@@ -43,6 +43,11 @@ import {
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import {
+  ConfirmDeletionDto,
+  type DeletionImpactPreview,
+  deletionSnapshot,
+} from "../common/deletion-impact";
+import {
   isHtmlContactCustomField,
   sanitizeContactCustomFieldHtml,
 } from "./contact-custom-field-html";
@@ -67,6 +72,7 @@ import {
   isNativeMessageVariableKey,
   normalizeContactCustomFieldName,
 } from "./contact-custom-field-identity";
+import { ConversationPurgeService } from "../conversations/conversation-purge.service";
 
 class ContactCatalogDto {
   @IsOptional()
@@ -241,6 +247,7 @@ export class CrmController {
     @Inject(ContactProfilePictureSyncService)
     private readonly profilePictures: ContactProfilePictureSyncService,
     @Inject(EvolutionClient) private readonly evolution: EvolutionClient,
+    @Inject(ConversationPurgeService) private readonly conversationPurge: ConversationPurgeService,
   ) {}
 
   @Get("customers")
@@ -707,16 +714,174 @@ export class CrmController {
   @RequirePermissions("contacts.delete", "contacts.additional_fields.read")
   async deleteContactCustomField(
     @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    await this.findContactCustomFieldOrThrow(id, current.tenantId);
-    const field = await this.prisma.contactCustomField.update({
-      where: { id },
-      data: {
-        archivedAt: new Date(),
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "contact_custom_fields" WHERE id = ${id} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
+      );
+      const impact = await this.buildCustomFieldDeletionPreview(id, current.tenantId, tx);
+      if (impact.snapshotToken !== dto.snapshotToken) {
+        return {
+          status: "changed" as const,
+          impact,
+          message: "Os usos deste campo mudaram. Revise os dados antes de confirmar novamente.",
+        };
+      }
+      if (impact.blockedReason) throw new BadRequestException(impact.blockedReason);
+      await tx.contactCustomFieldValue.deleteMany({
+        where: { tenantId: current.tenantId, fieldId: id },
+      });
+      await tx.contactCustomField.delete({ where: { id } });
+      return { status: "deleted" as const };
     });
-    return this.serializeContactCustomField(field);
+  }
+
+  @Get("contact-custom-fields/:id/deletion-preview")
+  @RequirePermissions("contacts.delete", "contacts.additional_fields.read")
+  customFieldDeletionPreview(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.buildCustomFieldDeletionPreview(id, current.tenantId);
+  }
+
+  private async buildCustomFieldDeletionPreview(
+    id: string,
+    tenantId: string,
+    db: Pick<
+      Prisma.TransactionClient,
+      | "contactCustomField"
+      | "contactCustomFieldValue"
+      | "quickReply"
+      | "campaign"
+      | "automationRule"
+      | "schedule"
+    > = this.prisma,
+  ): Promise<DeletionImpactPreview> {
+    const field = await db.contactCustomField.findFirst({
+      where: { id, tenantId, archivedAt: null },
+    });
+    if (!field) throw new NotFoundException("Campo adicional não encontrado.");
+    const [values, quickReplies, campaigns, automations, schedules] = await Promise.all([
+      db.contactCustomFieldValue.findMany({
+        where: { tenantId, fieldId: id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, updatedAt: true, contact: { select: { id: true, name: true } } },
+      }),
+      db.quickReply.findMany({
+        where: { tenantId, archivedAt: null },
+        select: { id: true, title: true, content: true, messages: true, updatedAt: true },
+      }),
+      db.campaign.findMany({
+        where: { tenantId, archivedAt: null },
+        select: { id: true, name: true, messageText: true, updatedAt: true },
+      }),
+      db.automationRule.findMany({
+        where: { tenantId, archivedAt: null },
+        select: { id: true, name: true, matchText: true, responseText: true, updatedAt: true },
+      }),
+      db.schedule.findMany({
+        where: { tenantId },
+        select: { id: true, payload: true, updatedAt: true },
+      }),
+    ]);
+    const token = `{{${field.variableKey}}}`;
+    const references = [
+      ...quickReplies
+        .filter((item) => hasDeletionVariableReference([item.content, item.messages], token))
+        .map((item) => ({
+          id: `quick-reply:${item.id}`,
+          label: item.title,
+          kind: "Mensagem rápida",
+          updatedAt: item.updatedAt,
+        })),
+      ...campaigns
+        .filter((item) => hasDeletionVariableReference(item.messageText, token))
+        .map((item) => ({
+          id: `campaign:${item.id}`,
+          label: item.name,
+          kind: "Campanha",
+          updatedAt: item.updatedAt,
+        })),
+      ...automations
+        .filter((item) => hasDeletionVariableReference([item.matchText, item.responseText], token))
+        .map((item) => ({
+          id: `automation:${item.id}`,
+          label: item.name,
+          kind: "Automação",
+          updatedAt: item.updatedAt,
+        })),
+      ...schedules
+        .filter((item) => hasDeletionVariableReference(item.payload, token))
+        .map((item) => ({
+          id: `schedule:${item.id}`,
+          label: item.id,
+          kind: "Agendamento",
+          updatedAt: item.updatedAt,
+        })),
+    ];
+    const blockedReason = references.length
+      ? "Este campo é usado em conteúdos ativos. Remova as variáveis indicadas antes de excluí-lo."
+      : undefined;
+    return {
+      snapshotToken: deletionSnapshot({
+        id: field.id,
+        updatedAt: field.updatedAt,
+        values: values.map((item) => [item.id, item.updatedAt]),
+        references: references.map((item) => [item.id, item.updatedAt]),
+      }),
+      title: "Excluir Campo Adicional?",
+      prompt: blockedReason
+        ? "A exclusão foi bloqueada para não corromper mensagens ou regras que usam esta variável."
+        : "Os valores armazenados para este campo serão excluídos definitivamente.",
+      record: {
+        name: field.label,
+        identifiers: [{ label: "Variável", value: token }],
+      },
+      dependencies: [
+        {
+          id: "values",
+          label: "Valores preenchidos",
+          count: values.length,
+          operation: "delete",
+          operationLabel: "Os valores serão excluídos; os contatos serão preservados.",
+          items: values.slice(0, 10).map((item) => ({
+            id: item.id,
+            label: item.contact.name,
+          })),
+          hasMore: values.length > 10,
+        },
+        {
+          id: "templates",
+          label: "Conteúdos que usam a variável",
+          count: references.length,
+          operation: "unlink",
+          operationLabel: references.length
+            ? "Precisam ser corrigidos manualmente antes da exclusão."
+            : "Nenhum conteúdo textual será afetado.",
+          items: references.slice(0, 10).map((item) => ({
+            id: item.id,
+            label: item.label,
+            description: item.kind,
+          })),
+          hasMore: references.length > 10,
+        },
+      ],
+      consequences: [
+        {
+          id: "field-values",
+          text: "A definição do campo e todos os seus valores serão excluídos definitivamente.",
+          irreversible: true,
+        },
+      ],
+      confirmation: {
+        level: "high",
+        confirmLabel: "Excluir campo e valores",
+        phrase: field.label,
+        inputLabel: "Digite o nome do campo",
+        instruction: `Digite exatamente “${field.label}” para confirmar.`,
+      },
+      blockedReason,
+    };
   }
 
   @Patch("contacts/bulk")
@@ -1542,18 +1707,20 @@ export class CrmController {
     return serialized;
   }
 
+  @Get("contacts/:id/deletion-impact")
+  @RequirePermissions("contacts.delete")
+  contactDeletionImpact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.conversationPurge.contactImpact(id, current.tenantId);
+  }
+
   @Delete("contacts/:id")
   @RequirePermissions("contacts.delete")
-  async deleteContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    await this.findContactOrThrow(id, current.tenantId);
-    const contact = await this.prisma.contact.update({
-      where: { id },
-      data: { archivedAt: new Date() },
-      include: contactInclude,
-    });
-    return this.serializeContact(contact, {
-      additionalFieldsViewer: current,
-    });
+  deleteContact(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.conversationPurge.purgeContact(id, dto.snapshotToken, current.tenantId);
   }
 
   @Get("tags")
@@ -1711,7 +1878,9 @@ export class CrmController {
 
     const tagIds = [...new Set(dto.tagIds ?? [])];
     if (tagIds.length) {
-      const count = await this.prisma.tag.count({ where: { tenantId, id: { in: tagIds } } });
+      const count = await this.prisma.tag.count({
+        where: { tenantId, id: { in: tagIds }, active: true, archivedAt: null },
+      });
       if (count !== tagIds.length)
         throw new BadRequestException("Etiqueta inexistente para este tenant.");
     }
@@ -2605,6 +2774,12 @@ function phoneFromStandaloneEvolutionNumber(value?: string | null) {
 
 function normalizeCatalogName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function hasDeletionVariableReference(value: unknown, token: string) {
+  if (value === null || value === undefined) return false;
+  const searchable = typeof value === "string" ? value : JSON.stringify(value);
+  return searchable.includes(token);
 }
 
 function nullableUpdate(value?: string | null) {

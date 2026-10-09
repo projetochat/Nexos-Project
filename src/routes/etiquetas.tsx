@@ -13,7 +13,9 @@ import {
   SearchInput,
   Textarea,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { crmApi, type ApiTag } from "@/lib/trixus-api";
@@ -49,7 +51,7 @@ function Page() {
   const [query, setQuery] = React.useState("");
   const { data: etiquetas = [], isLoading } = useQuery({
     queryKey: tagsQueryKey,
-    queryFn: crmApi.listTags,
+    queryFn: crmApi.listTagsCatalog,
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
   });
@@ -217,20 +219,26 @@ function Page() {
             }}
           />
         )}
-        <ConfirmDialog
+        <DeletionConfirmDialog
           open={!!deleting}
-          title="Excluir Etiqueta?"
-          destructive
-          description={<DeleteLinkedContactCatalogMessage name={deleting?.nome} />}
-          confirmLabel="Excluir"
-          onClose={() => setDeleting(null)}
-          onConfirm={async () => {
-            if (!deleting) return;
-            await crmApi.archiveTag(deleting.id);
+          resourceKey={`tag:${deleting?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          loadImpact={(signal) => {
+            if (!deleting) return Promise.reject(new Error("Etiqueta não selecionada."));
+            return crmApi.tagDeletionPreview(deleting.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!deleting) return Promise.reject(new Error("Etiqueta não selecionada."));
+            return crmApi.archiveTag(deleting.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
             toast.success("Etiqueta excluída");
-            refresh();
+            void refresh();
             setDeleting(null);
           }}
+          formatError={(error) => (error as Error).message}
         />
       </PageContainer>
     </AppShell>
@@ -245,22 +253,6 @@ function normalizeSearch(value: string) {
     .toLowerCase();
 }
 
-function DeleteLinkedContactCatalogMessage({ name }: { name?: string | null }) {
-  const selectedName = name ?? "Sem etiqueta";
-
-  return (
-    <div className="space-y-2">
-      <p>
-        Deseja realmente excluir a etiqueta{" "}
-        <strong className="font-semibold text-foreground">"{selectedName}"</strong>?
-      </p>
-      <p className="text-xs italic text-muted-foreground">
-        Os Contatos vinculados serão desvinculados.
-      </p>
-    </div>
-  );
-}
-
 export function EtiquetaForm({
   open,
   onClose,
@@ -271,7 +263,12 @@ export function EtiquetaForm({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string; description?: string; color?: string }) => Promise<void>;
+  onSubmit: (data: {
+    name: string;
+    description?: string;
+    color?: string;
+    active?: boolean;
+  }) => Promise<void>;
   initial?: ApiTag;
   clone?: boolean;
   tags: ApiTag[];
@@ -279,6 +276,7 @@ export function EtiquetaForm({
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [color, setColor] = React.useState("#3B82F6");
+  const [active, setActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [nameError, setNameError] = React.useState("");
   const duplicateNameError = (value: string) => {
@@ -297,6 +295,7 @@ export function EtiquetaForm({
     setName(initial ? (clone ? `${initial.nome} - Cópia` : initial.nome) : "");
     setDescription(initial?.descricao ?? "");
     setColor(initial?.cor ?? "#3B82F6");
+    setActive(clone ? true : initial?.active !== false);
     setNameError("");
   }, [clone, initial, open]);
 
@@ -313,6 +312,7 @@ export function EtiquetaForm({
         name: name.trim(),
         description: description.trim(),
         color: completeHexColor(color),
+        active,
       });
     } catch (error) {
       toast.error((error as Error).message);
@@ -345,6 +345,10 @@ export function EtiquetaForm({
         </div>
       }
     >
+      <label className="mb-4 flex min-h-7 items-center gap-2 text-sm">
+        <Switch checked={active} onCheckedChange={setActive} aria-label="Ativo" />
+        <span>Ativo</span>
+      </label>
       <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
         <Field label="Nome *" error={nameError || undefined}>
           <Input

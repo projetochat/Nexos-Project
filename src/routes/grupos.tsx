@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
@@ -449,37 +450,22 @@ function GroupsPage() {
           canManage={canUpdate}
         />
         {canLeave && (
-          <ConfirmDialog
+          <DeletionConfirmDialog
             open={!!leavingGroup}
-            title="Sair do Grupo?"
-            destructive
-            confirmLabel="Sair do Grupo"
-            description={
-              <p>
-                Deseja realmente sair do grupo{" "}
-                <strong className="font-semibold text-foreground">
-                  "{leavingGroup?.name ?? ""}"
-                </strong>
-                ?
-              </p>
+            resourceKey={`group:${leavingGroup?.id ?? "none"}`}
+            onOpenChange={(open) => !open && setLeavingGroup(null)}
+            loadImpact={(signal) => groupsApi.deletionImpact(leavingGroup!.id, signal)}
+            onConfirm={({ snapshotToken, signal }) =>
+              groupsApi.leave(leavingGroup!.id, snapshotToken, signal)
             }
-            onClose={() => setLeavingGroup(null)}
-            onConfirm={() => {
+            onDeleted={() => {
               const group = leavingGroup;
-              if (!group) return;
-              void groupsApi
-                .leave(group.id)
-                .then(async () => {
-                  toast.success("Você saiu do grupo");
-                  if (selectedGroup?.id === group.id) setSelectedGroup(null);
-                  await load();
-                })
-                .catch((error) =>
-                  toast.error("Não foi possível sair do grupo", {
-                    description: (error as Error).message,
-                  }),
-                );
+              toast.success("Você saiu do grupo e o histórico local foi removido");
+              if (selectedGroup?.id === group?.id) setSelectedGroup(null);
+              setLeavingGroup(null);
+              void load();
             }}
+            formatError={(error) => (error as Error).message}
           />
         )}
       </PageContainer>

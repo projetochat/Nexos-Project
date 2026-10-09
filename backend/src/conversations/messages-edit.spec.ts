@@ -1,8 +1,38 @@
 import { describe, expect, it, vi } from "vitest";
-import { MessageDirection, MessageType } from "../generated/prisma";
+import { MessageDirection, MessageStatus, MessageType } from "../generated/prisma";
 import { MessagesService } from "./messages.service";
 
 describe("message editing", () => {
+  it("serializes the original content retained for an edited contact message", () => {
+    const service = new MessagesService({} as never, {} as never, {} as never);
+    const serialize = (
+      service as unknown as {
+        serialize: (message: Record<string, unknown>) => Record<string, unknown>;
+      }
+    ).serialize.bind(service);
+
+    expect(
+      serialize({
+        id: "message-inbound",
+        tenantId: "tenant-a",
+        conversationId: "conversation-a",
+        direction: MessageDirection.INBOUND,
+        type: MessageType.TEXT,
+        status: MessageStatus.CREATED,
+        content: "CBA",
+        interactiveData: {
+          originalContent: "ABC",
+          editedAt: "2026-10-08T17:47:00.000Z",
+        },
+        reactions: [],
+      }),
+    ).toMatchObject({
+      content: "CBA",
+      original_content: "ABC",
+      edited_at: "2026-10-08T17:47:00.000Z",
+    });
+  });
+
   it("keeps an edited image caption consistent in content and media metadata", async () => {
     const prisma = {
       message: {

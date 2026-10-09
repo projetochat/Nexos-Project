@@ -70,7 +70,8 @@ describe("tela administrativa de assinaturas", () => {
   it("oferece somente as ações que controlam o fluxo e protege repetição", () => {
     expect(source).toContain('label="Detalhar"');
     expect(source).toContain('label="Gerar financeiro"');
-    expect(source).toContain('status === "SUSPENDED" ? "Reativar assinatura"');
+    expect(source).toContain('status === "SUSPENDED" || status === "CANCELLED"');
+    expect(source).toContain('"FINANCE_RELEASED", "SUSPENDED", "CANCELLED"');
     expect(source).toContain(': "Ativar assinatura"');
     expect(source).toContain("disabled={disabled || !canGenerateFinance}");
     expect(source).toContain("disabled={disabled || !canActivate}");
@@ -79,11 +80,12 @@ describe("tela administrativa de assinaturas", () => {
     expect(source).toContain("Financeiro já gerado.");
     expect(source).toContain("Financeiro ainda não gerado.");
     expect(source).toContain("A assinatura já está ativa e não pode ser ativada novamente.");
-    expect(source).toContain('if (status === "SUSPENDED") return null;');
+    expect(source).toContain('if (status === "SUSPENDED" || status === "CANCELLED") return null;');
     expect(source).toContain("O registro já se encontra suspenso");
     expect(source).toContain("O registro já se encontra cancelado");
     expect(source).toContain('title={reactivating ? "Reativar assinatura" : "Ativar assinatura"}');
     expect(source).toContain("setActivationTarget(row)");
+    expect(source).toContain("toast.error(apiErrorMessageWithRequestId(actionError))");
     expect(source).toContain(".subscription(value.id)");
     for (const section of ["Cliente", "Plano", "Assinatura"]) {
       expect(source).toContain(`title="${section}"`);
@@ -104,5 +106,14 @@ describe("tela administrativa de assinaturas", () => {
     expect(source).toContain('CANCELLED: { label: "Cancelada", tone: "destructive" }');
     expect(source).toContain('value === "SUSPENDED"');
     expect(source).toContain("bg-red-600/25 text-red-700");
+  });
+
+  it("explica a exclusão da tenant e a recriação do zero ao reativar", () => {
+    expect(source).toContain("A Tenant vinculada e todos os seus dados");
+    expect(source).toContain("excluídos definitivamente");
+    expect(source).toContain("Uma nova Tenant será criada e configurada do zero");
+    expect(source).toContain("Os dados da Tenant excluída não serão recuperados");
+    expect(source).toContain('"Excluída após cancelamento"');
+    expect(source).not.toContain("seus dados serão preservados para consulta e auditoria");
   });
 });

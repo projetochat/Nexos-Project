@@ -50,7 +50,7 @@ describe("quick replies tenant-wide catalog", () => {
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { tenantId: "tenant-a", archivedAt: null },
+        where: { tenantId: "tenant-a", archivedAt: null, active: true },
       }),
     );
   });
@@ -63,7 +63,7 @@ describe("quick replies tenant-wide catalog", () => {
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { tenantId: "tenant-a", archivedAt: null },
+        where: { tenantId: "tenant-a", archivedAt: null, active: true },
       }),
     );
   });

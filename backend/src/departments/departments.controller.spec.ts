@@ -4,6 +4,22 @@ import { DepartmentsController } from "./departments.controller";
 import { UpdateDepartmentDto } from "./dto/update-department.dto";
 
 describe("DepartmentsController", () => {
+  it("lists inactive departments only when administration explicitly requests all", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const controller = new DepartmentsController(
+      { department: { findMany } } as never,
+      {} as never,
+    );
+
+    await controller.list({ tenantId: "tenant-a" } as never, { status: "all" });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ active: expect.anything() }),
+      }),
+    );
+  });
+
   it("does not expose archived or incompatible instance links in department editing", async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const controller = new DepartmentsController(
@@ -106,6 +122,51 @@ describe("DepartmentsController", () => {
         }),
       }),
     );
+  });
+
+  it("allows removing every instance link from a department", async () => {
+    const timestamp = new Date("2026-10-08T12:00:00.000Z");
+    const existing = {
+      id: "department-a",
+      tenantId: "tenant-a",
+      name: "Comercial",
+      description: null,
+      color: "#3B82F6",
+      icon: "department",
+      active: true,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      connections: [{ connectionId: "connection-a" }],
+    };
+    const updated = { ...existing, connections: [] };
+    const tx = {
+      messagingConnection: { count: vi.fn().mockResolvedValue(0) },
+      departmentConnection: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      department: { update: vi.fn().mockResolvedValue(updated) },
+    };
+    const prisma = {
+      department: { findFirst: vi.fn().mockResolvedValue(existing) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const controller = new DepartmentsController(prisma as never, {} as never);
+
+    await expect(
+      controller.update("department-a", { connectionIds: [] }, {
+        tenantId: "tenant-a",
+      } as never),
+    ).resolves.toMatchObject({ connectionIds: [] });
+
+    expect(tx.messagingConnection.count).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        providerType: "EVOLUTION",
+        archivedAt: null,
+        id: { in: [] },
+      },
+    });
+    expect(tx.departmentConnection.deleteMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", departmentId: "department-a" },
+    });
   });
 
   it("updates a department whose optional description is null", async () => {
@@ -289,5 +350,157 @@ describe("DepartmentsController", () => {
       },
       include: { connections: { select: { connectionId: true } } },
     });
+  });
+
+  it("blocks direct PATCH deactivation so open conversations cannot be bypassed", async () => {
+    const prisma = { $transaction: vi.fn() };
+    const controller = new DepartmentsController(prisma as never, {} as never);
+
+    await expect(
+      controller.update("department-a", { active: false }, { tenantId: "tenant-a" } as never),
+    ).rejects.toThrow("Use o fluxo de inativação");
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("migrates open conversations with history before atomically deactivating", async () => {
+    const timestamp = new Date("2026-10-08T12:00:00.000Z");
+    const source = {
+      id: "department-source",
+      tenantId: "tenant-a",
+      name: "Comercial",
+      description: null,
+      color: "#3B82F6",
+      icon: "department",
+      active: true,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      connections: [{ connectionId: "connection-a" }],
+    };
+    const target = { id: "department-target", name: "Financeiro" };
+    const conversation = {
+      id: "conversation-a",
+      connectionId: "connection-a",
+      assignedMembershipId: "membership-a",
+    };
+    const migrated = {
+      id: conversation.id,
+      assignedMembershipId: conversation.assignedMembershipId,
+      departmentId: target.id,
+      updatedAt: timestamp,
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: source.id }]),
+      department: {
+        findFirst: vi.fn().mockResolvedValueOnce(source).mockResolvedValueOnce(target),
+        update: vi.fn().mockResolvedValue({ ...source, active: false }),
+      },
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([conversation]),
+        update: vi.fn().mockResolvedValue(migrated),
+        findUniqueOrThrow: vi.fn().mockResolvedValue(migrated),
+      },
+      tenantMembership: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "membership-a",
+            status: "ACTIVE",
+            user: { status: "ACTIVE" },
+            role: { key: "tenant_admin", metadata: {} },
+          },
+        ]),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const messages = { createSystemMessage: vi.fn().mockResolvedValue(undefined) };
+    const realtime = {
+      publishAssignmentUpdated: vi.fn(),
+      publishConversationUpdated: vi.fn(),
+    };
+    const controller = new DepartmentsController(
+      prisma as never,
+      {} as never,
+      messages as never,
+      realtime as never,
+    );
+
+    await expect(
+      controller.deactivateWithMigration(
+        source.id,
+        { targets: [{ connectionId: "connection-a", departmentId: target.id }] },
+        { tenantId: "tenant-a", membershipId: "actor-a", roleKey: "tenant_admin" } as never,
+      ),
+    ).resolves.toMatchObject({ id: source.id, active: false });
+
+    expect(tx.conversation.update).toHaveBeenCalledWith({
+      where: { id: conversation.id },
+      data: { departmentId: target.id },
+    });
+    expect(messages.createSystemMessage).toHaveBeenCalledWith(
+      tx,
+      conversation.id,
+      expect.objectContaining({ tenantId: "tenant-a" }),
+      expect.stringContaining("Comercial para o departamento Financeiro"),
+    );
+    expect(tx.department.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { active: false } }),
+    );
+    expect(realtime.publishAssignmentUpdated).toHaveBeenCalledOnce();
+    expect(realtime.publishConversationUpdated).toHaveBeenCalledOnce();
+  });
+
+  it("does not deactivate when writing migration history fails", async () => {
+    const timestamp = new Date("2026-10-08T12:00:00.000Z");
+    const source = {
+      id: "department-source",
+      tenantId: "tenant-a",
+      name: "Comercial",
+      description: null,
+      color: "#3B82F6",
+      icon: "department",
+      active: true,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      connections: [{ connectionId: "connection-a" }],
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      department: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce(source)
+          .mockResolvedValueOnce({ id: "department-target", name: "Financeiro" }),
+        update: vi.fn(),
+      },
+      conversation: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "conversation-a", connectionId: "connection-a", assignedMembershipId: null },
+          ]),
+        update: vi.fn().mockResolvedValue({}),
+        findUniqueOrThrow: vi.fn(),
+      },
+      tenantMembership: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const messages = {
+      createSystemMessage: vi.fn().mockRejectedValue(new Error("history failed")),
+    };
+    const controller = new DepartmentsController(prisma as never, {} as never, messages as never);
+
+    await expect(
+      controller.deactivateWithMigration(
+        source.id,
+        {
+          targets: [{ connectionId: "connection-a", departmentId: "department-target" }],
+        },
+        { tenantId: "tenant-a", membershipId: "actor-a", roleKey: "tenant_admin" } as never,
+      ),
+    ).rejects.toThrow("history failed");
+    expect(tx.department.update).not.toHaveBeenCalled();
   });
 });

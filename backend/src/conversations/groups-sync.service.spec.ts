@@ -178,6 +178,7 @@ describe("GroupsSyncService", () => {
 });
 
 const prismaTx = {
+  $queryRaw: vi.fn(),
   contact: {
     upsert: vi.fn(),
   },
@@ -195,6 +196,7 @@ const prismaTx = {
 };
 
 function prismaMock() {
+  prismaTx.$queryRaw.mockResolvedValue([{ id: "department-a" }]);
   prismaTx.contact.upsert.mockResolvedValue({ id: "contact-a" });
   prismaTx.conversation.findFirst.mockResolvedValue(null);
   prismaTx.conversation.create.mockResolvedValue({ id: "conversation-a" });

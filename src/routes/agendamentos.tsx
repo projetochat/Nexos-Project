@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import {
   Alert,
   Badge,
@@ -32,7 +33,7 @@ import {
   Select,
   Textarea,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal } from "@/components/modal";
+import { Modal } from "@/components/modal";
 import {
   schedulesApi,
   connectionsApi,
@@ -347,29 +348,24 @@ function SchedulingPage() {
             busy={saving}
           />
         )}
-        <ConfirmDialog
+        <DeletionConfirmDialog
           open={!!removing}
-          title="Excluir Agendamento?"
-          destructive
-          description={
-            <p>
-              Deseja realmente excluir o agendamento{" "}
-              <strong className="font-semibold text-foreground">"{removing?.title ?? ""}"</strong>?
-            </p>
-          }
-          confirmLabel="Excluir"
-          onClose={() => setRemoving(null)}
-          onConfirm={async () => {
-            if (!removing) return;
-            try {
-              await schedulesApi.remove(removing.id);
-              await qc.invalidateQueries({ queryKey: schedulesKey });
-              setRemoving(null);
-              toast.success("Agendamento excluído.");
-            } catch (error) {
-              toast.error((error as Error).message);
-            }
+          resourceKey={`schedule:${removing?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setRemoving(null);
           }}
+          loadImpact={(signal) => schedulesApi.deletionImpact(removing!.id, signal)}
+          onConfirm={({ snapshotToken, signal }) =>
+            schedulesApi.remove(removing!.id, snapshotToken, signal)
+          }
+          onDeleted={() => {
+            void qc.invalidateQueries({ queryKey: schedulesKey });
+            setRemoving(null);
+            toast.success("Agendamento excluído.");
+          }}
+          formatError={(error) =>
+            error instanceof Error ? error.message : "Não foi possível excluir o agendamento."
+          }
         />
       </PageContainer>
     </AppShell>

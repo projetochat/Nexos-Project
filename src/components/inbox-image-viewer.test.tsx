@@ -83,6 +83,8 @@ it("zooms with the wheel, drags, transforms and restores the image without chang
     );
     const stage = document.querySelector<HTMLElement>('[data-testid="image-stage"]')!;
     const image = stage.querySelector("img")!;
+    expect(stage.className).toContain("cursor-default");
+    expect(stage.className).not.toMatch(/cursor-(?:ew-resize|grab|grabbing)/);
     const click = async (label: string) => {
       await React.act(() =>
         (document.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement).click(),
@@ -102,6 +104,8 @@ it("zooms with the wheel, drags, transforms and restores the image without chang
       stage.dispatchEvent(wheel);
     });
     expect(wheel.defaultPrevented).toBe(true);
+    expect(stage.className).toContain("cursor-default");
+    expect(stage.className).not.toMatch(/cursor-(?:ew-resize|grab|grabbing)/);
     expect(image.style.transform).not.toContain("scale(1) rotate");
     const beforeDrag = image.style.transform;
     const pointer = (type: string, x: number, y: number) => {
@@ -171,6 +175,40 @@ it("closes when clicking outside the displayed image", async () => {
     Object.assign(event, { pointerId: 1, button: 0, clientX: 50, clientY: 50 });
     await React.act(() => stage.dispatchEvent(event));
     expect(close).toHaveBeenCalledOnce();
+  } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});
+
+it("opens image actions at the pointer position in full screen", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onOpenActions = vi.fn();
+  try {
+    await React.act(() =>
+      root.render(
+        <InboxImageViewer
+          src="blob:test-image"
+          message={{ id: "image1", media_data: { file_name: "foto.jpg" } } as ApiMessage}
+          onClose={vi.fn()}
+          onDownload={vi.fn().mockResolvedValue(undefined)}
+          onOpenActions={onOpenActions}
+        />,
+      ),
+    );
+    const stage = document.querySelector<HTMLElement>('[data-testid="image-stage"]')!;
+    const contextMenu = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 420,
+      clientY: 315,
+    });
+    await React.act(() => stage.dispatchEvent(contextMenu));
+    expect(contextMenu.defaultPrevented).toBe(true);
+    expect(onOpenActions).toHaveBeenCalledWith({ x: 420, y: 315 });
   } finally {
     await React.act(() => root.unmount());
     container.remove();

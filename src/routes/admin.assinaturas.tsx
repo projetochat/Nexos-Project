@@ -38,6 +38,7 @@ import {
   parsePlatformMoneyToCents,
 } from "@/lib/platform-field-formats";
 import {
+  apiErrorMessageWithRequestId,
   platformApi,
   type PlatformClient,
   type PlatformPlan,
@@ -183,11 +184,19 @@ function AssinaturasAdmin() {
     setBusyId(row.id);
     try {
       await handler(row.id);
-      toast.success(kind === "finance" ? "Financeiro gerado." : "Assinatura ativada.");
+      toast.success(
+        kind === "finance"
+          ? "Financeiro gerado."
+          : normalizeSubscriptionStatus(row.status) === "CANCELLED"
+            ? "Assinatura reativada com uma nova Tenant."
+            : normalizeSubscriptionStatus(row.status) === "SUSPENDED"
+              ? "Assinatura reativada."
+              : "Assinatura ativada.",
+      );
       load();
       return true;
     } catch (actionError) {
-      toast.error((actionError as Error).message);
+      toast.error(apiErrorMessageWithRequestId(actionError));
       return false;
     } finally {
       setBusyId(null);
@@ -645,7 +654,7 @@ function Actions({
   const buttonRef = React.useRef<HTMLButtonElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const canGenerateFinance = status === "DRAFT" || status === "TRIALING";
-  const canActivate = status === "FINANCE_RELEASED" || status === "SUSPENDED";
+  const canActivate = ["FINANCE_RELEASED", "SUSPENDED", "CANCELLED"].includes(status);
   const canSuspend = status === "ACTIVE";
   const canCancel = status !== "CANCELLED";
 
@@ -713,7 +722,11 @@ function Actions({
       />
       <ActionButton
         icon={Play}
-        label={status === "SUSPENDED" ? "Reativar assinatura" : "Ativar assinatura"}
+        label={
+          status === "SUSPENDED" || status === "CANCELLED"
+            ? "Reativar assinatura"
+            : "Ativar assinatura"
+        }
         tone="primary"
         disabled={disabled || !canActivate}
         onClick={onActivate}
@@ -874,8 +887,9 @@ function ActionDialog({
         </Field>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Confirma o cancelamento desta assinatura? Quando houver Tenant vinculada, ela será
-          encerrada e seus dados serão preservados para consulta e auditoria.
+          Confirma o cancelamento desta assinatura? A Tenant vinculada e todos os seus dados serão
+          excluídos definitivamente. A assinatura, o cliente, o financeiro e o histórico do Platform
+          serão preservados.
         </p>
       )}
     </Modal>
@@ -892,7 +906,10 @@ function ActivationConfirmModal({
   onConfirm: (row: PlatformSubscription) => Promise<boolean>;
 }) {
   const [saving, setSaving] = React.useState(false);
-  const reactivating = value ? normalizeSubscriptionStatus(value.status) === "SUSPENDED" : false;
+  const status = value ? normalizeSubscriptionStatus(value.status) : null;
+  const reactivatingSuspended = status === "SUSPENDED";
+  const recreatingCancelled = status === "CANCELLED";
+  const reactivating = reactivatingSuspended || recreatingCancelled;
 
   const confirm = async () => {
     if (!value) return;
@@ -931,7 +948,9 @@ function ActivationConfirmModal({
           </div>
           <p className="text-muted-foreground">
             {reactivating
-              ? "A Tenant existente e o acesso dos usuários serão restabelecidos."
+              ? recreatingCancelled
+                ? "Uma nova Tenant será criada e configurada do zero. Os dados da Tenant excluída não serão recuperados."
+                : "A Tenant existente e o acesso dos usuários serão restabelecidos."
               : "A Tenant será criada e configurada conforme o plano. O convite para definição da senha será enviado ao e-mail do responsável."}
           </p>
         </div>
@@ -1058,7 +1077,9 @@ function SubscriptionDetailModal({
               value={
                 detail.tenant
                   ? `${detail.tenant.slug} · ${detail.tenant.status}`
-                  : "Ainda não criada"
+                  : normalizeSubscriptionStatus(detail.status) === "CANCELLED"
+                    ? "Excluída após cancelamento"
+                    : "Ainda não criada"
               }
             />
             <DetailValue label="Início" value={formatOptionalDateTime(detail.startsAt)} />
@@ -1341,7 +1362,7 @@ function normalizeSubscriptionStatus(status: string): FlowStatus {
 function validateImmediateAction(status: FlowStatus, action: "finance" | "activate") {
   if (action === "finance")
     return status === "DRAFT" || status === "TRIALING" ? null : "Financeiro já gerado.";
-  if (status === "SUSPENDED") return null;
+  if (status === "SUSPENDED" || status === "CANCELLED") return null;
   if (status === "DRAFT" || status === "TRIALING") return "Financeiro ainda não gerado.";
   if (status === "PENDING_FINANCE")
     return "Assinatura não pode ser ativada porque o financeiro ainda não está liberado.";

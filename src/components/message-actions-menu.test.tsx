@@ -6,6 +6,49 @@ import { expect, it, vi } from "vitest";
 import { MessageActionsMenu } from "./message-actions-menu";
 import type { ApiMessage } from "@/lib/trixus-api";
 
+it("anchors a context-menu request at the pointer position", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const qc = new QueryClient();
+  try {
+    await React.act(() =>
+      root.render(
+        <QueryClientProvider client={qc}>
+          <MessageActionsMenu
+            message={
+              {
+                id: "context-image",
+                conversation_id: "c1",
+                sender: "contact",
+                type: "image",
+                content: "",
+                status: "delivered",
+                created_at: "2026-10-08T12:00:00Z",
+                media_data: { state: "ready" },
+              } as ApiMessage
+            }
+            onReact={vi.fn().mockResolvedValue(undefined)}
+            onDownload={vi.fn().mockResolvedValue(undefined)}
+            openRequest={1}
+            openPosition={{ x: 320, y: 240 }}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const anchor = host.querySelector<HTMLElement>('span[aria-hidden="true"]');
+    expect(anchor?.className).toContain("fixed");
+    expect(anchor?.style.left).toBe("320px");
+    expect(anchor?.style.top).toBe("240px");
+    expect(document.querySelectorAll('[aria-label="Ações da mensagem"]').length).toBeGreaterThan(1);
+  } finally {
+    await React.act(() => root.unmount());
+    host.remove();
+    qc.clear();
+  }
+});
+
 it("opens message actions, handles reply/copy/reaction/download and restricts unsupported actions", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div");

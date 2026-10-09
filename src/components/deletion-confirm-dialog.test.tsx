@@ -117,6 +117,24 @@ describe("DeletionConfirmDialog", () => {
     expect(document.body.textContent).toContain("5 registro(s) adicional(is)");
   });
 
+  it("shows a backend blocker and never submits the deletion", async () => {
+    const onConfirm = vi.fn().mockResolvedValue({ status: "deleted" as const });
+    await renderDialog(
+      {
+        ...baseImpact,
+        blockedReason: "Reatribua os atendentes antes de excluir este perfil.",
+      },
+      { onConfirm },
+    );
+
+    expect(document.body.textContent).toContain("Exclusão bloqueada");
+    expect(document.body.textContent).toContain("Reatribua os atendentes");
+    const button = findButton("Exclusão bloqueada");
+    expect(button?.disabled).toBe(true);
+    button?.click();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it("focuses Cancelar instead of the destructive action", async () => {
     await renderDialog();
     await React.act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));

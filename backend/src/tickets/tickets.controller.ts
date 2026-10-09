@@ -20,6 +20,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
+import { ConfirmDeletionDto } from "../common/deletion-impact";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketCommentDto } from "./dto/create-ticket-comment.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
@@ -95,10 +96,20 @@ export class TicketsController {
     return this.ticketsService.updateDepartment(id, dto.departmentId, current);
   }
 
+  @Get(":id/deletion-preview")
+  @RequirePermissions("tickets.delete")
+  deletionPreview(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.ticketsService.deletionPreview(id, current);
+  }
+
   @Delete(":id")
   @RequirePermissions("tickets.delete")
-  archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    return this.ticketsService.archive(id, current);
+  remove(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.remove(id, dto.snapshotToken, current);
   }
 
   @Get(":id/comments")

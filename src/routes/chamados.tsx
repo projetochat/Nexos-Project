@@ -16,7 +16,8 @@ import {
   SectionHeader,
   Select,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { formatPhoneForDisplay } from "@/lib/input-masks";
@@ -229,7 +230,7 @@ function ChamadosPage() {
                       <td className="px-4 py-3 text-xs">
                         {ticket.requesterContact?.name ?? ticket.customer?.name ?? "Sem vínculo"}
                       </td>
-                      <td className="px-4 py-3">{ticket.department.name}</td>
+                      <td className="px-4 py-3">{ticket.department?.name ?? "Sem departamento"}</td>
                       <td className="px-4 py-3 text-xs">
                         {ticket.assignedMembership?.user.name ?? "Fila"}
                       </td>
@@ -335,31 +336,26 @@ function ChamadosPage() {
             }}
           />
         )}
-        <ConfirmDialog
+        <DeletionConfirmDialog
           open={!!deletingTicket}
-          title="Excluir Chamado?"
-          description={
-            <p>
-              Deseja realmente excluir o chamado "
-              <strong className="font-semibold text-foreground">
-                {deletingTicket?.protocol ?? ""}
-              </strong>
-              "?
-            </p>
-          }
-          confirmLabel="Excluir"
-          destructive
-          onClose={() => setDeletingTicket(null)}
-          onConfirm={() => {
-            if (!deletingTicket) return;
-            void ticketApi
-              .archive(deletingTicket.id)
-              .then(() => {
-                toast.success("Chamado excluído.");
-                refreshTickets();
-              })
-              .catch((error) => toast.error((error as Error).message));
+          resourceKey={`ticket:${deletingTicket?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setDeletingTicket(null);
           }}
+          loadImpact={(signal) => {
+            if (!deletingTicket) return Promise.reject(new Error("Chamado não selecionado."));
+            return ticketApi.deletionPreview(deletingTicket.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!deletingTicket) return Promise.reject(new Error("Chamado não selecionado."));
+            return ticketApi.remove(deletingTicket.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
+            toast.success("Chamado excluído permanentemente.");
+            setDeletingTicket(null);
+            refreshTickets();
+          }}
+          formatError={(error) => (error instanceof Error ? error.message : "Falha ao excluir.")}
         />
       </PageContainer>
     </AppShell>
@@ -448,7 +444,7 @@ function TicketEditor({
     setDescription(initialTicket?.descriptionHtmlSanitized ?? initialTicket?.descriptionText ?? "");
     setCategory(initialTicket?.category ?? "SUPORTE");
     setPriority(initialTicket?.priority ?? "NORMAL");
-    setDepartmentId(initialTicket?.department.id ?? "");
+    setDepartmentId(initialTicket?.department?.id ?? "");
     setContactId(initialTicket?.requesterContact?.id ?? "");
     setRequesterSearch(initialTicket?.requesterContact?.name ?? "");
     setRequesterResultsOpen(false);
@@ -513,6 +509,10 @@ function TicketEditor({
       const descriptionHtml = /<[^>]+>/.test(description) ? description : textToHtml(description);
       let ticket: ApiTicket;
       if (initialTicket && !clone) {
+        ticket = initialTicket;
+        if (departmentId !== initialTicket.department?.id) {
+          ticket = await ticketApi.updateDepartment(ticket.id, departmentId);
+        }
         ticket = await ticketApi.update(initialTicket.id, {
           title: title.trim(),
           descriptionHtml,
@@ -522,9 +522,6 @@ function TicketEditor({
           customerId: customerId || null,
           conversationId: conversationId || null,
         });
-        if (departmentId !== initialTicket.department.id) {
-          ticket = await ticketApi.updateDepartment(ticket.id, departmentId);
-        }
         if (assignedMembershipId !== (initialTicket.assignedMembership?.id ?? "")) {
           ticket = await ticketApi.updateAssignee(ticket.id, assignedMembershipId || null);
         }
@@ -852,7 +849,7 @@ function TicketDetail({
           <Card className="p-4">
             <p className="whitespace-pre-wrap text-sm">{item.descriptionText}</p>
             <div className="mt-4 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
-              <span>Departamento: {item.department.name}</span>
+              <span>Departamento: {item.department?.name ?? "Sem departamento"}</span>
               <span>Responsável: {item.assignedMembership?.user.name ?? "Fila"}</span>
               <span>Contact: {item.requesterContact?.name ?? "Sem vínculo"}</span>
               <span>Customer: {item.customer?.name ?? "Sem vínculo"}</span>

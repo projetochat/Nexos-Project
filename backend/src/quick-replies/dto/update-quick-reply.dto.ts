@@ -28,6 +28,10 @@ export class UpdateQuickReplyDto extends QuickReplySequenceDto {
   closeOnSend?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @IsOptional()
   @IsString()
   attachmentFileName?: string | null;
 

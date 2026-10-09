@@ -14,9 +14,9 @@ const allowedEnvironmentExamples = new Set([
 const allowedSqlRoots = ["backend/prisma/migrations/", "supabase/migrations/"];
 // Reviewed fixtures/examples with intentional dummy credentials. Any content change invalidates the exception.
 const credentialFixtureHashes = new Map([
-  [".env.example", "4911056da6048a7e8881813e210a4c6173f64c599d7ac5116d2a66e5654866b9"],
-  [".env.vps.example", "bc4bb151f98a01a6c5574ea79889613676fc18dae96b03a743d5bbedfdce2e91"],
-  ["backend/.env.example", "3d7526619357ed0b31a311ff43ebbc39230d8818fdafcb63f50735626162781a"],
+  [".env.example", "9c2190e75b5a6f91debc2a983b0ec98e59aadfbf9dbea89b3906001d0e61eaf1"],
+  [".env.vps.example", "bd472a16c10fa4fd06e0500a86d4b796b05ea6bcad59db0626288c8cabaca818"],
+  ["backend/.env.example", "f71aed6f49c666c48f00d4ddfb0ca456c0a0a620495e4418c31c4d25bcc2438c"],
   [
     "backend/prisma/test-fixtures.ts",
     "6bce9d380ab9b9c3ae3c53b0cf6e8927ff7a1abc59f9299ec910051578c8b0bc",
@@ -39,7 +39,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/src/messaging/evolution/evolution-webhook.translator.spec.ts",
-    "0fc71c22089ac2dcffb81c89a64988fdf1b5f798fd11f8353f3ec5b96e7fcb01",
+    "209d58d936da73e3a596c617046e7739677990b500cbac7ac4d243dcf60e5eef",
   ],
   [
     "backend/src/messaging/evolution/evolution-webhook.controller.spec.ts",

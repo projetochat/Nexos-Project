@@ -136,6 +136,17 @@ describe("OnboardingService", () => {
     expect(tx.messagingConnection.count).not.toHaveBeenCalled();
   });
 
+  it("marks Etiquetas reviewed at step six before Mensagens Rápidas at step seven", async () => {
+    const { prisma } = database([[row({ currentStep: 7, maxCompletedStep: 6 })]]);
+
+    const result = await new OnboardingService(prisma as never).status(admin as never);
+
+    expect(result.checklist).toMatchObject({
+      tagsReviewed: true,
+      quickRepliesReviewed: false,
+    });
+  });
+
   it("completes with zero optional messages or tags after validating mandatory records", async () => {
     const completed = row({
       status: "COMPLETED",

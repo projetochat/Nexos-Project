@@ -1,8 +1,10 @@
 import "reflect-metadata";
 import { describe, expect, it, vi } from "vitest";
 import { compare, hashSync } from "bcryptjs";
+import { validate } from "class-validator";
 import { UsersController } from "./users.controller";
 import type { AuthenticatedUser } from "../auth/auth.types";
+import { CreateUserDto } from "./dto/create-user.dto";
 
 const current = {
   tenantId: "tenant-a",
@@ -243,5 +245,39 @@ describe("atendente reactivation without password", () => {
     const master = setup({ master: true });
     await expect(master.controller.activate("membership-a", current)).rejects.toThrow("master");
     expect(master.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects assigning an inactive access profile", async () => {
+    const controller = new UsersController(
+      {
+        role: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "role-inactive",
+            tenantId: "tenant-a",
+            key: "agent",
+            active: false,
+            permissions: [],
+          }),
+        },
+      } as never,
+      {} as never,
+    );
+
+    await expect(controller["assertAssignableRole"]("role-inactive", current)).rejects.toThrow(
+      "Perfil de Acesso inativo não pode ser atribuído",
+    );
+  });
+
+  it("accepts only active or disabled status when creating an attendant", async () => {
+    const dto = Object.assign(new CreateUserDto(), {
+      email: "agent@trixus.com.br",
+      name: "Agente",
+      password: "Senha123",
+      membershipStatus: "INVITED",
+    });
+
+    await expect(validate(dto)).resolves.toEqual([
+      expect.objectContaining({ property: "membershipStatus" }),
+    ]);
   });
 });

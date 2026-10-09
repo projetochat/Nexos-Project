@@ -5,6 +5,7 @@ import {
   MessagingConnectionStatus,
   MessagingProviderType,
 } from "../generated/prisma";
+import { lockActiveDepartmentForConversation } from "../departments/department-conversation-lock";
 import { EvolutionClient } from "../messaging/evolution/evolution.client";
 import { PrismaService } from "../prisma/prisma.service";
 import { contactPhoneDuplicateCandidates, normalizePhone } from "../crm/phone-normalization";
@@ -13,6 +14,7 @@ type EvolutionGroupSnapshot = Awaited<ReturnType<EvolutionClient["fetchGroups"]>
 type GroupSyncInput = {
   tenantId: string;
   connectionId?: string;
+  connectionIds?: string[];
   includeParticipants?: boolean;
 };
 
@@ -117,7 +119,11 @@ export class GroupsSyncService implements OnModuleDestroy {
         archivedAt: null,
         providerType: MessagingProviderType.EVOLUTION,
         status: MessagingConnectionStatus.CONNECTED,
-        ...(input.connectionId ? { id: input.connectionId } : {}),
+        ...(input.connectionId
+          ? { id: input.connectionId }
+          : input.connectionIds
+            ? { id: { in: input.connectionIds } }
+            : {}),
       },
     });
 
@@ -221,7 +227,11 @@ export class GroupsSyncService implements OnModuleDestroy {
     if (includeParticipants) {
       const reconciliation = await this.reconcileGroupParticipantNames({
         tenantId: input.tenantId,
-        ...(input.connectionId ? { connectionIds: [input.connectionId] } : {}),
+        ...(input.connectionId
+          ? { connectionIds: [input.connectionId] }
+          : input.connectionIds
+            ? { connectionIds: input.connectionIds }
+            : {}),
       });
       result.participantNamesUpdated = reconciliation.updated;
     }
@@ -399,6 +409,25 @@ export class GroupsSyncService implements OnModuleDestroy {
           conversationType: ConversationType.GROUP,
         },
       });
+      let conversationDepartmentId = existingConversation?.departmentId ?? null;
+      if (
+        !conversationDepartmentId ||
+        !(await lockActiveDepartmentForConversation(tx, {
+          tenantId,
+          departmentId: conversationDepartmentId,
+          connectionId: connection.id,
+        }))
+      ) {
+        conversationDepartmentId =
+          departmentId &&
+          (await lockActiveDepartmentForConversation(tx, {
+            tenantId,
+            departmentId,
+            connectionId: connection.id,
+          }))
+            ? departmentId
+            : null;
+      }
       const contact = await tx.contact.upsert({
         where: {
           tenantId_normalizedPhone: {
@@ -442,7 +471,7 @@ export class GroupsSyncService implements OnModuleDestroy {
               groupMetadataJson: metadata,
               isGroup: true,
               conversationType: ConversationType.GROUP,
-              departmentId: existingConversation.departmentId ?? departmentId,
+              departmentId: conversationDepartmentId,
               archivedAt: null,
             },
           })
@@ -454,7 +483,7 @@ export class GroupsSyncService implements OnModuleDestroy {
               status: ConversationStatus.ABERTA,
               isGroup: true,
               conversationType: ConversationType.GROUP,
-              departmentId,
+              departmentId: conversationDepartmentId,
               externalChatId: group.groupJid,
               externalGroupId: group.groupJid,
               groupName: group.subject,

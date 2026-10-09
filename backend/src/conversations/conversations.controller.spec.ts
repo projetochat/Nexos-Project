@@ -246,6 +246,15 @@ describe("ConversationsController contact variable context", () => {
     );
 
     const listed = await controller.list({} as never, current(["conversations.read"]));
+    expect(prisma.conversation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [
+          { lastMessageAt: { sort: "desc", nulls: "last" } },
+          { updatedAt: "desc" },
+          { id: "desc" },
+        ],
+      }),
+    );
     expect(listed.items[0].hasPendingScheduledMessage).toBe(true);
     expect(prisma.$queryRaw).toHaveBeenCalledOnce();
     const scheduledQuery = prisma.$queryRaw.mock.calls[0]?.[0] as { strings?: string[] };
@@ -368,7 +377,7 @@ describe("ConversationsController transfer options", () => {
 });
 
 describe("ConversationsController connection selection", () => {
-  it("uses the explicitly selected connection instead of another contact instance", async () => {
+  it("rejects an explicitly selected connection that is not linked to the contact", async () => {
     const selectedConnection = {
       id: "connection-selected",
       providerType: MessagingProviderType.EVOLUTION,
@@ -387,19 +396,21 @@ describe("ConversationsController connection selection", () => {
       {} as never,
     );
 
-    const connection = await controller["resolveConversationConnection"](
-      "connection-selected",
-      {
-        userId: "user-a",
-        tenantId: "tenant-a",
-        membershipId: "membership-a",
-        roleId: "role-a",
-        roleKey: "agent",
-        platformRole: "USER",
-        connectionIds: ["connection-selected"],
-      },
-      { instance: "instance-older", instanceIds: ["connection-older", "connection-selected"] },
-    );
+    await expect(
+      controller["resolveConversationConnection"](
+        "connection-selected",
+        {
+          userId: "user-a",
+          tenantId: "tenant-a",
+          membershipId: "membership-a",
+          roleId: "role-a",
+          roleKey: "agent",
+          platformRole: "USER",
+          connectionIds: ["connection-selected"],
+        },
+        { instance: "instance-older", instanceIds: ["connection-older"] },
+      ),
+    ).rejects.toThrow("não está vinculada ao contato");
 
     expect(prisma.messagingConnection.findFirst).toHaveBeenCalledWith({
       where: {
@@ -408,7 +419,6 @@ describe("ConversationsController connection selection", () => {
         archivedAt: null,
       },
     });
-    expect(connection).toBe(selectedConnection);
   });
 
   it("rejects assigning a conversation to an attendant outside its Chat scope", async () => {
@@ -592,7 +602,7 @@ describe("ConversationsController active conversation creation", () => {
   it("locks the tenant contact and revalidates a changed profile before inserting", async () => {
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "contact-a" }]),
-      contact: { findFirst: vi.fn().mockResolvedValue(contact) },
+      contact: { findFirst: vi.fn().mockResolvedValue(contact), update: vi.fn() },
       messagingConnection: { findFirst: vi.fn().mockResolvedValue(connection) },
       department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
       conversation: {
@@ -637,7 +647,7 @@ describe("ConversationsController active conversation creation", () => {
         } as never,
       ),
     ).rejects.toThrow("O perfil do atendente não permite esta instância no Chat.");
-    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
     expect(tx.conversation.create).not.toHaveBeenCalled();
   });
 
@@ -646,7 +656,7 @@ describe("ConversationsController active conversation creation", () => {
     let stored: unknown = null;
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "contact-a" }]),
-      contact: { findFirst: vi.fn().mockResolvedValue(contact) },
+      contact: { findFirst: vi.fn().mockResolvedValue(contact), update: vi.fn() },
       messagingConnection: { findFirst: vi.fn().mockResolvedValue(connection) },
       department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
       tenantMembership: {
@@ -722,8 +732,175 @@ describe("ConversationsController active conversation creation", () => {
 
     expect(results.map((item) => item.id)).toEqual(["conversation-a", "conversation-a"]);
     expect(tx.conversation.create).toHaveBeenCalledOnce();
+    expect(tx.conversation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ lastMessageAt: expect.any(Date) }),
+      }),
+    );
     expect(messages.createSystemMessage).toHaveBeenCalledOnce();
     expect(realtime.publishConversationCreated).toHaveBeenCalledOnce();
+  });
+
+  it("reuses an open conversation on the selected instance without moving or reassigning it", async () => {
+    const existing = {
+      id: "conversation-existing",
+      tenantId: "tenant-a",
+      contactId: "contact-a",
+      connectionId: "connection-a",
+      departmentId: "department-existing",
+      assignedMembershipId: "membership-other",
+      status: ConversationStatus.AGUARDANDO,
+    };
+    const personalContact = {
+      ...contact,
+      instance: "connection-personal",
+      instanceIds: ["connection-personal", "connection-a"],
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "contact-a" }]),
+      contact: { findFirst: vi.fn().mockResolvedValue(personalContact), update: vi.fn() },
+      messagingConnection: { findFirst: vi.fn().mockResolvedValue(connection) },
+      department: { findFirst: vi.fn().mockResolvedValue({ id: "department-requested" }) },
+      conversation: {
+        findFirst: vi.fn().mockResolvedValue(existing),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+    };
+    const prisma = { $transaction: vi.fn((callback) => callback(tx)) };
+    const messages = { createSystemMessage: vi.fn() };
+    const realtime = { publishConversationCreated: vi.fn(), publishConversationUpdated: vi.fn() };
+    const controller = new ConversationsController(
+      prisma as never,
+      messages as never,
+      realtime as never,
+      { enqueueMissing: vi.fn() } as never,
+    );
+    vi.spyOn(
+      controller as unknown as { serialize: (value: unknown) => unknown },
+      "serialize",
+    ).mockImplementation((value) => value);
+
+    const result = await controller.create(
+      {
+        contactId: "contact-a",
+        connectionId: "connection-a",
+        departmentId: "department-requested",
+        assignToSelf: true,
+        reuseExistingOpen: true,
+      },
+      current as never,
+    );
+
+    expect(result).toBe(existing);
+    expect(tx.contact.update).not.toHaveBeenCalled();
+    expect(tx.conversation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: "tenant-a",
+          contactId: "contact-a",
+          connectionId: "connection-a",
+        }),
+      }),
+    );
+    expect(tx.conversation.findFirst.mock.calls[0]?.[0]?.where).not.toHaveProperty("departmentId");
+    expect(tx.conversation.update).not.toHaveBeenCalled();
+    expect(tx.conversation.create).not.toHaveBeenCalled();
+    expect(messages.createSystemMessage).not.toHaveBeenCalled();
+    expect(realtime.publishConversationCreated).not.toHaveBeenCalled();
+    expect(realtime.publishConversationUpdated).not.toHaveBeenCalled();
+  });
+
+  it("creates a new conversation when a stale closed row is returned by the reuse lookup", async () => {
+    const now = new Date("2026-10-08T12:00:00.000Z");
+    const closed = {
+      id: "conversation-closed",
+      tenantId: "tenant-a",
+      contactId: "contact-a",
+      connectionId: "connection-a",
+      departmentId: "department-a",
+      assignedMembershipId: "membership-a",
+      status: ConversationStatus.FECHADA,
+      closedAt: now,
+    };
+    const created = {
+      ...closed,
+      id: "conversation-new",
+      status: ConversationStatus.EM_ANDAMENTO,
+      closedAt: null,
+      protocol: "000002",
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "contact-a" }]),
+      contact: {
+        findFirst: vi.fn().mockResolvedValue({
+          ...contact,
+          instance: "connection-a",
+          instanceIds: ["connection-a"],
+        }),
+        update: vi.fn(),
+      },
+      messagingConnection: { findFirst: vi.fn().mockResolvedValue(connection) },
+      department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
+      tenantMembership: {
+        findFirst: vi.fn().mockResolvedValue({ role: { key: "tenant_admin" }, departments: [] }),
+      },
+      conversationProtocolCounter: {
+        upsert: vi.fn().mockResolvedValue({ lastNumber: 2 }),
+      },
+      conversation: {
+        findFirst: vi.fn().mockResolvedValue(closed),
+        create: vi.fn().mockResolvedValue(created),
+        findUniqueOrThrow: vi.fn().mockResolvedValue(created),
+        update: vi.fn(),
+      },
+    };
+    const prisma = { $transaction: vi.fn((callback) => callback(tx)) };
+    const messages = { createSystemMessage: vi.fn().mockResolvedValue(undefined) };
+    const realtime = { publishConversationCreated: vi.fn(), publishConversationUpdated: vi.fn() };
+    const controller = new ConversationsController(
+      prisma as never,
+      messages as never,
+      realtime as never,
+      { enqueueMissing: vi.fn() } as never,
+    );
+    vi.spyOn(
+      controller as unknown as { serialize: (value: unknown) => unknown },
+      "serialize",
+    ).mockImplementation((value) => value);
+
+    const result = await controller.create(
+      {
+        contactId: "contact-a",
+        connectionId: "connection-a",
+        departmentId: "department-a",
+        assignToSelf: true,
+        reuseExistingOpen: true,
+      },
+      current as never,
+    );
+
+    expect(result).toBe(created);
+    expect(tx.contact.update).not.toHaveBeenCalled();
+    expect(tx.conversation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          closedAt: null,
+          status: {
+            in: [
+              ConversationStatus.ABERTA,
+              ConversationStatus.EM_ANDAMENTO,
+              ConversationStatus.AGUARDANDO,
+            ],
+          },
+        }),
+      }),
+    );
+    expect(tx.conversation.create).toHaveBeenCalledOnce();
+    expect(realtime.publishConversationCreated).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      conversationId: "conversation-new",
+    });
   });
 });
 

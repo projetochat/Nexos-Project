@@ -16,7 +16,7 @@ import { messageApi, type ApiMessage } from "@/lib/trixus-api";
 import { canCopyMessage, sendMessageCopy } from "@/lib/copy-message";
 import { copyMessageToClipboard } from "@/lib/message-clipboard";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Modal, ConfirmDialog } from "./modal";
 import { MessageReactionPicker } from "./message-reaction-picker";
 import { MessageForwardDialog } from "./message-forward-dialog";
@@ -28,6 +28,7 @@ export function MessageActionsMenu({
   onDownload,
   resendRequest = 0,
   openRequest = 0,
+  openPosition,
   canEdit = false,
   canDelete = false,
   canSend = false,
@@ -39,6 +40,7 @@ export function MessageActionsMenu({
   onDownload: () => Promise<void>;
   resendRequest?: number;
   openRequest?: number;
+  openPosition?: { x: number; y: number } | null;
   canEdit?: boolean;
   canDelete?: boolean;
   canSend?: boolean;
@@ -46,6 +48,7 @@ export function MessageActionsMenu({
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [contextPosition, setContextPosition] = useState<{ x: number; y: number } | null>(null);
   const [info, setInfo] = useState(false);
   const [forward, setForward] = useState(false);
   const [resend, setResend] = useState(false);
@@ -62,8 +65,9 @@ export function MessageActionsMenu({
     if (!openRequest || openRequest === handledOpenRequest.current) return;
     handledOpenRequest.current = openRequest;
     setError("");
+    setContextPosition(openPosition ?? null);
     setOpen(true);
-  }, [openRequest]);
+  }, [openPosition, openRequest]);
   useEffect(() => {
     if (!resendRequest || resendRequest === handledResendRequest.current) return;
     handledResendRequest.current = resendRequest;
@@ -101,14 +105,25 @@ export function MessageActionsMenu({
           open={open}
           onOpenChange={(value) => {
             setOpen(value);
+            if (!value) setContextPosition(null);
             setError("");
           }}
         >
+          {contextPosition && (
+            <PopoverAnchor asChild>
+              <span
+                aria-hidden="true"
+                className="pointer-events-none fixed z-[259] h-px w-px"
+                style={{ left: contextPosition.x, top: contextPosition.y }}
+              />
+            </PopoverAnchor>
+          )}
           <PopoverTrigger asChild>
             <button
               type="button"
               aria-label="Ações da mensagem"
               title="Ações da mensagem"
+              onPointerDown={() => setContextPosition(null)}
               className={`inline-flex h-7 w-7 items-center justify-center rounded-full bg-card text-foreground shadow-sm transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${open ? "opacity-100" : "opacity-0 pointer-events-none group-hover/message:opacity-100 group-hover/message:pointer-events-auto group-focus-within/message:opacity-100 group-focus-within/message:pointer-events-auto"}`}
             >
               <ChevronDown className="h-4 w-4" />

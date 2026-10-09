@@ -23,4 +23,8 @@ export class CreateRoleDto {
   @IsOptional()
   @IsBoolean()
   system?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }

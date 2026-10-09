@@ -49,10 +49,11 @@ describe("DashboardEditorModal", () => {
     expect(document.body.textContent).toContain("Editar Dashboard");
     expect(document.querySelector('[role="dialog"]')?.className).toContain("sm:max-w-2xl");
     expect(document.body.textContent).toContain("Contadores de registro");
-    expect(document.querySelector('[aria-label="Editar Contadores de registro"]')).toBeTruthy();
-    expect(
-      document.querySelector('[aria-label="Editar Contadores de registro"]')?.getAttribute("title"),
-    ).toBe("Editar");
+    const editButton = document.querySelector('[aria-label="Editar Contadores de registro"]');
+    expect(editButton).toBeTruthy();
+    expect(editButton?.className).toContain("text-foreground");
+    expect(editButton?.className).not.toContain("text-muted-foreground");
+    expect(editButton?.getAttribute("title")).toBe("Editar");
     expect(document.querySelector(".lucide-pencil")).toBeTruthy();
     expect(document.querySelector('[title^="Mover para"]')).toBeNull();
 

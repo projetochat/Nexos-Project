@@ -29,9 +29,41 @@ describe("tenant-wide catalogs", () => {
       "contacts.update",
     ]);
     expect(findMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", archivedAt: null, active: true },
+      orderBy: [{ name: "asc" }],
+    });
+  });
+
+  it("keeps inactive tags visible only in the administrative catalog", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const controller = new TagsController(
+      { tag: { findMany } } as never,
+      { publishContactTagsUpdated: vi.fn() } as never,
+    );
+
+    await controller.list(current, "catalog");
+
+    expect(findMany).toHaveBeenCalledWith({
       where: { tenantId: "tenant-a", archivedAt: null },
       orderBy: [{ name: "asc" }],
     });
+  });
+
+  it("refuses assigning an inactive tag even through the direct endpoint", async () => {
+    const upsert = vi.fn();
+    const controller = new TagsController(
+      {
+        contact: { findFirst: vi.fn().mockResolvedValue({ id: "contact-a" }) },
+        tag: { findFirst: vi.fn().mockResolvedValue(null) },
+        contactTag: { upsert },
+      } as never,
+      { publishContactTagsUpdated: vi.fn() } as never,
+    );
+
+    await expect(controller.assign("contact-a", "tag-inactive", current)).rejects.toThrow(
+      "Etiqueta não encontrada.",
+    );
+    expect(upsert).not.toHaveBeenCalled();
   });
 
   it("ties assigning and removing tags to contact editing", () => {

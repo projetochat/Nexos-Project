@@ -42,10 +42,10 @@ it("renders distinct sent, delivered, read and pending indicators", async () => 
   const root = createRoot(host);
   try {
     for (const [status, icon, color] of [
-      ["sent", "lucide-check", "text-slate-300"],
-      ["delivered", "lucide-check-check", "text-slate-300"],
-      ["read", "lucide-check-check", "text-sky-300"],
-      ["sending", "lucide-clock", "text-slate-300"],
+      ["sent", "lucide-check", "text-slate-500"],
+      ["delivered", "lucide-check-check", "text-slate-500"],
+      ["read", "lucide-check-check", "text-sky-600"],
+      ["sending", "lucide-clock", "text-slate-500"],
     ] as const) {
       await act(async () => root.render(<MessageStatusIcon status={status} />));
       expect(host.querySelector(`.${icon}`)?.classList.contains(color)).toBe(true);

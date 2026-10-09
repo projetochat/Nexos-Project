@@ -22,6 +22,19 @@ describe("effectivePermissions", () => {
     ).toEqual(["contacts.read"]);
   });
 
+  it("grants zero effective permissions while a profile is inactive", () => {
+    expect(
+      effectivePermissions({
+        key: "custom",
+        active: false,
+        permissions: [{ permissionId: "contacts.read" }],
+      }),
+    ).toEqual([]);
+    expect(effectivePermissions({ key: "tenant_admin", active: false, permissions: [] })).toEqual(
+      [],
+    );
+  });
+
   it("removes disabled optional modules from the administrator catalog", async () => {
     const permissions = await moduleAwarePermissions(
       {

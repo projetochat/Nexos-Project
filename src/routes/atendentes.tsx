@@ -34,6 +34,7 @@ import {
   Select,
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog } from "@/components/modal";
+import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { useSession } from "@/lib/session";
@@ -90,7 +91,7 @@ function AtendentesPage() {
   });
 
   const perfisAtribuiveis = React.useMemo(
-    () => perfis.filter((perfil) => perfil.key !== "tenant_admin"),
+    () => perfis.filter((perfil) => perfil.key !== "tenant_admin" && perfil.active !== false),
     [perfis],
   );
 
@@ -115,6 +116,7 @@ function AtendentesPage() {
         name: data.nome ?? "",
         password: data.senha ?? "",
         roleId: data.perfilId,
+        membershipStatus: data.ativo === false ? "DISABLED" : "ACTIVE",
         avatarUrl: data.avatarUrl ?? null,
       }),
     onSuccess: () => {
@@ -730,12 +732,11 @@ export function AtendenteForm({
 
           <div className="space-y-4">
             <label className="flex min-h-9 cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-primary"
+              <Switch
                 checked={form.ativo !== false}
                 disabled={protectOwnAccess}
-                onChange={(event) => setForm({ ...form, ativo: event.target.checked })}
+                onCheckedChange={(checked) => setForm({ ...form, ativo: checked })}
+                aria-label="Ativo"
               />
               <span>Ativo</span>
             </label>

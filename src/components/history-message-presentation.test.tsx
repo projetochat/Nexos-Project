@@ -89,6 +89,92 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
       "absolute -bottom-3",
     );
     expect(host.querySelector('[aria-label="Ações da mensagem"]')).toBeNull();
+
+    await render({
+      ...base,
+      content: "CBA",
+      original_content: "ABC",
+      edited_at: "2026-09-22T12:05:00Z",
+      reactions: [],
+    } as ApiMessage);
+    const originalEditedContent = host.querySelector("[data-original-edited-content]")!;
+    const currentEditedContent = host.querySelector("[data-current-edited-content]")!;
+    expect(originalEditedContent.textContent).toBe("(editada)ABC");
+    expect(originalEditedContent.className).toContain("text-muted-foreground");
+    expect(currentEditedContent.textContent).toBe("CBA");
+    expect(
+      originalEditedContent.compareDocumentPosition(currentEditedContent) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await render({
+      ...base,
+      id: "outbound-text",
+      sender: "agent",
+      direction: "outbound",
+      status: "read",
+      reactions: [],
+    } as ApiMessage);
+    const outboundBubble = host.querySelector('[data-message-id="outbound-text"] [tabindex="0"]')!;
+    expect(outboundBubble.className).toContain("bg-[#D0EBFE]");
+    expect(outboundBubble.className).toContain("text-slate-900");
+    expect(outboundBubble.className).not.toContain("bg-gradient-brand");
+
+    await render({
+      ...base,
+      id: "outbound-contact",
+      sender: "agent",
+      direction: "outbound",
+      type: "document",
+      content: "[contato]",
+      reactions: [],
+      media_data: {
+        file_name: "contato.vcf",
+        mime_type: "text/vcard",
+        state: "ready",
+        size: 42,
+        caption: null,
+        width: null,
+        height: null,
+        checksum: null,
+      },
+    } as ApiMessage);
+    await React.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const outboundContact = host.querySelector(
+      '[data-message-id="outbound-contact"] [aria-label^="Conversar com"]',
+    )?.parentElement;
+    expect(outboundContact?.className).toContain("bg-primary");
+    expect(outboundContact?.className).not.toContain("bg-[#D0EBFE]");
+
+    await render({
+      ...base,
+      id: "inbound-contact",
+      type: "document",
+      content: "[contato]",
+      reactions: [],
+      media_data: {
+        file_name: "contato.vcf",
+        mime_type: "text/vcard",
+        state: "ready",
+        size: 42,
+        caption: null,
+        width: null,
+        height: null,
+        checksum: null,
+      },
+    } as ApiMessage);
+    await React.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const inboundContact = host.querySelector(
+      '[data-message-id="inbound-contact"] [aria-label^="Conversar com"]',
+    )?.parentElement;
+    expect(inboundContact?.className).toContain("border-2");
+    expect(inboundContact?.className).toContain("border-primary");
+    expect(inboundContact?.className).toContain("bg-white");
+
     await render({
       ...base,
       reactions: ["👍", "👍", "❤️", "😂", "😮", "🙏", "🔥"].map((emoji, index) => ({
@@ -166,13 +252,35 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
     } as ApiMessage);
     expect(host.textContent).toContain("relatorio.pdf");
     await render({ ...base, deleted_for_everyone: true });
-    expect(host.textContent).toContain("Linha 1");
-    const deletedLabel = [...host.querySelectorAll("p")].find(
-      (item) => item.textContent === "Mensagem apagada",
-    );
-    expect(deletedLabel?.className).toContain("text-red-500");
-    expect(deletedLabel?.className).toContain("italic");
+    const inboundDeleted = host.querySelector('[data-message-id="one"] [data-deleted-message]')!;
+    const inboundDeletedContent = inboundDeleted.previousElementSibling!;
+    expect(inboundDeleted.textContent).toBe("Mensagem apagada");
+    expect(inboundDeleted.className).toContain("text-red-500");
+    expect(inboundDeleted.querySelector("svg")?.getAttribute("class")).toContain("text-red-500");
+    expect(inboundDeletedContent.className).toContain("opacity-50");
+    expect(inboundDeletedContent.textContent).toContain("Linha 1");
+    expect(
+      inboundDeletedContent.compareDocumentPosition(inboundDeleted) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(host.textContent).not.toContain("Esta mensagem foi apagada");
+
+    await render({
+      ...base,
+      id: "outbound-deleted",
+      sender: "agent",
+      direction: "outbound",
+      deleted_for_everyone: true,
+    } as ApiMessage);
+    const outboundDeleted = host.querySelector(
+      '[data-message-id="outbound-deleted"] [data-deleted-message]',
+    )!;
+    const outboundDeletedContent = outboundDeleted.previousElementSibling!;
+    expect(outboundDeleted.textContent).toBe("Mensagem apagada");
+    expect(outboundDeleted.className).toContain("text-red-500");
+    expect(outboundDeleted.querySelector("svg")?.getAttribute("class")).toContain("text-red-500");
+    expect(outboundDeletedContent.className).toContain("opacity-50");
+    expect(outboundDeletedContent.textContent).toContain("Linha 1");
 
     await render({ ...base, type: "video", forwarded: true });
     expect(host.querySelector('[aria-label="Mensagem encaminhada"]')?.textContent).toContain(

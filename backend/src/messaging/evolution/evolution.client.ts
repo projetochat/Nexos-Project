@@ -113,6 +113,7 @@ export class EvolutionClient {
           headers: input.webhookSecret ? { jwt_key: input.webhookSecret } : undefined,
           events: [
             "MESSAGES_UPSERT",
+            "MESSAGES_EDITED",
             "MESSAGES_UPDATE",
             "MESSAGES_DELETE",
             "SEND_MESSAGE_UPDATE",

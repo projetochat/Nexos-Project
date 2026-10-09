@@ -28,6 +28,20 @@ describe("instance access", () => {
     expect(roleConnectionIds({ key: "agent", metadata: {} })).toEqual([]);
     expect(connectionAccess({ roleKey: "agent" })).toEqual({ connectionId: { in: [] } });
   });
+
+  it("treats an explicitly empty Chat scope as authoritative", () => {
+    const role = {
+      key: "agent",
+      metadata: {
+        chatScopes: [],
+        connectionIds: ["legacy-connection"],
+        departmentIds: ["legacy-department"],
+      },
+    };
+
+    expect(roleConnectionIds(role)).toEqual([]);
+    expect(roleChatDepartmentIds(role)).toEqual([]);
+  });
   it("keeps the tenant administrator unrestricted within their tenant", () => {
     expect(roleConnectionIds({ key: "tenant_admin" })).toBeNull();
     expect(connectionAccess({ roleKey: "tenant_admin" })).toEqual({});

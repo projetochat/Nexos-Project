@@ -35,13 +35,15 @@ import {
   Textarea,
   SearchInput,
 } from "@/components/ui-kit";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { organizationApi, type ApiRole, type ApiUserMembership } from "@/lib/trixus-api";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/lib/session";
+import { reconcileRoleChatScopes } from "@/lib/role-chat-scopes";
 import { Switch } from "@/components/ui/switch";
 import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 import {
@@ -411,6 +413,7 @@ function defaultWorkSchedule(): WorkSchedule {
 }
 
 export type PerfilFormData = {
+  active: boolean;
   name: string;
   description: string;
   color: string;
@@ -482,6 +485,8 @@ function Page() {
   const { data: scopeOptions } = useQuery({
     queryKey: ["trixus", "role-scope-options"],
     queryFn: organizationApi.roleScopeOptions,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
   const connections = scopeOptions?.connections ?? [];
   const { data: memberships = [] } = useQuery({
@@ -543,6 +548,7 @@ function Page() {
       };
       if (id) {
         return organizationApi.updateRole(id, {
+          active: data.active,
           name: data.name,
           description: data.description,
           permissionIds: data.permissionIds,
@@ -550,6 +556,7 @@ function Page() {
         });
       }
       return organizationApi.createRole({
+        active: data.active,
         name: data.name,
         description: data.description,
         permissionIds: data.permissionIds,
@@ -572,16 +579,6 @@ function Page() {
       novo.hide();
       closeEditing();
       setDuplicating(null);
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string) => organizationApi.deleteRole(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["trixus", "roles"] });
-      toast.success("Perfil removido");
-      setDeleting(null);
     },
     onError: (error) => toast.error((error as Error).message),
   });
@@ -748,19 +745,26 @@ function Page() {
           onClose={() => setDuplicating(null)}
           onSubmit={(data) => save.mutate({ data })}
         />
-        <ConfirmDialog
+        <DeletionConfirmDialog
           open={!!deleting}
-          title="Excluir Perfil?"
-          destructive
-          description={
-            <p>
-              Deseja realmente excluir o perfil{" "}
-              <strong className="font-semibold text-foreground">"{deleting?.name ?? ""}"</strong>?
-            </p>
-          }
-          confirmLabel="Excluir"
-          onClose={() => setDeleting(null)}
-          onConfirm={() => deleting && remove.mutate(deleting.id)}
+          resourceKey={`role:${deleting?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          loadImpact={(signal) => {
+            if (!deleting) return Promise.reject(new Error("Perfil não selecionado."));
+            return organizationApi.roleDeletionPreview(deleting.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!deleting) return Promise.reject(new Error("Perfil não selecionado."));
+            return organizationApi.deleteRole(deleting.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
+            void qc.invalidateQueries({ queryKey: ["trixus", "roles"] });
+            toast.success("Perfil removido");
+            setDeleting(null);
+          }}
+          formatError={(error) => (error as Error).message}
         />
       </PageContainer>
     </AppShell>
@@ -811,6 +815,7 @@ export function PerfilForm({
   permissionGroups: typeof PERMISSION_GROUPS;
 }) {
   const [form, setForm] = React.useState<PerfilFormData>({
+    active: true,
     name: "",
     description: "",
     color: DEFAULT_ROLE_COLOR,
@@ -837,9 +842,22 @@ export function PerfilForm({
   React.useEffect(() => {
     if (!open) return;
     const metadata = (initial?.metadata ?? {}) as RoleMetadata;
+    const storedChatScopes =
+      metadata.chatScopes ??
+      (metadata.connectionIds ?? []).map((connectionId) => ({
+        connectionId,
+        departmentIds: (metadata.departmentIds ?? []).filter((departmentId) =>
+          connections
+            .find((connection) => connection.id === connectionId)
+            ?.departments.some((department) => department.id === departmentId),
+        ),
+        favoriteDepartmentId: null,
+      }));
+    const chatScopes = reconcileRoleChatScopes(storedChatScopes, connections);
     setForm(
       initial
         ? {
+            active: clone ? true : initial.active !== false,
             name: initial.name,
             description: initial.description ?? "",
             color: metadata.color ?? DEFAULT_ROLE_COLOR,
@@ -854,22 +872,13 @@ export function PerfilForm({
                     ),
                 )
               : initial.permissionIds,
-            departmentIds: metadata.departmentIds ?? [],
-            connectionIds: metadata.connectionIds ?? [],
-            chatScopes:
-              metadata.chatScopes ??
-              (metadata.connectionIds ?? []).map((connectionId) => ({
-                connectionId,
-                departmentIds: (metadata.departmentIds ?? []).filter((departmentId) =>
-                  connections
-                    .find((connection) => connection.id === connectionId)
-                    ?.departments.some((department) => department.id === departmentId),
-                ),
-                favoriteDepartmentId: null,
-              })),
+            departmentIds: [...new Set(chatScopes.flatMap((scope) => scope.departmentIds))],
+            connectionIds: chatScopes.map((scope) => scope.connectionId),
+            chatScopes,
             workSchedule: normalizeWorkSchedule(metadata.workSchedule ?? defaultWorkSchedule()),
           }
         : {
+            active: true,
             name: "",
             description: "",
             color: DEFAULT_ROLE_COLOR,
@@ -899,6 +908,12 @@ export function PerfilForm({
       setActiveTab("geral");
       return;
     }
+    const chatScopes = reconcileRoleChatScopes(form.chatScopes, connections);
+    if (chatScopes.some((scope) => scope.departmentIds.length === 0)) {
+      setActiveTab("visualizacao");
+      toast.error("Cada instância habilitada deve possuir pelo menos um departamento.");
+      return;
+    }
     const scheduleError = workScheduleError(form.workSchedule);
     if (scheduleError) {
       setActiveTab("jornada");
@@ -916,7 +931,13 @@ export function PerfilForm({
       toast.error(dependencyIssue);
       return;
     }
-    onSubmit({ ...form, permissionIds });
+    onSubmit({
+      ...form,
+      permissionIds,
+      chatScopes,
+      connectionIds: chatScopes.map((scope) => scope.connectionId),
+      departmentIds: [...new Set(chatScopes.flatMap((scope) => scope.departmentIds))],
+    });
   };
 
   const togglePermission = (
@@ -978,6 +999,14 @@ export function PerfilForm({
       }
     >
       <div className="space-y-5">
+        <label className="flex min-h-7 items-center gap-2 text-sm">
+          <Switch
+            checked={form.active}
+            onCheckedChange={(active) => setForm((current) => ({ ...current, active }))}
+            aria-label="Ativo"
+          />
+          <span>Ativo</span>
+        </label>
         <PerfilTabs active={activeTab} onChange={setActiveTab} />
         {activeTab === "geral" && (
           <GeneralTab
@@ -1134,7 +1163,9 @@ function ScopeSettings({
 }) {
   const sortedConnections = sortByOptionLabel(
     connections.filter(
-      (connection) => connection.status === "connected" || connection.status === "disconnected",
+      (connection) =>
+        connection.departments.length > 0 &&
+        (connection.status === "connected" || connection.status === "disconnected"),
     ),
     (connection) => connection.name,
   );
@@ -1147,12 +1178,22 @@ function ScopeSettings({
       return;
     }
     if (scopeFor(connection.id)) return;
+    const firstDepartment = sortByOptionLabel(connection.departments, (item) => item.name)[0];
+    if (!firstDepartment) return;
     onChange([
       ...form.chatScopes,
-      { connectionId: connection.id, departmentIds: [], favoriteDepartmentId: null },
+      {
+        connectionId: connection.id,
+        departmentIds: [firstDepartment.id],
+        favoriteDepartmentId: null,
+      },
     ]);
   };
   const setDepartments = (connectionId: string, departmentIds: string[]) => {
+    if (departmentIds.length === 0) {
+      toast.error("Mantenha pelo menos um departamento habilitado para esta instância.");
+      return;
+    }
     onChange(
       form.chatScopes.map((scope) =>
         scope.connectionId === connectionId
@@ -1202,7 +1243,7 @@ function ScopeSettings({
             departments.every((department) => scope.departmentIds.includes(department.id));
           return (
             <div key={connection.id} className="overflow-hidden rounded-xl border border-border">
-              <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-1 bg-primary/5 px-3 py-1.5 sm:flex sm:flex-wrap sm:justify-between sm:gap-2">
+              <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-1 bg-primary/5 py-1.5 pl-3 pr-[21px] sm:flex sm:flex-wrap sm:justify-between sm:gap-2">
                 <strong className="col-start-1 row-start-1 min-w-0 truncate">
                   {connection.name}
                 </strong>
@@ -1228,7 +1269,16 @@ function ScopeSettings({
                       onCheckedChange={(checked) =>
                         setDepartments(
                           connection.id,
-                          checked ? departments.map((department) => department.id) : [],
+                          checked
+                            ? departments.map((department) => department.id)
+                            : [
+                                favoriteDepartmentId &&
+                                departments.some(
+                                  (department) => department.id === favoriteDepartmentId,
+                                )
+                                  ? favoriteDepartmentId
+                                  : departments[0].id,
+                              ],
                         )
                       }
                     />
@@ -1284,7 +1334,10 @@ function ScopeSettings({
                         </button>
                         <Switch
                           checked={checked}
-                          disabled={!enabled}
+                          disabled={
+                            !enabled || (checked && (scope?.departmentIds.length ?? 0) === 1)
+                          }
+                          aria-label={`Liberar departamento ${department.name}`}
                           onCheckedChange={(nextChecked) =>
                             setDepartments(
                               connection.id,

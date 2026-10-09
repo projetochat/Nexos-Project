@@ -649,8 +649,9 @@ button[aria-label*="Selecionar"]:hover {
 button[title*="Duplicar"],
 button[aria-label*="Duplicar"],
 .duplicate-action-button {
-  border-color: color-mix(in oklab, var(--color-primary) 35%, var(--border));
-  color: var(--color-primary);
+  border-color: var(--border);
+  background-color: var(--surface-2);
+  color: var(--foreground);
 }
 
 button[title*="Duplicar"]:hover,

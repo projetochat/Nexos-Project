@@ -146,6 +146,7 @@ describe("EvolutionClient", () => {
             headers: { jwt_key: "webhook-secret" },
             events: [
               "MESSAGES_UPSERT",
+              "MESSAGES_EDITED",
               "MESSAGES_UPDATE",
               "MESSAGES_DELETE",
               "SEND_MESSAGE_UPDATE",

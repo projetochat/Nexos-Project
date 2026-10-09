@@ -76,6 +76,7 @@ export type DeletionImpactPreview = {
   dependencies: DeletionDependency[];
   consequences: DeletionConsequence[];
   confirmation: DeletionConfirmationPolicy;
+  blockedReason?: string;
 };
 
 export type DeletionConfirmationResult =
@@ -257,7 +258,8 @@ export function DeletionConfirmDialog({
   );
 
   const handleConfirm = async () => {
-    if (!impact || busyRef.current || !reinforcedConfirmationMatches) return;
+    if (!impact || impact.blockedReason || busyRef.current || !reinforcedConfirmationMatches)
+      return;
     const controller = new AbortController();
     const operationResourceKey = resourceKeyRef.current;
     const confirmForResource = onConfirmRef.current;
@@ -399,6 +401,12 @@ export function DeletionConfirmDialog({
               {changedMessage && (
                 <StatusCard tone="warning" title="Dependências atualizadas">
                   {changedMessage}
+                </StatusCard>
+              )}
+
+              {impact.blockedReason && (
+                <StatusCard tone="warning" title="Exclusão bloqueada">
+                  {impact.blockedReason}
                 </StatusCard>
               )}
 
@@ -556,6 +564,7 @@ export function DeletionConfirmDialog({
               isBusy ||
               error?.kind === "submit" ||
               !!(error && !impact) ||
+              !!impact.blockedReason ||
               !reinforcedConfirmationMatches
             }
             onClick={() => void handleConfirm()}
@@ -565,7 +574,9 @@ export function DeletionConfirmDialog({
               ? "Verificando…"
               : phase === "submitting"
                 ? "Excluindo…"
-                : (impact?.confirmation.confirmLabel ?? "Excluir")}
+                : impact?.blockedReason
+                  ? "Exclusão bloqueada"
+                  : (impact?.confirmation.confirmLabel ?? "Excluir")}
           </Button>
         </div>
       </AlertDialogContent>

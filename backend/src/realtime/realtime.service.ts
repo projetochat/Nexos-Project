@@ -215,7 +215,6 @@ export class RealtimeService {
             where: {
               id: payload.contactId,
               tenantId: context.tenantId,
-              conversations: { some: conversationVisibilityWhere(scope) },
             },
             select: { id: true },
           });

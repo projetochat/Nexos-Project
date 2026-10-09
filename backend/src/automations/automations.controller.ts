@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Inject,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -28,6 +29,12 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
+import {
+  changedDeletion,
+  ConfirmDeletionDto,
+  deletionSnapshot,
+  type DeletionImpactPreview,
+} from "../common/deletion-impact";
 import { AutomationActionType, AutomationRuleStatus, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -202,14 +209,98 @@ export class AutomationsController {
     return serializeAutomation(rule);
   }
 
+  @Get(":id/deletion-preview")
+  @RequirePermissions("automations.delete")
+  async deletionPreview(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.automationDeletionImpact(id, current.tenantId);
+  }
+
   @Delete(":id")
   @RequirePermissions("automations.delete")
-  async archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    await this.prisma.automationRule.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id } },
-      data: { archivedAt: new Date(), status: "DISABLED" },
+  async remove(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const impact = await this.automationDeletionImpact(id, current.tenantId, tx);
+      if (impact.snapshotToken !== dto.snapshotToken) {
+        return changedDeletion(impact);
+      }
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: current.tenantId,
+          type: "automation.deleted.audit",
+          aggregateId: id,
+          status: "PROCESSED",
+          processedAt: new Date(),
+          payload: {
+            automationId: id,
+            name: impact.record.name,
+            deletedByMembershipId: current.membershipId,
+            snapshotToken: impact.snapshotToken,
+          },
+        },
+      });
+      await tx.automationRule.delete({
+        where: { tenantId_id: { tenantId: current.tenantId, id } },
+      });
+      return { status: "deleted" as const };
     });
-    return { ok: true };
+  }
+
+  private async automationDeletionImpact(
+    id: string,
+    tenantId: string,
+    db: Pick<PrismaService, "automationRule"> | Prisma.TransactionClient = this.prisma,
+  ): Promise<DeletionImpactPreview> {
+    const rule = await db.automationRule.findFirst({
+      where: { id, tenantId },
+      include: automationInclude,
+    });
+    if (!rule) throw new NotFoundException("Automação não encontrada.");
+    const snapshotToken = deletionSnapshot({
+      id: rule.id,
+      updatedAt: rule.updatedAt,
+      status: rule.status,
+      actionType: rule.actionType,
+      departmentId: rule.departmentId,
+    });
+    return {
+      snapshotToken,
+      title: "Excluir automação",
+      prompt: "Esta exclusão é permanente e removerá a regra de automação deste tenant.",
+      record: {
+        name: rule.name,
+        identifiers: [
+          { label: "Ação", value: rule.actionType.toLowerCase() },
+          { label: "Disparo", value: rule.matchText },
+        ],
+      },
+      dependencies: rule.department
+        ? [
+            {
+              id: "department",
+              label: "Departamento vinculado",
+              count: 1,
+              operation: "unlink" as const,
+              operationLabel: "O vínculo será removido com a automação.",
+              items: [{ id: rule.department.id, label: rule.department.name }],
+            },
+          ]
+        : [],
+      consequences: [
+        {
+          id: "rule",
+          text: "A regra deixará de existir e não poderá ser reativada.",
+          irreversible: true,
+        },
+      ],
+      confirmation: {
+        level: "standard" as const,
+        confirmLabel: "Excluir automação",
+      },
+    };
   }
 
   private async assertDepartment(departmentId: string | undefined, tenantId: string) {

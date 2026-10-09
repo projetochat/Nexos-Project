@@ -472,13 +472,16 @@ export class UsersController {
       );
       await this.assertNameAvailable(tx, current.tenantId, dto.name);
       await this.entitlements.assertTenantOperational(current.tenantId);
-      await this.entitlements.assertWithinLimit(
-        current.tenantId,
-        "maxUsers",
-        await tx.tenantMembership.count({
-          where: { tenantId: current.tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
-        }),
-      );
+      const membershipStatus = dto.membershipStatus ?? "ACTIVE";
+      if (membershipStatus === "ACTIVE") {
+        await this.entitlements.assertWithinLimit(
+          current.tenantId,
+          "maxUsers",
+          await tx.tenantMembership.count({
+            where: { tenantId: current.tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
+          }),
+        );
+      }
       let user = await tx.user.findUnique({ where: { email } });
       if (user) {
         const existing = await tx.tenantMembership.findUnique({
@@ -500,7 +503,7 @@ export class UsersController {
       }
 
       const created = await tx.tenantMembership.create({
-        data: { tenantId: current.tenantId, userId: user.id, roleId, status: "ACTIVE" },
+        data: { tenantId: current.tenantId, userId: user.id, roleId, status: membershipStatus },
       });
       await this.replaceDepartments(tx, current.tenantId, created.id, dto.departmentIds ?? []);
       return tx.tenantMembership.findUniqueOrThrow({
@@ -799,6 +802,9 @@ export class UsersController {
 
   private async assertAssignableRole(roleId: string, current: AuthenticatedUser) {
     const role = await this.assertRoleInTenant(roleId, current.tenantId);
+    if (role.active === false) {
+      throw new BadRequestException("Perfil de Acesso inativo não pode ser atribuído.");
+    }
     if (role.key === "tenant_admin") {
       throw new BadRequestException("O perfil Administrador é reservado ao usuário administrador.");
     }

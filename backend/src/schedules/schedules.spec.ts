@@ -3,6 +3,7 @@ import { ValidationPipe } from "@nestjs/common";
 import { expect, it, vi } from "vitest";
 import { SaveScheduleDto } from "./schedules.dto";
 import { SchedulesController } from "./schedules.module";
+import { deletionSnapshot } from "../common/deletion-impact";
 const item = {
   id: "52a2dc2a-d80b-41bb-b97a-0d5365539bc3",
   identifier: "Teste",
@@ -70,16 +71,17 @@ it("rejects client-supplied tenant ownership", async () => {
   ).rejects.toThrow();
 });
 it("uses the authenticated tenant on reads, writes and deletions", async () => {
+  const removable = {
+    id: item.id,
+    connectionId: null,
+    executionStatus: null,
+    version: 0,
+    payload: item,
+  };
   const prisma = {
     schedule: {
       findMany: vi.fn().mockResolvedValue([]),
-      findUnique: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({
-        id: item.id,
-        connectionId: null,
-        executionStatus: null,
-        version: 0,
-        payload: item,
-      }),
+      findUnique: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(removable),
       create: vi.fn().mockImplementation(async ({ data }) => data),
       deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
@@ -89,7 +91,20 @@ it("uses the authenticated tenant on reads, writes and deletions", async () => {
   const user = { tenantId: "tenant-a", roleKey: "tenant_admin" } as never;
   await controller.save(item as never, user);
   await controller.list(user);
-  await controller.remove(item.id, user);
+  await controller.remove(
+    item.id,
+    {
+      snapshotToken: deletionSnapshot({
+        id: removable.id,
+        version: removable.version,
+        executionStatus: removable.executionStatus,
+        updatedAt: undefined,
+        dueAt: undefined,
+        payload: removable.payload,
+      }),
+    },
+    user,
+  );
   expect(prisma.schedule.create).toHaveBeenCalledWith(
     expect.objectContaining({
       data: expect.objectContaining({ tenantId: "tenant-a" }),
@@ -452,7 +467,7 @@ it("does not let an agent delete a legacy message schedule from an inaccessible 
   const controller = new SchedulesController(prisma as never, {} as never);
 
   await expect(
-    controller.remove(item.id, {
+    controller.remove(item.id, { snapshotToken: "0".repeat(64) }, {
       tenantId: "tenant-a",
       membershipId: "membership-a",
       roleKey: "agent",
@@ -512,23 +527,37 @@ it("rejects an edit when execution wins the CAS race, including a legacy null st
 });
 
 it("rejects deletion when execution wins after the authorization read", async () => {
+  const removable = {
+    id: item.id,
+    tenantId: "tenant-a",
+    connectionId: null,
+    executionStatus: "PENDING",
+    version: 4,
+    payload: item,
+  };
   const prisma = {
     schedule: {
-      findUnique: vi.fn().mockResolvedValue({
-        id: item.id,
-        tenantId: "tenant-a",
-        connectionId: null,
-        executionStatus: "PENDING",
-        version: 4,
-        payload: item,
-      }),
+      findUnique: vi.fn().mockResolvedValue(removable),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   };
   const controller = new SchedulesController(prisma as never, {} as never);
 
   await expect(
-    controller.remove(item.id, { tenantId: "tenant-a", roleKey: "tenant_admin" } as never),
+    controller.remove(
+      item.id,
+      {
+        snapshotToken: deletionSnapshot({
+          id: removable.id,
+          version: removable.version,
+          executionStatus: removable.executionStatus,
+          updatedAt: undefined,
+          dueAt: undefined,
+          payload: removable.payload,
+        }),
+      },
+      { tenantId: "tenant-a", roleKey: "tenant_admin" } as never,
+    ),
   ).rejects.toThrow("iniciou a execução ou foi alterado");
   expect(prisma.schedule.deleteMany).toHaveBeenCalledWith({
     where: {
@@ -538,4 +567,32 @@ it("rejects deletion when execution wins after the authorization read", async ()
       executionStatus: "PENDING",
     },
   });
+});
+
+it("returns a refreshed deletion impact when the schedule changes after preview", async () => {
+  let version = 1;
+  const prisma = {
+    schedule: {
+      findUnique: vi.fn(async () => ({
+        id: item.id,
+        tenantId: "tenant-a",
+        connectionId: null,
+        executionStatus: "PENDING",
+        version,
+        payload: item,
+        updatedAt: new Date(`2026-10-08T18:0${version}:00.000Z`),
+        dueAt: new Date(item.scheduledAt),
+      })),
+      deleteMany: vi.fn(),
+    },
+  };
+  const controller = new SchedulesController(prisma as never, {} as never);
+  const current = { tenantId: "tenant-a", roleKey: "tenant_admin" } as never;
+  const impact = await controller.deletionImpact(item.id, current);
+  version = 2;
+
+  await expect(
+    controller.remove(item.id, { snapshotToken: impact.snapshotToken }, current),
+  ).resolves.toMatchObject({ status: "changed" });
+  expect(prisma.schedule.deleteMany).not.toHaveBeenCalled();
 });

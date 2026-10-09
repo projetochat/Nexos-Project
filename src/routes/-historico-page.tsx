@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, MessageSquarePlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquarePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Button } from "@/components/ui-kit";
@@ -19,10 +19,11 @@ import {
 import { conversationTimestamp, num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { useSession } from "@/lib/session";
-import { messageApi, operationsApi } from "@/lib/trixus-api";
+import { conversationApi, messageApi, operationsApi } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { ContactPanel, MessageBubble } from "./inbox.$conversationId";
 import { orderHistoryMessages } from "@/lib/history-message-order";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 
 const PAGE_SIZE = 20;
 const HISTORY_PERIODS = new Set([
@@ -99,6 +100,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
   const [page, setPage] = React.useState(1);
   const [selectedId, setActiveId] = React.useState<string | null>(initialConversationId ?? null);
   const [panelOpen, setPanelOpen] = React.useState(false);
+  const [deletingConversationId, setDeletingConversationId] = React.useState<string | null>(null);
 
   const clearConversationDeepLink = React.useCallback(
     (options: { clearSelection?: boolean } = {}) => {
@@ -375,6 +377,16 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                       <MessageSquarePlus className="h-3.5 w-3.5" />
                       <span className="hidden sm:inline">Nova conversa</span>
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setDeletingConversationId(active.id)}
+                      aria-label="Excluir histórico"
+                      title="Excluir histórico"
+                      className="hover:border-destructive hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </header>
 
                   <div className="inbox-message-background min-h-0 flex-1 overflow-y-auto px-2 py-6">
@@ -433,6 +445,23 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
         <ActiveConversationOrchestrator
           request={conversationRequest}
           onCancel={() => setConversationRequest(null)}
+        />
+        <DeletionConfirmDialog
+          open={!!deletingConversationId}
+          resourceKey={`conversation:${deletingConversationId ?? "none"}`}
+          onOpenChange={(open) => !open && setDeletingConversationId(null)}
+          loadImpact={(signal) => conversationApi.deletionImpact(deletingConversationId!, signal)}
+          onConfirm={({ snapshotToken, signal }) =>
+            conversationApi.remove(deletingConversationId!, snapshotToken, signal)
+          }
+          onDeleted={() => {
+            toast.success("Histórico excluído");
+            setDeletingConversationId(null);
+            setActiveId(null);
+            clearConversationDeepLink();
+            void queryClient.invalidateQueries({ queryKey: ["operations", "history"] });
+          }}
+          formatError={(error) => (error as Error).message}
         />
       </div>
     </AppShellFull>

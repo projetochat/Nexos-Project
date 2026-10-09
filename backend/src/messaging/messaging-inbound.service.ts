@@ -21,6 +21,10 @@ import {
 import { downloadRemoteMedia } from "./media/remote-media-downloader";
 import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
+import {
+  evolutionStoredMessageId,
+  evolutionStoredText,
+} from "./evolution/evolution-webhook.translator";
 import { MessagingOutboundService } from "./messaging-outbound.service";
 import { selectAutomaticReply } from "./automatic-reply";
 import { conversationQueueForNotification } from "../conversations/conversation-queue-scope";
@@ -74,7 +78,7 @@ export class MessagingInboundService {
         ? await this.resolveGroupDisplayName(event, connection.externalReference)
         : null;
 
-      const duplicateWhere = this.duplicateWhere(event, connection.ownerPhoneNormalized);
+      const duplicateWhere = this.duplicateWhere(event);
       const duplicate = await tx.message.findFirst({
         where: duplicateWhere,
       });
@@ -168,7 +172,6 @@ export class MessagingInboundService {
         tx,
         event,
         contact,
-        connection,
         groupDisplayName,
         historical,
         initialConversationDepartmentId,
@@ -234,15 +237,31 @@ export class MessagingInboundService {
       }
       const canClearPendingResponse =
         !historical && event.fromMe && conversation.connectionId === event.connectionId;
-      if (canClearPendingResponse) {
+      if (!historical) {
         await tx.$queryRaw<Array<{ id: string }>>`
           SELECT id FROM "conversations"
           WHERE id = ${conversation.id} AND "tenantId" = ${event.tenantId}
           FOR UPDATE`;
+      }
+      if (canClearPendingResponse) {
         conversation = await tx.conversation.findUniqueOrThrow({
           where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
         });
       }
+      const latestTimelineRows = historical
+        ? []
+        : ((await tx.$queryRaw<Array<{ createdAt: Date }>>`
+            SELECT "createdAt"
+            FROM "messages"
+            WHERE "tenantId" = ${event.tenantId}
+              AND "conversationId" = ${conversation.id}
+            ORDER BY "createdAt" DESC, id DESC
+            LIMIT 1`) ?? []);
+      const timelineAt = normalizeLiveTimelineTimestamp(
+        event.occurredAt,
+        latestTimelineRows[0]?.createdAt,
+        historical,
+      );
       const latestInboundMessage = canClearPendingResponse
         ? await tx.message.findFirst({
             where: {
@@ -255,7 +274,7 @@ export class MessagingInboundService {
           })
         : null;
       const clearsPendingResponse =
-        !!latestInboundMessage && event.occurredAt > latestInboundMessage.createdAt;
+        !!latestInboundMessage && timelineAt > latestInboundMessage.createdAt;
       if (clearsPendingResponse) {
         await tx.message.updateMany({
           where: {
@@ -263,9 +282,9 @@ export class MessagingInboundService {
             conversationId: conversation.id,
             direction: MessageDirection.INBOUND,
             readAt: null,
-            createdAt: { lt: event.occurredAt },
+            createdAt: { lt: timelineAt },
           },
-          data: { readAt: event.occurredAt },
+          data: { readAt: timelineAt },
         });
       }
       const message = await tx.message.create({
@@ -308,7 +327,7 @@ export class MessagingInboundService {
           mediaProviderUrl: event.media?.url ?? null,
           mediaState: resolveInboundMediaState(event, downloadedMedia),
           providerStatus: event.fromMe ? "outbound_synced" : "inbound_received",
-          createdAt: event.occurredAt,
+          createdAt: timelineAt,
         },
       });
       if (
@@ -326,12 +345,12 @@ export class MessagingInboundService {
               createdConversation && !existingContact && !isGroup
                 ? "Nova lead (passiva)"
                 : "Nova conversa (passiva)",
-            createdAt: new Date(event.occurredAt.getTime() - 1),
+            createdAt: new Date(timelineAt.getTime() - 1),
           },
         });
       }
       const messageIsOlder =
-        conversation.lastMessageAt instanceof Date && conversation.lastMessageAt > event.occurredAt;
+        conversation.lastMessageAt instanceof Date && conversation.lastMessageAt > timelineAt;
       const updatedConversation = await tx.conversation.update({
         where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
         include: { lead: { select: { status: true } } },
@@ -344,7 +363,7 @@ export class MessagingInboundService {
           lastMessagePreview: messageIsOlder
             ? conversation.lastMessagePreview
             : truncatePreview(preview),
-          lastMessageAt: messageIsOlder ? conversation.lastMessageAt : event.occurredAt,
+          lastMessageAt: messageIsOlder ? conversation.lastMessageAt : timelineAt,
           inboxArchivedAt: historical
             ? conversation.inboxArchivedAt
             : isGroup
@@ -670,13 +689,53 @@ export class MessagingInboundService {
         connectionId: event.connectionId,
         providerMessageId: event.providerMessageId,
       },
-      select: { id: true, conversationId: true, content: true },
+      select: {
+        id: true,
+        conversationId: true,
+        content: true,
+        interactiveData: true,
+        providerChatId: true,
+        connection: { select: { externalReference: true } },
+      },
     });
     if (!message) return { updated: false, reason: "MESSAGE_NOT_FOUND" };
-    if (message.content === event.content) return { updated: false, reason: "UNCHANGED" };
+    const content =
+      event.content ??
+      (await this.resolveProviderEditContent(event, {
+        providerChatId: message.providerChatId,
+        providerInstanceName: message.connection?.externalReference ?? null,
+      }));
+    if (!content) {
+      this.logger.warn({
+        event: "messaging.message_edit.content_unavailable",
+        tenantId: event.tenantId,
+        connectionId: event.connectionId,
+        providerMessageId: event.providerMessageId,
+        reason: "EDIT_CONTENT_UNAVAILABLE",
+      });
+      return { updated: false, reason: "EDIT_CONTENT_UNAVAILABLE" };
+    }
+    if (message.content === content) return { updated: false, reason: "UNCHANGED" };
+    const metadata =
+      message.interactiveData &&
+      typeof message.interactiveData === "object" &&
+      !Array.isArray(message.interactiveData)
+        ? (message.interactiveData as Record<string, unknown>)
+        : {};
     await this.prisma.message.update({
       where: { tenantId_id: { tenantId: event.tenantId, id: message.id } },
-      data: { content: event.content, updatedAt: event.occurredAt },
+      data: {
+        content,
+        interactiveData: {
+          ...metadata,
+          originalContent:
+            typeof metadata.originalContent === "string"
+              ? metadata.originalContent
+              : message.content,
+          editedAt: event.occurredAt.toISOString(),
+        },
+        updatedAt: event.occurredAt,
+      },
     });
     const latestMessage = options.preserveLatestPreview
       ? await this.prisma.message.findFirst({
@@ -689,7 +748,7 @@ export class MessagingInboundService {
       await this.prisma.conversation.update({
         where: { tenantId_id: { tenantId: event.tenantId, id: message.conversationId } },
         data: {
-          lastMessagePreview: truncatePreview(event.content),
+          lastMessagePreview: truncatePreview(content),
           ...(!options.preserveLatestPreview ? { lastMessageAt: event.occurredAt } : {}),
         },
       });
@@ -700,6 +759,42 @@ export class MessagingInboundService {
       reason: "message.edited",
     });
     return { updated: true, messageId: message.id, conversationId: message.conversationId };
+  }
+
+  private async resolveProviderEditContent(
+    event: MessageEditEvent,
+    fallback: { providerChatId: string | null; providerInstanceName: string | null },
+  ) {
+    const instanceName = event.providerInstanceName ?? fallback.providerInstanceName;
+    const remoteJid = event.remoteJid ?? fallback.providerChatId;
+    if (!this.evolution || !instanceName || !remoteJid) return null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const records = await this.evolution.findMessages({
+          instanceName,
+          remoteJid,
+          page: 1,
+          pageSize: 100,
+        });
+        const stored = records.find(
+          (record) => evolutionStoredMessageId(record) === event.providerMessageId,
+        );
+        const content = stored ? evolutionStoredText(stored) : null;
+        if (content) return content;
+      } catch (error) {
+        this.logger.warn({
+          event: "messaging.message_edit.lookup_failed",
+          tenantId: event.tenantId,
+          connectionId: event.connectionId,
+          providerMessageId: event.providerMessageId,
+          attempt: attempt + 1,
+          error: error instanceof Error ? error.message : "Provider lookup failed.",
+        });
+      }
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
+    }
+    return null;
   }
 
   async processDeletion(event: MessageDeletionEvent) {
@@ -737,34 +832,13 @@ export class MessagingInboundService {
     return { updated: true, messageId: message.id, conversationId: message.conversationId };
   }
 
-  private duplicateWhere(
-    event: InboundMessageEvent,
-    ownerPhoneNormalized: string | null,
-  ): Prisma.MessageWhereInput {
-    const exactConnection: Prisma.MessageWhereInput = {
+  private duplicateWhere(event: InboundMessageEvent): Prisma.MessageWhereInput {
+    return {
       tenantId: event.tenantId,
       connectionId: event.connectionId,
       OR: [
         { externalMessageId: event.externalMessageId },
         ...(event.fromMe ? [{ providerMessageId: event.externalMessageId }] : []),
-      ],
-    };
-    if (!ownerPhoneNormalized) return exactConnection;
-    return {
-      tenantId: event.tenantId,
-      AND: [
-        {
-          OR: [
-            { externalMessageId: event.externalMessageId },
-            ...(event.fromMe ? [{ providerMessageId: event.externalMessageId }] : []),
-          ],
-        },
-        {
-          OR: [
-            { connectionId: event.connectionId },
-            { connection: { is: { ownerPhoneNormalized } } },
-          ],
-        },
       ],
     };
   }
@@ -773,7 +847,6 @@ export class MessagingInboundService {
     tx: Prisma.TransactionClient,
     event: InboundMessageEvent,
     contact: { id: string; departmentId?: string | null },
-    connection: { ownerPhoneNormalized: string | null },
     groupDisplayName?: string | null,
     historical = false,
     initialDepartmentId: string | null = contact.departmentId ?? null,
@@ -832,20 +905,6 @@ export class MessagingInboundService {
       orderBy: { updatedAt: "desc" },
     });
     if (existing) return { conversation: existing, created: false };
-
-    if (connection.ownerPhoneNormalized) {
-      const existingByOwner = await tx.conversation.findFirst({
-        where: {
-          tenantId: event.tenantId,
-          contactId: contact.id,
-          archivedAt: null,
-          ...(historical ? {} : { status: { not: ConversationStatus.FECHADA } }),
-          connection: { is: { ownerPhoneNormalized: connection.ownerPhoneNormalized } },
-        },
-        orderBy: { updatedAt: "desc" },
-      });
-      if (existingByOwner) return { conversation: existingByOwner, created: false };
-    }
 
     const created = await tx.conversation.create({
       data: {
@@ -1034,6 +1093,20 @@ function mediaPreview(type: InboundMessageEvent["type"]) {
   if (type === "VIDEO") return "[video]";
   if (type === "DOCUMENT") return "[documento]";
   return "";
+}
+
+export function normalizeLiveTimelineTimestamp(
+  occurredAt: Date,
+  latestCreatedAt: Date | string | undefined,
+  historical: boolean,
+) {
+  if (historical || !latestCreatedAt) return occurredAt;
+  const latest = latestCreatedAt instanceof Date ? latestCreatedAt : new Date(latestCreatedAt);
+  if (!Number.isFinite(latest.getTime())) return occurredAt;
+  const sameSecond =
+    Math.floor(occurredAt.getTime() / 1_000) === Math.floor(latest.getTime() / 1_000);
+  if (sameSecond && occurredAt <= latest) return new Date(latest.getTime() + 1);
+  return occurredAt;
 }
 
 function defaultMimeType(type: InboundMessageEvent["type"]) {

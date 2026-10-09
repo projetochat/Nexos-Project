@@ -66,7 +66,11 @@ describe("quick reply editor", () => {
         />,
       ),
     );
-    expect(document.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+    expect(
+      document
+        .querySelector('[role="switch"][aria-label="Encerrar conversa"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("false");
     expect(document.querySelector('[aria-label="Tipo de mídia"]')).not.toBeNull();
     expect(document.querySelector('[aria-label="Abrir opções de anexo"]')).toBeNull();
     await click(button("Adicionar mensagem"));

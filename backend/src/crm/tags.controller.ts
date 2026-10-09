@@ -10,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -19,6 +20,12 @@ import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.de
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
+import { Prisma } from "../generated/prisma";
+import {
+  ConfirmDeletionDto,
+  type DeletionImpactPreview,
+  deletionSnapshot,
+} from "../common/deletion-impact";
 import { CreateTagDto } from "./dto/create-tag.dto";
 import { UpdateTagDto } from "./dto/update-tag.dto";
 
@@ -32,9 +39,16 @@ export class TagsController {
 
   @Get("tags")
   @RequireAnyPermission("chat.tags.read", "contacts.update")
-  async list(@CurrentUser() current: AuthenticatedUser) {
+  async list(
+    @CurrentUser() current: AuthenticatedUser,
+    @Query("scope") scope?: "catalog" | "active",
+  ) {
     const tags = await this.prisma.tag.findMany({
-      where: { tenantId: current.tenantId, archivedAt: null },
+      where: {
+        tenantId: current.tenantId,
+        archivedAt: null,
+        ...(scope === "catalog" ? {} : { active: true }),
+      },
       orderBy: [{ name: "asc" }],
     });
     return tags.map(serializeTag);
@@ -59,6 +73,7 @@ export class TagsController {
           normalizedName: normalizeName(dto.name),
           description: cleanOptional(dto.description),
           color: dto.color ?? archived.color,
+          active: dto.active ?? true,
           archivedAt: null,
         },
       });
@@ -72,6 +87,7 @@ export class TagsController {
           normalizedName: normalizeName(dto.name),
           description: cleanOptional(dto.description),
           color: dto.color ?? "#3B82F6",
+          active: dto.active ?? true,
         },
       });
       return serializeTag(tag);
@@ -97,6 +113,7 @@ export class TagsController {
           normalizedName: dto.name ? normalizeName(dto.name) : undefined,
           description: dto.description === undefined ? undefined : cleanOptional(dto.description),
           color: dto.color,
+          active: dto.active,
         },
       });
       return serializeTag(tag);
@@ -107,13 +124,109 @@ export class TagsController {
 
   @Delete("tags/:id")
   @RequirePermissions("chat.tags.delete")
-  async archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    await this.findTagOrThrow(id, current.tenantId);
-    const tag = await this.prisma.tag.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id } },
-      data: { archivedAt: new Date() },
+  async archive(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tags" WHERE id = ${id} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
+      );
+      const impact = await this.buildDeletionPreview(id, current.tenantId, tx);
+      if (impact.snapshotToken !== dto.snapshotToken) {
+        return {
+          status: "changed" as const,
+          impact,
+          message: "Os vínculos da etiqueta mudaram. Revise os dados atualizados.",
+        };
+      }
+      const campaigns = await tx.campaign.findMany({
+        where: { tenantId: current.tenantId, audienceTagIds: { has: id } },
+        select: { id: true, audienceTagIds: true },
+      });
+      await tx.contactTag.deleteMany({ where: { tenantId: current.tenantId, tagId: id } });
+      for (const campaign of campaigns) {
+        await tx.campaign.update({
+          where: { tenantId_id: { tenantId: current.tenantId, id: campaign.id } },
+          data: { audienceTagIds: campaign.audienceTagIds.filter((tagId) => tagId !== id) },
+        });
+      }
+      await tx.tag.delete({ where: { tenantId_id: { tenantId: current.tenantId, id } } });
+      return { status: "deleted" as const };
     });
-    return serializeTag(tag);
+  }
+
+  @Get("tags/:id/deletion-preview")
+  @RequirePermissions("chat.tags.delete")
+  deletionPreview(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.buildDeletionPreview(id, current.tenantId);
+  }
+
+  private async buildDeletionPreview(
+    id: string,
+    tenantId: string,
+    db: Pick<Prisma.TransactionClient, "tag" | "contactTag" | "campaign"> = this.prisma,
+  ): Promise<DeletionImpactPreview> {
+    const tag = await db.tag.findFirst({ where: { id, tenantId, archivedAt: null } });
+    if (!tag) throw new NotFoundException("Etiqueta não encontrada.");
+    const [contactLinks, campaigns] = await Promise.all([
+      db.contactTag.findMany({
+        where: { tenantId, tagId: id },
+        orderBy: { createdAt: "asc" },
+        select: { contactId: true, contact: { select: { name: true, phone: true } } },
+      }),
+      db.campaign.findMany({
+        where: { tenantId, audienceTagIds: { has: id } },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, name: true, status: true, updatedAt: true },
+      }),
+    ]);
+    const snapshotToken = deletionSnapshot({
+      id: tag.id,
+      updatedAt: tag.updatedAt,
+      contacts: contactLinks.map((item) => item.contactId),
+      campaigns: campaigns.map((item) => [item.id, item.updatedAt]),
+    });
+    return {
+      snapshotToken,
+      title: "Excluir Etiqueta?",
+      prompt: "A etiqueta será removida dos contatos e das audiências de campanhas abaixo.",
+      record: { name: tag.name, identifiers: [{ label: "Etiqueta", value: tag.name }] },
+      dependencies: [
+        {
+          id: "contacts",
+          label: "Contatos vinculados",
+          count: contactLinks.length,
+          operation: "unlink",
+          operationLabel: "A etiqueta será removida; os contatos serão preservados.",
+          items: contactLinks.slice(0, 10).map((item) => ({
+            id: item.contactId,
+            label: item.contact.name,
+            description: item.contact.phone,
+          })),
+          hasMore: contactLinks.length > 10,
+        },
+        {
+          id: "campaigns",
+          label: "Campanhas vinculadas",
+          count: campaigns.length,
+          operation: "unlink",
+          operationLabel:
+            "A referência da etiqueta será removida da audiência; as campanhas serão preservadas.",
+          items: campaigns.slice(0, 10).map((item) => ({
+            id: item.id,
+            label: item.name,
+            description: item.status,
+          })),
+          hasMore: campaigns.length > 10,
+        },
+      ],
+      consequences: [
+        { id: "tag", text: "A etiqueta será excluída definitivamente.", irreversible: true },
+      ],
+      confirmation: { level: "standard", confirmLabel: "Excluir etiqueta" },
+    };
   }
 
   @Post("contacts/:id/tags/:tagId")
@@ -124,7 +237,7 @@ export class TagsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findContactOrThrow(contactId, current.tenantId);
-    await this.findTagOrThrow(tagId, current.tenantId);
+    await this.findTagOrThrow(tagId, current.tenantId, true);
     await this.prisma.contactTag.upsert({
       where: { contactId_tagId: { contactId, tagId } },
       update: {},
@@ -159,8 +272,10 @@ export class TagsController {
     return contact.tags.map((item) => serializeTag(item.tag));
   }
 
-  private async findTagOrThrow(id: string, tenantId: string) {
-    const tag = await this.prisma.tag.findFirst({ where: { id, tenantId, archivedAt: null } });
+  private async findTagOrThrow(id: string, tenantId: string, requireActive = false) {
+    const tag = await this.prisma.tag.findFirst({
+      where: { id, tenantId, archivedAt: null, ...(requireActive ? { active: true } : {}) },
+    });
     if (!tag) throw new NotFoundException("Etiqueta não encontrada.");
     return tag;
   }
@@ -222,6 +337,7 @@ function serializeTag(tag: {
   name: string;
   description: string | null;
   color: string;
+  active: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }) {
@@ -230,6 +346,7 @@ function serializeTag(tag: {
     nome: tag.name,
     descricao: tag.description,
     cor: tag.color,
+    active: tag.active,
     createdAt: tag.createdAt,
     updatedAt: tag.updatedAt,
   };

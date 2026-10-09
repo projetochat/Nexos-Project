@@ -6,7 +6,10 @@ import {
   MessageStatus,
   MessageType,
 } from "../generated/prisma";
-import { MessagingInboundService } from "./messaging-inbound.service";
+import {
+  MessagingInboundService,
+  normalizeLiveTimelineTimestamp,
+} from "./messaging-inbound.service";
 
 beforeEach(() =>
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network disabled in inbound tests"))),
@@ -589,9 +592,104 @@ describe("MessagingInboundService", () => {
       { preserveLatestPreview: true },
     );
     expect(prisma.message.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ content: "Texto editado" }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: "Texto editado",
+          interactiveData: expect.objectContaining({
+            originalContent: "Antes",
+            editedAt: "2026-09-22T12:00:00.000Z",
+          }),
+        }),
+      }),
     );
     expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it("preserves the first original content across subsequent contact edits", async () => {
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValueOnce({
+      id: "message-a",
+      conversationId: "conversation-a",
+      content: "Segunda versão",
+      interactiveData: {
+        originalContent: "Texto original",
+        editedAt: "2026-09-22T12:00:00.000Z",
+      },
+    });
+    await new MessagingInboundService(prisma as never).processEdit({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      providerMessageId: "provider-a",
+      content: "Terceira versão",
+      occurredAt: new Date("2026-09-22T12:05:00.000Z"),
+    });
+
+    expect(prisma.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: "Terceira versão",
+          interactiveData: expect.objectContaining({
+            originalContent: "Texto original",
+            editedAt: "2026-09-22T12:05:00.000Z",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("recovers contact edit content from Evolution when v2.3.7 omits it from the webhook", async () => {
+    const prisma = prismaMock();
+    const realtime = { publishConversationUpdated: vi.fn() };
+    const evolution = {
+      findMessages: vi.fn().mockResolvedValue([
+        {
+          key: { id: "provider-a", remoteJid: "5511987654321@s.whatsapp.net" },
+          message: { conversation: "Texto recuperado" },
+        },
+      ]),
+    };
+    prisma.message.findFirst.mockResolvedValueOnce({
+      id: "message-a",
+      conversationId: "conversation-a",
+      content: "Texto original",
+      interactiveData: null,
+      providerChatId: "5511987654321@s.whatsapp.net",
+      connection: { externalReference: "tenant-support" },
+    });
+
+    const result = await new MessagingInboundService(
+      prisma as never,
+      undefined,
+      realtime as never,
+      evolution as never,
+    ).processEdit({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      providerMessageId: "provider-a",
+      content: null,
+      occurredAt: new Date("2026-10-09T12:00:00.000Z"),
+      providerInstanceName: "tenant-support",
+      remoteJid: "5511987654321@s.whatsapp.net",
+    });
+
+    expect(evolution.findMessages).toHaveBeenCalledWith({
+      instanceName: "tenant-support",
+      remoteJid: "5511987654321@s.whatsapp.net",
+      page: 1,
+      pageSize: 100,
+    });
+    expect(prisma.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: "Texto recuperado",
+          interactiveData: expect.objectContaining({ originalContent: "Texto original" }),
+        }),
+      }),
+    );
+    expect(realtime.publishConversationUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "message.edited" }),
+    );
+    expect(result).toMatchObject({ updated: true, messageId: "message-a" });
   });
 
   it("refreshes the last message preview without moving its date for a retained edit", async () => {
@@ -724,19 +822,10 @@ describe("MessagingInboundService", () => {
     expect(prisma.message.findFirst).toHaveBeenCalledWith({
       where: {
         tenantId: "tenant-a",
-        AND: [
-          {
-            OR: [
-              { externalMessageId: "campaign-provider-id" },
-              { providerMessageId: "campaign-provider-id" },
-            ],
-          },
-          {
-            OR: [
-              { connectionId: "connection-a" },
-              { connection: { is: { ownerPhoneNormalized: "+5511888888888" } } },
-            ],
-          },
+        connectionId: "connection-a",
+        OR: [
+          { externalMessageId: "campaign-provider-id" },
+          { providerMessageId: "campaign-provider-id" },
         ],
       },
     });
@@ -801,15 +890,19 @@ describe("MessagingInboundService", () => {
     expect(prisma.conversation.update).not.toHaveBeenCalled();
   });
 
-  it("does not clear a conversation reused from another connection with the same owner", async () => {
+  it("creates a conversation on the exact inbound instance instead of reusing another owner match", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
     prisma.message.findFirst.mockResolvedValueOnce(null);
     prisma.contact.findFirst.mockResolvedValue(contact());
     prisma.contact.update.mockResolvedValue(contact());
-    prisma.conversation.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(conversation({ connectionId: "connection-other", unreadCount: 2 }));
+    prisma.conversation.findFirst.mockResolvedValueOnce(null);
+    prisma.conversation.create.mockResolvedValue(
+      conversation({ id: "conversation-new", connectionId: "connection-a", departmentId: null }),
+    );
+    prisma.conversation.findUniqueOrThrow.mockResolvedValue(
+      conversation({ id: "conversation-new", connectionId: "connection-a", departmentId: null }),
+    );
     prisma.message.create.mockResolvedValue({
       id: "cross-instance-outbound",
       conversationId: "conversation-a",
@@ -818,7 +911,7 @@ describe("MessagingInboundService", () => {
       createdAt: new Date("2026-08-03T12:00:00.000Z"),
     });
     prisma.conversation.update.mockResolvedValue(
-      conversation({ connectionId: "connection-other", unreadCount: 2 }),
+      conversation({ id: "conversation-new", connectionId: "connection-a", departmentId: null }),
     );
 
     await new MessagingInboundService(prisma as never).process({
@@ -834,9 +927,19 @@ describe("MessagingInboundService", () => {
       occurredAt: new Date("2026-08-03T12:00:00.000Z"),
     });
 
-    expect(prisma.message.updateMany).not.toHaveBeenCalled();
-    expect(prisma.conversation.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ unreadCount: 2 }) }),
+    expect(prisma.conversation.findFirst).toHaveBeenCalledOnce();
+    expect(prisma.conversation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          connectionId: "connection-a",
+          departmentId: null,
+        }),
+      }),
+    );
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ conversationId: "conversation-new" }),
+      }),
     );
   });
 
@@ -1474,6 +1577,29 @@ describe("MessagingInboundService", () => {
         mediaState: "READY",
       }),
     });
+  });
+});
+
+describe("normalizeLiveTimelineTimestamp", () => {
+  it("places a live message after a log already stored in the same second", () => {
+    expect(
+      normalizeLiveTimelineTimestamp(
+        new Date("2026-10-09T00:05:00.000Z"),
+        new Date("2026-10-09T00:05:00.500Z"),
+        false,
+      ).toISOString(),
+    ).toBe("2026-10-09T00:05:00.501Z");
+  });
+
+  it("preserves different seconds and historical imports", () => {
+    const nextSecond = new Date("2026-10-09T00:05:01.000Z");
+    expect(
+      normalizeLiveTimelineTimestamp(nextSecond, new Date("2026-10-09T00:05:00.500Z"), false),
+    ).toBe(nextSecond);
+    const historical = new Date("2026-10-09T00:05:00.000Z");
+    expect(
+      normalizeLiveTimelineTimestamp(historical, new Date("2026-10-09T00:05:00.500Z"), true),
+    ).toBe(historical);
   });
 });
 

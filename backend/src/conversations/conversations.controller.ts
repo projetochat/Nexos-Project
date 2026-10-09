@@ -9,6 +9,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Inject,
@@ -36,6 +37,7 @@ import {
   Prisma,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { lockActiveDepartmentForConversation } from "../departments/department-conversation-lock";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { ContactProfilePictureSyncService } from "../messaging/contact-profile-picture-sync.service";
 import { AssignConversationDto } from "./dto/assign-conversation.dto";
@@ -47,8 +49,15 @@ import { MessagesService } from "./messages.service";
 import { conversationQueueScope } from "./conversation-queue-scope";
 import { conversationVisibilityWhere } from "./conversation-visibility";
 import { BulkCloseConversationsDto } from "./dto/bulk-close-conversations.dto";
+import { ConfirmDeletionDto } from "../common/deletion-impact";
+import { ConversationPurgeService } from "./conversation-purge.service";
 
 const BULK_CLOSE_WRITE_BATCH_SIZE = 500;
+const ACTIVE_CONVERSATION_STATUSES: ConversationStatus[] = [
+  ConversationStatus.ABERTA,
+  ConversationStatus.EM_ANDAMENTO,
+  ConversationStatus.AGUARDANDO,
+];
 
 const conversationInclude = {
   contact: {
@@ -94,6 +103,7 @@ export class ConversationsController {
     @Inject(RealtimePublisher) private readonly realtime: RealtimePublisher,
     @Inject(ContactProfilePictureSyncService)
     private readonly profilePictures: ContactProfilePictureSyncService,
+    @Inject(ConversationPurgeService) private readonly conversationPurge: ConversationPurgeService,
   ) {}
 
   @Get()
@@ -153,12 +163,31 @@ export class ConversationsController {
     return this.serialize(conversation, current);
   }
 
+  @Get(":id/deletion-impact")
+  @RequirePermissions("history.read")
+  async deletionImpact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    await this.findVisibleConversation(id, current);
+    return this.conversationPurge.conversationImpact(id, current.tenantId);
+  }
+
+  @Delete(":id")
+  @RequirePermissions("history.read")
+  async remove(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findVisibleConversation(id, current);
+    return this.conversationPurge.purgeConversation(id, dto.snapshotToken, current.tenantId);
+  }
+
   @Post()
   @RequirePermissions("messages.send")
   async create(@Body() dto: CreateConversationDto, @CurrentUser() current: AuthenticatedUser) {
     const assignToSelf = dto.assignToSelf ?? false;
     const status = assignToSelf ? ConversationStatus.EM_ANDAMENTO : ConversationStatus.ABERTA;
     const now = new Date();
+    const reuseVisibility = dto.reuseExistingOpen ? await this.visibilityWhere(current) : undefined;
 
     const result = await this.prisma.$transaction(async (tx) => {
       // Serializa tentativas para o mesmo contato sem exigir migração ou confiar no frontend.
@@ -184,20 +213,41 @@ export class ConversationsController {
       const departmentId = connection
         ? await this.resolveDepartmentId(dto.departmentId, current, connection.id, tx)
         : null;
+      if (connection && !contact.instanceIds.includes(connection.id)) {
+        await tx.contact.update({
+          where: { tenantId_id: { tenantId: current.tenantId, id: contact.id } },
+          data: {
+            instance: contact.instance ?? connection.id,
+            instanceIds: [...new Set([...contact.instanceIds, connection.id])],
+          },
+        });
+      }
 
       const existing = await tx.conversation.findFirst({
         where: {
           tenantId: current.tenantId,
           contactId: contact.id,
-          departmentId,
+          ...(dto.reuseExistingOpen ? {} : { departmentId }),
           ...(connection ? { connectionId: connection.id } : {}),
+          ...(reuseVisibility ? { AND: [reuseVisibility] } : {}),
           archivedAt: null,
-          status: { not: ConversationStatus.FECHADA },
+          closedAt: null,
+          status: { in: ACTIVE_CONVERSATION_STATUSES },
         },
         orderBy: { updatedAt: "desc" },
         include: conversationInclude,
       });
-      if (existing) {
+      if (
+        existing &&
+        !existing.closedAt &&
+        ACTIVE_CONVERSATION_STATUSES.includes(existing.status)
+      ) {
+        // The new-conversation flow already resolved the target instance. If an
+        // open conversation appeared after its preflight, reuse it without
+        // changing its department, queue or attendant.
+        if (dto.reuseExistingOpen) {
+          return { conversation: existing, created: false, updated: false };
+        }
         if (!assignToSelf) return { conversation: existing, created: false, updated: false };
         const shouldAssign =
           existing.assignedMembershipId !== current.membershipId ||
@@ -255,7 +305,10 @@ export class ConversationsController {
           protocol,
           isGroup: dto.isGroup ?? false,
           lastMessagePreview: null,
-          lastMessageAt: null,
+          // A conversation without a first message still has an inbox movement:
+          // its active opening. Persist it so database ordering matches the
+          // timestamp exposed by the API instead of placing NULLs last.
+          lastMessageAt: now,
         },
         include: conversationInclude,
       });
@@ -345,6 +398,14 @@ export class ConversationsController {
       if (targetMembershipId) {
         if (dto.self && !departmentId) {
           throw new BadRequestException("Selecione um departamento para iniciar o atendimento.");
+        }
+        if (departmentId) {
+          await this.assertDepartmentForConnection(
+            departmentId,
+            conversation.connectionId!,
+            current,
+            tx,
+          );
         }
         await this.assertAssignableMembership(
           tx,
@@ -452,8 +513,18 @@ export class ConversationsController {
       throw new BadRequestException("Conversa sem instância vinculada.");
     }
     await this.assertDepartmentForConnection(dto.departmentId, conversation.connectionId, current);
-
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (
+        typeof (tx.department as Partial<Prisma.TransactionClient["department"]>).findFirst ===
+        "function"
+      ) {
+        await this.assertDepartmentForConnection(
+          dto.departmentId,
+          conversation.connectionId!,
+          current,
+          tx,
+        );
+      }
       if (conversation.assignedMembershipId) {
         await this.assertAssignableMembership(
           tx,
@@ -930,16 +1001,20 @@ export class ConversationsController {
       if (!selectedConnection) {
         throw new BadRequestException("Connection inexistente para este tenant.");
       }
-      const contactConnections = uniqueValues([...(contact?.instanceIds ?? []), contact?.instance]);
+      const linkedConnectionKeys = uniqueValues([
+        ...(contact?.instanceIds ?? []),
+        contact?.instance,
+      ]);
+      const selectedConnectionKeys = uniqueValues([
+        selectedConnection.id,
+        selectedConnection.externalReference,
+        selectedConnection.name,
+      ]);
       if (
-        contactConnections.length > 0 &&
-        !contactConnections.some((value) =>
-          [selectedConnection.id, selectedConnection.externalReference, selectedConnection.name]
-            .filter(Boolean)
-            .includes(value),
-        )
+        linkedConnectionKeys.length > 0 &&
+        !selectedConnectionKeys.some((key) => linkedConnectionKeys.includes(key))
       ) {
-        throw new BadRequestException("A instância selecionada não está vinculada ao contato.");
+        throw new ForbiddenException("A instância selecionada não está vinculada ao contato.");
       }
       return this.assertUsableConversationConnection(selectedConnection);
     }
@@ -994,8 +1069,19 @@ export class ConversationsController {
     departmentId: string,
     connectionId: string,
     current: AuthenticatedUser,
-    db: Pick<Prisma.TransactionClient, "department"> = this.prisma,
+    db: Pick<Prisma.TransactionClient, "department"> &
+      Partial<Pick<Prisma.TransactionClient, "$queryRaw">> = this.prisma,
   ) {
+    if (
+      db.$queryRaw &&
+      !(await lockActiveDepartmentForConversation(db as Prisma.TransactionClient, {
+        tenantId: current.tenantId,
+        departmentId,
+        connectionId,
+      }))
+    ) {
+      throw new BadRequestException("Departamento não liberado para esta instância.");
+    }
     const department = await db.department.findFirst({
       where: {
         tenantId: current.tenantId,

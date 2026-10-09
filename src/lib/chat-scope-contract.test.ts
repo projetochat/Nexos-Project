@@ -27,7 +27,9 @@ describe("catálogos independentes do escopo do Chat", () => {
     expect(contacts).toContain("setInstances(sortByOptionLabel(options.instances");
     expect(contacts).toContain("<ActiveConversationOrchestrator");
     expect(orchestrator).toContain("enabled: !!request && canStart");
-    expect(orchestrator).toContain("resolveConnectedContactInstances(request.contact, instances)");
+    expect(orchestrator).toContain("contactInstanceReferences(request.contact)");
+    expect(orchestrator).toContain("resolveConnectedContactInstances(request.contact, permitted)");
+    expect(orchestrator).toContain('setStep("forbidden")');
   });
 
   it("usa os catálogos do Chat nos filtros operacionais", () => {

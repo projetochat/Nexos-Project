@@ -8,6 +8,10 @@ import { Button } from "@/components/ui-kit";
 import { connectionInstanceValue } from "@/lib/connection-options";
 import { canStartActiveConversation } from "@/lib/active-conversation-permissions";
 import {
+  contactInstanceReferences,
+  resolveConnectedContactInstances,
+} from "@/lib/contact-instance-selection";
+import {
   departmentsForConnection,
   favoriteDepartmentForConnection,
 } from "@/lib/favorite-department";
@@ -15,12 +19,13 @@ import { setInboxTab } from "@/lib/inbox-tab-state";
 import { useSession } from "@/lib/session";
 import {
   conversationApi,
+  crmApi,
   organizationApi,
+  type ApiConversation,
   type ApiContact,
   type ApiContactInstanceOption,
 } from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
-import { resolveConnectedContactInstances } from "@/lib/contact-instance-selection";
 
 export type ActiveConversationRequest = {
   key: number;
@@ -33,6 +38,12 @@ type Props = {
   onCancel: () => void;
   onOpened?: () => void;
 };
+
+const ACTIVE_CONVERSATION_STATUSES = new Set(["aberta", "em_andamento", "aguardando"]);
+
+function isReusableActiveConversation(conversation: Pick<ApiConversation, "status" | "is_group">) {
+  return !conversation.is_group && ACTIVE_CONVERSATION_STATUSES.has(conversation.status);
+}
 
 export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: Props) {
   const user = useSession((state) => state.user);
@@ -48,6 +59,38 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
   const departmentsQuery = useQuery({
     queryKey: ["trixus", "chat-departments"],
     queryFn: organizationApi.listChatDepartments,
+    enabled: !!request && canStart,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const instanceCatalogQuery = useQuery({
+    queryKey: ["trixus", "contact-options"],
+    queryFn: crmApi.contactOptions,
+    enabled: !!request && canStart,
+    staleTime: 30_000,
+  });
+  const existingConversationsQuery = useQuery({
+    queryKey: ["trixus", "conversations", "open-for-contact", request?.contact.id],
+    queryFn: async () => {
+      const pages = await Promise.all(
+        (["aberta", "em_andamento", "aguardando"] as const).map((status) =>
+          conversationApi.list({
+            contactId: request!.contact.id,
+            status,
+            pageSize: 20,
+            sort: "lastMessageAt",
+            direction: "desc",
+          }),
+        ),
+      );
+      return Array.from(
+        new Map(
+          pages
+            .flatMap((page) => page.items)
+            .map((conversation) => [conversation.id, conversation]),
+        ).values(),
+      );
+    },
     enabled: !!request && canStart,
     staleTime: 0,
     refetchOnMount: "always",
@@ -69,16 +112,25 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
   const [candidates, setCandidates] = React.useState<ApiContactInstanceOption[]>([]);
   const [connectionId, setConnectionId] = React.useState("");
   const [departmentId, setDepartmentId] = React.useState("");
-  const [step, setStep] = React.useState<"instance" | "department" | null>(null);
+  const [blockedInstanceLabel, setBlockedInstanceLabel] = React.useState("");
+  const [step, setStep] = React.useState<
+    "forbidden" | "no-access" | "instance" | "department" | null
+  >(null);
   const [busy, setBusy] = React.useState(false);
   const handledRequest = React.useRef<number | null>(null);
   const submitting = React.useRef(false);
+
+  const existingOpenConversations = React.useMemo(
+    () => (existingConversationsQuery.data ?? []).filter(isReusableActiveConversation),
+    [existingConversationsQuery.data],
+  );
 
   const close = React.useCallback(() => {
     setStep(null);
     setCandidates([]);
     setConnectionId("");
     setDepartmentId("");
+    setBlockedInstanceLabel("");
     onCancel();
   }, [onCancel]);
 
@@ -93,18 +145,33 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
       submitting.current = true;
       setBusy(true);
       try {
-        const conversation = await conversationApi.create({
+        const payload = {
           contactId: request.contact.id,
           connectionId: selectedConnectionId,
           departmentId: selectedDepartmentId,
           assignToSelf: true,
+          reuseExistingOpen: true,
           ...(request.firstMessagePreview
             ? { firstMessagePreview: request.firstMessagePreview }
             : {}),
-        });
+        };
+        let conversation = await conversationApi.create(payload);
+        if (!isReusableActiveConversation(conversation)) {
+          // A conversa pode ter sido encerrada entre a consulta preliminar e a
+          // resposta da criação. Repita uma vez para o backend criar/retornar o
+          // ciclo ativo atual, mas nunca navegue para o ID encerrado.
+          await queryClient.invalidateQueries({
+            queryKey: ["trixus", "conversations", "open-for-contact", request.contact.id],
+          });
+          conversation = await conversationApi.create(payload);
+        }
+        if (!isReusableActiveConversation(conversation)) {
+          throw new Error("O servidor não retornou uma conversa ativa.");
+        }
         setInboxTab("ativas");
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] }),
+          queryClient.invalidateQueries({ queryKey: ["trixus", "contacts"] }),
           queryClient.invalidateQueries({ queryKey: ["operations", "history"] }),
         ]);
         setStep(null);
@@ -125,9 +192,42 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
     [canStart, close, navigate, onCancel, onOpened, queryClient, request],
   );
 
+  const openExistingConversation = React.useCallback(
+    async (conversation: ApiConversation) => {
+      setStep(null);
+      if (conversation.status === "aguardando") setInboxTab("standby");
+      else if (conversation.status === "aberta") {
+        setInboxTab(conversation.is_lead ? "leads" : "fila");
+      } else {
+        setInboxTab("ativas");
+      }
+      onOpened?.();
+      onCancel();
+      await navigate({
+        to: "/inbox/$conversationId",
+        params: { conversationId: conversation.id },
+      });
+    },
+    [navigate, onCancel, onOpened],
+  );
+
+  const existingForConnection = React.useCallback(
+    (selectedConnectionId: string) =>
+      existingOpenConversations.find(
+        (conversation) =>
+          (conversation.connection?.id ?? conversation.connection_id) === selectedConnectionId,
+      ),
+    [existingOpenConversations],
+  );
+
   const continueWithConnection = React.useCallback(
     (selectedConnectionId: string) => {
       if (!request) return;
+      const existing = existingForConnection(selectedConnectionId);
+      if (existing) {
+        void openExistingConversation(existing);
+        return;
+      }
       const departments = departmentsForConnection(
         departmentsQuery.data ?? [],
         selectedConnectionId,
@@ -148,11 +248,26 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
       setDepartmentId("");
       setStep("department");
     },
-    [close, createConversation, departmentsQuery.data, isTenantAdmin, request],
+    [
+      close,
+      createConversation,
+      departmentsQuery.data,
+      existingForConnection,
+      isTenantAdmin,
+      openExistingConversation,
+      request,
+    ],
   );
 
   React.useEffect(() => {
-    if (!request || connectionsLoading || departmentsQuery.isLoading) return;
+    if (
+      !request ||
+      connectionsLoading ||
+      departmentsQuery.isLoading ||
+      instanceCatalogQuery.isLoading ||
+      existingConversationsQuery.isLoading
+    )
+      return;
     if (handledRequest.current === request.key) return;
     handledRequest.current = request.key;
     if (!canStart) {
@@ -160,21 +275,50 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
       close();
       return;
     }
-    if (connectionsError || departmentsQuery.error) {
+    if (connectionsError || departmentsQuery.error || existingConversationsQuery.error) {
       toast.error("Não foi possível carregar as opções para iniciar a conversa.");
       close();
       return;
     }
-    const resolved = resolveConnectedContactInstances(request.contact, instances);
-    setCandidates(resolved);
+    const permitted = instances.filter(
+      (instance) => instance.status?.toUpperCase() === "CONNECTED",
+    );
+    const linkedReferences = contactInstanceReferences(request.contact);
+    const resolved = resolveConnectedContactInstances(request.contact, permitted);
+    setCandidates(linkedReferences.length === 0 ? permitted : resolved);
     setConnectionId("");
     setDepartmentId("");
-    if (resolved.length === 0) {
-      toast.error("Nenhuma instância conectada e permitida para este contato.");
-      close();
+    setBlockedInstanceLabel("");
+    if (permitted.length === 0) {
+      if (instances.length === 0) {
+        setStep("no-access");
+      } else {
+        toast.error("Nenhuma instância conectada e permitida para este atendente.");
+        close();
+      }
       return;
     }
-    if (resolved.length === 1) {
+    if (linkedReferences.length === 0) {
+      setStep("instance");
+      return;
+    }
+    if (resolved.length === 0) {
+      setCandidates(permitted);
+      const blockedReference = request.contact.instancia ?? linkedReferences[0];
+      const blockedInstance = instanceCatalogQuery.data?.instances.find((instance) =>
+        [
+          instance.id,
+          instance.value,
+          instance.externalReference,
+          instance.instanceName,
+          instance.ownerPhone,
+        ].some((reference) => reference === blockedReference),
+      );
+      setBlockedInstanceLabel(blockedInstance?.name ?? blockedReference);
+      setStep("forbidden");
+      return;
+    }
+    if (linkedReferences.length === 1) {
       continueWithConnection(resolved[0].id);
       return;
     }
@@ -187,7 +331,11 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
     continueWithConnection,
     departmentsQuery.error,
     departmentsQuery.isLoading,
+    existingConversationsQuery.error,
+    existingConversationsQuery.isLoading,
     instances,
+    instanceCatalogQuery.data?.instances,
+    instanceCatalogQuery.isLoading,
     request,
   ]);
 
@@ -195,6 +343,51 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
 
   return (
     <>
+      <Modal
+        open={step === "no-access"}
+        onClose={() => !busy && close()}
+        title="Nenhuma instância disponível"
+        size="sm"
+        footer={
+          <div className="flex w-full justify-end">
+            <Button variant="primary" size="sm" onClick={close}>
+              Ok
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          Seu perfil de acesso não possui nenhuma instância liberada para atendimento. Solicite a
+          liberação ao administrador.
+        </p>
+      </Modal>
+      <Modal
+        open={step === "forbidden"}
+        onClose={() => !busy && close()}
+        title="Atendimento não permitido"
+        size="sm"
+        footer={
+          <div className="flex w-full justify-end">
+            <Button variant="primary" size="sm" onClick={close}>
+              Ok
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p>
+            Você não está habilitado para atender pela instância{" "}
+            <strong className="text-foreground">{blockedInstanceLabel}</strong>.
+          </p>
+          <p>
+            Seu perfil possui permissão para atendimento somente pela(s) instância(s){" "}
+            <strong className="text-foreground">
+              {candidates.map((instance) => instance.name).join(", ")}
+            </strong>
+            .
+          </p>
+        </div>
+      </Modal>
       <Modal
         open={step === "instance"}
         onClose={() => !busy && close()}

@@ -5,6 +5,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { Copy, Eye, Megaphone, Pause, Play, Plus, RefreshCw, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import {
   Alert,
   Badge,
@@ -106,6 +107,7 @@ function Page() {
     action: "start" | "cancel";
     campaign: ApiCampaign;
   }>(null);
+  const [removingCampaign, setRemovingCampaign] = React.useState<ApiCampaign | null>(null);
 
   const listQuery = useQuery({
     queryKey: queryKeys.list(filters),
@@ -170,7 +172,7 @@ function Page() {
       action,
       campaign,
     }: {
-      action: "start" | "pause" | "resume" | "cancel" | "duplicate" | "archive";
+      action: "start" | "pause" | "resume" | "cancel" | "duplicate";
       campaign: ApiCampaign;
     }) => {
       if (action === "start")
@@ -181,8 +183,7 @@ function Page() {
       if (action === "pause") return campaignApi.pause(campaign.id);
       if (action === "resume") return campaignApi.resume(campaign.id);
       if (action === "cancel") return campaignApi.cancel(campaign.id);
-      if (action === "duplicate") return campaignApi.duplicate(campaign.id);
-      return campaignApi.archive(campaign.id);
+      return campaignApi.duplicate(campaign.id);
     },
     onSuccess: () => {
       invalidateCampaigns();
@@ -316,6 +317,7 @@ function Page() {
             canDelete={canDelete}
             onAction={(action, campaign) => {
               if (action === "start" || action === "cancel") setConfirming({ action, campaign });
+              else if (action === "remove") setRemovingCampaign(campaign);
               else actionMutation.mutate({ action, campaign });
             }}
           />
@@ -345,6 +347,27 @@ function Page() {
           }
           onClose={() => setConfirming(null)}
           onConfirm={() => confirming && actionMutation.mutate(confirming)}
+        />
+        <DeletionConfirmDialog
+          open={!!removingCampaign}
+          resourceKey={`campaign:${removingCampaign?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setRemovingCampaign(null);
+          }}
+          loadImpact={(signal) => campaignApi.deletionImpact(removingCampaign!.id, signal)}
+          onConfirm={({ snapshotToken, signal }) =>
+            campaignApi.remove(removingCampaign!.id, snapshotToken, signal)
+          }
+          onDeleted={() => {
+            const removedId = removingCampaign?.id;
+            if (selectedId === removedId) setSelectedId(null);
+            setRemovingCampaign(null);
+            invalidateCampaigns();
+            toast.success("Campanha excluída.");
+          }}
+          formatError={(error) =>
+            error instanceof Error ? error.message : "Não foi possível excluir a campanha."
+          }
         />
       </PageContainer>
     </AppShell>
@@ -434,7 +457,7 @@ function CampaignDetail({
   canReadRecipients: boolean;
   canDelete: boolean;
   onAction: (
-    action: "start" | "pause" | "resume" | "cancel" | "duplicate" | "archive",
+    action: "start" | "pause" | "resume" | "cancel" | "duplicate" | "remove",
     campaign: ApiCampaign,
   ) => void;
 }) {
@@ -522,9 +545,9 @@ function CampaignDetail({
             size="sm"
             variant="ghost"
             className="trash-action"
-            onClick={() => onAction("archive", campaign)}
+            onClick={() => onAction("remove", campaign)}
           >
-            <Trash2 className="h-3.5 w-3.5" /> Arquivar
+            <Trash2 className="h-3.5 w-3.5" /> Excluir
           </Button>
         )}
       </div>

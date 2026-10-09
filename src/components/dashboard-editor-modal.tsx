@@ -650,7 +650,7 @@ function IconButton({
           ? "text-muted-foreground hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
           : primary
             ? "text-primary hover:border-primary/40 hover:bg-primary/10"
-            : "text-muted-foreground hover:border-primary/30 hover:bg-muted hover:text-primary"
+            : "text-foreground hover:border-primary/30 hover:bg-muted hover:text-primary"
       }`}
     >
       {children}

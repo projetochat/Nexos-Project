@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveConnectedContactInstances } from "./contact-instance-selection";
+import {
+  contactInstanceReferences,
+  resolveConnectedContactInstances,
+} from "./contact-instance-selection";
 
 const instances = [
   { id: "a", value: "a", name: "A", color: null, status: "CONNECTED" },
@@ -31,5 +34,11 @@ describe("resolveConnectedContactInstances", () => {
         (instance) => instance.id,
       ),
     ).toEqual(["b"]);
+  });
+
+  it("treats canonical instance links as authoritative over the legacy primary field", () => {
+    expect(
+      contactInstanceReferences({ instanceIds: ["a", "b", "a"], instancia: "legacy-b" }),
+    ).toEqual(["a", "b"]);
   });
 });

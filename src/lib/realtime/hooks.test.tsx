@@ -329,6 +329,49 @@ describe("useRealtimeInbox render stability", () => {
 
       expect(client.getQueryCache().getAll()).toHaveLength(0);
       expect(lastSocket?.disconnect).toHaveBeenCalled();
+      expect(useSession.getState().user?.id).toBe("user-a");
+    } finally {
+      await act(async () => root.unmount());
+      client.clear();
+      host.remove();
+    }
+  });
+
+  it("keeps the active session while instance access caches are refreshed", async () => {
+    vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "true");
+    localStorage.setItem("trixus.api.accessToken", "access");
+    const { useSession } = await import("@/lib/session");
+    const { useInstanceAccessUpdates } = await import("./hooks");
+    useSession.setState({ user: user(), hydrated: true });
+    const client = new QueryClient();
+    client.setQueryData(["trixus", "conversations", "scope"], { items: [] });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    function Probe() {
+      useInstanceAccessUpdates();
+      return null;
+    }
+    try {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <Probe />
+          </QueryClientProvider>,
+        ),
+      );
+      await act(async () =>
+        lastSocket?.on.mock.calls.find(([name]) => name === "instance-access.updated")?.[1]({
+          eventId: "instance-access-event",
+          event: "instance-access.updated",
+          version: 1,
+          occurredAt: new Date().toISOString(),
+          data: { roleId: "role-a" },
+        }),
+      );
+
+      expect(useSession.getState().user?.id).toBe("user-a");
+      expect(client.getQueryState(["trixus", "conversations", "scope"])?.isInvalidated).toBe(true);
     } finally {
       await act(async () => root.unmount());
       client.clear();

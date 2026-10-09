@@ -19,6 +19,24 @@ import {
   unsubscribeConversation,
 } from "./client";
 
+let authorizationRefresh: Promise<void> | null = null;
+
+function refreshAuthorization(queryClient: ReturnType<typeof useQueryClient>) {
+  if (authorizationRefresh) return authorizationRefresh;
+  disconnectRealtime();
+  authorizationRefresh = clearAuthorizationCache(queryClient)
+    .then(() => hydrateSession({ preserveUserOnTransientError: true }))
+    .then(async () => {
+      await queryClient.cancelQueries();
+      await queryClient.resetQueries();
+    })
+    .finally(() => {
+      authorizationRefresh = null;
+      if (useSession.getState().user) void connectRealtime();
+    });
+  return authorizationRefresh;
+}
+
 export function useRealtimeStatus() {
   return React.useSyncExternalStore(subscribeRealtime, realtimeSnapshot, realtimeSnapshot);
 }
@@ -30,14 +48,14 @@ export function useInstanceAccessUpdates(connect = true) {
     if (user && connect) void connectRealtime();
     return onRealtimeEvent((event) => {
       if (event.event === "authorization.updated") {
-        disconnectRealtime();
-        void clearAuthorizationCache(queryClient).then(() => hydrateSession());
+        void refreshAuthorization(queryClient);
         return;
       }
       if (event.event === "instance-access.updated") {
-        void hydrateSession().finally(() => {
-          void queryClient.cancelQueries().then(() => queryClient.resetQueries());
-        });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "chat-departments"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "chat-messaging-connections"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
         return;
       }
       if (event.event === "contact.updated" || event.event === "contact.tags.updated") {

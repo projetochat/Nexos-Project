@@ -23,7 +23,6 @@ import {
   ArrowLeft,
   ContactRound,
   Phone,
-  MessageSquarePlus,
   Forward,
   Ban,
 } from "lucide-react";
@@ -41,6 +40,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { MessageStatusIcon } from "@/components/message-status-icon";
 import { DepartmentIcon } from "@/components/department-icon";
 import { MessageActionsMenu } from "@/components/message-actions-menu";
+import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { InboxMobileActions } from "@/components/inbox-mobile-actions";
 import { InboxContactPicker, type SharedContactSelection } from "@/components/inbox-contact-picker";
 import { ProfileCameraModal } from "@/components/profile-photo-controls";
@@ -68,6 +68,7 @@ import {
 } from "@/lib/quick-reply-sequence";
 import { useSession } from "@/lib/session";
 import { conversationAuthorizationScope } from "@/lib/conversation-query-authorization";
+import { orderConversationMessages } from "@/lib/conversation-message-order";
 import { conversationTimestamp, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
@@ -98,10 +99,6 @@ import {
   CALL_UNAVAILABLE_MESSAGE,
   ConversationCallButton,
 } from "@/components/conversation-call-button";
-import {
-  ActiveConversationOrchestrator,
-  type ActiveConversationRequest,
-} from "@/components/active-conversation-orchestrator";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
 
@@ -283,7 +280,9 @@ function ContactCardMessage({
   return (
     <div
       className={`w-64 overflow-hidden rounded-xl ${
-        mine ? "bg-emerald-950/35 text-white" : "bg-surface-2"
+        mine
+          ? "bg-primary text-primary-foreground"
+          : "border-2 border-primary bg-white text-slate-900"
       }`}
     >
       <div className="flex items-center gap-3 px-3 py-3">
@@ -292,7 +291,7 @@ function ContactCardMessage({
           <p className="truncate text-sm font-semibold">{name}</p>
           {phone && (
             <p
-              className={`mt-0.5 flex items-center gap-1 text-xs ${mine ? "text-white/70" : "text-muted-foreground"}`}
+              className={`mt-0.5 flex items-center gap-1 text-xs ${mine ? "text-primary-foreground/75" : "text-slate-500"}`}
             >
               <Phone className="h-3 w-3" />
               {phone}
@@ -303,7 +302,9 @@ function ContactCardMessage({
       <button
         type="button"
         className={`flex w-full items-center justify-center gap-2 border-t px-3 py-2 text-sm font-semibold transition hover:brightness-110 ${
-          mine ? "border-white/15 text-emerald-300" : "border-transparent text-primary"
+          mine
+            ? "border-primary-foreground/25 text-primary-foreground"
+            : "border-primary/30 text-primary"
         }`}
         aria-label={`Conversar com ${name}`}
         title="Contato compartilhado"
@@ -350,6 +351,7 @@ function ConversationPage() {
     enabled: !!conv,
     refetchInterval: 30_000,
   });
+  const orderedMessages = React.useMemo(() => orderConversationMessages(mensagens), [mensagens]);
 
   const { data: memberships = [] } = useQuery({
     queryKey: ["trixus", "users", "conversation-transfer"],
@@ -377,8 +379,8 @@ function ConversationPage() {
     [agents],
   );
   const galleryImages = React.useMemo(
-    () => mensagens.filter((message) => message.type === "image" && !!message.media_data),
-    [mensagens],
+    () => orderedMessages.filter((message) => message.type === "image" && !!message.media_data),
+    [orderedMessages],
   );
   const { data: apiDepartments = [], isLoading: departmentsLoading } = useQuery({
     queryKey: ["trixus", "chat-departments", "conversation-transfer"],
@@ -412,7 +414,7 @@ function ConversationPage() {
   const showAgentName = perms.mostrar_nome_atendente;
   const mentionOptions = React.useMemo(() => {
     const byPhone = new Map<string, MentionOption>();
-    for (const message of mensagens) {
+    for (const message of orderedMessages) {
       const phone = message.participant?.phone?.replace(/\D/g, "");
       if (!phone) continue;
       byPhone.set(phone, {
@@ -422,15 +424,15 @@ function ConversationPage() {
       });
     }
     return Array.from(byPhone.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [mensagens]);
+  }, [orderedMessages]);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const messageRefs = React.useRef(new Map<string, HTMLDivElement>());
   const [highlightedMessageId, setHighlightedMessageId] = React.useState<string | null>(null);
-  const latestMessageId = mensagens.at(-1)?.id;
+  const latestMessageId = orderedMessages.at(-1)?.id;
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [conversationId, latestMessageId, mensagens.length]);
+  }, [conversationId, latestMessageId, orderedMessages.length]);
 
   const scrollToMessage = React.useCallback((messageId: string | null | undefined) => {
     if (!messageId) return;
@@ -447,9 +449,6 @@ function ConversationPage() {
   const transferModal = useDisclosure();
   const startDepartmentModal = useDisclosure();
   const [startDepartmentId, setStartDepartmentId] = React.useState("");
-  const [conversationRequest, setConversationRequest] =
-    React.useState<ActiveConversationRequest | null>(null);
-  const conversationRequestKey = React.useRef(0);
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [replyTo, setReplyTo] = React.useState<Message | null>(null);
   const queuePrefs = useQueuePrefs();
@@ -603,24 +602,7 @@ function ConversationPage() {
                   onClick={() => systemToast.info(CALL_UNAVAILABLE_MESSAGE)}
                 />
               )}
-              {conv.status === "fechada" ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
-                  onClick={() => {
-                    if (!conv.contact || conv.is_group) return;
-                    conversationRequestKey.current += 1;
-                    setConversationRequest({
-                      key: conversationRequestKey.current,
-                      contact: conv.contact,
-                      firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
-                    });
-                  }}
-                >
-                  <MessageSquarePlus className="h-3.5 w-3.5" /> Nova conversa
-                </Button>
-              ) : (
+              {conv.status !== "fechada" && (
                 <>
                   {showStart && canSendMessages && (
                     <Button
@@ -653,12 +635,12 @@ function ConversationPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="group hover:!border-destructive hover:!bg-destructive hover:!text-destructive-foreground focus-visible:!border-destructive focus-visible:!bg-destructive focus-visible:!text-destructive-foreground"
+                      className="action-hover-destructive group"
                       onClick={() => setClosing(true)}
                       aria-label="Encerrar Atendimento"
                       title="Encerrar Atendimento"
                     >
-                      <CircleCheckBig className="h-3.5 w-3.5 transition-colors group-hover:text-destructive" />{" "}
+                      <CircleCheckBig className="h-3.5 w-3.5 transition-colors" />{" "}
                       <span className="hidden lg:inline">Encerrar</span>
                     </Button>
                   )}
@@ -667,138 +649,142 @@ function ConversationPage() {
             </div>
           </header>
 
-          <div
-            ref={scrollRef}
-            className="inbox-message-background min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6"
-          >
-            <div className="w-full space-y-4">
-              {(() => {
-                const hasLifecycleLog = mensagens.some(
-                  (message) =>
-                    message.type === "system" &&
-                    /nova conversa|atendimento iniciado|conversa iniciada|nov[ao] lead/i.test(
-                      message.content,
-                    ),
-                );
-                if (hasLifecycleLog) return null;
-                const firstConversationMessage = mensagens.find(
-                  (message) => message.type !== "system",
-                );
-                const startedByContact = firstConversationMessage?.sender === "contact";
-                if (!startedByContact) {
-                  return (
-                    <StartedServiceLog
-                      type="ATIVO"
-                      protocol={conv.protocolo}
-                      attendantName={conv.agent?.nome ?? "Não informado"}
-                      timestamp={new Date(conv.created_at).getTime()}
-                    />
+          <div data-chat-drop-zone className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              ref={scrollRef}
+              className="inbox-message-background min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6"
+            >
+              <div className="w-full space-y-4">
+                {(() => {
+                  const hasLifecycleLog = orderedMessages.some(
+                    (message) =>
+                      message.type === "system" &&
+                      /nova conversa|atendimento iniciado|conversa iniciada|nov[ao] lead/i.test(
+                        message.content,
+                      ),
                   );
-                }
-                const isLead = conv.originated_as_lead ?? conv.is_lead;
-                const line = isLead ? "bg-info/40" : "bg-success/40";
-                const pill = isLead
-                  ? "border-info/40 bg-blue-50 text-info dark:bg-blue-950"
-                  : "border-success/40 bg-emerald-50 text-success dark:bg-emerald-950";
-                const openingLabel = isLead ? "NOVO LEAD" : "NOVA CONVERSA";
-                const label = `${openingLabel} — ${fmtLogStamp(new Date(conv.created_at).getTime())}`;
-                return (
-                  <div className="flex items-center gap-3">
-                    <span className={`h-0.5 flex-1 ${line}`} />
-                    <span
-                      className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${pill}`}
-                    >
-                      {label}
-                    </span>
-                    <span className={`h-0.5 flex-1 ${line}`} />
-                  </div>
-                );
-              })()}
-              {mensagens.map((m) => (
-                <MessageBubble
-                  key={m.id}
-                  m={m}
-                  agents={messageAgents}
-                  showAgentName={showAgentName}
-                  onReply={(message) => setReplyTo(message)}
-                  onQuotedClick={scrollToMessage}
-                  highlighted={highlightedMessageId === m.id}
-                  contactName={conv.contact?.nome ?? "Contato"}
-                  isGroup={conv.is_group}
-                  conversationOriginatedAsLead={conv.originated_as_lead ?? conv.is_lead}
-                  customFieldLabels={(conv.contact?.customFieldValues ?? []).map(
-                    (field) => field.label,
-                  )}
-                  contactAvatarUrl={conv.contact?.avatar_url ?? null}
-                  connectionAvatarUrl={conv.connection?.logo_url ?? null}
-                  connectionName={conv.connection?.name ?? "WhatsApp"}
-                  galleryImages={galleryImages}
-                  canEditMessage={perms.editar_mensagem}
-                  canDeleteMessage={perms.excluir_mensagem}
-                  canSendMessage={canSendMessages}
-                  setMessageRef={(node) => {
-                    if (node) messageRefs.current.set(m.id, node);
-                    else messageRefs.current.delete(m.id);
-                  }}
-                />
-              ))}
-              {mensagens.length === 0 && (
-                <p className="text-center text-xs text-muted-foreground">Nenhuma mensagem ainda.</p>
-              )}
+                  if (hasLifecycleLog) return null;
+                  const firstConversationMessage = orderedMessages.find(
+                    (message) => message.type !== "system",
+                  );
+                  const startedByContact = firstConversationMessage?.sender === "contact";
+                  if (!startedByContact) {
+                    return (
+                      <StartedServiceLog
+                        type="ATIVO"
+                        protocol={conv.protocolo}
+                        attendantName={conv.agent?.nome ?? "Não informado"}
+                        timestamp={new Date(conv.created_at).getTime()}
+                      />
+                    );
+                  }
+                  const isLead = conv.originated_as_lead ?? conv.is_lead;
+                  const line = isLead ? "bg-info/40" : "bg-success/40";
+                  const pill = isLead
+                    ? "border-info/40 bg-blue-50 text-info dark:bg-blue-950"
+                    : "border-success/40 bg-emerald-50 text-success dark:bg-emerald-950";
+                  const openingLabel = isLead ? "NOVO LEAD" : "NOVA CONVERSA";
+                  const label = `${openingLabel} — ${fmtLogStamp(new Date(conv.created_at).getTime())}`;
+                  return (
+                    <div className="flex items-center gap-3">
+                      <span className={`h-0.5 flex-1 ${line}`} />
+                      <span
+                        className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${pill}`}
+                      >
+                        {label}
+                      </span>
+                      <span className={`h-0.5 flex-1 ${line}`} />
+                    </div>
+                  );
+                })()}
+                {orderedMessages.map((m) => (
+                  <MessageBubble
+                    key={m.id}
+                    m={m}
+                    agents={messageAgents}
+                    showAgentName={showAgentName}
+                    onReply={(message) => setReplyTo(message)}
+                    onQuotedClick={scrollToMessage}
+                    highlighted={highlightedMessageId === m.id}
+                    contactName={conv.contact?.nome ?? "Contato"}
+                    isGroup={conv.is_group}
+                    conversationOriginatedAsLead={conv.originated_as_lead ?? conv.is_lead}
+                    customFieldLabels={(conv.contact?.customFieldValues ?? []).map(
+                      (field) => field.label,
+                    )}
+                    contactAvatarUrl={conv.contact?.avatar_url ?? null}
+                    connectionAvatarUrl={conv.connection?.logo_url ?? null}
+                    connectionName={conv.connection?.name ?? "WhatsApp"}
+                    galleryImages={galleryImages}
+                    canEditMessage={perms.editar_mensagem}
+                    canDeleteMessage={perms.excluir_mensagem}
+                    canSendMessage={canSendMessages}
+                    setMessageRef={(node) => {
+                      if (node) messageRefs.current.set(m.id, node);
+                      else messageRefs.current.delete(m.id);
+                    }}
+                  />
+                ))}
+                {orderedMessages.length === 0 && (
+                  <p className="text-center text-xs text-muted-foreground">
+                    Nenhuma mensagem ainda.
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
 
-          <div className="relative">
-            <Composer
-              key={conversationId}
-              conversationId={conv.id}
-              authorId={user?.id ?? null}
-              priorityInstances={[
-                conv.connection?.id,
-                conv.connection?.externalReference,
-                conv.connection?.name,
-              ].filter((value): value is string => Boolean(value))}
-              variableContext={{
-                contactName: conv.contact?.nome,
-                phone: conv.contact?.telefone,
-                email: conv.contact?.email,
-                instance: conv.connection?.name,
-                timezone: conv.connection?.timezone,
-                customer: conv.contact?.customer?.nome,
-                department: conv.contact?.contactDepartment?.nome ?? conv.contact?.departamento,
-                customFields: Object.fromEntries(
-                  (conv.contact?.customFieldValues ?? []).map((field) => [
-                    field.variableKey,
-                    field.value,
-                  ]),
-                ),
-                customFieldValues: conv.contact?.customFieldValues ?? [],
-              }}
-              disabled={!canSend}
-              disabledReason={
-                conv.status === "fechada"
-                  ? "closed"
-                  : isStandby
-                    ? "standby"
-                    : !conv.agent_id
-                      ? "lead"
-                      : !isMine
-                        ? "not-mine"
-                        : null
-              }
-              onStart={showStart ? handleAssume : undefined}
-              allowQuickReplies={canSendMessages && perms.acessa_mensagens_rapidas}
-              allowAudio={canSendMessages}
-              onTicket={canCreateTicket ? handleGerarChamado : undefined}
-              ticketDisabled={gerando || !conv.protocolo || !canCreateTicket}
-              mentionOptions={conv.is_group ? mentionOptions : []}
-              replyTo={replyTo}
-              onCancelReply={() => setReplyTo(null)}
-              onSent={() => {
-                setReplyTo(null);
-                void invalidateConversationQueries(qc, conv.id);
-              }}
-            />
+            <div className="relative">
+              <Composer
+                key={conversationId}
+                conversationId={conv.id}
+                authorId={user?.id ?? null}
+                priorityInstances={[
+                  conv.connection?.id,
+                  conv.connection?.externalReference,
+                  conv.connection?.name,
+                ].filter((value): value is string => Boolean(value))}
+                variableContext={{
+                  contactName: conv.contact?.nome,
+                  phone: conv.contact?.telefone,
+                  email: conv.contact?.email,
+                  instance: conv.connection?.name,
+                  timezone: conv.connection?.timezone,
+                  customer: conv.contact?.customer?.nome,
+                  department: conv.contact?.contactDepartment?.nome ?? conv.contact?.departamento,
+                  customFields: Object.fromEntries(
+                    (conv.contact?.customFieldValues ?? []).map((field) => [
+                      field.variableKey,
+                      field.value,
+                    ]),
+                  ),
+                  customFieldValues: conv.contact?.customFieldValues ?? [],
+                }}
+                disabled={!canSend}
+                disabledReason={
+                  conv.status === "fechada"
+                    ? "closed"
+                    : isStandby
+                      ? "standby"
+                      : !conv.agent_id
+                        ? "lead"
+                        : !isMine
+                          ? "not-mine"
+                          : null
+                }
+                onStart={showStart ? handleAssume : undefined}
+                allowQuickReplies={canSendMessages && perms.acessa_mensagens_rapidas}
+                allowAudio={canSendMessages}
+                onTicket={canCreateTicket ? handleGerarChamado : undefined}
+                ticketDisabled={gerando || !conv.protocolo || !canCreateTicket}
+                mentionOptions={conv.is_group ? mentionOptions : []}
+                replyTo={replyTo}
+                onCancelReply={() => setReplyTo(null)}
+                onSent={() => {
+                  setReplyTo(null);
+                  void invalidateConversationQueries(qc, conv.id);
+                }}
+              />
+            </div>
           </div>
           <div className="hidden border-t border-border bg-surface-1 px-3 pb-3 md:block xl:hidden">
             {canCreateTicket && (
@@ -945,10 +931,6 @@ function ConversationPage() {
             ))}
         </div>
       </Modal>
-      <ActiveConversationOrchestrator
-        request={conversationRequest}
-        onCancel={() => setConversationRequest(null)}
-      />
       <ConfirmDialog
         open={closing}
         title="Encerrar Conversa?"
@@ -1066,6 +1048,10 @@ export function MessageBubble({
   const [mediaError, setMediaError] = React.useState(false);
   const [resendRequest, setResendRequest] = React.useState(0);
   const [actionsOpenRequest, setActionsOpenRequest] = React.useState(0);
+  const [actionsOpenPosition, setActionsOpenPosition] = React.useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const mediaState = m.media_data?.state ?? null;
   const mediaReady = !!m.media_data && (!mediaState || mediaState === "ready");
   React.useEffect(() => {
@@ -1200,7 +1186,11 @@ export function MessageBubble({
   const isSticker =
     m.type === "image" && (m.sticker === true || m.content.trim().toLowerCase() === "[figurinha]");
   const contactCard = isContactCardMessage(m);
-  const isVisualOnly = contactCard || isSticker;
+  const isVisualOnly = !m.deleted_for_everyone && (contactCard || isSticker);
+  const originalContent = m.original_content?.trim();
+  const showsEditedHistory = Boolean(
+    m.edited_at && originalContent && originalContent !== m.content.trim(),
+  );
   const timestamp = conversationTimestamp(new Date(m.created_at).getTime());
   return (
     <div
@@ -1232,6 +1222,7 @@ export function MessageBubble({
         onContextMenu={(event) => {
           if (readOnly) return;
           event.preventDefault();
+          setActionsOpenPosition({ x: event.clientX, y: event.clientY });
           setActionsOpenRequest((request) => request + 1);
         }}
         onClick={(event) => {
@@ -1243,10 +1234,10 @@ export function MessageBubble({
         className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[50%] ${
           isVisualOnly
             ? "rounded-xl bg-transparent p-0 shadow-none"
-            : `rounded-2xl px-3 py-2 shadow-card ${mine ? "rounded-br-sm bg-gradient-brand text-white" : "rounded-bl-sm border border-border bg-surface-1"}`
+            : `rounded-2xl px-3 py-2 shadow-card ${mine ? "rounded-br-sm bg-[#D0EBFE] text-slate-900" : "rounded-bl-sm border border-border bg-surface-1"}`
         }`}
       >
-        {!readOnly && (
+        {!readOnly && !m.deleted_for_everyone && (
           <MessageActionsMenu
             message={m}
             onReply={onReply ? () => onReply(m) : undefined}
@@ -1254,6 +1245,7 @@ export function MessageBubble({
             onDownload={() => download()}
             resendRequest={resendRequest}
             openRequest={actionsOpenRequest}
+            openPosition={actionsOpenPosition}
             canEdit={canEditMessage}
             canDelete={canDeleteMessage}
             canSend={canSendMessage}
@@ -1262,16 +1254,16 @@ export function MessageBubble({
         {m.participant?.name && !mine && (
           <p className="mb-1 text-sm font-semibold text-primary">{m.participant.name}</p>
         )}
-        {m.forwarded && (
+        {m.forwarded && !m.deleted_for_everyone && (
           <p
             aria-label="Mensagem encaminhada"
-            className={`mb-1 flex items-center gap-1 text-[11px] italic ${mine ? "text-white/75" : "text-muted-foreground"}`}
+            className={`mb-1 flex items-center gap-1 text-[11px] italic ${mine ? "text-slate-600" : "text-muted-foreground"}`}
           >
             <Forward className="h-3 w-3" aria-hidden="true" />
             Encaminhada
           </p>
         )}
-        {m.quoted && (
+        {m.quoted && !m.deleted_for_everyone && (
           <QuotedPreview
             conversationId={m.conversation_id}
             quoted={m.quoted}
@@ -1279,7 +1271,7 @@ export function MessageBubble({
             onClick={() => onQuotedClick?.(m.quoted?.message_id)}
           />
         )}
-        {m.type === "image" && mediaUrl && imagePreviewOpen && (
+        {m.type === "image" && !m.deleted_for_everyone && mediaUrl && imagePreviewOpen && (
           <InboxImageViewer
             src={mediaUrl}
             readOnly={readOnly}
@@ -1295,142 +1287,171 @@ export function MessageBubble({
                 : undefined
             }
             onDownload={(image) => download(image as Message)}
+            onOpenActions={
+              readOnly
+                ? undefined
+                : (position) => {
+                    setActionsOpenPosition(position);
+                    setActionsOpenRequest((request) => request + 1);
+                  }
+            }
           />
         )}
         <div className={m.deleted_for_everyone ? "opacity-50" : undefined}>
-          {m.type === "image" && m.media_data && (
-            <div
-              data-sticker-media={isSticker || undefined}
-              className={
-                isSticker
-                  ? "overflow-hidden"
-                  : "mb-2 overflow-hidden rounded-lg border border-border/60"
-              }
-            >
-              {mediaUrl ? (
+          {
+            <>
+              {m.type === "image" && m.media_data && (
+                <div
+                  data-sticker-media={isSticker || undefined}
+                  className={
+                    isSticker
+                      ? "overflow-hidden"
+                      : "mb-2 overflow-hidden rounded-lg border border-border/60"
+                  }
+                >
+                  {mediaUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setImagePreviewOpen(true)}
+                      aria-label="Ampliar imagem"
+                      className="block cursor-zoom-in"
+                    >
+                      <img
+                        src={mediaUrl}
+                        alt={isSticker ? "Figurinha" : (m.media_data.file_name ?? "imagem")}
+                        className={`max-h-72 max-w-full object-contain ${isSticker ? "block" : ""}`}
+                      />
+                    </button>
+                  ) : mediaError || mediaState === "failed" ? (
+                    <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
+                  ) : mediaReady ? (
+                    <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
+                  ) : (
+                    <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
+                  )}
+                </div>
+              )}
+              {m.type === "video" && m.media_data && (
+                <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+                  {mediaUrl ? (
+                    <video src={mediaUrl} controls className="max-h-72 max-w-full" />
+                  ) : mediaError || mediaState === "failed" ? (
+                    <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
+                  ) : mediaReady ? (
+                    <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
+                  ) : (
+                    <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
+                  )}
+                </div>
+              )}
+              {(m.type === "audio" || m.type === "voice") &&
+                m.media_data &&
+                (mediaUrl ? (
+                  <AudioPlayer
+                    src={mediaUrl}
+                    durationMs={m.duration_ms}
+                    mine={mine}
+                    avatarName={mine ? outboundAvatarName : avatarName}
+                    avatarUrl={mine ? outboundAvatarUrl : contactAvatarUrl}
+                  />
+                ) : (
+                  <div
+                    className={`mb-2 rounded-lg px-3 py-2 text-xs ${
+                      mine ? "bg-black/5" : "bg-surface-2"
+                    }`}
+                  >
+                    {mediaError || mediaState === "failed"
+                      ? "Audio indisponivel."
+                      : mediaReady
+                        ? "Carregando audio..."
+                        : "Audio em processamento..."}
+                  </div>
+                ))}
+              {isContactCardMessage(m) && m.media_data && (
+                <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
+              )}
+              {m.type === "document" && !isContactCardMessage(m) && m.media_data && (
                 <button
                   type="button"
-                  onClick={() => setImagePreviewOpen(true)}
-                  aria-label="Ampliar imagem"
-                  className="block cursor-zoom-in"
+                  onClick={mediaReady ? () => void download() : undefined}
+                  disabled={!mediaReady}
+                  className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
+                    mine ? "border-black/10 bg-black/5" : "border-border/60 bg-surface-2"
+                  } ${mediaReady ? "" : "opacity-70"}`}
                 >
-                  <img
-                    src={mediaUrl}
-                    alt={isSticker ? "Figurinha" : (m.media_data.file_name ?? "imagem")}
-                    className={`max-h-72 max-w-full object-contain ${isSticker ? "block" : ""}`}
-                  />
+                  <Download className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {mediaState === "failed"
+                      ? "Documento indisponivel"
+                      : mediaReady
+                        ? (m.media_data.file_name ?? "Documento")
+                        : "Documento em processamento..."}
+                  </span>
                 </button>
-              ) : mediaError || mediaState === "failed" ? (
-                <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
-              ) : mediaReady ? (
-                <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
-              ) : (
-                <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
               )}
-            </div>
-          )}
-          {m.type === "video" && m.media_data && (
-            <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
-              {mediaUrl ? (
-                <video src={mediaUrl} controls className="max-h-72 max-w-full" />
-              ) : mediaError || mediaState === "failed" ? (
-                <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
-              ) : mediaReady ? (
-                <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
-              ) : (
-                <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
+              {m.link_preview && <LinkPreviewCard preview={m.link_preview} mine={mine} />}
+              {m.content &&
+                !isVisualOnly &&
+                m.content !== "[áudio]" &&
+                m.content !== "[imagem]" && (
+                  <div className={showsEditedHistory ? "space-y-1" : undefined}>
+                    {showsEditedHistory && originalContent && (
+                      <div data-original-edited-content className="text-xs text-muted-foreground">
+                        <span className="mr-1 italic">(editada)</span>
+                        <MessageText content={originalContent} />
+                      </div>
+                    )}
+                    <div data-current-edited-content={showsEditedHistory || undefined}>
+                      <MessageText content={m.content} />
+                      {m.edited_at && !showsEditedHistory && (
+                        <span className="ml-1 text-[10px] opacity-70">(editada)</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              {m.interactive_data?.kind === "list" && (
+                <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
               )}
-            </div>
-          )}
-          {(m.type === "audio" || m.type === "voice") &&
-            m.media_data &&
-            (mediaUrl ? (
-              <AudioPlayer
-                src={mediaUrl}
-                durationMs={m.duration_ms}
-                mine={mine}
-                avatarName={mine ? outboundAvatarName : avatarName}
-                avatarUrl={mine ? outboundAvatarUrl : contactAvatarUrl}
-              />
-            ) : (
-              <div
-                className={`mb-2 rounded-lg px-3 py-2 text-xs ${
-                  mine ? "bg-white/15" : "bg-surface-2"
-                }`}
-              >
-                {mediaError || mediaState === "failed"
-                  ? "Audio indisponivel."
-                  : mediaReady
-                    ? "Carregando audio..."
-                    : "Audio em processamento..."}
-              </div>
-            ))}
-          {isContactCardMessage(m) && m.media_data && (
-            <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
-          )}
-          {m.type === "document" && !isContactCardMessage(m) && m.media_data && (
-            <button
-              type="button"
-              onClick={mediaReady ? () => void download() : undefined}
-              disabled={!mediaReady}
-              className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
-                mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
-              } ${mediaReady ? "" : "opacity-70"}`}
-            >
-              <Download className="h-4 w-4 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">
-                {mediaState === "failed"
-                  ? "Documento indisponivel"
-                  : mediaReady
-                    ? (m.media_data.file_name ?? "Documento")
-                    : "Documento em processamento..."}
-              </span>
-            </button>
-          )}
-          {m.link_preview && <LinkPreviewCard preview={m.link_preview} mine={mine} />}
-          {m.content && !isVisualOnly && m.content !== "[áudio]" && m.content !== "[imagem]" && (
-            <>
-              <MessageText content={m.content} />
-              {m.edited_at && <span className="ml-1 text-[10px] opacity-70">(editada)</span>}
+              {m.reactions && m.reactions.length > 0 && (
+                <div
+                  aria-label="Reações da mensagem"
+                  title={reactionGroups.map(([emoji, count]) => `${emoji} ${count}`).join(", ")}
+                  className={`absolute -bottom-3 ${mine ? "right-2" : "left-2"} z-10 flex max-w-32 items-center gap-0.5 overflow-hidden whitespace-nowrap rounded-full border border-border bg-card px-1 py-0.5 text-foreground shadow-sm`}
+                >
+                  {reactionGroups.slice(0, 3).map(([emoji, count]) => (
+                    <span
+                      key={emoji}
+                      aria-label={`${emoji}: ${count}`}
+                      className="shrink-0 text-sm leading-4"
+                    >
+                      {emoji}
+                    </span>
+                  ))}
+                  {m.reactions.length > 1 && (
+                    <span
+                      aria-label={`${m.reactions.length} reações no total`}
+                      className="min-w-0 truncate px-0.5 text-[10px] leading-4"
+                    >
+                      {m.reactions.length}
+                    </span>
+                  )}
+                </div>
+              )}
             </>
-          )}
-          {m.interactive_data?.kind === "list" && (
-            <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
-          )}
-          {m.reactions && m.reactions.length > 0 && (
-            <div
-              aria-label="Reações da mensagem"
-              title={reactionGroups.map(([emoji, count]) => `${emoji} ${count}`).join(", ")}
-              className={`absolute -bottom-3 ${mine ? "right-2" : "left-2"} z-10 flex max-w-32 items-center gap-0.5 overflow-hidden whitespace-nowrap rounded-full border border-border bg-card px-1 py-0.5 text-foreground shadow-sm`}
-            >
-              {reactionGroups.slice(0, 3).map(([emoji, count]) => (
-                <span
-                  key={emoji}
-                  aria-label={`${emoji}: ${count}`}
-                  className="shrink-0 text-sm leading-4"
-                >
-                  {emoji}
-                </span>
-              ))}
-              {m.reactions.length > 1 && (
-                <span
-                  aria-label={`${m.reactions.length} reações no total`}
-                  className="min-w-0 truncate px-0.5 text-[10px] leading-4"
-                >
-                  {m.reactions.length}
-                </span>
-              )}
-            </div>
-          )}
+          }
         </div>
         {m.deleted_for_everyone && (
-          <p className="mt-1 text-[10px] font-semibold italic uppercase tracking-wide text-red-500">
-            Mensagem apagada
-          </p>
+          <div
+            data-deleted-message
+            className="mt-1 flex items-center gap-1.5 text-sm font-medium text-red-500"
+          >
+            <Ban className="h-4 w-4 shrink-0 text-red-500" aria-hidden="true" />
+            <span>Mensagem apagada</span>
+          </div>
         )}
         <div className="mt-1 flex items-center justify-end">
           <span
-            className={`flex shrink-0 items-center justify-end whitespace-nowrap text-right font-mono text-[10px] leading-4 ${mine ? "text-white/70" : "text-muted-foreground"}`}
+            className={`flex shrink-0 items-center justify-end whitespace-nowrap text-right font-mono text-[10px] leading-4 ${mine ? "text-slate-600" : "text-muted-foreground"}`}
           >
             {timestamp.day ? `${timestamp.day} ${timestamp.time}` : timestamp.time}
             {mine && (
@@ -1480,7 +1501,7 @@ function WhatsAppListMessage({
         type="button"
         onClick={() => setOpen(true)}
         className={`mt-3 flex w-full items-center justify-center gap-2 border-t pt-2 text-sm font-medium transition hover:brightness-110 ${
-          mine ? "border-white/25 text-white" : "border-border text-primary"
+          mine ? "border-black/10 text-blue-700" : "border-border text-primary"
         }`}
         aria-label={`${interactive.buttonText}: abrir opções`}
       >
@@ -1567,7 +1588,7 @@ function LinkPreviewCard({
       rel="noopener noreferrer"
       aria-label={`Abrir preview de ${hostname}`}
       className={`mb-2 block max-w-sm overflow-hidden rounded-lg border text-left transition hover:brightness-95 ${
-        mine ? "border-white/25 bg-black/10" : "border-border/70 bg-surface-2"
+        mine ? "border-black/10 bg-black/5" : "border-border/70 bg-surface-2"
       }`}
     >
       {thumbnail && (
@@ -1690,11 +1711,11 @@ function QuotedPreview({
       type="button"
       onClick={onClick}
       className={`mb-2 block w-full border-l-2 px-2 py-1 text-left text-xs ${
-        mine ? "border-white/60 bg-white/10 text-white/85" : "border-primary/60 bg-card"
+        mine ? "border-blue-500/60 bg-white/45 text-slate-700" : "border-primary/60 bg-card"
       } ${quoted.message_id ? "cursor-pointer transition hover:opacity-85" : "cursor-default"}`}
     >
       {quoted.author_name && (
-        <p className={`mb-1 truncate font-semibold ${mine ? "text-white" : "text-primary"}`}>
+        <p className={`mb-1 truncate font-semibold ${mine ? "text-blue-700" : "text-primary"}`}>
           {quoted.author_name}
         </p>
       )}
@@ -1816,7 +1837,7 @@ function AudioPlayer({
   const secs = durationMs ? Math.round(durationMs / 1000) : null;
   return (
     <div
-      className={`flex min-w-[220px] items-center gap-2 rounded-lg px-2 py-1.5 ${mine ? "bg-white/15" : "bg-surface-2"}`}
+      className={`flex min-w-[220px] items-center gap-2 rounded-lg px-2 py-1.5 ${mine ? "bg-black/5" : "bg-surface-2"}`}
     >
       <button
         type="button"
@@ -1908,6 +1929,9 @@ function Composer({
   };
   const [pendingFiles, setPendingFiles] = React.useState<PendingMedia[]>([]);
   const [draggingFiles, setDraggingFiles] = React.useState(false);
+  const [dropZoneRect, setDropZoneRect] = React.useState<DOMRect | null>(null);
+  const composerRootRef = React.useRef<HTMLDivElement>(null);
+  const dragDepthRef = React.useRef(0);
   const [mediaSending, setMediaSending] = React.useState(false);
   const [showQR, setShowQR] = React.useState(false);
   const [qrFilter, setQrFilter] = React.useState("");
@@ -1951,7 +1975,7 @@ function Composer({
     });
   };
 
-  const queueFiles = (files: readonly File[]) => {
+  const queueFiles = React.useCallback((files: readonly File[]) => {
     const additions: PendingMedia[] = files.map((file) => {
       const mediaType = messageMediaType(file);
       return {
@@ -1969,7 +1993,54 @@ function Composer({
       if (!current.length) additions[0]!.carriesContext = true;
       return [...current, ...additions];
     });
-  };
+  }, []);
+
+  React.useEffect(() => {
+    const zone = composerRootRef.current?.closest<HTMLElement>("[data-chat-drop-zone]");
+    if (!zone) return;
+    const containsFiles = (transfer: DataTransfer | null) =>
+      !!transfer && Array.from(transfer.types).includes("Files");
+    const enter = (event: DragEvent) => {
+      if (disabled || !containsFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      dragDepthRef.current += 1;
+      setDropZoneRect(zone.getBoundingClientRect());
+      setDraggingFiles(true);
+    };
+    const over = (event: DragEvent) => {
+      if (disabled || !containsFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
+    const leave = (event: DragEvent) => {
+      if (!containsFiles(event.dataTransfer)) return;
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) {
+        setDraggingFiles(false);
+        setDropZoneRect(null);
+      }
+    };
+    const drop = (event: DragEvent) => {
+      if (disabled) return;
+      const files = event.dataTransfer ? filesFromTransfer(event.dataTransfer) : [];
+      if (!files.length) return;
+      event.preventDefault();
+      dragDepthRef.current = 0;
+      setDraggingFiles(false);
+      setDropZoneRect(null);
+      queueFiles(files);
+    };
+    zone.addEventListener("dragenter", enter);
+    zone.addEventListener("dragover", over);
+    zone.addEventListener("dragleave", leave);
+    zone.addEventListener("drop", drop);
+    return () => {
+      zone.removeEventListener("dragenter", enter);
+      zone.removeEventListener("dragover", over);
+      zone.removeEventListener("dragleave", leave);
+      zone.removeEventListener("drop", drop);
+    };
+  }, [disabled, queueFiles]);
 
   const removePendingFile = (id: string) => {
     setPendingFiles((current) => {
@@ -2085,6 +2156,18 @@ function Composer({
     setPendingVariableTemplate(null);
     setMentionFilter(null);
     setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const input = textareaRef.current;
+    const start = input?.selectionStart ?? text.length;
+    const end = input?.selectionEnd ?? start;
+    setText(text.slice(0, start) + emoji + text.slice(end));
+    setPendingVariableTemplate(null);
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + emoji.length, start + emoji.length);
+    });
   };
 
   const mentionToken = (label: string, fallbackPhone: string) => {
@@ -2295,27 +2378,6 @@ function Composer({
     }
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    if (disabled || !Array.from(event.dataTransfer.types).includes("Files")) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-    setDraggingFiles(true);
-  };
-
-  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
-    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-    setDraggingFiles(false);
-  };
-
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    if (disabled) return;
-    const files = filesFromTransfer(event.dataTransfer);
-    if (!files.length) return;
-    event.preventDefault();
-    setDraggingFiles(false);
-    queueFiles(files);
-  };
-
   const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
@@ -2518,17 +2580,22 @@ function Composer({
 
   return (
     <div
+      ref={composerRootRef}
       className={`relative border-t bg-surface-1 p-3 transition-colors ${
         draggingFiles ? "border-primary bg-primary/5" : "border-border"
       }`}
-      onDragEnter={handleDragOver}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
     >
-      {draggingFiles && (
-        <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-background/90 text-sm font-medium text-primary">
-          Solte os arquivos para anexar
+      {draggingFiles && dropZoneRect && (
+        <div
+          className="pointer-events-none fixed z-[240] flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10 text-xl font-medium text-primary backdrop-blur-[1px]"
+          style={{
+            left: dropZoneRect.left + 8,
+            top: dropZoneRect.top + 8,
+            width: Math.max(0, dropZoneRect.width - 16),
+            height: Math.max(0, dropZoneRect.height - 16),
+          }}
+        >
+          Arraste arquivo aqui
         </div>
       )}
       <div className="w-full">
@@ -2857,6 +2924,10 @@ function Composer({
               style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
             />
 
+            <MessageEmojiPicker
+              disabled={disabled || sequenceSending || mediaSending || !!sequence || !!pendingAudio}
+              onSelect={insertEmoji}
+            />
             {allowAudio && !recording && (
               <Button
                 variant="ghost"

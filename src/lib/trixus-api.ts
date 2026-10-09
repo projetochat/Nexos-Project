@@ -109,6 +109,36 @@ export class TrixusApiError extends Error {
   }
 }
 
+export type ApiDeletionImpactPreview = {
+  snapshotToken: string;
+  title: string;
+  prompt: string;
+  record: {
+    name: string;
+    identifiers: Array<{ label: string; value: string }>;
+  };
+  dependencies: Array<{
+    id: string;
+    label: string;
+    count: number;
+    operation: "unlink" | "reassign" | "delete";
+    operationLabel: string;
+    items?: Array<{ id: string; label: string; description?: string }>;
+    hasMore?: boolean;
+  }>;
+  consequences: Array<{ id: string; text: string; irreversible: boolean }>;
+  confirmation:
+    | { level: "standard"; confirmLabel: string }
+    | {
+        level: "high";
+        confirmLabel: string;
+        phrase: string;
+        inputLabel: string;
+        instruction: string;
+      };
+  blockedReason?: string;
+};
+
 export type ApiDepartment = {
   id: string;
   tenantId: string;
@@ -118,7 +148,7 @@ export type ApiDepartment = {
   icon: DepartmentIcon;
   connectionIds: string[];
   favoriteConnectionIds?: string[];
-  active: boolean;
+  active?: boolean;
   createdAt?: string;
   updatedAt?: string;
   memberCount?: number;
@@ -144,6 +174,7 @@ export type ApiRole = {
   description: string | null;
   metadata: unknown;
   system: boolean;
+  active: boolean;
   createdAt?: string;
   updatedAt?: string;
   permissionIds: string[];
@@ -200,6 +231,7 @@ export type ApiTag = {
   nome: string;
   descricao?: string | null;
   cor: string;
+  active?: boolean;
   archivedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -420,6 +452,7 @@ export type ApiQuickReply = {
   updatedAt: string;
   close_on_send: boolean;
   closeOnSend?: boolean;
+  active?: boolean;
 };
 
 export type ApiMessage = {
@@ -453,6 +486,7 @@ export type ApiMessage = {
   created_at: string;
   updated_at: string;
   edited_at?: string | null;
+  original_content?: string | null;
   deleted_at?: string | null;
   deleted_for_everyone?: boolean;
   read_at: string | null;
@@ -575,6 +609,10 @@ export type ApiAutomationRule = {
   updatedAt: string;
 };
 
+export type ApiDeletionConfirmationResult =
+  | { status: "deleted"; cleanup?: "completed" | "pending" }
+  | { status: "changed"; impact: ApiDeletionImpactPreview; message?: string };
+
 export type ApiServiceHoursPeriod = { start: string; end: string };
 export type ApiServiceHoursRow = {
   day: string;
@@ -689,7 +727,7 @@ export type ApiTicket = {
   status: ApiTicketStatus;
   priority: ApiTicketPriority;
   category: ApiTicketCategory;
-  department: { id: string; name: string; color: string };
+  department: { id: string; name: string; color: string } | null;
   requesterContact: { id: string; name: string; email: string | null; phone: string } | null;
   customer: { id: string; name: string; email: string | null; phone: string | null } | null;
   conversation: { id: string; protocol: string | null; status: string } | null;
@@ -979,6 +1017,7 @@ type ConversationPayload = {
   departmentId?: string | null;
   connectionId?: string | null;
   assignToSelf?: boolean;
+  reuseExistingOpen?: boolean;
   isGroup?: boolean;
   firstMessagePreview?: string | null;
 };
@@ -1177,8 +1216,9 @@ export const organizationApi = {
     }),
   listFinancialPayments: () => apiRequest<ApiFinancialPayment[]>("/company/financial"),
   listDepartments: () => apiRequest<ApiDepartment[]>("/departments"),
-  listDepartmentsByConnection: (params: { connectionId?: string } = {}) =>
-    apiRequest<ApiDepartment[]>(`/departments${queryString(params)}`),
+  listDepartmentsByConnection: (
+    params: { connectionId?: string; status?: "active" | "inactive" | "all" } = {},
+  ) => apiRequest<ApiDepartment[]>(`/departments${queryString(params)}`),
   listChatDepartments: () => apiRequest<ApiDepartment[]>("/departments/chat-scope"),
   departmentConnectionOptions: () =>
     apiRequest<Array<Pick<ApiMessagingConnection, "id" | "name" | "status" | "color" | "logoUrl">>>(
@@ -1206,8 +1246,32 @@ export const organizationApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  deleteDepartment: (id: string) =>
-    apiRequest<ApiDepartment>(`/departments/${id}`, { method: "DELETE" }),
+  departmentDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/departments/${id}/deletion-preview`, { signal }),
+  deleteDepartment: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/departments/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
+  departmentDeactivationPreview: (id: string) =>
+    apiRequest<{
+      departmentId: string;
+      openConversationCount: number;
+      groups: Array<{
+        connectionId: string | null;
+        count: number;
+        destinations: Array<Pick<ApiDepartment, "id" | "name" | "color">>;
+      }>;
+    }>(`/departments/${id}/deactivation-preview`),
+  deactivateDepartment: (
+    id: string,
+    targets: Array<{ connectionId: string | null; departmentId: string }>,
+  ) =>
+    apiRequest<ApiDepartment>(`/departments/${id}/deactivate`, {
+      method: "POST",
+      body: JSON.stringify({ targets }),
+    }),
 
   listRoles: () => apiRequest<ApiRole[]>("/roles"),
   roleScopeOptions: () =>
@@ -1225,6 +1289,7 @@ export const organizationApi = {
     key?: string;
     description?: string | null;
     permissionIds: string[];
+    active?: boolean;
     metadata?: unknown;
   }) => apiRequest<ApiRole>("/roles", { method: "POST", body: JSON.stringify(data) }),
   updateRole: (
@@ -1233,10 +1298,18 @@ export const organizationApi = {
       name?: string;
       description?: string | null;
       permissionIds?: string[];
+      active?: boolean;
       metadata?: unknown;
     },
   ) => apiRequest<ApiRole>(`/roles/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  deleteRole: (id: string) => apiRequest<{ ok: true }>(`/roles/${id}`, { method: "DELETE" }),
+  roleDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/roles/${id}/deletion-preview`, { signal }),
+  deleteRole: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/roles/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
 
   listUsers: () => apiRequest<ApiUserMembership[]>("/users"),
   createUser: (data: {
@@ -1244,6 +1317,7 @@ export const organizationApi = {
     name: string;
     password: string;
     roleId?: string;
+    membershipStatus?: "ACTIVE" | "DISABLED";
     departmentIds?: string[];
     avatarUrl?: string | null;
   }) => apiRequest<ApiUserMembership>("/users", { method: "POST", body: JSON.stringify(data) }),
@@ -1352,8 +1426,14 @@ export const crmApi = {
       method: "PATCH",
       body: JSON.stringify({ customerId }),
     }),
-  deleteContact: (id: string) =>
-    apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "DELETE" }),
+  contactDeletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/crm/contacts/${id}/deletion-impact`, { signal }),
+  deleteContact: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/crm/contacts/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   previewContactsFromAgenda: (data: { connectionId?: string | null } = {}) =>
     apiRequest<ApiAgendaImportPreview>("/crm/contacts/import/agenda/preview", {
       method: "POST",
@@ -1387,11 +1467,21 @@ export const crmApi = {
       body: JSON.stringify(data),
     }),
   listTags: () => apiRequest<ApiTag[]>("/tags"),
-  createTag: (data: { name: string; description?: string; color?: string }) =>
+  listTagsCatalog: () => apiRequest<ApiTag[]>("/tags?scope=catalog"),
+  createTag: (data: { name: string; description?: string; color?: string; active?: boolean }) =>
     apiRequest<ApiTag>("/tags", { method: "POST", body: JSON.stringify(data) }),
-  updateTag: (id: string, data: { name?: string; description?: string; color?: string }) =>
-    apiRequest<ApiTag>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  archiveTag: (id: string) => apiRequest<ApiTag>(`/tags/${id}`, { method: "DELETE" }),
+  updateTag: (
+    id: string,
+    data: { name?: string; description?: string; color?: string; active?: boolean },
+  ) => apiRequest<ApiTag>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  tagDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/tags/${id}/deletion-preview`, { signal }),
+  archiveTag: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/tags/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   assignContactTag: (contactId: string, tagId: string) =>
     apiRequest<ApiTag[]>(`/contacts/${contactId}/tags/${tagId}`, { method: "POST" }),
   removeContactTag: (contactId: string, tagId: string) =>
@@ -1469,8 +1559,16 @@ export const crmApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  deleteContactCustomField: (id: string) =>
-    apiRequest<ApiContactCustomField>(`/crm/contact-custom-fields/${id}`, { method: "DELETE" }),
+  contactCustomFieldDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/crm/contact-custom-fields/${id}/deletion-preview`, {
+      signal,
+    }),
+  deleteContactCustomField: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/crm/contact-custom-fields/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   reorderContactCustomFields: (fieldIds: string[]) =>
     apiRequest<ApiContactCustomField[]>("/crm/contact-custom-fields/reorder", {
       method: "PATCH",
@@ -1515,8 +1613,14 @@ export const groupsApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  leave: (id: string) =>
-    apiRequest<{ id: string; left: boolean }>(`/groups/${id}/leave`, { method: "POST" }),
+  deletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/groups/${id}/deletion-impact`, { signal }),
+  leave: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/groups/${id}/leave`, {
+      method: "POST",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   sync: (data: { connectionId?: string } = {}) =>
     apiRequest<{
       synced: number;
@@ -1549,6 +1653,7 @@ export const quickReplyApi = {
     content: string;
     departmentId?: string | null;
     closeOnSend?: boolean;
+    active?: boolean;
     messages?: QuickReplyMessage[];
     intervalSeconds?: number;
     attachmentFileName?: string | null;
@@ -1564,6 +1669,7 @@ export const quickReplyApi = {
       content?: string;
       departmentId?: string | null;
       closeOnSend?: boolean;
+      active?: boolean;
       messages?: QuickReplyMessage[];
       intervalSeconds?: number;
       attachmentFileName?: string | null;
@@ -1576,7 +1682,14 @@ export const quickReplyApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  archive: (id: string) => apiRequest<ApiQuickReply>(`/quick-replies/${id}`, { method: "DELETE" }),
+  deletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/quick-replies/${id}/deletion-preview`, { signal }),
+  archive: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/quick-replies/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
 };
 
 export const conversationApi = {
@@ -1623,6 +1736,14 @@ export const conversationApi = {
     apiRequest<ApiConversation>(`/conversations/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    }),
+  deletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/conversations/${id}/deletion-impact`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/conversations/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
     }),
 };
 
@@ -1680,7 +1801,14 @@ export const automationApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  archive: (id: string) => apiRequest<{ ok: true }>(`/automations/${id}`, { method: "DELETE" }),
+  deletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/automations/${id}/deletion-preview`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/automations/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
 };
 
 export const messageApi = {
@@ -1962,7 +2090,14 @@ export const ticketApi = {
       method: "PATCH",
       body: JSON.stringify({ departmentId }),
     }),
-  archive: (id: string) => apiRequest<ApiTicket>(`/tickets/${id}`, { method: "DELETE" }),
+  deletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/tickets/${id}/deletion-preview`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/tickets/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   comments: (id: string) => apiRequest<ApiTicketComment[]>(`/tickets/${id}/comments`),
   createComment: (id: string, bodyHtml: string) =>
     apiRequest<ApiTicketComment>(`/tickets/${id}/comments`, {
@@ -2058,7 +2193,14 @@ export const campaignApi = {
       timezone: string;
     }>,
   ) => apiRequest<ApiCampaign>(`/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  archive: (id: string) => apiRequest<ApiCampaign>(`/campaigns/${id}`, { method: "DELETE" }),
+  deletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/campaigns/${id}/deletion-impact`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/campaigns/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   preview: (data: { messageText: string; audience: ApiCampaignAudience }) =>
     apiRequest<ApiCampaignPreview>("/campaigns/audience-preview", {
       method: "POST",
@@ -3100,5 +3242,12 @@ export const schedulesApi = {
       method: "POST",
       body: JSON.stringify(scheduleWritePayload(data)),
     }),
-  remove: (id: string) => apiRequest<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),
+  deletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/schedules/${id}/deletion-impact`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/schedules/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
 };

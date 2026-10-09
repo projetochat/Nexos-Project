@@ -32,6 +32,7 @@ vi.mock("@/lib/trixus-api", () => ({
   operationsApi: { history: api.history, timeline: api.timeline },
   messageApi: { list: api.messages },
   conversationApi: {},
+  crmApi: { contactOptions: vi.fn().mockResolvedValue({ instances: [] }) },
   organizationApi: { listChatDepartments: vi.fn().mockResolvedValue([]) },
 }));
 import { HistoricoPage } from "../routes/-historico-page";

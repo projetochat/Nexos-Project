@@ -12,6 +12,11 @@ import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import {
+  changedDeletion,
+  deletionSnapshot,
+  type DeletionImpactPreview,
+} from "../common/deletion-impact";
+import {
   Prisma,
   TicketAttachmentStatus,
   TicketCategory,
@@ -27,6 +32,10 @@ import { CreateTicketCommentDto } from "./dto/create-ticket-comment.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { UpdateTicketDto } from "./dto/update-ticket.dto";
 import { FileStorageProvider } from "./storage/file-storage.provider";
+import {
+  TICKET_ATTACHMENT_CLEANUP_REQUESTED,
+  TicketAttachmentCleanupService,
+} from "./ticket-attachment-cleanup.service";
 import {
   htmlToText,
   sanitizeFileName,
@@ -51,6 +60,8 @@ export class TicketsService {
     @Inject(AttachmentSecurityScanner) private readonly scanner: AttachmentSecurityScanner,
     @Inject(RealtimePublisher) private readonly realtime: RealtimePublisher,
     @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
+    @Inject(TicketAttachmentCleanupService)
+    private readonly attachmentCleanup: TicketAttachmentCleanupService,
   ) {}
 
   async list(query: ListTicketsQueryDto, current: AuthenticatedUser) {
@@ -137,6 +148,11 @@ export class TicketsService {
 
   async update(id: string, dto: UpdateTicketDto, current: AuthenticatedUser) {
     const existing = await this.findVisibleTicket(id, current);
+    if (!existing.departmentId) {
+      throw new BadRequestException(
+        "Selecione um departamento antes de editar este chamado.",
+      );
+    }
     const data: Prisma.TicketUpdateInput = {};
     if (dto.title !== undefined) data.title = sanitizePlainText(dto.title, 180);
     if (dto.descriptionHtml !== undefined) {
@@ -212,6 +228,11 @@ export class TicketsService {
     current: AuthenticatedUser,
   ) {
     const existing = await this.findVisibleTicket(id, current);
+    if (!existing.departmentId) {
+      throw new BadRequestException(
+        "Selecione um departamento antes de atribuir este chamado.",
+      );
+    }
     const next = assignedMembershipId
       ? await this.resolveAssignee(assignedMembershipId, existing.departmentId, current)
       : null;
@@ -267,18 +288,194 @@ export class TicketsService {
     return serializeTicket(updated);
   }
 
-  async archive(id: string, current: AuthenticatedUser) {
-    const existing = await this.findVisibleTicket(id, current);
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.ticket.update({
-        where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
-        data: { archivedAt: new Date() },
-        include: ticketInclude,
+  async deletionPreview(id: string, current: AuthenticatedUser) {
+    return this.ticketDeletionImpact(await this.ticketDeletionState(this.prisma, id, current));
+  }
+
+  async remove(id: string, snapshotToken: string, current: AuthenticatedUser) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const state = await this.ticketDeletionState(tx, id, current);
+      const impact = this.ticketDeletionImpact(state);
+      if (impact.snapshotToken !== snapshotToken) {
+        return changedDeletion(impact);
+      }
+      const cleanupEvent = await tx.outboxEvent.create({
+        data: {
+          tenantId: current.tenantId,
+          type: TICKET_ATTACHMENT_CLEANUP_REQUESTED,
+          aggregateId: state.ticket.id,
+          payload: {
+            ticketId: state.ticket.id,
+            protocol: state.ticket.protocol,
+            title: state.ticket.title,
+            deletedByMembershipId: current.membershipId,
+            snapshotToken,
+            counts: {
+              comments: state.comments.length,
+              history: state.history.length,
+              attachments: state.attachments.length,
+            },
+            objectKeys: state.attachments.map((attachment) => attachment.objectKey),
+          },
+        },
       });
-      await this.recordHistory(updated.id, current, "ticket.archived", undefined, undefined, tx);
-      return updated;
+      await tx.ticketAttachment.deleteMany({
+        where: { tenantId: current.tenantId, ticketId: state.ticket.id },
+      });
+      await tx.ticketComment.deleteMany({
+        where: { tenantId: current.tenantId, ticketId: state.ticket.id },
+      });
+      await tx.ticketHistory.deleteMany({
+        where: { tenantId: current.tenantId, ticketId: state.ticket.id },
+      });
+      await tx.ticket.delete({
+        where: { tenantId_id: { tenantId: current.tenantId, id: state.ticket.id } },
+      });
+      return { status: "deleted" as const, cleanupEventId: cleanupEvent.id };
     });
-    return serializeTicket(updated);
+    if (result.status === "changed") return result;
+
+    const cleanupCompleted = await this.attachmentCleanup.process(result.cleanupEventId);
+    this.realtime.publishTicketUpdated({
+      tenantId: current.tenantId,
+      ticketId: id,
+      reason: "ticket.deleted",
+    });
+    return {
+      status: "deleted" as const,
+      cleanup: cleanupCompleted ? "completed" : "pending",
+    };
+  }
+
+  private async ticketDeletionState(
+    db: PrismaService | Prisma.TransactionClient,
+    id: string,
+    current: AuthenticatedUser,
+  ) {
+    const ticket = await db.ticket.findFirst({
+      where: { id, tenantId: current.tenantId },
+      select: {
+        id: true,
+        protocol: true,
+        title: true,
+        status: true,
+        updatedAt: true,
+      },
+    });
+    if (!ticket) throw new NotFoundException("Chamado não encontrado.");
+    const [comments, history, attachments] = await Promise.all([
+      db.ticketComment.findMany({
+        where: { tenantId: current.tenantId, ticketId: ticket.id },
+        select: { id: true, bodyText: true, updatedAt: true, archivedAt: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      db.ticketHistory.findMany({
+        where: { tenantId: current.tenantId, ticketId: ticket.id },
+        select: { id: true, event: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      db.ticketAttachment.findMany({
+        where: { tenantId: current.tenantId, ticketId: ticket.id },
+        select: {
+          id: true,
+          originalNameSanitized: true,
+          objectKey: true,
+          status: true,
+          deletedAt: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
+    return { ticket, comments, history, attachments };
+  }
+
+  private ticketDeletionImpact(
+    state: Awaited<ReturnType<TicketsService["ticketDeletionState"]>>,
+  ): DeletionImpactPreview {
+    const snapshotToken = deletionSnapshot({
+      ticket: {
+        id: state.ticket.id,
+        updatedAt: state.ticket.updatedAt,
+        status: state.ticket.status,
+      },
+      comments: state.comments.map((item) => [item.id, item.updatedAt, item.archivedAt]),
+      history: state.history.map((item) => [item.id, item.createdAt]),
+      attachments: state.attachments.map((item) => [
+        item.id,
+        item.status,
+        item.deletedAt,
+        item.createdAt,
+        item.objectKey,
+      ]),
+    });
+    return {
+      snapshotToken,
+      title: "Excluir chamado",
+      prompt:
+        "Esta exclusão é permanente. O chamado e todos os registros dependentes abaixo serão removidos.",
+      record: {
+        name: state.ticket.title,
+        identifiers: [
+          { label: "Protocolo", value: state.ticket.protocol },
+          { label: "Status", value: state.ticket.status },
+        ],
+      },
+      dependencies: [
+        {
+          id: "comments",
+          label: "Comentários",
+          count: state.comments.length,
+          operation: "delete" as const,
+          operationLabel: "Serão excluídos permanentemente.",
+          items: state.comments.slice(0, 5).map((item) => ({
+            id: item.id,
+            label: item.bodyText.slice(0, 90) || "Comentário sem texto",
+          })),
+          hasMore: state.comments.length > 5,
+        },
+        {
+          id: "history",
+          label: "Eventos do histórico",
+          count: state.history.length,
+          operation: "delete" as const,
+          operationLabel: "Serão excluídos; a auditoria da exclusão será preservada separadamente.",
+          items: state.history.slice(0, 5).map((item) => ({ id: item.id, label: item.event })),
+          hasMore: state.history.length > 5,
+        },
+        {
+          id: "attachments",
+          label: "Anexos",
+          count: state.attachments.length,
+          operation: "delete" as const,
+          operationLabel: "Os registros serão excluídos e os arquivos removidos após o commit.",
+          items: state.attachments.slice(0, 5).map((item) => ({
+            id: item.id,
+            label: item.originalNameSanitized,
+          })),
+          hasMore: state.attachments.length > 5,
+        },
+      ],
+      consequences: [
+        {
+          id: "ticket",
+          text: "Não será possível recuperar o chamado pela aplicação.",
+          irreversible: true,
+        },
+        {
+          id: "storage",
+          text: "Falhas temporárias ao remover arquivos serão retomadas de forma idempotente.",
+          irreversible: true,
+        },
+      ],
+      confirmation: {
+        level: "high" as const,
+        confirmLabel: "Excluir chamado",
+        phrase: state.ticket.protocol,
+        inputLabel: "Protocolo do chamado",
+        instruction: `Digite ${state.ticket.protocol} para confirmar a exclusão permanente.`,
+      },
+    };
   }
 
   async comments(id: string, current: AuthenticatedUser) {

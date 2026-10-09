@@ -4,8 +4,9 @@ import type { Prisma } from "../generated/prisma";
 
 export function roleConnectionIds(role: { key: string; metadata?: unknown }): string[] | null {
   if (role.key === "tenant_admin") return null;
+  const rawScopes = (role.metadata as { chatScopes?: unknown } | null)?.chatScopes;
   const scopes = roleChatScopes(role);
-  if (scopes.length) return scopes.map((scope) => scope.connectionId);
+  if (Array.isArray(rawScopes)) return scopes.map((scope) => scope.connectionId);
   const ids = (role.metadata as { connectionIds?: unknown } | null)?.connectionIds;
   return Array.isArray(ids)
     ? [...new Set(ids.filter((id): id is string => typeof id === "string"))]
@@ -14,8 +15,11 @@ export function roleConnectionIds(role: { key: string; metadata?: unknown }): st
 
 export function roleChatDepartmentIds(role: { key: string; metadata?: unknown }): string[] | null {
   if (role.key === "tenant_admin") return null;
+  const rawScopes = (role.metadata as { chatScopes?: unknown } | null)?.chatScopes;
   const scopes = roleChatScopes(role);
-  if (scopes.length) return [...new Set(scopes.flatMap((scope) => scope.departmentIds))];
+  if (Array.isArray(rawScopes)) {
+    return [...new Set(scopes.flatMap((scope) => scope.departmentIds))];
+  }
   const ids = (role.metadata as { departmentIds?: unknown } | null)?.departmentIds;
   return Array.isArray(ids)
     ? [...new Set(ids.filter((id): id is string => typeof id === "string"))]

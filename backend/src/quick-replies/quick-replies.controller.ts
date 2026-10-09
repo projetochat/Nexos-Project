@@ -20,6 +20,11 @@ import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  ConfirmDeletionDto,
+  type DeletionImpactPreview,
+  deletionSnapshot,
+} from "../common/deletion-impact";
 import { CreateQuickReplyDto } from "./dto/create-quick-reply.dto";
 import { ListQuickRepliesQueryDto } from "./dto/list-quick-replies-query.dto";
 import { UpdateQuickReplyDto } from "./dto/update-quick-reply.dto";
@@ -73,6 +78,7 @@ export class QuickRepliesController {
       attachmentSize: dto.attachmentSize ?? null,
       attachmentDataUrl: dto.attachmentDataUrl ?? null,
       closeOnSend: dto.closeOnSend ?? false,
+      active: dto.active ?? true,
       departmentId,
     };
     try {
@@ -135,6 +141,7 @@ export class QuickRepliesController {
           attachmentSize: dto.attachmentSize,
           attachmentDataUrl: dto.attachmentDataUrl,
           closeOnSend: dto.closeOnSend,
+          active: dto.active,
           departmentId,
         },
         include: quickReplyInclude,
@@ -147,14 +154,75 @@ export class QuickRepliesController {
 
   @Delete(":id")
   @RequirePermissions("chat.quick_replies.delete")
-  async archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    const existing = await this.findOrThrow(id, current.tenantId);
-    const reply = await this.prisma.quickReply.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
-      data: { archivedAt: new Date() },
-      include: quickReplyInclude,
+  async archive(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "quick_replies" WHERE id = ${id} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
+      );
+      const impact = await this.buildDeletionPreview(id, current.tenantId, tx);
+      if (impact.snapshotToken !== dto.snapshotToken) {
+        return {
+          status: "changed" as const,
+          impact,
+          message: "A mensagem rápida mudou. Revise os dados antes de excluir.",
+        };
+      }
+      await tx.quickReply.delete({
+        where: { tenantId_id: { tenantId: current.tenantId, id } },
+      });
+      return { status: "deleted" as const };
     });
-    return serializeQuickReply(reply);
+  }
+
+  @Get(":id/deletion-preview")
+  @RequirePermissions("chat.quick_replies.delete")
+  deletionPreview(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.buildDeletionPreview(id, current.tenantId);
+  }
+
+  private async buildDeletionPreview(
+    id: string,
+    tenantId: string,
+    db: Pick<Prisma.TransactionClient, "quickReply"> = this.prisma,
+  ): Promise<DeletionImpactPreview> {
+    const reply = await db.quickReply.findFirst({
+      where: { id, tenantId, archivedAt: null },
+      select: {
+        id: true,
+        title: true,
+        shortcut: true,
+        updatedAt: true,
+        attachmentFileName: true,
+      },
+    });
+    if (!reply) throw new NotFoundException("Mensagem rápida não encontrada.");
+    return {
+      snapshotToken: deletionSnapshot(reply),
+      title: "Excluir Mensagem Rápida?",
+      prompt: "Esta mensagem rápida não possui vínculos estruturais com outros registros.",
+      record: {
+        name: reply.title,
+        identifiers: [
+          { label: "Atalho", value: `/${reply.shortcut.replace(/^\//, "")}` },
+          ...(reply.attachmentFileName
+            ? [{ label: "Anexo", value: reply.attachmentFileName }]
+            : []),
+        ],
+      },
+      dependencies: [],
+      consequences: [
+        {
+          id: "shortcut",
+          text: "O conteúdo e o anexo serão excluídos; o atalho ficará disponível para reutilização.",
+          irreversible: true,
+        },
+      ],
+      confirmation: { level: "standard", confirmLabel: "Excluir mensagem" },
+    };
   }
 
   private async visibleWhere(
@@ -165,7 +233,12 @@ export class QuickRepliesController {
     const q = query.q?.trim();
     const where: Prisma.QuickReplyWhereInput = {
       tenantId: current.tenantId,
-      ...(status === "active" ? { archivedAt: null } : {}),
+      ...(status === "active"
+        ? {
+            archivedAt: null,
+            ...(query.scope === "catalog" ? {} : { active: true }),
+          }
+        : {}),
       ...(status === "archived" ? { archivedAt: { not: null } } : {}),
       ...(q
         ? {
@@ -251,6 +324,7 @@ function serializeQuickReply(reply: QuickReplyWithRelations) {
     updatedAt: reply.updatedAt,
     close_on_send: reply.closeOnSend,
     closeOnSend: reply.closeOnSend,
+    active: reply.active,
   };
 }
 

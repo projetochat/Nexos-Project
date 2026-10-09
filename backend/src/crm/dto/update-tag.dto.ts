@@ -1,4 +1,4 @@
-import { IsOptional, IsString, Length, Matches, MaxLength } from "class-validator";
+import { IsBoolean, IsOptional, IsString, Length, Matches, MaxLength } from "class-validator";
 
 export class UpdateTagDto {
   @IsOptional()
@@ -16,4 +16,8 @@ export class UpdateTagDto {
   @MaxLength(20)
   @Matches(/^#[0-9a-fA-F]{6}$/)
   color?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }

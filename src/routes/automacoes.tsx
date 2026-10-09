@@ -24,6 +24,7 @@ import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
 import { ComingSoonPage } from "@/components/coming-soon-page";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 
 export const Route = createFileRoute("/automacoes")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
@@ -64,6 +65,7 @@ function AutomationsPage() {
   const canUpdate = permissions.includes("automations.update");
   const canDelete = permissions.includes("automations.delete");
   const [creating, setCreating] = React.useState(false);
+  const [deleting, setDeleting] = React.useState<ApiAutomationRule | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: automationQueryKey,
     queryFn: () => automationApi.list({ pageSize: 100 }),
@@ -121,11 +123,7 @@ function AutomationsPage() {
                   toast.success("Automação atualizada");
                   refresh();
                 }}
-                onArchive={async () => {
-                  await automationApi.archive(rule.id);
-                  toast.success("Automação arquivada");
-                  refresh();
-                }}
+                onDelete={() => setDeleting(rule)}
               />
             ))}
             {isLoading && (
@@ -138,6 +136,27 @@ function AutomationsPage() {
             )}
           </div>
         </Card>
+        <DeletionConfirmDialog
+          open={!!deleting}
+          resourceKey={`automation:${deleting?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          loadImpact={(signal) => {
+            if (!deleting) return Promise.reject(new Error("Automação não selecionada."));
+            return automationApi.deletionPreview(deleting.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!deleting) return Promise.reject(new Error("Automação não selecionada."));
+            return automationApi.remove(deleting.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
+            toast.success("Automação excluída permanentemente.");
+            setDeleting(null);
+            refresh();
+          }}
+          formatError={(error) => (error instanceof Error ? error.message : "Falha ao excluir.")}
+        />
       </PageContainer>
     </AppShell>
   );
@@ -148,13 +167,13 @@ function AutomationRow({
   canUpdate,
   canDelete,
   onToggle,
-  onArchive,
+  onDelete,
 }: {
   rule: ApiAutomationRule;
   canUpdate: boolean;
   canDelete: boolean;
   onToggle: () => void;
-  onArchive: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div className="flex items-center gap-4 p-4">
@@ -189,8 +208,8 @@ function AutomationRow({
             variant="ghost"
             size="sm"
             className="trash-action"
-            onClick={onArchive}
-            aria-label="Arquivar automação"
+            onClick={onDelete}
+            aria-label="Excluir automação"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>

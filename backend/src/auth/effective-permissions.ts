@@ -7,10 +7,12 @@ import { coerceFeatures, mergeFeatureOverrides } from "../platform/plan-entitlem
 
 type RoleWithPermissions = {
   key: string;
+  active?: boolean;
   permissions: Array<{ permissionId: string }>;
 };
 
 export function effectivePermissions(role: RoleWithPermissions): PermissionKey[] {
+  if (role.active === false) return [];
   if (role.key === "tenant_admin") return [...TENANT_ADMIN_PERMISSIONS];
   return [
     ...new Set(

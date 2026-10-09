@@ -34,6 +34,12 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import type { RealtimeServerEvent } from "../realtime/realtime-events";
+import {
+  changedDeletion,
+  deletionSnapshot,
+  type DeletionImpactPreview,
+  type DeletionResult,
+} from "../common/deletion-impact";
 import { positiveDelayMs, readCampaignRuntimeConfig } from "./campaign-config";
 import { CampaignDispatchQueue } from "./campaign-dispatch.queue";
 import {
@@ -59,6 +65,17 @@ const EXECUTION_LOCKED_STATUSES = [
   CampaignStatus.RUNNING,
   CampaignStatus.COMPLETED,
   CampaignStatus.CANCELLED,
+] as const;
+const DELETABLE_CAMPAIGN_STATUSES = [
+  CampaignStatus.DRAFT,
+  CampaignStatus.CANCELLED,
+  CampaignStatus.COMPLETED,
+  CampaignStatus.FAILED,
+] as const;
+const ACTIVE_CAMPAIGN_RECIPIENT_STATUSES = [
+  CampaignRecipientStatus.PENDING,
+  CampaignRecipientStatus.QUEUED,
+  CampaignRecipientStatus.PROCESSING,
 ] as const;
 
 type DbClient = PrismaService | Prisma.TransactionClient;
@@ -198,28 +215,67 @@ export class CampaignsService {
     return this.serialize(updated);
   }
 
-  async archive(id: string, current: AuthenticatedUser) {
-    const campaign = await this.findCampaign(id, current.tenantId);
-    if (
-      !statusIn(campaign.status, [
-        CampaignStatus.DRAFT,
-        CampaignStatus.CANCELLED,
-        CampaignStatus.COMPLETED,
-        CampaignStatus.FAILED,
-      ])
-    ) {
-      throw canonicalConflict(
-        "CAMPAIGN_ARCHIVE_INVALID",
-        "Campanha em execução não pode ser arquivada.",
-      );
-    }
-    return this.serialize(
-      await this.prisma.campaign.update({
-        where: { id: campaign.id },
-        data: { archivedAt: new Date() },
-        include: { connection: true },
-      }),
-    );
+  async deletionImpact(id: string, current: AuthenticatedUser): Promise<DeletionImpactPreview> {
+    return (await this.campaignDeletionState(id, current.tenantId, this.prisma)).impact;
+  }
+
+  async remove(
+    id: string,
+    snapshotToken: string,
+    current: AuthenticatedUser,
+  ): Promise<DeletionResult> {
+    const preview = await this.deletionImpact(id, current);
+    if (snapshotToken !== preview.snapshotToken) return changedDeletion(preview);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const state = await this.campaignDeletionState(id, current.tenantId, tx);
+      if (snapshotToken !== state.impact.snapshotToken) return changedDeletion(state.impact);
+      if (state.activeRecipientCount > 0) {
+        throw canonicalConflict(
+          "CAMPAIGN_DELETE_RECIPIENTS_ACTIVE",
+          "A campanha possui destinatários em processamento e não pode ser excluída.",
+        );
+      }
+
+      await tx.message.updateMany({
+        where: { tenantId: current.tenantId, campaignId: state.campaign.id },
+        data: { campaignId: null, campaignRecipientId: null },
+      });
+      await tx.outboxEvent.deleteMany({
+        where: {
+          tenantId: current.tenantId,
+          aggregateId: state.campaign.id,
+          type: {
+            in: [
+              OUTBOX_CAMPAIGN_DISPATCH_REQUESTED,
+              OUTBOX_CAMPAIGN_CANCEL_REQUESTED,
+              OUTBOX_CAMPAIGN_RESUME_REQUESTED,
+            ],
+          },
+        },
+      });
+      await tx.campaignRecipient.deleteMany({
+        where: { tenantId: current.tenantId, campaignId: state.campaign.id },
+      });
+      const deleted = await tx.campaign.deleteMany({
+        where: {
+          id: state.campaign.id,
+          tenantId: current.tenantId,
+          archivedAt: null,
+          version: state.campaign.version,
+          status: state.campaign.status,
+          updatedAt: state.campaign.updatedAt,
+        },
+      });
+      if (deleted.count !== 1) {
+        throw canonicalConflict(
+          "CAMPAIGN_DELETE_CHANGED",
+          "A campanha foi alterada durante a exclusão. Atualize os dados e tente novamente.",
+        );
+      }
+      return { status: "deleted" } as const;
+    });
+    return result;
   }
 
   async preview(dto: AudiencePreviewDto, current: AuthenticatedUser) {
@@ -1382,6 +1438,135 @@ export class CampaignsService {
       customerIds: campaign.audienceCustomerIds,
       contactIds: campaign.audienceContactIds,
     };
+  }
+
+  private async campaignDeletionState(id: string, tenantId: string, db: DbClient) {
+    const campaign = await db.campaign.findFirst({
+      where: { id, tenantId, archivedAt: null },
+      include: { connection: true },
+    });
+    if (!campaign) throw new NotFoundException("Campanha não encontrada.");
+    if (!DELETABLE_CAMPAIGN_STATUSES.includes(campaign.status as never)) {
+      throw canonicalConflict(
+        "CAMPAIGN_ARCHIVE_INVALID",
+        "Campanha em execução não pode ser excluída.",
+      );
+    }
+
+    const [recipientCount, activeRecipientCount, recipientSample, messageCount, outboxCount] =
+      await Promise.all([
+        db.campaignRecipient.count({ where: { tenantId, campaignId: campaign.id } }),
+        db.campaignRecipient.count({
+          where: {
+            tenantId,
+            campaignId: campaign.id,
+            status: { in: [...ACTIVE_CAMPAIGN_RECIPIENT_STATUSES] },
+          },
+        }),
+        db.campaignRecipient.findMany({
+          where: { tenantId, campaignId: campaign.id },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          take: 5,
+          select: { id: true, displayName: true, normalizedPhone: true, status: true },
+        }),
+        db.message.count({ where: { tenantId, campaignId: campaign.id } }),
+        db.outboxEvent.count({
+          where: {
+            tenantId,
+            aggregateId: campaign.id,
+            type: {
+              in: [
+                OUTBOX_CAMPAIGN_DISPATCH_REQUESTED,
+                OUTBOX_CAMPAIGN_CANCEL_REQUESTED,
+                OUTBOX_CAMPAIGN_RESUME_REQUESTED,
+              ],
+            },
+          },
+        }),
+      ]);
+    if (activeRecipientCount > 0) {
+      throw canonicalConflict(
+        "CAMPAIGN_DELETE_RECIPIENTS_ACTIVE",
+        "A campanha possui destinatários em processamento e não pode ser excluída.",
+      );
+    }
+
+    const impact: DeletionImpactPreview = {
+      snapshotToken: deletionSnapshot({
+        id: campaign.id,
+        version: campaign.version,
+        status: campaign.status,
+        updatedAt: campaign.updatedAt,
+        recipientCount,
+        activeRecipientCount,
+        messageCount,
+        outboxCount,
+      }),
+      title: "Excluir campanha?",
+      prompt:
+        "A campanha será excluída definitivamente. As mensagens já existentes continuarão no histórico das conversas.",
+      record: {
+        name: campaign.name,
+        identifiers: [
+          { label: "ID", value: campaign.id },
+          { label: "Estado", value: campaign.status },
+          { label: "Instância", value: campaign.connection.name },
+        ],
+      },
+      dependencies: [
+        {
+          id: "recipients",
+          label: "Destinatários da campanha",
+          count: recipientCount,
+          operation: "delete",
+          operationLabel: "Serão excluídos com a campanha",
+          items: recipientSample.map((recipient) => ({
+            id: recipient.id,
+            label: recipient.displayName || recipient.normalizedPhone,
+            description: recipient.status,
+          })),
+          hasMore: recipientCount > recipientSample.length,
+        },
+        {
+          id: "messages",
+          label: "Mensagens existentes no histórico",
+          count: messageCount,
+          operation: "unlink",
+          operationLabel: "Serão preservadas sem o vínculo da campanha",
+        },
+        ...(outboxCount
+          ? [
+              {
+                id: "outbox",
+                label: "Solicitações técnicas pendentes",
+                count: outboxCount,
+                operation: "delete" as const,
+                operationLabel: "Serão removidas com segurança",
+              },
+            ]
+          : []),
+      ],
+      consequences: [
+        {
+          id: "campaign",
+          text: "A campanha, seus destinatários e suas estatísticas serão excluídos definitivamente.",
+          irreversible: true,
+        },
+        {
+          id: "history",
+          text: "As mensagens já enviadas permanecerão disponíveis no histórico das conversas.",
+          irreversible: false,
+        },
+      ],
+      confirmation: {
+        level: "high",
+        confirmLabel: "Excluir campanha",
+        phrase: "EXCLUIR CAMPANHA",
+        inputLabel: "Confirmação",
+        instruction: 'Digite exatamente "EXCLUIR CAMPANHA" para confirmar.',
+      },
+    };
+    return { campaign, activeRecipientCount, impact };
   }
 
   private async findCampaign(id: string, tenantId: string) {

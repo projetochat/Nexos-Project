@@ -255,8 +255,8 @@ export class OnboardingService {
       activeDepartment: activeDepartment > 0,
       administratorProfile: administratorProfile > 0,
       activeAdministrator: activeAdministrator > 0,
-      quickRepliesReviewed: row.maxCompletedStep >= 6,
-      tagsReviewed: row.maxCompletedStep >= 7,
+      tagsReviewed: row.maxCompletedStep >= 6,
+      quickRepliesReviewed: row.maxCompletedStep >= 7,
     };
   }
 

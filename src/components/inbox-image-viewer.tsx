@@ -31,6 +31,7 @@ export function InboxImageViewer({
   onReply,
   onDownload,
   onCopy = copyMessageToClipboard,
+  onOpenActions,
   readOnly = false,
 }: {
   src: string;
@@ -41,9 +42,9 @@ export function InboxImageViewer({
   onReply?: (message: ApiMessage) => void;
   onDownload: (message: ApiMessage) => Promise<void>;
   onCopy?: typeof copyMessageToClipboard;
+  onOpenActions?: (position: { x: number; y: number }) => void;
 }) {
   const [view, setView] = React.useState(initialView);
-  const [dragging, setDragging] = React.useState(false);
   const drag = React.useRef<{
     id: number;
     x: number;
@@ -103,7 +104,6 @@ export function InboxImageViewer({
   React.useEffect(() => {
     setView(initialView);
     drag.current = null;
-    setDragging(false);
   }, [activeMessage.id]);
 
   React.useEffect(() => {
@@ -426,7 +426,13 @@ export function InboxImageViewer({
             <div
               ref={setStage}
               data-testid="image-stage"
-              className={`relative min-h-0 flex-1 touch-none overflow-hidden ${view.zoom > 1 ? (dragging ? "cursor-grabbing" : "cursor-grab") : gallery.length > 1 ? "cursor-ew-resize" : "cursor-default"}`}
+              className="relative min-h-0 flex-1 cursor-default touch-none overflow-hidden"
+              onContextMenu={(event) => {
+                if (!onOpenActions) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenActions({ x: event.clientX, y: event.clientY });
+              }}
               onDoubleClick={() => setView(initialView)}
               onPointerDown={(event) => {
                 if (event.button !== 0 || drag.current) return;
@@ -453,7 +459,6 @@ export function InboxImageViewer({
                   startY: event.clientY,
                   pan: view.zoom > 1,
                 };
-                setDragging(true);
               }}
               onPointerMove={(event) => {
                 const previous = drag.current;
@@ -477,17 +482,14 @@ export function InboxImageViewer({
                   }
                 }
                 drag.current = null;
-                setDragging(false);
                 if (event.currentTarget.hasPointerCapture(event.pointerId))
                   event.currentTarget.releasePointerCapture(event.pointerId);
               }}
               onPointerCancel={() => {
                 drag.current = null;
-                setDragging(false);
               }}
               onLostPointerCapture={() => {
                 drag.current = null;
-                setDragging(false);
               }}
             >
               {gallery.length > 1 && (

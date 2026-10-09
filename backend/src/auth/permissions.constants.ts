@@ -77,9 +77,46 @@ export type PermissionKey = (typeof PERMISSIONS)[number];
 
 export const TENANT_ADMIN_PERMISSIONS: PermissionKey[] = [...PERMISSIONS];
 
-export const SUPERVISOR_PERMISSIONS: PermissionKey[] = [...PERMISSIONS].filter(
-  (permission) => !["roles.delete", "settings.manage"].includes(permission),
-);
+export const SUPERVISOR_PERMISSIONS: PermissionKey[] = [
+  "dashboard.read",
+  "dashboard.create",
+  "dashboard.update",
+  "dashboard.delete",
+  "conversations.read",
+  "messages.send",
+  "chat.messages.edit",
+  "chat.messages.delete",
+  "chat.agent_name.show",
+  "history.read",
+  "conversations.assign",
+  "chat.phone.read",
+  "chat.conversations.view_all_active",
+  "contacts.read",
+  "contacts.create",
+  "contacts.update",
+  "contacts.delete",
+  "contacts.additional_fields.read",
+  "groups.read",
+  "groups.create",
+  "groups.update",
+  "groups.leave",
+  "users.read",
+  "users.create",
+  "users.update",
+  "users.delete",
+  "departments.read",
+  "departments.create",
+  "departments.update",
+  "departments.delete",
+  "chat.tags.read",
+  "chat.tags.create",
+  "chat.tags.update",
+  "chat.tags.delete",
+  "chat.quick_replies.read",
+  "chat.quick_replies.create",
+  "chat.quick_replies.update",
+  "chat.quick_replies.delete",
+];
 
 /**
  * Perfil inicial solicitado para novas tenants: leitura do Dashboard e acesso
@@ -88,6 +125,7 @@ export const SUPERVISOR_PERMISSIONS: PermissionKey[] = [...PERMISSIONS].filter(
 export const AGENT_PERMISSIONS: PermissionKey[] = [
   "dashboard.read",
   "contacts.read",
+  "contacts.create",
   "contacts.update",
   "conversations.read",
   "messages.send",
@@ -96,9 +134,10 @@ export const AGENT_PERMISSIONS: PermissionKey[] = [
   "chat.agent_name.show",
   "conversations.assign",
   "chat.phone.read",
-  "chat.conversations.view_all_active",
-  "chat.bulk_actions.execute",
   "history.read",
+  "groups.read",
+  "chat.tags.read",
+  "chat.quick_replies.read",
 ];
 
 export function isPermissionKey(value: string): value is PermissionKey {

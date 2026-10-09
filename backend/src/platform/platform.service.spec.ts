@@ -182,7 +182,7 @@ describe("PlatformService health", () => {
     });
   });
 
-  it("cancels a subscription by terminating and preserving its tenant", async () => {
+  it("cancels a subscription by deleting its tenant and preserving the platform record", async () => {
     const existing = {
       id: "subscription-1",
       tenantId: "tenant-1",
@@ -190,10 +190,15 @@ describe("PlatformService health", () => {
       status: "ACTIVE",
       tenant: { id: "tenant-1" },
     };
-    const updated = { ...existing, status: "CANCELLED" };
+    const updated = { ...existing, tenantId: null, status: "CANCELLED" };
     const tx = {
-      tenantSubscription: { update: vi.fn().mockResolvedValue(updated) },
-      tenant: { update: vi.fn().mockResolvedValue({ id: "tenant-1", status: "TERMINATED" }) },
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      tenantSubscription: {
+        findUnique: vi.fn().mockResolvedValue(existing),
+        findFirst: vi.fn().mockResolvedValue(null),
+        update: vi.fn().mockResolvedValue(updated),
+      },
+      tenant: { delete: vi.fn().mockResolvedValue({ id: "tenant-1" }) },
       subscriptionHistory: { create: vi.fn().mockResolvedValue({}) },
     };
     const prisma = {
@@ -207,13 +212,11 @@ describe("PlatformService health", () => {
       service.cancelSubscription("subscription-1", { reason: "Contrato encerrado" }, actor()),
     ).resolves.toEqual(updated);
 
-    expect(tx.tenant.update).toHaveBeenCalledWith({
-      where: { id: "tenant-1" },
-      data: expect.objectContaining({
-        status: "TERMINATED",
-        suspensionReason: "Contrato encerrado",
-      }),
+    expect(tx.tenantSubscription.update).toHaveBeenCalledWith({
+      where: { id: "subscription-1" },
+      data: expect.objectContaining({ tenantId: null, status: "CANCELLED" }),
     });
+    expect(tx.tenant.delete).toHaveBeenCalledWith({ where: { id: "tenant-1" } });
     expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         tenantId: "tenant-1",
@@ -222,8 +225,12 @@ describe("PlatformService health", () => {
       }),
     });
     expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: "tenant-1", action: "subscription.cancelled" }),
+      expect.objectContaining({
+        action: "subscription.cancelled",
+        metadata: { deletedTenantId: "tenant-1" },
+      }),
     );
+    expect(audit.record.mock.calls[0]?.[0]).not.toHaveProperty("tenantId");
   });
 
   it("reactivates a suspended subscription using the existing tenant", async () => {
@@ -268,13 +275,16 @@ describe("PlatformService health", () => {
     );
   });
 
-  it("creates the tenant administrator with a temporary password without sending e-mail", async () => {
+  it("reactivates a cancelled subscription by provisioning a new tenant from zero", async () => {
     const existing = {
       id: "subscription-1",
       tenantId: null,
       clientId: "client-1",
       planId: "plan-1",
-      status: "FINANCE_RELEASED",
+      status: "CANCELLED",
+      cancelledAt: new Date("2026-10-08T12:00:00.000Z"),
+      cancelAtPeriodEnd: false,
+      suspensionReason: null,
       limitsSnapshot: { maxUsers: 3, maxConnections: 1 },
       client: {
         id: "client-1",
@@ -285,7 +295,7 @@ describe("PlatformService health", () => {
         status: "ACTIVE",
       },
       plan: { id: "plan-1" },
-      invoices: [{ id: "invoice-1", released: true }],
+      invoices: [],
     };
     const createdTenant = { id: "tenant-1", name: "Empresa Teste", slug: "empresa-teste" };
     const tx = {
@@ -366,6 +376,29 @@ describe("PlatformService health", () => {
     expect(email.sendTenantAdministratorInvitation).not.toHaveBeenCalled();
     expect(tx.platformClient.findUnique).not.toHaveBeenCalled();
     expect(tx.platformClient.update).not.toHaveBeenCalled();
+    expect(tx.tenantSubscription.update).toHaveBeenCalledWith({
+      where: { id: "subscription-1" },
+      data: expect.objectContaining({
+        tenantId: "tenant-1",
+        status: "ACTIVE",
+        cancelledAt: null,
+        cancelAtPeriodEnd: false,
+      }),
+    });
+    expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        previousStatus: "CANCELLED",
+        nextStatus: "ACTIVE",
+        reason: "subscription.reactivated_from_cancellation",
+      }),
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "subscription.reactivated",
+        tenantId: "tenant-1",
+        metadata: expect.objectContaining({ recreatedFromCancellation: true }),
+      }),
+    );
   });
 
   it("creates a distinct tenant for another subscription and links the existing administrator", async () => {

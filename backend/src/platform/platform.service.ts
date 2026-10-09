@@ -1832,45 +1832,75 @@ export class PlatformService {
       throw new ConflictException("A assinatura não pode ser cancelada no estado atual.");
     }
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
+      const lockedSubscription = await tx.tenantSubscription.findUnique({ where: { id } });
+      if (!lockedSubscription) throw new NotFoundException("Assinatura não encontrada.");
+      if (lockedSubscription.status === "CANCELLED") {
+        throw new ConflictException("A assinatura já está cancelada.");
+      }
+      if (
+        ![
+          "AWAITING_FINANCE",
+          "FINANCE_RELEASED",
+          "ACTIVE",
+          "SUSPENDED",
+          "REGISTERING",
+          "TRIALING",
+        ].includes(lockedSubscription.status)
+      ) {
+        throw new ConflictException("A assinatura não pode ser cancelada no estado atual.");
+      }
       const cancelledAt = new Date();
       const reason = dto.reason?.trim() || "subscription.cancelled";
+      if (lockedSubscription.tenantId) {
+        const anotherActiveSubscription = await tx.tenantSubscription.findFirst({
+          where: {
+            tenantId: lockedSubscription.tenantId,
+            id: { not: id },
+            status: { not: "CANCELLED" },
+          },
+          select: { id: true },
+        });
+        if (anotherActiveSubscription) {
+          throw new ConflictException(
+            "A Tenant está vinculada a outra assinatura ativa e não pode ser excluída.",
+          );
+        }
+      }
       const subscription = await tx.tenantSubscription.update({
         where: { id },
-        data: { status: "CANCELLED", cancelledAt, cancelAtPeriodEnd: false },
+        data: {
+          tenantId: null,
+          status: "CANCELLED",
+          cancelledAt,
+          cancelAtPeriodEnd: false,
+        },
       });
-      if (existing.tenantId) {
-        await tx.tenant.update({
-          where: { id: existing.tenantId },
-          data: {
-            status: "TERMINATED",
-            terminatedAt: cancelledAt,
-            authRevokedAt: cancelledAt,
-            suspensionReason: reason,
-          },
-        });
-      }
       await tx.subscriptionHistory.create({
         data: {
           subscriptionId: id,
-          tenantId: existing.tenantId,
-          previousStatus: existing.status,
+          tenantId: lockedSubscription.tenantId,
+          previousStatus: lockedSubscription.status,
           nextStatus: "CANCELLED",
-          previousPlanId: existing.planId,
-          nextPlanId: existing.planId,
+          previousPlanId: lockedSubscription.planId,
+          nextPlanId: lockedSubscription.planId,
           reason,
           actorUserId: current.userId,
         },
       });
-      return subscription;
+      if (lockedSubscription.tenantId) {
+        await this.deleteTenantDatabase(tx, lockedSubscription.tenantId);
+      }
+      return { subscription, deletedTenantId: lockedSubscription.tenantId };
     });
     await this.audit.record({
       actor: current,
       action: "subscription.cancelled",
       targetType: "subscription",
       targetId: id,
-      tenantId: existing.tenantId ?? undefined,
+      metadata: updated.deletedTenantId ? { deletedTenantId: updated.deletedTenantId } : undefined,
     });
-    return updated;
+    return updated.subscription;
   }
 
   async generateSubscriptionFinance(id: string, current: AuthenticatedUser) {
@@ -1976,14 +2006,17 @@ export class PlatformService {
       });
       return this.subscriptionDetail(id);
     }
-    if (!existing.invoices.length) throw new ConflictException("Financeiro ainda não gerado.");
-    const invoice = existing.invoices[0];
-    if (existing.status !== "FINANCE_RELEASED" || !invoice.released) {
-      throw new ConflictException("A ativação exige uma fatura com financeiro liberado.");
+    const recreatingCancelledSubscription = existing.status === "CANCELLED";
+    if (!recreatingCancelledSubscription) {
+      if (!existing.invoices.length) throw new ConflictException("Financeiro ainda não gerado.");
+      const hasReleasedInvoice = existing.invoices.some((invoice) => invoice.released);
+      if (!hasReleasedInvoice || existing.status !== "FINANCE_RELEASED") {
+        throw new ConflictException("A ativação exige uma fatura com financeiro liberado.");
+      }
     }
     if (!existing.client)
       throw new BadRequestException("A assinatura não possui cliente vinculado.");
-    if (existing.tenantId)
+    if (existing.tenantId && !recreatingCancelledSubscription)
       throw new ConflictException("A assinatura já possui uma tenant vinculada.");
     const invitationEmailEnabled = this.tenantAdministratorInvitationEmailEnabled();
     if (invitationEmailEnabled) this.email?.assertInvitationDeliveryReady();
@@ -2009,11 +2042,15 @@ export class PlatformService {
           },
         });
         if (!lockedSubscription) throw new NotFoundException("Assinatura não encontrada.");
-        if (lockedSubscription.tenantId) {
+        const recreatingCancelled = lockedSubscription.status === "CANCELLED";
+        if (lockedSubscription.tenantId && !recreatingCancelled) {
           throw new ConflictException("A assinatura já possui uma tenant vinculada.");
         }
-        const lockedInvoice = lockedSubscription.invoices[0];
-        if (lockedSubscription.status !== "FINANCE_RELEASED" || !lockedInvoice?.released) {
+        if (
+          !recreatingCancelled &&
+          (!lockedSubscription.invoices.some((invoice) => invoice.released) ||
+            lockedSubscription.status !== "FINANCE_RELEASED")
+        ) {
           throw new ConflictException("A ativação exige uma fatura com financeiro liberado.");
         }
         const refreshedClient = lockedSubscription.client;
@@ -2024,6 +2061,26 @@ export class PlatformService {
           throw new ConflictException(
             "Não é possível ativar a assinatura de um cliente cancelado.",
           );
+        }
+        if (recreatingCancelled && lockedSubscription.tenantId) {
+          const anotherActiveSubscription = await tx.tenantSubscription.findFirst({
+            where: {
+              tenantId: lockedSubscription.tenantId,
+              id: { not: id },
+              status: { not: "CANCELLED" },
+            },
+            select: { id: true },
+          });
+          if (anotherActiveSubscription) {
+            throw new ConflictException(
+              "A Tenant está vinculada a outra assinatura ativa e não pode ser recriada.",
+            );
+          }
+          await tx.tenantSubscription.update({
+            where: { id },
+            data: { tenantId: null },
+          });
+          await this.deleteTenantDatabase(tx, lockedSubscription.tenantId);
         }
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${refreshedClient.id}))`;
         const limits = coerceLimits(lockedSubscription.limitsSnapshot);
@@ -2085,11 +2142,14 @@ export class PlatformService {
                 .filter((clientId): clientId is string => Boolean(clientId)),
             ),
           );
+          const reusableOrphanedAdministrator =
+            recreatingCancelled && existingAdministrator.memberships.length === 0;
           if (
             existingAdministrator.status !== "ACTIVE" ||
             existingAdministrator.platformRole !== "USER" ||
-            linkedClientIds.size === 0 ||
-            [...linkedClientIds].some((clientId) => clientId !== refreshedClient.id)
+            (!reusableOrphanedAdministrator &&
+              (linkedClientIds.size === 0 ||
+                [...linkedClientIds].some((clientId) => clientId !== refreshedClient.id)))
           ) {
             throw new ConflictException(
               "O e-mail do administrador pertence a outro acesso e não pode ser reutilizado.",
@@ -2148,7 +2208,17 @@ export class PlatformService {
         }
         await tx.tenantSubscription.update({
           where: { id },
-          data: { tenantId: created.id, status: "ACTIVE" },
+          data: {
+            tenantId: created.id,
+            status: "ACTIVE",
+            ...(recreatingCancelled
+              ? {
+                  cancelledAt: null,
+                  cancelAtPeriodEnd: false,
+                  suspensionReason: null,
+                }
+              : {}),
+          },
         });
         await tx.invoice.updateMany({
           where: { subscriptionId: id },
@@ -2162,7 +2232,9 @@ export class PlatformService {
             nextPlanId: lockedSubscription.planId,
             previousStatus: lockedSubscription.status,
             nextStatus: "ACTIVE",
-            reason: "subscription.activated",
+            reason: recreatingCancelled
+              ? "subscription.reactivated_from_cancellation"
+              : "subscription.activated",
             actorUserId: current.userId,
           },
         });
@@ -2187,13 +2259,16 @@ export class PlatformService {
     }
     await this.audit.record({
       actor: current,
-      action: "subscription.activated",
+      action: recreatingCancelledSubscription
+        ? "subscription.reactivated"
+        : "subscription.activated",
       targetType: "subscription",
       targetId: id,
       tenantId: tenant.id,
       metadata: {
         administratorProvisioning: tenant.administratorProvisioning,
         passwordChangeRequired: tenant.passwordChangeRequired,
+        ...(recreatingCancelledSubscription ? { recreatedFromCancellation: true } : {}),
       },
     });
     return this.subscriptionDetail(id);
@@ -2832,6 +2907,10 @@ export class PlatformService {
     const plan = await this.prisma.plan.findFirst({ where: { id, status: "ACTIVE" } });
     if (!plan) throw new BadRequestException({ code: "PLAN_NOT_ACTIVE" });
     return plan;
+  }
+
+  private async deleteTenantDatabase(tx: Prisma.TransactionClient, tenantId: string) {
+    await tx.tenant.delete({ where: { id: tenantId } });
   }
 
   private async assertDowngradeAllowed(tenantId: string | null, nextLimits: unknown) {

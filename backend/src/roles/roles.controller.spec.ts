@@ -87,7 +87,7 @@ describe("RolesController permission delegation", () => {
     ]);
   });
 
-  it("accepts stale legacy aliases and stores only their canonical replacements", async () => {
+  it("stores canonical permissions and refreshes affected users without revoking sessions", async () => {
     const role = {
       id: "role-a",
       tenantId: "tenant-a",
@@ -186,14 +186,7 @@ describe("RolesController permission delegation", () => {
       "tickets.create",
       "conversations.assign",
     ]);
-    expect(revokeSessions).toHaveBeenCalledWith({
-      where: {
-        tenantId: "tenant-a",
-        membershipId: { in: ["membership-a", "membership-b"] },
-        revokedAt: null,
-      },
-      data: { revokedAt: expect.any(Date) },
-    });
+    expect(revokeSessions).not.toHaveBeenCalled();
     expect(realtime.publish).toHaveBeenCalledWith(
       { membershipId: "membership-a" },
       "authorization.updated",
@@ -291,6 +284,12 @@ describe("RolesController permission delegation", () => {
               },
             ],
           },
+          {
+            id: "connection-without-departments",
+            name: "WhatsApp sem departamento",
+            status: "CONNECTED",
+            departments: [],
+          },
         ]),
       },
       department: {
@@ -354,6 +353,49 @@ describe("RolesController permission delegation", () => {
         current as never,
       ),
     ).rejects.toThrow("O departamento favorito precisa estar liberado.");
+  });
+
+  it("rejects an enabled instance without an allowed department", async () => {
+    const controller = new RolesController({} as never, {} as never);
+
+    await expect(
+      controller.create(
+        {
+          name: "Escopo vazio",
+          permissionIds: ["contacts.read"],
+          metadata: {
+            chatScopes: [
+              {
+                connectionId: "connection-outside-scope",
+                departmentIds: [],
+                favoriteDepartmentId: null,
+              },
+            ],
+          },
+        },
+        current as never,
+      ),
+    ).rejects.toThrow("deve possuir pelo menos um departamento liberado");
+  });
+
+  it("rejects a legacy enabled instance without departments", async () => {
+    const prisma = {
+      messagingConnection: { count: vi.fn().mockResolvedValue(1) },
+      departmentConnection: { count: vi.fn() },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await expect(
+      controller.create(
+        {
+          name: "Escopo legado vazio",
+          permissionIds: ["contacts.read"],
+          metadata: { connectionIds: ["connection-a"], departmentIds: [] },
+        },
+        current as never,
+      ),
+    ).rejects.toThrow("deve possuir pelo menos um departamento liberado");
+    expect(prisma.departmentConnection.count).not.toHaveBeenCalled();
   });
 
   it("rejects a department that is not linked to the selected instance", async () => {

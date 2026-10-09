@@ -1,7 +1,16 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Copy, Check } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Copy,
+  Check,
+  AlertTriangle,
+  ChevronDown,
+  X,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -13,8 +22,10 @@ import {
   Textarea,
   SearchInput,
   InstanceFilterSelect,
+  Select,
 } from "@/components/ui-kit";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import {
@@ -26,6 +37,7 @@ import {
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
 import { DepartmentIcon, DepartmentIconSelect } from "@/components/department-icon";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
 
@@ -35,7 +47,12 @@ export type DepartamentoFormData = {
   color?: string;
   icon?: DepartmentIconName;
   connectionIds: string[];
+  active?: boolean;
 };
+
+type DepartmentDeactivationPreview = Awaited<
+  ReturnType<typeof organizationApi.departmentDeactivationPreview>
+>;
 
 function normalizeDepartmentName(value: string) {
   return value
@@ -76,6 +93,11 @@ function Page() {
   const [editing, setEditing] = React.useState<ApiDepartment | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = React.useState<ApiDepartment | null>(null);
+  const [pendingDeactivation, setPendingDeactivation] = React.useState<{
+    department: ApiDepartment;
+    preview: DepartmentDeactivationPreview;
+  } | null>(null);
+  const [migrationTargets, setMigrationTargets] = React.useState<Record<string, string>>({});
   const [query, setQuery] = React.useState("");
   const [instanceFilter, setInstanceFilter] = React.useState("");
   const novo = useDisclosure();
@@ -87,7 +109,10 @@ function Page() {
   } = useQuery({
     queryKey: ["trixus", "departments", instanceFilter],
     queryFn: () =>
-      organizationApi.listDepartmentsByConnection({ connectionId: instanceFilter || undefined }),
+      organizationApi.listDepartmentsByConnection({
+        connectionId: instanceFilter || undefined,
+        status: "all",
+      }),
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
   });
@@ -121,6 +146,7 @@ function Page() {
         return [savedDepartment, ...current];
       });
       qc.invalidateQueries({ queryKey: ["trixus", "departments"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
       toast.success(vars.id ? "Departamento atualizado" : "Departamento criado");
       novo.hide();
       setEditing(null);
@@ -129,18 +155,46 @@ function Page() {
     onError: (error) => toast.error((error as Error).message),
   });
 
-  const remove = useMutation({
-    mutationFn: (id: string) => organizationApi.deleteDepartment(id),
-    onSuccess: (_department, deletedId) => {
-      qc.setQueryData<ApiDepartment[]>(["trixus", "departments"], (current = []) =>
-        current.filter((department) => department.id !== deletedId),
-      );
+  const deactivate = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      targets: Array<{ connectionId: string | null; departmentId: string }>;
+    }) => organizationApi.deactivateDepartment(payload.id, payload.targets),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["trixus", "departments"] });
-      toast.success("Departamento excluído");
-      setDeleting(null);
+      qc.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
+      toast.success("Departamento inativado");
+      setPendingDeactivation(null);
+      setMigrationTargets({});
+      setEditing(null);
     },
     onError: (error) => toast.error((error as Error).message),
   });
+
+  const submitDepartment = async (data: DepartamentoFormData) => {
+    if (!editing || !editing.active || data.active !== false) {
+      save.mutate({ id: editing?.id, data });
+      return;
+    }
+    try {
+      const changes = { ...data };
+      delete changes.active;
+      await organizationApi.updateDepartment(editing.id, changes);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["trixus", "departments"] }),
+        qc.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] }),
+      ]);
+      const preview = await organizationApi.departmentDeactivationPreview(editing.id);
+      if (preview.openConversationCount === 0) {
+        deactivate.mutate({ id: editing.id, targets: [] });
+        return;
+      }
+      setMigrationTargets({});
+      setPendingDeactivation({ department: editing, preview });
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
 
   const filtered = sortByOptionLabel(departamentos, (department) => department.name).filter((d) => {
     if (
@@ -197,7 +251,7 @@ function Page() {
             {filtered.map((d) => (
               <Card
                 key={d.id}
-                className="min-h-[86px] p-4 transition hover:border-primary/35 hover:bg-surface-1"
+                className={`min-h-[86px] p-4 transition hover:border-primary/35 hover:bg-surface-1 ${d.active ? "" : "opacity-60"}`}
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3">
@@ -207,7 +261,10 @@ function Page() {
                     >
                       <DepartmentIcon icon={d.icon} />
                     </div>
-                    <p className="min-w-0 truncate font-semibold">{d.name}</p>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{d.name}</p>
+                      {!d.active && <p className="text-xs text-muted-foreground">Inativo</p>}
+                    </div>
                   </div>
                   <div className="flex shrink-0 gap-1">
                     {canCreate && (
@@ -236,7 +293,6 @@ function Page() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="trash-action"
                         title="Excluir departamento"
                         aria-label={`Excluir departamento ${d.name}`}
                         onClick={() => setDeleting(d)}
@@ -283,22 +339,56 @@ function Page() {
             departments={departamentos}
             connections={connectionOptions}
             onClose={() => setEditing(null)}
-            onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
+            onSubmit={(data) => void submitDepartment(data)}
           />
         )}
-        <ConfirmDialog
-          open={!!deleting}
-          title="Excluir Departamento?"
-          destructive
-          description={
-            <p>
-              Deseja realmente excluir o departamento{" "}
-              <strong className="font-semibold text-foreground">"{deleting?.name ?? ""}"</strong>?
-            </p>
+        <DepartmentDeactivationModal
+          value={pendingDeactivation}
+          connectionOptions={connectionOptions}
+          targets={migrationTargets}
+          busy={deactivate.isPending}
+          onTargetChange={(connectionId, departmentId) =>
+            setMigrationTargets((current) => ({ ...current, [connectionId ?? ""]: departmentId }))
           }
-          confirmLabel="Excluir"
-          onClose={() => setDeleting(null)}
-          onConfirm={() => deleting && remove.mutate(deleting.id)}
+          onClose={() => {
+            setPendingDeactivation(null);
+            setMigrationTargets({});
+          }}
+          onConfirm={() => {
+            if (!pendingDeactivation) return;
+            deactivate.mutate({
+              id: pendingDeactivation.department.id,
+              targets: pendingDeactivation.preview.groups.map((group) => ({
+                connectionId: group.connectionId,
+                departmentId: migrationTargets[group.connectionId ?? ""],
+              })),
+            });
+          }}
+        />
+        <DeletionConfirmDialog
+          open={!!deleting}
+          resourceKey={`department:${deleting?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          loadImpact={(signal) => {
+            if (!deleting) return Promise.reject(new Error("Departamento não selecionado."));
+            return organizationApi.departmentDeletionPreview(deleting.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!deleting) return Promise.reject(new Error("Departamento não selecionado."));
+            return organizationApi.deleteDepartment(deleting.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
+            toast.success("Departamento excluído");
+            setDeleting(null);
+            void Promise.all([
+              qc.invalidateQueries({ queryKey: ["trixus", "departments"] }),
+              qc.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] }),
+              qc.invalidateQueries({ queryKey: ["tickets"] }),
+            ]);
+          }}
+          formatError={(error) => (error as Error).message}
         />
       </PageContainer>
     </AppShell>
@@ -344,8 +434,9 @@ export function DepartamentoForm({
             color: initial.color,
             icon: initial.icon,
             connectionIds: initial.connectionIds,
+            active: clone ? true : initial.active,
           }
-        : { color: "#3B82F6", icon: "department", connectionIds: [] },
+        : { color: "#3B82F6", icon: "department", connectionIds: [], active: true },
     );
     setError("");
   }, [clone, departments, initial, open]);
@@ -359,10 +450,6 @@ export function DepartamentoForm({
     const duplicateError = duplicateNameError(form.name);
     if (duplicateError) {
       setError(duplicateError);
-      return;
-    }
-    if (connections.length > 0 && form.connectionIds.length === 0) {
-      toast.error("Vincule ao menos uma instância.");
       return;
     }
     onSubmit({ ...form, color: completeHexColor(form.color) });
@@ -399,6 +486,18 @@ export function DepartamentoForm({
       }
     >
       <div className="space-y-4">
+        {!clone && (
+          <div className="flex items-center gap-2">
+            <Switch
+              id="department-active"
+              checked={form.active !== false}
+              onCheckedChange={(active) => setForm((current) => ({ ...current, active }))}
+            />
+            <label htmlFor="department-active" className="cursor-pointer text-sm">
+              Ativo
+            </label>
+          </div>
+        )}
         <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
           <Field label="Nome *" error={error || undefined}>
             <Input
@@ -425,41 +524,13 @@ export function DepartamentoForm({
             </div>
           </Field>
         </div>
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
-          <Field label="Instâncias *">
-            <div className="min-h-11 rounded-lg border border-border bg-surface-1 p-2">
-              {connections.length === 0 ? (
-                <p className="px-1 py-1 text-sm text-muted-foreground">
-                  Nenhuma instância cadastrada.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {connections.map((connection) => {
-                    const selected = form.connectionIds.includes(connection.id);
-                    return (
-                      <button
-                        key={connection.id}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() =>
-                          setForm((current) => ({
-                            ...current,
-                            connectionIds: selected
-                              ? current.connectionIds.filter((id) => id !== connection.id)
-                              : [...current.connectionIds, connection.id],
-                          }))
-                        }
-                        className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm transition ${selected ? "border-primary bg-primary/10 text-primary" : "border-border bg-background"}`}
-                      >
-                        <span className="h-2 w-2 rounded-full bg-success" />
-                        {connection.name}
-                        {selected && <Check className="h-3.5 w-3.5" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_7.5rem]">
+          <Field label="Instâncias">
+            <DepartmentInstanceMultiSelect
+              connections={connections}
+              selectedIds={form.connectionIds}
+              onChange={(connectionIds) => setForm((current) => ({ ...current, connectionIds }))}
+            />
           </Field>
           <Field label="Ícone">
             <DepartmentIconSelect
@@ -475,6 +546,232 @@ export function DepartamentoForm({
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
         </Field>
+      </div>
+    </Modal>
+  );
+}
+
+export function DepartmentInstanceMultiSelect({
+  connections,
+  selectedIds,
+  onChange,
+}: {
+  connections: Array<Pick<ApiMessagingConnection, "id" | "name" | "color">>;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const selectedConnections = connections.filter((connection) =>
+    selectedIds.includes(connection.id),
+  );
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [open]);
+
+  const toggle = (id: string) => {
+    onChange(
+      selectedIds.includes(id)
+        ? selectedIds.filter((selectedId) => selectedId !== id)
+        : [...selectedIds, id],
+    );
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm outline-none transition hover:border-primary/50 focus:border-primary ${
+          selectedConnections.length > 0 ? "text-foreground" : "text-muted-foreground"
+        }`}
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {selectedConnections.length === 0 ? (
+            <span className="text-muted-foreground">- Selecione -</span>
+          ) : (
+            selectedConnections.map((connection) => (
+              <span
+                key={connection.id}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-medium"
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: connection.color ?? "#22c55e" }}
+                />
+                <span className="truncate">{connection.name}</span>
+              </span>
+            ))
+          )}
+        </span>
+        <span className="flex shrink-0 items-center gap-1">
+          {selectedConnections.length > 0 && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(event) => {
+                event.stopPropagation();
+                onChange([]);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                event.stopPropagation();
+                onChange([]);
+              }}
+              className="rounded p-0.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+              aria-label="Limpar seleção"
+            >
+              <X className="h-3.5 w-3.5" />
+            </span>
+          )}
+          <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
+        </span>
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute bottom-full z-[90] mb-2 max-h-[min(22rem,calc(100vh-10rem))] w-full overflow-auto rounded-lg border border-border bg-card p-1 shadow-card"
+        >
+          {connections.map((connection) => {
+            const selected = selectedIds.includes(connection.id);
+            return (
+              <button
+                key={connection.id}
+                type="button"
+                onClick={() => toggle(connection.id)}
+                role="option"
+                aria-selected={selected}
+                className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
+                  selected ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                <span
+                  className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                    selected
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-surface-1"
+                  }`}
+                >
+                  {selected && <Check className="h-2.5 w-2.5" />}
+                </span>
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: connection.color ?? "#22c55e" }}
+                />
+                <span className="truncate">{connection.name}</span>
+              </button>
+            );
+          })}
+          {connections.length === 0 && (
+            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+              Nenhuma instância cadastrada.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DepartmentDeactivationModal({
+  value,
+  connectionOptions,
+  targets,
+  busy,
+  onTargetChange,
+  onClose,
+  onConfirm,
+}: {
+  value: { department: ApiDepartment; preview: DepartmentDeactivationPreview } | null;
+  connectionOptions: Array<Pick<ApiMessagingConnection, "id" | "name">>;
+  targets: Record<string, string>;
+  busy: boolean;
+  onTargetChange: (connectionId: string | null, departmentId: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const groups = value?.preview.groups ?? [];
+  const ready =
+    groups.length > 0 &&
+    groups.every(
+      (group) =>
+        !!targets[group.connectionId ?? ""] &&
+        group.destinations.some(
+          (destination) => destination.id === targets[group.connectionId ?? ""],
+        ),
+    );
+  return (
+    <Modal
+      open={!!value}
+      onClose={onClose}
+      title="Inativar Departamento"
+      size="md"
+      dismissible={!busy}
+      footer={
+        <>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" disabled={!ready || busy} onClick={onConfirm}>
+            Confirmar
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+          <div className="space-y-1 text-sm">
+            <p className="font-semibold">
+              Existem {value?.preview.openConversationCount ?? 0} conversas ativas vinculadas a este
+              departamento.
+            </p>
+            <p className="text-muted-foreground">
+              Selecione o destino compatível para cada instância. A inativação ocorrerá somente após
+              todas as transferências.
+            </p>
+          </div>
+        </div>
+        {groups.map((group) => {
+          const key = group.connectionId ?? "";
+          const connectionName = group.connectionId
+            ? (connectionOptions.find((connection) => connection.id === group.connectionId)?.name ??
+              "Instância")
+            : "Sem instância";
+          return (
+            <Field
+              key={key || "without-connection"}
+              label={`${connectionName} · ${group.count} conversa${group.count === 1 ? "" : "s"}`}
+            >
+              <Select
+                value={targets[key] ?? ""}
+                onChange={(event) => onTargetChange(group.connectionId, event.target.value)}
+              >
+                <option value="">Selecione um departamento ativo</option>
+                {group.destinations.map((destination) => (
+                  <option key={destination.id} value={destination.id}>
+                    {destination.name}
+                  </option>
+                ))}
+              </Select>
+              {group.destinations.length === 0 && (
+                <p className="mt-1 text-xs text-destructive">
+                  Não existe departamento ativo e compatível para esta instância.
+                </p>
+              )}
+            </Field>
+          );
+        })}
       </div>
     </Modal>
   );

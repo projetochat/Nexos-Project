@@ -85,4 +85,39 @@ describe("realtime instance access", () => {
     expect(denied.emit).not.toHaveBeenCalled();
     expect(withoutPermission.emit).not.toHaveBeenCalled();
   });
+
+  it("broadcasts contact updates independently from the Chat instance scope", async () => {
+    const socket = {
+      data: { context: { membershipId: "contact-reader", tenantId: "tenant-a" } },
+      emit: vi.fn(),
+    };
+    const prisma = {
+      tenantMembership: {
+        findFirst: vi.fn().mockResolvedValue({
+          role: {
+            key: "agent",
+            metadata: { connectionIds: [], departmentIds: [] },
+            permissions: [{ permissionId: "contacts.read" }],
+          },
+          tenant: { authRevokedAt: null },
+        }),
+      },
+      impersonationSession: { findFirst: vi.fn() },
+      contact: { findFirst: vi.fn().mockResolvedValue({ id: "contact-a" }) },
+    };
+    const service = new RealtimeService({} as never, prisma as never);
+    service["server"] = {
+      in: () => ({ fetchSockets: async () => [socket] }),
+    } as unknown as NonNullable<RealtimeService["server"]>;
+
+    await service["publishScoped"]("tenant:tenant-a", "contact.updated", {
+      contactId: "contact-a",
+    });
+
+    expect(prisma.contact.findFirst).toHaveBeenCalledWith({
+      where: { id: "contact-a", tenantId: "tenant-a" },
+      select: { id: true },
+    });
+    expect(socket.emit).toHaveBeenCalledOnce();
+  });
 });

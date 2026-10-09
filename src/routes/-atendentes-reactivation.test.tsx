@@ -50,7 +50,7 @@ it("reactivates an inactive account without requesting a password", async () => 
     let password = document.querySelector<HTMLInputElement>('[aria-label="Senha do atendente"]')!;
     expect(password.disabled).toBe(true);
     await React.act(async () =>
-      document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Ativo"]')!.click(),
     );
     password = document.querySelector<HTMLInputElement>('[aria-label="Senha do atendente"]')!;
     expect(password.disabled).toBe(true);

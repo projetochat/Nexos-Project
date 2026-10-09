@@ -37,6 +37,18 @@ describe("organização do editor de Perfil de Acesso", () => {
     expect(scopes).toContain("aria-pressed={favorite}");
   });
 
+  it("exige ao menos um departamento por instância habilitada", () => {
+    const scopes = source.slice(
+      source.indexOf("function ScopeSettings"),
+      source.indexOf("function PermissionSettings"),
+    );
+
+    expect(scopes).toContain("connection.departments.length > 0");
+    expect(scopes).toContain("departmentIds: [firstDepartment.id]");
+    expect(scopes).toContain("Mantenha pelo menos um departamento habilitado");
+    expect(source).toContain("chatScopes.some((scope) => scope.departmentIds.length === 0)");
+  });
+
   it("faz o último acesso de agrupadores ímpares ocupar as duas colunas", () => {
     const permissions = source.slice(source.indexOf("function PermissionGroupBlock"));
 
@@ -76,6 +88,7 @@ describe("organização do editor de Perfil de Acesso", () => {
     expect(scopes).toContain("grid-cols-[minmax(0,1fr)_auto_auto]");
     expect(scopes).toContain("contents sm:flex");
     expect(scopes).toContain("grid-cols-[minmax(0,1fr)_2.25rem_2.25rem]");
+    expect(scopes).toContain("pl-3 pr-[21px]");
   });
 
   it("restaura os resumos e mantém as ações abaixo da divisória dos cards", () => {

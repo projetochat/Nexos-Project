@@ -802,6 +802,7 @@ model Role {
   description String?
   metadata    Json?
   system      Boolean            @default(false)
+  active      Boolean            @default(true)
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -812,6 +813,7 @@ model Role {
   @@unique([tenantId, key])
   @@unique([tenantId, id])
   @@index([tenantId])
+  @@index([tenantId, active])
   @@map("roles")
 }
 
@@ -988,6 +990,7 @@ model Tag {
   normalizedName String
   description    String?
   color          String       @default("#3B82F6")
+  active         Boolean      @default(true)
   archivedAt     DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -998,6 +1001,7 @@ model Tag {
   @@unique([tenantId, normalizedName])
   @@index([tenantId])
   @@index([tenantId, archivedAt])
+  @@index([tenantId, active, archivedAt])
   @@map("tags")
 }
 
@@ -1307,6 +1311,7 @@ model QuickReply {
   attachmentSize        Int?
   attachmentDataUrl     String?
   closeOnSend           Boolean           @default(false)
+  active                Boolean           @default(true)
   departmentId          String?
   createdByMembershipId String?
   archivedAt            DateTime?
@@ -1319,6 +1324,7 @@ model QuickReply {
   @@unique([tenantId, departmentId, normalizedShortcut])
   @@unique([tenantId, id])
   @@index([tenantId, archivedAt])
+  @@index([tenantId, active, archivedAt])
   @@index([tenantId, departmentId])
   @@map("quick_replies")
 }
@@ -1347,7 +1353,7 @@ model Ticket {
   requesterContactId       String?
   customerId               String?
   conversationId           String?
-  departmentId             String
+  departmentId             String?
   assignedMembershipId     String?
   createdByMembershipId    String
   closedByMembershipId     String?
@@ -1360,7 +1366,7 @@ model Ticket {
   requesterContact         Contact?           @relation(fields: [requesterContactId], references: [id], onDelete: SetNull)
   customer                 Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
   conversation             Conversation?      @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Restrict)
-  department               Department         @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Restrict)
+  department               Department?        @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: SetNull)
   assignedMembership       TenantMembership?  @relation("TicketAssignee", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
   createdByMembership      TenantMembership   @relation("TicketCreator", fields: [createdByMembershipId], references: [id], onDelete: Restrict)
   closedByMembership       TenantMembership?  @relation("TicketCloser", fields: [closedByMembershipId], references: [id], onDelete: SetNull)
@@ -1549,7 +1555,7 @@ model Notification {
   readAt       DateTime?
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   membership   TenantMembership?  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  department   Department?        @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Cascade)
+  department   Department?        @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: SetNull)
 
   @@unique([tenantId, id])
   @@index([tenantId, membershipId, status, createdAt])

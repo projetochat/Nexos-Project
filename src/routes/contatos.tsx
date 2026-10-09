@@ -61,6 +61,7 @@ import {
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Modal, ConfirmDialog } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
@@ -1497,6 +1498,14 @@ function ContatosPage() {
           >
             <List className="h-4 w-4" />
           </Button>
+          <ContactGridConfiguration
+            visibleColumns={visibleGridColumnSet}
+            customFields={eligibleGridCustomFields}
+            onToggle={toggleGridColumn}
+            onRestore={() => setVisibleGridColumns([...DEFAULT_CONTACT_GRID_COLUMNS])}
+            onHideAll={() => setVisibleGridColumns([])}
+            onShowAll={() => setVisibleGridColumns(allEligibleGridColumnKeys)}
+          />
         </div>
 
         {selectedBulkCount > 0 && (canUpdateContacts || canDeleteContacts) && (
@@ -1930,19 +1939,7 @@ function ContatosPage() {
                         </th>
                       ))}
                       <th className="sticky right-0 w-44 min-w-44 rounded-tr-lg bg-surface-2 px-3 py-2 text-center font-medium">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>Ações</span>
-                          <ContactGridConfiguration
-                            visibleColumns={visibleGridColumnSet}
-                            customFields={eligibleGridCustomFields}
-                            onToggle={toggleGridColumn}
-                            onRestore={() =>
-                              setVisibleGridColumns([...DEFAULT_CONTACT_GRID_COLUMNS])
-                            }
-                            onHideAll={() => setVisibleGridColumns([])}
-                            onShowAll={() => setVisibleGridColumns(allEligibleGridColumnKeys)}
-                          />
-                        </div>
+                        Ações
                       </th>
                     </tr>
                   </thead>
@@ -2241,47 +2238,21 @@ function ContatosPage() {
           />
         )}
         {canDeleteContacts && (
-          <ConfirmDialog
+          <DeletionConfirmDialog
             open={!!deleting}
-            title="Excluir Contato?"
-            description={
-              deleting ? (
-                <div className="space-y-3">
-                  <p>
-                    Contato abaixo será apagado.
-                    <br />
-                    Deseja continuar?
-                  </p>
-                  <div className="space-y-1 text-foreground">
-                    <p>
-                      <strong>Nome: </strong>{" "}
-                      <strong className="font-semibold text-foreground">"{deleting.nome}"</strong>
-                    </p>
-                    <p>
-                      <strong>Whatsapp: </strong> {formatPhoneWithDdi(deleting.telefone)}
-                    </p>
-                  </div>
-                  <p className="italic">
-                    Histórico de Conversas associadas a esse contato serão preservadas para
-                    auditoria.
-                  </p>
-                </div>
-              ) : undefined
+            resourceKey={`contact:${deleting?.id ?? "none"}`}
+            onOpenChange={(open) => !open && setDeleting(null)}
+            loadImpact={(signal) => crmApi.contactDeletionImpact(deleting!.id, signal)}
+            onConfirm={({ snapshotToken, signal }) =>
+              crmApi.deleteContact(deleting!.id, snapshotToken, signal)
             }
-            destructive
-            confirmLabel="Excluir"
-            onClose={() => setDeleting(null)}
-            onConfirm={async () => {
-              if (!deleting) return;
-              try {
-                await crmApi.deleteContact(deleting.id);
-                toast.success("Contato excluído");
-                setDeleting(null);
-                await load();
-              } catch (e) {
-                toast.error("Falha ao excluir", { description: (e as Error).message });
-              }
+            onDeleted={() => {
+              toast.success("Contato e histórico excluídos");
+              setDeleting(null);
+              void load();
+              void queryClient.invalidateQueries({ queryKey: ["operations", "history"] });
             }}
+            formatError={(error) => (error as Error).message}
           />
         )}
       </PageContainer>
@@ -4728,7 +4699,7 @@ function TagMultiSelect({
       </button>
       {open && (
         <div
-          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(27rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(15rem,calc(100vh-8rem))]`}
+          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(27rem,calc(100vh-8rem))] w-full max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(15rem,calc(100vh-8rem))]`}
         >
           <div className="grid max-h-[22rem] min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:max-h-[11.5rem] sm:grid-cols-2">
             {tags.map((tag) => {

@@ -7,7 +7,8 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Copy, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { ConfirmDialog, Modal } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   Button,
@@ -509,26 +510,26 @@ function ContactFieldsSettings() {
             }}
             onSubmit={save}
           />
-          <ConfirmDialog
+          <DeletionConfirmDialog
             open={!!deleting}
-            title="Excluir Campo?"
-            description={
-              <p>
-                Deseja realmente excluir o campo adicional "
-                <strong className="font-semibold text-foreground">{deleting?.label ?? ""}</strong>
-                "?
-              </p>
-            }
-            destructive
-            confirmLabel="Excluir"
-            onClose={() => setDeleting(null)}
-            onConfirm={async () => {
-              if (!deleting) return;
-              await crmApi.deleteContactCustomField(deleting.id);
+            resourceKey={`contact-custom-field:${deleting?.id ?? "none"}`}
+            onOpenChange={(open) => {
+              if (!open) setDeleting(null);
+            }}
+            loadImpact={(signal) => {
+              if (!deleting) return Promise.reject(new Error("Campo não selecionado."));
+              return crmApi.contactCustomFieldDeletionPreview(deleting.id, signal);
+            }}
+            onConfirm={({ snapshotToken, signal }) => {
+              if (!deleting) return Promise.reject(new Error("Campo não selecionado."));
+              return crmApi.deleteContactCustomField(deleting.id, snapshotToken, signal);
+            }}
+            onDeleted={() => {
               toast.success("Campo excluído");
               setDeleting(null);
-              await load();
+              void load();
             }}
+            formatError={(error) => (error as Error).message}
           />
         </>
       )}

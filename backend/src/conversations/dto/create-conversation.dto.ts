@@ -18,6 +18,10 @@ export class CreateConversationDto {
 
   @IsOptional()
   @IsBoolean()
+  reuseExistingOpen?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   isGroup?: boolean;
 
   @IsOptional()

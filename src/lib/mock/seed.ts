@@ -156,7 +156,7 @@ const STATUS_CONV = [
   "perdida",
   "arquivada",
 ] as const;
-const CANAIS = ["WhatsApp", "WhatsApp Business"] as const;
+const CANAIS = ["WhatsApp", "WhatsApp"] as const;
 
 const FRASES_CLIENTE = [
   "Boa tarde! Preciso de ajuda com o meu pedido.",

@@ -158,8 +158,10 @@ export type MessageEditEvent = {
   tenantId: string;
   connectionId: string;
   providerMessageId: string;
-  content: string;
+  content: string | null;
   occurredAt: Date;
+  providerInstanceName?: string | null;
+  remoteJid?: string | null;
 };
 export type MessageDeletionEvent = {
   tenantId: string;

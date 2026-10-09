@@ -1115,6 +1115,7 @@ describe("MessagingConnectionsService", () => {
       instanceName: "tenant-a-suporte",
       urlCorrect: true,
       messagesUpsertPresent: true,
+      messagesEditedPresent: false,
       messagesDeletePresent: false,
       secretBackendConfigured: true,
       secretEvolutionConfigured: true,
@@ -1143,7 +1144,7 @@ describe("MessagingConnectionsService", () => {
           name: "tenant-a-suporte",
           Webhook: {
             url: "http://host.docker.internal:3001/api/webhooks/evolution",
-            events: ["MESSAGES_UPSERT", "MESSAGES_DELETE"],
+            events: ["MESSAGES_UPSERT", "MESSAGES_EDITED", "MESSAGES_DELETE"],
             headers: { jwt_key: "secret" },
           },
         }),

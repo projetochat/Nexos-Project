@@ -105,9 +105,113 @@ describe("TicketsService tenant-wide temporary access policy", () => {
       "tickets.create",
     ]);
   });
+
+  it("previews every dependent record before physical deletion", async () => {
+    const prisma = prismaMock();
+    prisma.ticket.findFirst.mockResolvedValue(ticket());
+    prisma.ticketComment.findMany.mockResolvedValue([
+      {
+        id: "comment-a",
+        bodyText: "Análise inicial",
+        updatedAt: new Date("2026-10-08T12:01:00Z"),
+        archivedAt: null,
+      },
+    ]);
+    prisma.ticketHistory.findMany.mockResolvedValue([
+      { id: "history-a", event: "ticket.created", createdAt: new Date("2026-10-08T12:00:00Z") },
+    ]);
+    prisma.ticketAttachment.findMany.mockResolvedValue([
+      {
+        id: "attachment-a",
+        originalNameSanitized: "evidencia.pdf",
+        objectKey: "tenants/tenant-a/tickets/ticket-a/evidencia.pdf",
+        status: "READY",
+        deletedAt: null,
+        createdAt: new Date("2026-10-08T12:02:00Z"),
+      },
+    ]);
+
+    const impact = await serviceWith(prisma).deletionPreview("ticket-a", current);
+
+    expect(impact.snapshotToken).toHaveLength(64);
+    expect(impact.dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "comments", count: 1 }),
+        expect.objectContaining({ id: "history", count: 1 }),
+        expect.objectContaining({ id: "attachments", count: 1 }),
+      ]),
+    );
+    expect(impact.confirmation).toMatchObject({ level: "high", phrase: "TKT-000014" });
+  });
+
+  it("deletes children and ticket in one transaction, then removes storage objects", async () => {
+    const prisma = prismaMock();
+    const order: string[] = [];
+    mockDeletionState(prisma);
+    prisma.outboxEvent.create.mockResolvedValue({ id: "cleanup-event" });
+    prisma.ticketAttachment.deleteMany.mockImplementation(async () => {
+      order.push("attachments");
+      return { count: 1 };
+    });
+    prisma.ticketComment.deleteMany.mockImplementation(async () => {
+      order.push("comments");
+      return { count: 1 };
+    });
+    prisma.ticketHistory.deleteMany.mockImplementation(async () => {
+      order.push("history");
+      return { count: 1 };
+    });
+    prisma.ticket.delete.mockImplementation(async () => {
+      order.push("ticket");
+      return ticket();
+    });
+    prisma.$transaction.mockImplementation(async (callback: (tx: unknown) => unknown) => {
+      const result = await callback(prisma);
+      order.push("commit");
+      return result;
+    });
+    const cleanup = {
+      process: vi.fn(async () => {
+        order.push("storage");
+        return true;
+      }),
+    };
+    const service = serviceWith(prisma, cleanup);
+    const impact = await service.deletionPreview("ticket-a", current);
+
+    await expect(service.remove("ticket-a", impact.snapshotToken, current)).resolves.toMatchObject({
+      status: "deleted",
+      cleanup: "completed",
+    });
+
+    expect(order).toEqual(["attachments", "comments", "history", "ticket", "commit", "storage"]);
+    expect(prisma.ticket.delete).toHaveBeenCalledWith({
+      where: { tenantId_id: { tenantId: "tenant-a", id: "ticket-a" } },
+    });
+    expect(cleanup.process).toHaveBeenCalledWith("cleanup-event");
+  });
+
+  it("revalidates a stale snapshot without deleting anything", async () => {
+    const prisma = prismaMock();
+    mockDeletionState(prisma);
+    prisma.$transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
+      callback(prisma),
+    );
+    const cleanup = { process: vi.fn() };
+
+    const result = await serviceWith(prisma, cleanup).remove("ticket-a", "0".repeat(64), current);
+
+    expect(result.status).toBe("changed");
+    expect(prisma.ticket.delete).not.toHaveBeenCalled();
+    expect(prisma.outboxEvent.create).not.toHaveBeenCalled();
+    expect(cleanup.process).not.toHaveBeenCalled();
+  });
 });
 
-function serviceWith(prisma: ReturnType<typeof prismaMock>) {
+function serviceWith(
+  prisma: ReturnType<typeof prismaMock>,
+  cleanup: { process: ReturnType<typeof vi.fn> } = { process: vi.fn() },
+) {
   return new TicketsService(
     prisma as never,
     {} as never,
@@ -122,6 +226,7 @@ function serviceWith(prisma: ReturnType<typeof prismaMock>) {
       publishTicketAttachmentRemoved: vi.fn(),
     } as never,
     { assertFeature: vi.fn().mockResolvedValue(undefined) } as never,
+    cleanup as never,
   );
 }
 
@@ -132,9 +237,43 @@ function prismaMock() {
     departmentMembership: { findMany: vi.fn() },
     conversation: { findFirst: vi.fn() },
     ticketProtocolCounter: { upsert: vi.fn() },
-    ticket: { create: vi.fn(), findMany: vi.fn(), count: vi.fn(), findFirst: vi.fn() },
-    ticketHistory: { create: vi.fn() },
+    ticket: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      findFirst: vi.fn(),
+      delete: vi.fn(),
+    },
+    ticketComment: { findMany: vi.fn(), deleteMany: vi.fn() },
+    ticketHistory: { create: vi.fn(), findMany: vi.fn(), deleteMany: vi.fn() },
+    ticketAttachment: { findMany: vi.fn(), deleteMany: vi.fn() },
+    outboxEvent: { create: vi.fn() },
   };
+}
+
+function mockDeletionState(prisma: ReturnType<typeof prismaMock>) {
+  prisma.ticket.findFirst.mockResolvedValue(ticket());
+  prisma.ticketComment.findMany.mockResolvedValue([
+    {
+      id: "comment-a",
+      bodyText: "Comentário",
+      updatedAt: new Date("2026-10-08T12:01:00Z"),
+      archivedAt: null,
+    },
+  ]);
+  prisma.ticketHistory.findMany.mockResolvedValue([
+    { id: "history-a", event: "ticket.created", createdAt: new Date("2026-10-08T12:00:00Z") },
+  ]);
+  prisma.ticketAttachment.findMany.mockResolvedValue([
+    {
+      id: "attachment-a",
+      originalNameSanitized: "evidencia.pdf",
+      objectKey: "tenants/tenant-a/tickets/ticket-a/evidencia.pdf",
+      status: "READY",
+      deletedAt: null,
+      createdAt: new Date("2026-10-08T12:02:00Z"),
+    },
+  ]);
 }
 
 function ticket() {

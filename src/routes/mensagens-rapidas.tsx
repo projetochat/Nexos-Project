@@ -17,7 +17,9 @@ import {
   SearchInput,
   SectionHeader,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   crmApi,
@@ -237,37 +239,27 @@ function QuickRepliesPage() {
           />
         )}
 
-        <ConfirmDialog
+        <DeletionConfirmDialog
           open={!!confirming}
-          title="Excluir Mensagem Rápida?"
-          description={
-            confirming ? (
-              <p>
-                Deseja realmente excluir o atalho{" "}
-                <strong className="font-semibold text-foreground">
-                  "/{confirming.atalho.replace(/^\//, "")}"
-                </strong>
-                ?
-              </p>
-            ) : (
-              ""
-            )
-          }
-          confirmLabel="Excluir"
-          destructive
-          onClose={() => setConfirming(null)}
-          onConfirm={async () => {
-            if (!confirming) return;
-            try {
-              await quickReplyApi.archive(confirming.id);
-              toast.success("Removido");
-              refresh();
-              qc.invalidateQueries({ queryKey: ["trixus", "quick-replies", "composer"] });
-              setConfirming(null);
-            } catch (error) {
-              toast.error((error as Error).message);
-            }
+          resourceKey={`quick-reply:${confirming?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setConfirming(null);
           }}
+          loadImpact={(signal) => {
+            if (!confirming) return Promise.reject(new Error("Mensagem não selecionada."));
+            return quickReplyApi.deletionPreview(confirming.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!confirming) return Promise.reject(new Error("Mensagem não selecionada."));
+            return quickReplyApi.archive(confirming.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
+            toast.success("Removido");
+            void refresh();
+            void qc.invalidateQueries({ queryKey: ["trixus", "quick-replies", "composer"] });
+            setConfirming(null);
+          }}
+          formatError={(error) => (error as Error).message}
         />
       </div>
     </AppShell>
@@ -292,6 +284,7 @@ export function QuickReplyEditor({
   const [atalho, setAtalho] = React.useState("");
   const [messages, setMessages] = React.useState<QuickReplyMessage[]>([{ text: "" }]);
   const [closeOnSend, setCloseOnSend] = React.useState(false);
+  const [active, setActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [shortcutError, setShortcutError] = React.useState("");
   const [customVariables, setCustomVariables] = React.useState<
@@ -362,6 +355,7 @@ export function QuickReplyEditor({
     setAtalho(initial ? duplicateShortcut(initial.atalho, clone) : "");
     setMessages(initial ? quickReplyMessages(initial) : [{ text: "" }]);
     setCloseOnSend(initial?.close_on_send ?? false);
+    setActive(clone ? true : initial?.active !== false);
     setShortcutError("");
   }, [clone, open, initial]);
 
@@ -398,6 +392,7 @@ export function QuickReplyEditor({
           intervalSeconds: 0,
           departmentId: initial.departmentId,
           closeOnSend,
+          active,
           attachmentFileName: attachment?.fileName ?? null,
           attachmentMimeType: attachment?.mimeType ?? null,
           attachmentSize: attachment?.size ?? null,
@@ -412,6 +407,7 @@ export function QuickReplyEditor({
           intervalSeconds: 0,
           departmentId: null,
           closeOnSend,
+          active,
           attachmentFileName: attachment?.fileName ?? null,
           attachmentMimeType: attachment?.mimeType ?? null,
           attachmentSize: attachment?.size ?? null,
@@ -459,6 +455,10 @@ export function QuickReplyEditor({
       }
     >
       <div className="space-y-3">
+        <label className="flex min-h-7 items-center gap-2 text-sm">
+          <Switch checked={active} onCheckedChange={setActive} aria-label="Ativo" />
+          <span>Ativo</span>
+        </label>
         <Field
           label="Atalho *"
           hint="Somente letras e hífen, sem barra. Ex.: bom-dia, bt, obg"

@@ -1030,6 +1030,7 @@ export class MessagingConnectionsService {
         if (
           audit.urlCorrect &&
           audit.messagesUpsertPresent &&
+          audit.messagesEditedPresent &&
           audit.messagesDeletePresent &&
           audit.secretMatch
         ) {
@@ -1041,6 +1042,7 @@ export class MessagingConnectionsService {
         if (
           verified.urlCorrect &&
           verified.messagesUpsertPresent &&
+          verified.messagesEditedPresent &&
           verified.messagesDeletePresent &&
           verified.secretMatch
         ) {
@@ -1093,6 +1095,7 @@ export class MessagingConnectionsService {
       instanceName,
       urlCorrect: webhook?.url === config.webhookPublicUrl,
       messagesUpsertPresent: !!webhook?.events?.includes("MESSAGES_UPSERT"),
+      messagesEditedPresent: !!webhook?.events?.includes("MESSAGES_EDITED"),
       messagesDeletePresent: !!webhook?.events?.includes("MESSAGES_DELETE"),
       secretBackendConfigured: !!config.webhookSecret,
       secretEvolutionConfigured: !!evolutionSecret,

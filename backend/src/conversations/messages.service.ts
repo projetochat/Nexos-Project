@@ -435,6 +435,7 @@ export class MessagesService {
   }
 
   private serialize(message: MessageWithRelations) {
+    const metadata = asObject(message.interactiveData);
     return {
       id: message.id,
       tenantId: message.tenantId,
@@ -449,14 +450,16 @@ export class MessagesService {
       outbound_origin: outboundMessageOrigin(message),
       content: message.content ?? "",
       interactive_data: message.interactiveData ?? null,
-      forwarded: asObject(message.interactiveData)?.forwarded === true,
-      sticker: asObject(message.interactiveData)?.sticker === true,
-      link_preview: serializeLinkPreview(asObject(message.interactiveData)?.linkPreview),
+      forwarded: metadata.forwarded === true,
+      sticker: metadata.sticker === true,
+      link_preview: serializeLinkPreview(metadata.linkPreview),
       created_at: message.createdAt,
       updated_at: message.updatedAt,
-      edited_at: asObject(message.interactiveData)?.editedAt ?? null,
-      deleted_at: asObject(message.interactiveData)?.deletedAt ?? null,
-      deleted_for_everyone: asObject(message.interactiveData)?.deletedForEveryone === true,
+      edited_at: metadata.editedAt ?? null,
+      original_content:
+        typeof metadata.originalContent === "string" ? metadata.originalContent : null,
+      deleted_at: metadata.deletedAt ?? null,
+      deleted_for_everyone: metadata.deletedForEveryone === true,
       read_at: message.readAt,
       type: serializeType(message.type),
       status: message.status.toLowerCase(),

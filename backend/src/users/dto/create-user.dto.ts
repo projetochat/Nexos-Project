@@ -1,4 +1,12 @@
-import { IsArray, IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  IsArray,
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 
 export class CreateUserDto {
   @IsEmail()
@@ -16,6 +24,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   roleId?: string;
+
+  @IsOptional()
+  @IsIn(["ACTIVE", "DISABLED"])
+  membershipStatus?: "ACTIVE" | "DISABLED";
 
   @IsOptional()
   @IsArray()

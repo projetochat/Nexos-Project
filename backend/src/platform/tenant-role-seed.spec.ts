@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { AGENT_PERMISSIONS, TENANT_ADMIN_PERMISSIONS } from "../auth/permissions.constants";
+import {
+  AGENT_PERMISSIONS,
+  SUPERVISOR_PERMISSIONS,
+  TENANT_ADMIN_PERMISSIONS,
+} from "../auth/permissions.constants";
 import { seedTenantRoles } from "./tenant-role-seed";
 
 describe("seedTenantRoles", () => {
-  it("creates the Atendimento department and only the required system access profiles", async () => {
+  it("creates Atendimento and the three required system access profiles", async () => {
     const tx = {
       department: {
         upsert: vi.fn().mockResolvedValue({ id: "department-atendimento" }),
@@ -25,13 +29,21 @@ describe("seedTenantRoles", () => {
         where: { tenantId_name: { tenantId: "tenant-a", name: "Atendimento" } },
       }),
     );
-    expect(tx.role.upsert).toHaveBeenCalledTimes(2);
-    expect(Object.keys(result).sort()).toEqual(["agent", "tenant_admin"]);
+    expect(tx.role.upsert).toHaveBeenCalledTimes(3);
+    expect(Object.keys(result).sort()).toEqual(["agent", "supervisor", "tenant_admin"]);
     expect(tx.role.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         update: expect.not.objectContaining({ metadata: expect.anything() }),
         create: expect.objectContaining({
           key: "agent",
+          metadata: { departmentIds: ["department-atendimento"] },
+        }),
+      }),
+    );
+    expect(tx.role.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          key: "supervisor",
           metadata: { departmentIds: ["department-atendimento"] },
         }),
       }),
@@ -43,8 +55,15 @@ describe("seedTenantRoles", () => {
       })),
       skipDuplicates: true,
     });
+    expect(tx.rolePermission.createMany).toHaveBeenCalledWith({
+      data: SUPERVISOR_PERMISSIONS.map((permissionId) => ({
+        roleId: "tenant-a:supervisor",
+        permissionId,
+      })),
+      skipDuplicates: true,
+    });
     expect(tx.permission.upsert).toHaveBeenCalledTimes(
-      new Set([...TENANT_ADMIN_PERMISSIONS, ...AGENT_PERMISSIONS]).size,
+      new Set([...TENANT_ADMIN_PERMISSIONS, ...SUPERVISOR_PERMISSIONS, ...AGENT_PERMISSIONS]).size,
     );
   });
 });

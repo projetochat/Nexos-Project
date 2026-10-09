@@ -16,7 +16,7 @@ const CATEGORIES = [
 ];
 
 const POPULAR = [
-  "Como conectar o WhatsApp Business",
+  "Como conectar o WhatsApp",
   "Distribuição de conversas por skill",
   "Configurando horário de atendimento",
   "Etiquetas e organização da caixa",

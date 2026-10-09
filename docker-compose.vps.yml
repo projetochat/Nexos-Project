@@ -78,7 +78,7 @@ services:
       - evolution-instances:/evolution/instances
     ports:
       # Apache terminates TLS and proxies the existing Evolution domain to this loopback-only port.
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${EVOLUTION_PORT:-8080}:8080"
 
   backend:
     build:
@@ -155,7 +155,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "127.0.0.1:4173:4173"
+      - "127.0.0.1:${FRONTEND_PORT:-4173}:4173"
 
   migrate:
     profiles: ["release"]
