@@ -242,7 +242,7 @@ def healthy_apps(compose, stabilization_seconds=30):
 
         frontend = command(['/usr/bin/curl', '--fail', '--silent', '--show-error',
                             '--max-time', '20', 'http://127.0.0.1:4173/'])
-        require(bool(re.search(r'<title[^>]*>\s*Trixus\s*</title>', frontend,
+        require(bool(re.search(r'<title[^>]*>\s*Trixus(?:\s*\|\s*App)?\s*</title>', frontend,
                                flags=re.IGNORECASE)),
                 'Frontend local nao confirmou identidade do Trixus')
 

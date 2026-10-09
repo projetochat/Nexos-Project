@@ -381,38 +381,41 @@ class ReleaseTest(unittest.TestCase):
                                 for call in calls))
 
     def test_healthy_apps_uses_only_loopback_and_checks_trixus_identity(self):
-        calls = []
+        for title in ('Trixus', 'Trixus | App'):
+            calls = []
 
-        def run(args, **kwargs):
-            calls.append(args)
-            if args[-1].endswith('/api/health'):
-                return ('{"ok":true,"service":"trixus-api","database":"up",'
-                        '"redis":"up","queue":"up","storage":"up"}')
-            return '<html><head><title>Trixus</title></head></html>'
+            def run(args, **kwargs):
+                calls.append(args)
+                if args[-1].endswith('/api/health'):
+                    return ('{"ok":true,"service":"trixus-api","database":"up",'
+                            '"redis":"up","queue":"up","storage":"up"}')
+                return f'<html><head><title>{title}</title></head></html>'
 
-        with patch.object(release, 'command', side_effect=run), \
-             patch.object(release, 'app_container_state', return_value={
-                 'backend': 'a' * 64, 'frontend': 'b' * 64,
-             }), patch.object(release.time, 'sleep') as sleep:
-            release.healthy_apps(['docker', 'compose'], stabilization_seconds=30)
+            with self.subTest(title=title), \
+                 patch.object(release, 'command', side_effect=run), \
+                 patch.object(release, 'app_container_state', return_value={
+                     'backend': 'a' * 64, 'frontend': 'b' * 64,
+                 }), patch.object(release.time, 'sleep') as sleep:
+                release.healthy_apps(['docker', 'compose'], stabilization_seconds=30)
 
-        urls = [args[-1] for args in calls]
-        self.assertEqual(urls, ['http://127.0.0.1:3001/api/health',
-                                'http://127.0.0.1:4173/',
-                                'http://127.0.0.1:3001/api/health',
-                                'http://127.0.0.1:4173/'])
-        self.assertTrue(all(url.startswith('http://127.0.0.1:') for url in urls))
-        sleep.assert_called_once_with(30)
+            urls = [args[-1] for args in calls]
+            self.assertEqual(urls, ['http://127.0.0.1:3001/api/health',
+                                    'http://127.0.0.1:4173/',
+                                    'http://127.0.0.1:3001/api/health',
+                                    'http://127.0.0.1:4173/'])
+            self.assertTrue(all(url.startswith('http://127.0.0.1:') for url in urls))
+            sleep.assert_called_once_with(30)
 
     def test_healthy_apps_rejects_unrelated_responses(self):
         healthy = ('{"ok":true,"service":"trixus-api","database":"up",'
                    '"redis":"up","queue":"up","storage":"up"}')
-        for backend, frontend in (('{"status":"ok"}', '<title>Trixus</title>'),
-                                  ('not-json', '<title>Trixus</title>'),
+        for backend, frontend in (('{"status":"ok"}', '<title>Trixus | App</title>'),
+                                  ('not-json', '<title>Trixus | App</title>'),
                                   ('{"ok":true,"service":"other","database":"up",'
                                    '"redis":"up","queue":"up","storage":"up"}',
-                                   '<title>Trixus</title>'),
-                                  (healthy, '<title>GLPI</title>')):
+                                   '<title>Trixus | App</title>'),
+                                  (healthy, '<title>GLPI</title>'),
+                                  (healthy, '<title>Trixus Dashboard</title>')):
             with self.subTest(backend=backend, frontend=frontend), \
                  patch.object(release, 'command', side_effect=[backend, frontend]), \
                  patch.object(release, 'app_container_state', return_value={
@@ -425,7 +428,7 @@ class ReleaseTest(unittest.TestCase):
         healthy = ('{"ok":true,"service":"trixus-api","database":"up",'
                    '"redis":"up","queue":"up","storage":"up"}')
         stable = {'backend': 'a' * 64, 'frontend': 'b' * 64}
-        with patch.object(release, 'command', side_effect=[healthy, '<title>Trixus</title>']), \
+        with patch.object(release, 'command', side_effect=[healthy, '<title>Trixus | App</title>']), \
              patch.object(release, 'app_container_state', side_effect=[
                  stable, CheckError('Container da aplicacao instavel: backend'),
              ]), patch.object(release.time, 'sleep') as sleep, self.assertRaises(CheckError):
