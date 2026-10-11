@@ -3114,6 +3114,15 @@ function trixusMessageFromCode(code?: string) {
 function authMessageFromStatus(status: number, code?: string) {
   if (status === 401) return "E-mail ou senha inválidos.";
   if (status === 403) {
+    if (code === "PASSWORD_CONFIRMATION_MISMATCH") {
+      return "A confirmação da nova senha não confere.";
+    }
+    if (code === "PASSWORD_TOO_LONG") {
+      return "A nova senha deve possuir no máximo 72 bytes.";
+    }
+    if (code === "TEMPORARY_PASSWORD_REUSE" || code === "PASSWORD_REUSE") {
+      return "A nova senha deve ser diferente da senha temporária.";
+    }
     if (code === "USER_WITHOUT_ACTIVE_MEMBERSHIP") {
       return "Seu usuário não possui acesso a nenhuma organização ativa.";
     }

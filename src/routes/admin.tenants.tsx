@@ -685,6 +685,10 @@ function TenantCredentialsModal({
               </button>
             )}
           </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Se o primeiro acesso ainda estiver pendente, esta senha será temporária e deverá ser
+            substituída pelo administrador ao entrar.
+          </p>
         </Field>
       </div>
     </Modal>

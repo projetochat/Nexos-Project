@@ -78,6 +78,9 @@ describe("Platform Tenants", () => {
     expect(tenantsSource).toContain('hour: "2-digit"');
     expect(tenantsSource).toContain('minute: "2-digit"');
     expect(tenantsSource).toContain("Gerenciar credenciais do usuário administrador");
+    expect(tenantsSource).toContain(
+      "Se o primeiro acesso ainda estiver pendente, esta senha será temporária",
+    );
     expect(tenantsSource).toContain('tenant.status === "ACTIVE"');
     expect(tenantsSource).toContain("updateTenantAdministratorCredentials");
     expect(tenantsSource).toContain("Configuração da Tenant");

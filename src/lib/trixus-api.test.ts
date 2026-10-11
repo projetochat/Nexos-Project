@@ -298,6 +298,47 @@ describe("trixus-api auth client", () => {
     );
   });
 
+  it.each([
+    ["PASSWORD_REUSE", "A nova senha deve ser diferente da senha temporária."],
+    ["TEMPORARY_PASSWORD_REUSE", "A nova senha deve ser diferente da senha temporária."],
+    ["PASSWORD_CONFIRMATION_MISMATCH", "A confirmação da nova senha não confere."],
+    ["PASSWORD_TOO_LONG", "A nova senha deve possuir no máximo 72 bytes."],
+  ])("preserves the specific first-access error %s", async (code, expectedMessage) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(403, {
+          code,
+          message: expectedMessage,
+        }),
+      ),
+    );
+
+    await expect(
+      completeRequiredPasswordChangeWithTrixusApi({
+        setupToken: "setup-token",
+        newPassword: "senha-segura",
+        confirmPassword: "senha-segura",
+      }),
+    ).rejects.toThrow(expectedMessage);
+  });
+
+  it("keeps the generic permission message for unknown authentication 403 codes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(403, {
+          code: "UNMAPPED_ACCESS_DENIED",
+          message: "Detalhe interno não catalogado.",
+        }),
+      ),
+    );
+
+    await expect(loginWithTrixusApi("admin@trixus.app", "demo1234")).rejects.toThrow(
+      "Seu usuário não possui permissão para acessar este ambiente.",
+    );
+  });
+
   it("returns a clear message for internal authentication errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseJson(500, {})));
 
