@@ -56,6 +56,8 @@ describe("ConversationPurgeService", () => {
     const service = new ConversationPurgeService(prisma as never, storage as never);
     const impact = await service.conversationImpact("conversation-a", "tenant-a");
 
+    expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Confirmar" });
+
     await expect(
       service.purgeConversation("conversation-a", impact.snapshotToken, "tenant-a"),
     ).resolves.toEqual({ status: "deleted", cleanup: "completed" });
@@ -128,5 +130,6 @@ describe("ConversationPurgeService", () => {
     const impact = await service.contactImpact("contact-a", "tenant-a");
 
     expect(impact.blockedReason).toContain("campanha pendente ou em processamento");
+    expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Confirmar" });
   });
 });

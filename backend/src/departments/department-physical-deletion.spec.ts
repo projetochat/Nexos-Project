@@ -103,13 +103,13 @@ function deletionClient() {
 }
 
 describe("department physical deletion", () => {
-  it("previews preserved records and requires reinforced confirmation", async () => {
+  it("previews preserved records with a single confirmation action", async () => {
     const { prisma } = deletionClient();
     const controller = new DepartmentsController(prisma as never, {} as never, undefined, undefined);
 
     const impact = await controller.deletionPreview("department-a", current);
 
-    expect(impact.confirmation).toMatchObject({ level: "high", phrase: "Suporte" });
+    expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Confirmar" });
     expect(impact.dependencies.find((item) => item.id === "memberships")).toMatchObject({
       count: 1,
       operation: "unlink",

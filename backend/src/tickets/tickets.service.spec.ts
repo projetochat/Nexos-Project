@@ -141,7 +141,7 @@ describe("TicketsService tenant-wide temporary access policy", () => {
         expect.objectContaining({ id: "attachments", count: 1 }),
       ]),
     );
-    expect(impact.confirmation).toMatchObject({ level: "high", phrase: "TKT-000014" });
+    expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Confirmar" });
   });
 
   it("deletes children and ticket in one transaction, then removes storage objects", async () => {

@@ -698,11 +698,8 @@ export class DepartmentsController {
         },
       ],
       confirmation: {
-        level: "high",
-        confirmLabel: "Excluir departamento",
-        phrase: state.department.name,
-        inputLabel: "Digite o nome do departamento",
-        instruction: `Digite exatamente “${state.department.name}” para confirmar.`,
+        level: "standard",
+        confirmLabel: "Confirmar",
       },
     };
   }

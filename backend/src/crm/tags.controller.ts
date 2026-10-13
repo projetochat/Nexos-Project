@@ -225,7 +225,7 @@ export class TagsController {
       consequences: [
         { id: "tag", text: "A etiqueta será excluída definitivamente.", irreversible: true },
       ],
-      confirmation: { level: "standard", confirmLabel: "Excluir etiqueta" },
+      confirmation: { level: "standard", confirmLabel: "Confirmar" },
     };
   }
 

@@ -20,7 +20,7 @@ import {
   AlertDialogDescription,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button, Input } from "@/components/ui-kit";
+import { Button } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
 
 export type DeletionDependencyOperation = "unlink" | "reassign" | "delete";
@@ -48,18 +48,10 @@ export type DeletionConsequence = {
   irreversible: boolean;
 };
 
-export type DeletionConfirmationPolicy =
-  | {
-      level: "standard";
-      confirmLabel: string;
-    }
-  | {
-      level: "high";
-      confirmLabel: string;
-      phrase: string;
-      inputLabel: string;
-      instruction: string;
-    };
+export type DeletionConfirmationPolicy = {
+  level: "standard";
+  confirmLabel: string;
+};
 
 /**
  * Domain-owned deletion preflight. All record data, counts and consequences must
@@ -144,7 +136,6 @@ export function DeletionConfirmDialog({
   >("idle");
   const [error, setError] = React.useState<DialogError | null>(null);
   const [changedMessage, setChangedMessage] = React.useState<string | null>(null);
-  const [confirmationText, setConfirmationText] = React.useState("");
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
   const [announcement, setAnnouncement] = React.useState("");
   const requestController = React.useRef<AbortController | null>(null);
@@ -172,7 +163,6 @@ export function DeletionConfirmDialog({
 
   const replaceImpact = React.useCallback((next: DeletionImpactPreview) => {
     setImpact(next);
-    setConfirmationText("");
     setExpanded(new Set());
   }, []);
 
@@ -211,7 +201,6 @@ export function DeletionConfirmDialog({
       setImpact(null);
       setError(null);
       setChangedMessage(null);
-      setConfirmationText("");
       setExpanded(new Set());
       setAnnouncement("");
       setPhase("idle");
@@ -222,7 +211,6 @@ export function DeletionConfirmDialog({
     setImpact(null);
     setError(null);
     setChangedMessage(null);
-    setConfirmationText("");
     setExpanded(new Set());
     void requestImpact("initial");
     return () => requestController.current?.abort();
@@ -238,11 +226,6 @@ export function DeletionConfirmDialog({
 
   const isBusy = phase !== "idle";
   const isCommitting = phase === "submitting";
-  const highImpact = impact?.confirmation.level === "high" ? impact.confirmation : null;
-  const hasValidReinforcedPhrase = !highImpact || highImpact.phrase.trim().length > 0;
-  const reinforcedConfirmationMatches =
-    hasValidReinforcedPhrase && (!highImpact || confirmationText === highImpact.phrase);
-
   const showChangedImpact = React.useCallback(
     (next: DeletionImpactPreview, message?: string) => {
       replaceImpact(next);
@@ -258,8 +241,7 @@ export function DeletionConfirmDialog({
   );
 
   const handleConfirm = async () => {
-    if (!impact || impact.blockedReason || busyRef.current || !reinforcedConfirmationMatches)
-      return;
+    if (!impact || impact.blockedReason || busyRef.current) return;
     const controller = new AbortController();
     const operationResourceKey = resourceKeyRef.current;
     const confirmForResource = onConfirmRef.current;
@@ -499,49 +481,6 @@ export function DeletionConfirmDialog({
                 </section>
               )}
 
-              {highImpact && (
-                <section aria-labelledby={`${listIdPrefix}-reinforced`} className="space-y-2">
-                  <h3 id={`${listIdPrefix}-reinforced`} className="font-semibold">
-                    Confirmação reforçada
-                  </h3>
-                  <p
-                    id={`${listIdPrefix}-reinforced-instruction`}
-                    className="text-sm text-muted-foreground"
-                  >
-                    {highImpact.instruction}
-                  </p>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-foreground">
-                      {highImpact.inputLabel}
-                    </span>
-                    <Input
-                      autoComplete="off"
-                      aria-describedby={`${listIdPrefix}-reinforced-instruction ${listIdPrefix}-reinforced-status`}
-                      aria-invalid={confirmationText.length > 0 && !reinforcedConfirmationMatches}
-                      spellCheck={false}
-                      value={confirmationText}
-                      disabled={isBusy}
-                      onChange={(event) => setConfirmationText(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && reinforcedConfirmationMatches && !isBusy) {
-                          event.preventDefault();
-                          void handleConfirm();
-                        }
-                      }}
-                    />
-                    <span
-                      id={`${listIdPrefix}-reinforced-status`}
-                      className="block text-xs text-muted-foreground"
-                    >
-                      {reinforcedConfirmationMatches
-                        ? "Confirmação correspondente."
-                        : !hasValidReinforcedPhrase
-                          ? "A confirmação não está disponível porque o domínio não forneceu uma frase válida."
-                          : "O texto deve corresponder exatamente ao valor solicitado."}
-                    </span>
-                  </label>
-                </section>
-              )}
             </div>
           ) : null}
         </div>
@@ -564,8 +503,7 @@ export function DeletionConfirmDialog({
               isBusy ||
               error?.kind === "submit" ||
               !!(error && !impact) ||
-              !!impact.blockedReason ||
-              !reinforcedConfirmationMatches
+              !!impact.blockedReason
             }
             onClick={() => void handleConfirm()}
           >
@@ -576,7 +514,7 @@ export function DeletionConfirmDialog({
                 ? "Excluindo…"
                 : impact?.blockedReason
                   ? "Exclusão bloqueada"
-                  : (impact?.confirmation.confirmLabel ?? "Excluir")}
+                  : (impact?.confirmation.confirmLabel ?? "Confirmar")}
           </Button>
         </div>
       </AlertDialogContent>

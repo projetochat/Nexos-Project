@@ -127,15 +127,7 @@ export type ApiDeletionImpactPreview = {
     hasMore?: boolean;
   }>;
   consequences: Array<{ id: string; text: string; irreversible: boolean }>;
-  confirmation:
-    | { level: "standard"; confirmLabel: string }
-    | {
-        level: "high";
-        confirmLabel: string;
-        phrase: string;
-        inputLabel: string;
-        instruction: string;
-      };
+  confirmation: { level: "standard"; confirmLabel: string };
   blockedReason?: string;
 };
 

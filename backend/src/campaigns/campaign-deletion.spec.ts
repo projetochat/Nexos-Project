@@ -64,6 +64,7 @@ describe("campaign physical deletion", () => {
         expect.objectContaining({ id: "outbox", count: 1, operation: "delete" }),
       ]),
     );
+    expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Confirmar" });
     await expect(service.remove("campaign-a", impact.snapshotToken, current)).resolves.toEqual({
       status: "deleted",
     });

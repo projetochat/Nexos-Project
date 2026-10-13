@@ -177,7 +177,7 @@ describe("DeletionConfirmDialog", () => {
     await renderDialog(baseImpact, { loadImpact });
 
     expect(document.body.textContent).toContain("Carregando dependências");
-    expect(findButton("Excluir")?.disabled).toBe(true);
+    expect(findButton("Confirmar")?.disabled).toBe(true);
 
     await React.act(() => reject(new Error("offline")));
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
@@ -219,49 +219,24 @@ describe("DeletionConfirmDialog", () => {
     );
   });
 
-  it("requires the backend-provided phrase for a high-impact deletion", async () => {
-    const highImpact: DeletionImpactPreview = {
+  it("confirms directly without rendering a reinforced text field", async () => {
+    const directImpact: DeletionImpactPreview = {
       ...baseImpact,
       confirmation: {
-        level: "high",
-        confirmLabel: "Excluir permanentemente",
-        phrase: "REG-42",
-        inputLabel: "Digite o código do registro",
-        instruction: "Digite REG-42 para confirmar esta operação.",
+        level: "standard",
+        confirmLabel: "Confirmar",
       },
     };
-    const { onConfirm } = await renderDialog(highImpact);
-    const confirm = findButton("Excluir permanentemente")!;
-    const input = document.querySelector<HTMLInputElement>("input")!;
+    const { onConfirm } = await renderDialog(directImpact);
+    const confirm = findButton("Confirmar")!;
 
-    expect(confirm.disabled).toBe(true);
-    await React.act(() => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter?.call(input, "REG-42");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    expect(document.querySelector("input")).toBeNull();
+    expect(document.body.textContent).not.toContain("Confirmação reforçada");
     expect(confirm.disabled).toBe(false);
 
     await React.act(() => confirm.click());
     await React.act(async () => Promise.resolve());
     expect(onConfirm).toHaveBeenCalledOnce();
-  });
-
-  it("blocks an invalid high-impact policy with an empty phrase", async () => {
-    const invalidPolicy: DeletionImpactPreview = {
-      ...baseImpact,
-      confirmation: {
-        level: "high",
-        confirmLabel: "Excluir permanentemente",
-        phrase: "   ",
-        inputLabel: "Digite a identificação",
-        instruction: "Confirme a identificação informada pelo domínio.",
-      },
-    };
-    await renderDialog(invalidPolicy);
-
-    expect(findButton("Excluir permanentemente")?.disabled).toBe(true);
-    expect(document.body.textContent).toContain("o domínio não forneceu uma frase válida");
   });
 
   it("does not offer an automatic resubmit after an unconfirmed commit result", async () => {

@@ -397,7 +397,7 @@ export class SchedulesController {
           irreversible: true,
         },
       ],
-      confirmation: { level: "standard", confirmLabel: "Excluir agendamento" },
+      confirmation: { level: "standard", confirmLabel: "Confirmar" },
     };
   }
 

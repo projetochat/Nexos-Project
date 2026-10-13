@@ -375,7 +375,7 @@ export class RolesController {
           irreversible: true,
         },
       ],
-      confirmation: { level: "standard", confirmLabel: "Excluir perfil" },
+      confirmation: { level: "standard", confirmLabel: "Confirmar" },
       blockedReason,
     };
   }

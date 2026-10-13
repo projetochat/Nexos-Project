@@ -232,11 +232,8 @@ export class ConversationPurgeService {
         },
       ],
       confirmation: {
-        level: "high",
-        confirmLabel: "Excluir definitivamente",
-        phrase: "EXCLUIR HISTÓRICO",
-        inputLabel: "Digite EXCLUIR HISTÓRICO",
-        instruction: "Esta ação é irreversível.",
+        level: "standard",
+        confirmLabel: "Confirmar",
       },
       ...(processingOutbox.length
         ? {
@@ -388,11 +385,8 @@ export class ConversationPurgeService {
         },
       ],
       confirmation: {
-        level: "high",
-        confirmLabel: "Excluir contato definitivamente",
-        phrase: "EXCLUIR CONTATO",
-        inputLabel: "Digite EXCLUIR CONTATO",
-        instruction: "Confirme somente após revisar os impactos.",
+        level: "standard",
+        confirmLabel: "Confirmar",
       },
       ...(activeRecipients.length
         ? {

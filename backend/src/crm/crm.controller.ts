@@ -874,11 +874,8 @@ export class CrmController {
         },
       ],
       confirmation: {
-        level: "high",
-        confirmLabel: "Excluir campo e valores",
-        phrase: field.label,
-        inputLabel: "Digite o nome do campo",
-        instruction: `Digite exatamente “${field.label}” para confirmar.`,
+        level: "standard",
+        confirmLabel: "Confirmar",
       },
       blockedReason,
     };

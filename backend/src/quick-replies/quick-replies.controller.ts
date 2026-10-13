@@ -221,7 +221,7 @@ export class QuickRepliesController {
           irreversible: true,
         },
       ],
-      confirmation: { level: "standard", confirmLabel: "Excluir mensagem" },
+      confirmation: { level: "standard", confirmLabel: "Confirmar" },
     };
   }
 

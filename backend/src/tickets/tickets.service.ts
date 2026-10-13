@@ -469,11 +469,8 @@ export class TicketsService {
         },
       ],
       confirmation: {
-        level: "high" as const,
-        confirmLabel: "Excluir chamado",
-        phrase: state.ticket.protocol,
-        inputLabel: "Protocolo do chamado",
-        instruction: `Digite ${state.ticket.protocol} para confirmar a exclusão permanente.`,
+        level: "standard" as const,
+        confirmLabel: "Confirmar",
       },
     };
   }

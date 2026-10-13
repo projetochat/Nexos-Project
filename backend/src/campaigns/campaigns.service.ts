@@ -1559,11 +1559,8 @@ export class CampaignsService {
         },
       ],
       confirmation: {
-        level: "high",
-        confirmLabel: "Excluir campanha",
-        phrase: "EXCLUIR CAMPANHA",
-        inputLabel: "Confirmação",
-        instruction: 'Digite exatamente "EXCLUIR CAMPANHA" para confirmar.',
+        level: "standard",
+        confirmLabel: "Confirmar",
       },
     };
     return { campaign, activeRecipientCount, impact };

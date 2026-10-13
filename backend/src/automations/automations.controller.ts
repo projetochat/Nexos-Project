@@ -298,7 +298,7 @@ export class AutomationsController {
       ],
       confirmation: {
         level: "standard" as const,
-        confirmLabel: "Excluir automação",
+        confirmLabel: "Confirmar",
       },
     };
   }
