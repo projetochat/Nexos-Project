@@ -78,7 +78,6 @@ const validMetrics = {
   empty_keys: 0,
   invalid_format_keys: 0,
   reserved_keys: 0,
-  unexpected_keys: 0,
   unexpected_normalized_names: 0,
   duplicate_keys: 0,
 };
@@ -230,7 +229,6 @@ describe("safe contact custom field migration preflight", () => {
     ["empty_keys", "EMPTY_KEYS"],
     ["invalid_format_keys", "INVALID_KEY_FORMAT"],
     ["reserved_keys", "RESERVED_KEYS"],
-    ["unexpected_keys", "UNEXPECTED_KEYS"],
     ["unexpected_normalized_names", "UNEXPECTED_NORMALIZED_NAMES"],
     ["duplicate_keys", "DUPLICATE_KEYS"],
   ])("detects semantic drift in active or archived rows: %s", (field, expected) => {
@@ -327,8 +325,176 @@ describe("safe contact custom field migration preflight", () => {
         .mockResolvedValueOnce([completed()])
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([validCatalog])
-        .mockResolvedValueOnce([{ ...validMetrics, unexpected_keys: 1 }]),
+        .mockResolvedValueOnce([{ ...validMetrics, invalid_format_keys: 1 }]),
     };
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
+    );
+  });
+
+  it("accepts a stable technical key after a legitimate field rename", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-renamed",
+            tenantId: "tenant-a",
+            label: "Nome atualizado",
+            normalizedName: "nome atualizado",
+            variableKey: "nome_original",
+          },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).resolves.toMatchObject({
+      migrationState: "COMPLETED_VALID",
+      semanticDrift: [],
+    });
+  });
+
+  it("accepts distinct stable keys when current labels derive the same candidate key", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-a",
+            tenantId: "tenant-a",
+            label: "Código do cliente",
+            normalizedName: "código do cliente",
+            variableKey: "codigo_original_a",
+          },
+          {
+            id: "field-b",
+            tenantId: "tenant-a",
+            label: "Código cliente",
+            normalizedName: "código cliente",
+            variableKey: "codigo_original_b",
+          },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).resolves.toMatchObject({
+      migrationState: "COMPLETED_VALID",
+      semanticDrift: [],
+    });
+  });
+
+  it.each([
+    ["an empty label-derived key", "   ", "", "campo_legado"],
+    ["a reserved label-derived key", "Cumprimento", "cumprimento", "campo_legado"],
+  ])("rejects %s after the migration", async (_case, label, normalizedName, variableKey) => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          { id: "field-invalid-label", tenantId: "tenant-a", label, normalizedName, variableKey },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
+    );
+  });
+
+  it.each([
+    ["a null stored key", null],
+    ["an empty stored key", ""],
+    ["an invalid stored key", "Campo Ruim"],
+    ["a reserved stored key", "cumprimento"],
+  ])("rejects %s after the migration", async (_case, variableKey) => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-invalid-key",
+            tenantId: "tenant-a",
+            label: "Campo legado",
+            normalizedName: "campo legado",
+            variableKey,
+          },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
+    );
+  });
+
+  it("rejects a stored normalized name that no longer matches the current label", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-renamed",
+            tenantId: "tenant-a",
+            label: "Nome atualizado",
+            normalizedName: "nome anterior",
+            variableKey: "nome_original",
+          },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
+    );
+  });
+
+  it("rejects duplicate stable technical keys after the migration", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-a",
+            tenantId: "tenant-a",
+            label: "Campo um",
+            normalizedName: "campo um",
+            variableKey: "campo_estavel",
+          },
+          {
+            id: "field-b",
+            tenantId: "tenant-a",
+            label: "Campo dois",
+            normalizedName: "campo dois",
+            variableKey: "campo_estavel",
+          },
+        ]),
+    };
+
     await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
       "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
     );

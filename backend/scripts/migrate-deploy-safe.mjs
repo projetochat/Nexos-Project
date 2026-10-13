@@ -123,44 +123,11 @@ WITH generated AS (
     field."tenantId",
     field."variableKey",
     field."normalizedName",
-    lower(regexp_replace(normalize(trim(field."label"), NFKC), '\\s+', ' ', 'g')) AS expected_name,
-    trim(both '_' from regexp_replace(
-      translate(lower(normalize(trim(field."label"), NFKC)),
-        'áàâãäåéèêëíìîïóòôõöúùûüçñýÿ',
-        'aaaaaaeeeeiiiiooooouuuucnyy'),
-      '[^a-z0-9]+', '_', 'g'
-    )) AS base_key
+    lower(regexp_replace(normalize(trim(field."label"), NFKC), '\\s+', ' ', 'g')) AS expected_name
   FROM "contact_custom_fields" field
-), expected AS (
-  SELECT
-    generated.*,
-    COALESCE(
-      NULLIF(
-        string_agg(part.token, '_' ORDER BY part.ordinal)
-          FILTER (
-            WHERE part.token <> ''
-              AND part.token NOT IN (
-                'de','do','dos','da','das','o','a','os','as',
-                'um','uns','uma','umas','e','ou'
-              )
-          ),
-        ''
-      ),
-      generated.base_key
-    ) AS expected_key
-  FROM generated
-  LEFT JOIN LATERAL regexp_split_to_table(generated.base_key, '_')
-    WITH ORDINALITY AS part(token, ordinal) ON true
-  GROUP BY
-    generated."id",
-    generated."tenantId",
-    generated."variableKey",
-    generated."normalizedName",
-    generated.expected_name,
-    generated.base_key
 ), duplicate_rows AS (
   SELECT count(*) - 1 AS extras
-  FROM expected
+  FROM generated
   WHERE "variableKey" IS NOT NULL
   GROUP BY "tenantId", "variableKey"
   HAVING count(*) > 1
@@ -174,11 +141,10 @@ SELECT
       AND "variableKey" !~ '^[a-z0-9]+(?:_[a-z0-9]+)*$'
   )::int AS invalid_format_keys,
   count(*) FILTER (WHERE "variableKey" = ANY($1::text[]))::int AS reserved_keys,
-  count(*) FILTER (WHERE "variableKey" IS DISTINCT FROM expected_key)::int AS unexpected_keys,
   count(*) FILTER (WHERE "normalizedName" IS DISTINCT FROM expected_name)::int
     AS unexpected_normalized_names,
   COALESCE((SELECT sum(extras) FROM duplicate_rows), 0)::int AS duplicate_keys
-FROM expected
+FROM generated
 `;
 
 export async function migrationChecksum() {
@@ -516,7 +482,6 @@ export function semanticDrift(metrics) {
     ["EMPTY_KEYS", metrics.empty_keys],
     ["INVALID_KEY_FORMAT", metrics.invalid_format_keys],
     ["RESERVED_KEYS", metrics.reserved_keys],
-    ["UNEXPECTED_KEYS", metrics.unexpected_keys],
     ["UNEXPECTED_NORMALIZED_NAMES", metrics.unexpected_normalized_names],
     ["DUPLICATE_KEYS", metrics.duplicate_keys],
   ];
@@ -609,8 +574,10 @@ async function applicationSemanticDrift(prisma, applied) {
       const expectedName = canonicalNormalizedName(row.label);
       const expectedKey = canonicalVariableKey(row.label);
       const migrationKey = migrationVariableKey(row.label);
+      // After creation this is a stable template identifier, not a mirror of the editable label.
+      const stableKey = applied ? row.variableKey : expectedKey;
       const nameIdentity = `${row.tenantId}\0${expectedName}`;
-      const keyIdentity = `${row.tenantId}\0${expectedKey}`;
+      const keyIdentity = `${row.tenantId}\0${stableKey}`;
       if (normalizedNames.has(nameIdentity)) drift.add("APPLICATION_DUPLICATE_NAMES");
       if (variableKeys.has(keyIdentity)) drift.add("APPLICATION_DUPLICATE_KEYS");
       normalizedNames.add(nameIdentity);
@@ -618,12 +585,16 @@ async function applicationSemanticDrift(prisma, applied) {
       if (nativeNames.includes(expectedName)) drift.add("APPLICATION_NATIVE_NAME");
       if (!expectedKey) drift.add("APPLICATION_EMPTY_KEY");
       if (nativeKeys.includes(expectedKey)) drift.add("APPLICATION_RESERVED_KEY");
+      if (applied) {
+        if (!stableKey) drift.add("APPLICATION_STORED_EMPTY_KEY");
+        if (stableKey && !/^[a-z0-9]+(?:_[a-z0-9]+)*$/u.test(stableKey)) {
+          drift.add("APPLICATION_STORED_INVALID_KEY_FORMAT");
+        }
+        if (nativeKeys.includes(stableKey)) drift.add("APPLICATION_STORED_RESERVED_KEY");
+      }
       if (migrationKey !== expectedKey) drift.add("APPLICATION_KEY_ALGORITHM_MISMATCH");
       if (applied && row.normalizedName !== expectedName) {
         drift.add("APPLICATION_UNEXPECTED_NORMALIZED_NAME");
-      }
-      if (applied && row.variableKey !== expectedKey) {
-        drift.add("APPLICATION_UNEXPECTED_KEY");
       }
     }
     if (rows.length < 500) break;
