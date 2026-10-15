@@ -1372,6 +1372,11 @@ export const onboardingApi = {
       method: "POST",
       body: JSON.stringify({ version }),
     }),
+  ensureDepartmentConnection: (connectionId: string) =>
+    apiRequest<{ departmentId: string; connectionId: string; repaired: boolean }>(
+      `/onboarding/department-connection/${encodeURIComponent(connectionId)}`,
+      { method: "POST" },
+    ),
 };
 
 export const crmApi = {
@@ -2012,6 +2017,12 @@ export const connectionsApi = {
   qr: (id: string) =>
     apiRequest<{ connectionId: string; qrCodeBase64: string | null; status: string }>(
       `/messaging/connections/${id}/qr`,
+      { cache: "no-store" },
+    ),
+  qrStatus: (id: string) =>
+    apiRequest<{ connectionId: string; qrCodeBase64: string | null; status: string }>(
+      `/messaging/connections/${id}/qr/current`,
+      { cache: "no-store" },
     ),
   logout: (id: string) =>
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/logout`, {
@@ -2020,10 +2031,16 @@ export const connectionsApi = {
   remove: (id: string) =>
     apiRequest<{
       id: string;
-      removed: boolean;
+      deleted: boolean;
       providerInstanceExisted: boolean;
-      removedConversationHistoryCount?: number;
-      closedChatConversationCount?: number;
+      mediaCleanup: "completed" | "pending";
+      deletedConversationCount: number;
+      deletedMessageCount: number;
+      deletedCampaignCount: number;
+      deletedCampaignRecipientCount: number;
+      deletedNotificationCount: number;
+      deletedScheduleCount: number;
+      unlinkedContactCount: number;
     }>(`/messaging/connections/${id}`, {
       method: "DELETE",
       body: JSON.stringify({ confirmation: "REMOVER" }),

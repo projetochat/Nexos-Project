@@ -13,14 +13,16 @@ import {
 } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  ConversationStatus,
+  CampaignRecipientStatus,
+  CampaignStatus,
   MessagingHistoryImportKind,
-  MessageDirection,
-  MessageType,
+  MessagingHistoryImportStatus,
   MessagingConnection,
   MessagingConnectionStatus,
   MessagingProviderType,
+  OutboxEventStatus,
   Prisma,
+  ScheduleExecutionStatus,
 } from "../generated/prisma";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -28,6 +30,7 @@ import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { phoneFromRemoteIdentity } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
+import { EvolutionQrCodeStore } from "./evolution/evolution-qr-code.store";
 import {
   assertEvolutionConfigured,
   evolutionConfigFromEnv,
@@ -37,17 +40,35 @@ import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.
 import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 import { MessagingHistoryImportService } from "./messaging-history-import.service";
-import { resolveMessageType, validatePolicy } from "./media/messaging-media-storage.service";
+import {
+  MessagingMediaStorageService,
+  resolveMessageType,
+  validatePolicy,
+} from "./media/messaging-media-storage.service";
 import type { QuickReplyAttachmentDto } from "../quick-replies/dto/quick-reply-message.dto";
+import {
+  MESSAGING_MEDIA_CLEANUP_REQUESTED,
+  MessagingMediaCleanupService,
+} from "./messaging-media-cleanup.service";
 
 const IDEMPOTENT_EVOLUTION_TRANSACTION_OPTIONS = {
   maxWait: 10_000,
   timeout: 30_000,
 } as const;
+const QR_STATUS_RECONCILIATION_INTERVAL_MS = 10_000;
+
+function qrReconnectWaitMs() {
+  const configured = Number(process.env.TRIXUS_EVOLUTION_QR_RECONNECT_WAIT_MS);
+  if (!Number.isFinite(configured)) return 30_000;
+  return Math.min(60_000, Math.max(5_000, Math.trunc(configured)));
+}
 
 @Injectable()
 export class MessagingConnectionsService {
   private readonly logger = new Logger(MessagingConnectionsService.name);
+  private readonly qrGenerationRequests = new Map<string, Promise<QrCodeResult>>();
+  private readonly localQrCodes = new Map<string, { value: string; expiresAt: number }>();
+  private readonly qrStatusReconciledAt = new Map<string, number>();
 
   constructor(
     @Inject(PrismaService)
@@ -61,6 +82,15 @@ export class MessagingConnectionsService {
     @Optional()
     @Inject(MessagingHistoryImportService)
     private readonly historyImport?: MessagingHistoryImportService,
+    @Optional()
+    @Inject(EvolutionQrCodeStore)
+    private readonly qrCodes?: EvolutionQrCodeStore,
+    @Optional()
+    @Inject(MessagingMediaStorageService)
+    private readonly mediaStorage?: MessagingMediaStorageService,
+    @Optional()
+    @Inject(MessagingMediaCleanupService)
+    private readonly mediaCleanup?: MessagingMediaCleanupService,
   ) {}
 
   async list(current: AuthenticatedUser) {
@@ -516,28 +546,242 @@ export class MessagingConnectionsService {
     ) {
       throw new BadRequestException("Connection não é Evolution.");
     }
-    const instance = await this.evolution.findInstance(connection.externalReference);
-    if (!instance) {
-      await this.markOrphan(connection.id);
-      throw new BadRequestException("INSTANCE_NOT_FOUND: instance Evolution não encontrada.");
+    const currentRequest = this.qrGenerationRequests.get(connection.id);
+    if (currentRequest) return currentRequest;
+    const request = this.generateQrCode(connection).finally(() => {
+      this.qrGenerationRequests.delete(connection.id);
+    });
+    this.qrGenerationRequests.set(connection.id, request);
+    return request;
+  }
+
+  async qrCodeStatus(id: string, current: AuthenticatedUser) {
+    let connection = await this.findTenantConnection(id, current.tenantId);
+    this.assertNotRemovalPending(connection);
+    if (
+      connection.providerType !== MessagingProviderType.EVOLUTION ||
+      !connection.externalReference
+    ) {
+      throw new BadRequestException("Connection não é Evolution.");
     }
-    const response = await this.evolution.connect(connection.externalReference);
-    await this.ensureWebhookConfiguredSafely(connection.externalReference, connection.id);
+    const instanceName = connection.externalReference;
+    const lastReconciledAt = this.qrStatusReconciledAt.get(connection.id) ?? 0;
+    if (
+      connection.status !== MessagingConnectionStatus.CONNECTED &&
+      Date.now() - lastReconciledAt >= QR_STATUS_RECONCILIATION_INTERVAL_MS &&
+      typeof this.evolution.connectionState === "function"
+    ) {
+      this.qrStatusReconciledAt.set(connection.id, Date.now());
+      try {
+        const state = await this.evolution.connectionState(instanceName);
+        const providerStatus = translateEvolutionState(
+          state.instance?.state ?? state.instance?.status,
+        );
+        if (providerStatus === MessagingConnectionStatus.CONNECTED) {
+          await this.clearQrCode(instanceName);
+          connection = await this.updateConnectionStatus(
+            connection.id,
+            MessagingConnectionStatus.CONNECTED,
+          );
+        }
+      } catch (error) {
+        this.logger.debug({
+          event: "evolution.qr.status_reconciliation_failed",
+          connectionId: connection.id,
+          instanceName: sanitizeInstanceName(instanceName),
+          error: error instanceof Error ? error.message.slice(0, 200) : "Provider unavailable",
+        });
+      }
+    }
+    return this.qrCodeResult(connection, await this.readQrCode(instanceName));
+  }
+
+  async captureEvolutionQrCode(connectionId: string, instanceName: string, value: string | null) {
+    const qrCodeBase64 = normalizeQrCode(value);
+    if (!qrCodeBase64) return false;
+    await this.writeQrCode(instanceName, qrCodeBase64);
+    this.logger.log({
+      event: "evolution.qr.captured",
+      connectionId,
+      instanceName: sanitizeInstanceName(instanceName),
+    });
+    return true;
+  }
+
+  private async generateQrCode(connection: ConnectionWithArchive): Promise<QrCodeResult> {
+    const instanceName = connection.externalReference!;
+    const cached = await this.readQrCode(instanceName);
+    if (cached) return this.qrCodeResult(connection, cached);
+
+    const lockToken = await this.qrCodes?.acquireGenerationLock(instanceName);
+    if (this.qrCodes && !lockToken) {
+      return this.qrCodeResult(connection, await this.readQrCode(instanceName));
+    }
+    const stopLockRenewal = this.startQrLockRenewal(instanceName, lockToken);
+    try {
+      const instance = await this.evolution.findInstance(instanceName);
+      if (!instance) {
+        await this.assertQrLockOwner(instanceName, lockToken);
+        const response = await this.recreateExternalSession(connection, false);
+        return this.completeQrGeneration(connection, response);
+      }
+
+      const state = await this.evolution.connectionState(instanceName);
+      const providerStatus = translateEvolutionState(
+        state.instance?.state ?? state.instance?.status ?? instance.connectionStatus,
+      );
+      if (providerStatus === MessagingConnectionStatus.CONNECTED) {
+        await this.clearQrCode(instanceName);
+        const updated = await this.updateConnectionStatus(
+          connection.id,
+          MessagingConnectionStatus.CONNECTED,
+        );
+        return this.qrCodeResult(updated, null);
+      }
+
+      await this.ensureWebhookConfigured(instanceName);
+      await this.clearQrCode(instanceName);
+      const response = await this.evolution.connect(instanceName);
+      const immediateQr = normalizeQrCode(evolutionQrBase64(response));
+      if (immediateQr) {
+        await this.writeQrCode(instanceName, immediateQr);
+        return this.completeQrGeneration(connection, response);
+      }
+
+      if (providerStatus === MessagingConnectionStatus.DISCONNECTED) {
+        const delayedQr = await this.waitForQrCode(instanceName, qrReconnectWaitMs());
+        if (delayedQr) return this.markQrConnecting(connection, delayedQr);
+        const confirmed = await this.evolution.connectionState(instanceName);
+        const confirmedStatus = translateEvolutionState(
+          confirmed.instance?.state ?? confirmed.instance?.status,
+        );
+        if (confirmedStatus === MessagingConnectionStatus.DISCONNECTED) {
+          await this.assertQrLockOwner(instanceName, lockToken);
+          const recreated = await this.recreateExternalSession(connection, true);
+          return this.completeQrGeneration(connection, recreated);
+        }
+      }
+
+      return this.markQrConnecting(connection, await this.readQrCode(instanceName));
+    } finally {
+      stopLockRenewal();
+      if (lockToken) await this.qrCodes?.releaseGenerationLock(instanceName, lockToken);
+    }
+  }
+
+  private startQrLockRenewal(instanceName: string, lockToken: string | null | undefined) {
+    if (!lockToken || !this.qrCodes) return () => undefined;
+    const interval = setInterval(() => {
+      void this.qrCodes?.renewGenerationLock(instanceName, lockToken);
+    }, 20_000);
+    interval.unref?.();
+    return () => clearInterval(interval);
+  }
+
+  private async assertQrLockOwner(instanceName: string, lockToken: string | null | undefined) {
+    if (!lockToken || !this.qrCodes) return;
+    if (await this.qrCodes.renewGenerationLock(instanceName, lockToken)) return;
+    throw new ServiceUnavailableException(
+      "Outra tentativa de reconexão assumiu esta instância. Aguarde alguns segundos e tente novamente.",
+    );
+  }
+
+  private async recreateExternalSession(
+    connection: ConnectionWithArchive,
+    deleteExisting: boolean,
+  ) {
+    const instanceName = connection.externalReference!;
+    if (deleteExisting) {
+      try {
+        await this.evolution.deleteInstance(instanceName);
+      } catch (error) {
+        if (!isProviderNotFound(error)) throw error;
+      }
+    }
+
+    let response: Awaited<ReturnType<EvolutionClient["createInstance"]>>;
+    try {
+      response = await this.evolution.createInstance({ instanceName });
+    } catch (error) {
+      const reconciled = await this.evolution.findInstance(instanceName).catch(() => null);
+      if (!reconciled) throw error;
+      response = { instance: reconciled };
+    }
+    await this.ensureWebhookConfigured(instanceName);
+    const immediateQr = normalizeQrCode(evolutionQrBase64(response));
+    if (immediateQr) {
+      await this.writeQrCode(instanceName, immediateQr);
+      return response;
+    }
+    return this.evolution.connect(instanceName);
+  }
+
+  private async completeQrGeneration(
+    connection: ConnectionWithArchive,
+    response: Awaited<ReturnType<EvolutionClient["createInstance"]>>,
+  ) {
+    const qrCodeBase64 = normalizeQrCode(evolutionQrBase64(response));
+    if (qrCodeBase64) await this.writeQrCode(connection.externalReference!, qrCodeBase64);
+    return this.markQrConnecting(
+      connection,
+      qrCodeBase64 ?? (await this.readQrCode(connection.externalReference!)),
+    );
+  }
+
+  private async markQrConnecting(connection: ConnectionWithArchive, qrCodeBase64: string | null) {
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
       data: { status: MessagingConnectionStatus.CONNECTING },
     });
-    this.realtime?.publishConnectionStatusUpdated({
-      tenantId: updated.tenantId,
-      connectionId: updated.id,
-      status: updated.status.toLowerCase(),
-      updatedAt: updated.updatedAt,
-    });
+    if (updated.status !== connection.status) {
+      this.realtime?.publishConnectionStatusUpdated({
+        tenantId: updated.tenantId,
+        connectionId: updated.id,
+        status: updated.status.toLowerCase(),
+        updatedAt: updated.updatedAt,
+      });
+    }
+    return this.qrCodeResult(updated, qrCodeBase64);
+  }
+
+  private qrCodeResult(connection: ConnectionWithArchive, qrCodeBase64: string | null) {
     return {
       connectionId: connection.id,
-      qrCodeBase64: evolutionQrBase64(response),
-      status: "connecting",
+      qrCodeBase64,
+      status: connection.status.toLowerCase(),
     };
+  }
+
+  private async writeQrCode(instanceName: string, value: string) {
+    this.localQrCodes.set(instanceName, { value, expiresAt: Date.now() + 90_000 });
+    await this.qrCodes?.put(instanceName, value);
+  }
+
+  private async readQrCode(instanceName: string) {
+    const shared = await this.qrCodes?.get(instanceName);
+    if (shared) return shared;
+    const local = this.localQrCodes.get(instanceName);
+    if (!local) return null;
+    if (local.expiresAt <= Date.now()) {
+      this.localQrCodes.delete(instanceName);
+      return null;
+    }
+    return local.value;
+  }
+
+  private async clearQrCode(instanceName: string) {
+    this.localQrCodes.delete(instanceName);
+    await this.qrCodes?.clear(instanceName);
+  }
+
+  private async waitForQrCode(instanceName: string, timeoutMs: number) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const value = await this.readQrCode(instanceName);
+      if (value) return value;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return null;
   }
 
   async update(id: string, dto: UpdateMessagingConnectionDto, current: AuthenticatedUser) {
@@ -781,60 +1025,56 @@ export class MessagingConnectionsService {
       connectionStatus: connection.status,
       references,
     };
-    if (connection.archivedAt || connection.status === MessagingConnectionStatus.REMOVED) {
-      this.logger.log({
-        ...baseLog,
-        authResult: "allowed",
-        providerResult: "skipped_already_removed",
-        httpResult: 200,
-      });
-      return {
-        id: connection.id,
-        removed: true,
-        archived: true,
-        status: "removed",
-        providerInstanceExisted: false,
-        idempotent: true,
-        removedConversationHistoryCount: 0,
-        closedChatConversationCount: 0,
-      };
-    }
     if (
       connection.providerType !== MessagingProviderType.EVOLUTION ||
-      !connection.externalReference
+      (!connection.externalReference && connection.status !== MessagingConnectionStatus.REMOVED)
     ) {
       throw new BadRequestException("Connection não é Evolution.");
     }
+
+    await this.assertConnectionPurgeAvailable(this.prisma, connection.tenantId, connection.id);
 
     const removalAlreadyPending =
       connection.status === MessagingConnectionStatus.ERROR && connection.serviceEnabled === false;
     const previousStatus = connection.status;
     const previousServiceEnabled = connection.serviceEnabled !== false;
-    const claimed = await this.prisma.messagingConnection.updateMany({
-      where: {
-        id: connection.id,
-        tenantId: current.tenantId,
-        archivedAt: null,
-        status: connection.status,
-        updatedAt: connection.updatedAt,
-      },
-      data: {
-        status: MessagingConnectionStatus.ERROR,
-        serviceEnabled: false,
-      },
-    });
-    if (claimed.count !== 1) {
-      throw new ConflictException(
-        "A conexão foi alterada durante a remoção. Atualize a tela e tente novamente.",
-      );
+    const legacyRemoved =
+      connection.status === MessagingConnectionStatus.REMOVED || !!connection.archivedAt;
+    if (!legacyRemoved) {
+      const claimed = await this.prisma.messagingConnection.updateMany({
+        where: {
+          id: connection.id,
+          tenantId: current.tenantId,
+          archivedAt: null,
+          status: connection.status,
+          updatedAt: connection.updatedAt,
+        },
+        data: {
+          status: MessagingConnectionStatus.ERROR,
+          serviceEnabled: false,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException(
+          "A conexão foi alterada durante a remoção. Atualize a tela e tente novamente.",
+        );
+      }
     }
 
-    let providerDelete: Awaited<ReturnType<typeof this.deleteEvolutionInstanceForRemoval>>;
+    let providerDelete = {
+      result: "skipped_already_removed",
+      endpoint: null as string | null,
+      httpStatus: 200,
+      instanceExisted: false,
+      idempotent: true,
+    };
     try {
-      providerDelete = await this.deleteEvolutionInstanceForRemoval(
-        connection.externalReference,
-        baseLog,
-      );
+      if (!legacyRemoved && connection.externalReference) {
+        providerDelete = await this.deleteEvolutionInstanceForRemoval(
+          connection.externalReference,
+          baseLog,
+        );
+      }
     } catch (error) {
       if (!removalAlreadyPending) {
         await this.prisma.messagingConnection
@@ -863,115 +1103,378 @@ export class MessagingConnectionsService {
       throw error;
     }
 
-    const archivedAt = new Date();
-    const finalized = await this.prisma.$transaction(async (tx) => {
-      const cleanup = await this.cleanupConnectionConversations(connection, tx, archivedAt);
-      const removal = await tx.messagingConnection.updateMany({
-        where: {
-          id: connection.id,
-          tenantId: current.tenantId,
-          archivedAt: null,
-          status: MessagingConnectionStatus.ERROR,
-          serviceEnabled: false,
-          externalReference: connection.externalReference,
-        },
-        data: {
-          status: MessagingConnectionStatus.REMOVED,
-          externalReference: null,
-          ownerExternalId: null,
-          ownerPhoneNormalized: null,
-          archivedAt,
-          serviceEnabled: false,
-        },
+    const finalized = await this.prisma.$transaction(async (tx) =>
+      this.purgeConnectionData(
+        tx,
+        connection.tenantId,
+        connection.id,
+        connection.externalReference,
+        legacyRemoved,
+      ),
+    );
+    const mediaCleanup = await this.cleanupConnectionMedia(
+      finalized.mediaCleanupEventId,
+      finalized.mediaStorageKeys,
+    );
+    if (connection.externalReference) {
+      this.localQrCodes.delete(connection.externalReference);
+      await this.qrCodes?.clear(connection.externalReference).catch((error) => {
+        this.logger.warn({
+          ...baseLog,
+          event: "messaging.connection.remove_qr_cleanup_failed",
+          error: sanitizeEnsureError(error),
+        });
       });
-      if (removal.count !== 1) {
-        throw new ConflictException(
-          "A conexão foi alterada durante a finalização da remoção. Tente novamente.",
-        );
-      }
-      const updated = await tx.messagingConnection.findUniqueOrThrow({
-        where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
-      });
-      return { cleanup, updated };
-    });
+    }
+    this.qrGenerationRequests.delete(connection.id);
+    this.qrStatusReconciledAt.delete(connection.id);
 
     this.realtime?.publishConnectionStatusUpdated({
       tenantId: connection.tenantId,
       connectionId: connection.id,
-      status: "removed",
-      updatedAt: finalized.updated.updatedAt,
+      status: "deleted",
+      updatedAt: new Date(),
     });
     this.logger.log({
       ...baseLog,
       providerResult: providerDelete.result,
       evolutionHttpStatus: providerDelete.httpStatus,
       httpResult: 200,
-      archivedAt,
+      deleted: true,
+      mediaCleanup,
+      counts: finalized.counts,
     });
     return {
       id: connection.id,
-      removed: true,
-      archived: true,
-      status: "removed",
+      deleted: true,
       providerInstanceExisted: providerDelete.instanceExisted,
       idempotent: providerDelete.idempotent,
-      ...finalized.cleanup,
+      mediaCleanup,
+      ...finalized.counts,
     };
   }
 
-  private async cleanupConnectionConversations(
-    connection: { id: string; tenantId: string },
-    db: Pick<Prisma.TransactionClient, "conversation" | "message">,
-    removedAt = new Date(),
+  private async assertConnectionPurgeAvailable(
+    db: PrismaService | Prisma.TransactionClient,
+    tenantId: string,
+    connectionId: string,
   ) {
-    const activeConversations = await db.conversation.findMany({
-      where: {
-        tenantId: connection.tenantId,
-        connectionId: connection.id,
-        status: { not: ConversationStatus.FECHADA },
-        archivedAt: null,
-      },
-      select: { id: true },
-    });
-    const closed = await db.conversation.updateMany({
-      where: {
-        tenantId: connection.tenantId,
-        connectionId: connection.id,
-        status: { not: ConversationStatus.FECHADA },
-        archivedAt: null,
-      },
-      data: {
-        status: ConversationStatus.FECHADA,
-        closedAt: removedAt,
-        archivedAt: removedAt,
-        inboxArchivedAt: removedAt,
-      },
-    });
-    if (activeConversations.length) {
-      await db.message.createMany({
-        data: activeConversations.map((conversation) => ({
-          tenantId: connection.tenantId,
-          conversationId: conversation.id,
-          connectionId: connection.id,
-          direction: MessageDirection.SYSTEM,
-          type: MessageType.SYSTEM,
-          content: INSTANCE_REMOVAL_CLOSE_MESSAGE,
-          createdAt: removedAt,
-        })),
+    const state = await this.loadConnectionPurgeState(db, tenantId, connectionId);
+    if (
+      state.activeCampaignCount > 0 ||
+      state.activeRecipientCount > 0 ||
+      state.processingOutboxCount > 0 ||
+      state.runningImportCount > 0
+    ) {
+      throw new ConflictException(
+        "Existem mensagens ou campanhas em processamento. Aguarde a conclusão antes de excluir a instância.",
+      );
+    }
+    if (state.blockingScheduleCount > 0) {
+      throw new ConflictException(
+        "Existem mensagens agendadas em processamento. Aguarde a conclusão antes de excluir a instância.",
+      );
+    }
+    return state;
+  }
+
+  private async loadConnectionPurgeState(
+    db: PrismaService | Prisma.TransactionClient,
+    tenantId: string,
+    connectionId: string,
+  ) {
+    const [
+      conversations,
+      directMessages,
+      campaigns,
+      schedules,
+      notificationCount,
+      runningImportCount,
+    ] = await Promise.all([
+      db.conversation.findMany({
+        where: { tenantId, connectionId },
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          messages: {
+            orderBy: { id: "asc" },
+            select: { id: true, mediaStorageKey: true },
+          },
+        },
+      }),
+      db.message.findMany({
+        where: { tenantId, connectionId },
+        orderBy: { id: "asc" },
+        select: { id: true, mediaStorageKey: true },
+      }),
+      db.campaign.findMany({
+        where: { tenantId, connectionId },
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          status: true,
+          recipients: { orderBy: { id: "asc" }, select: { id: true, status: true } },
+        },
+      }),
+      db.schedule.findMany({
+        where: { tenantId, connectionId },
+        orderBy: { id: "asc" },
+        select: { id: true, executionStatus: true },
+      }),
+      db.notification.count({ where: { tenantId, connectionId } }),
+      db.messagingHistoryImport.count({
+        where: { tenantId, connectionId, status: MessagingHistoryImportStatus.RUNNING },
+      }),
+    ]);
+    const conversationMessages = conversations.flatMap((item) => item.messages);
+    const messages = [
+      ...new Map(
+        [...conversationMessages, ...directMessages].map((message) => [message.id, message]),
+      ).values(),
+    ];
+    const recipientIds = campaigns.flatMap((campaign) =>
+      campaign.recipients.map((recipient) => recipient.id),
+    );
+    const aggregateIds = [
+      ...conversations.map((item) => item.id),
+      ...messages.map((item) => item.id),
+      ...campaigns.map((item) => item.id),
+      ...recipientIds,
+      ...schedules.map((item) => item.id),
+    ];
+    const processingOutboxCount = aggregateIds.length
+      ? await db.outboxEvent.count({
+          where: {
+            tenantId,
+            aggregateId: { in: aggregateIds },
+            status: OutboxEventStatus.PROCESSING,
+          },
+        })
+      : 0;
+    return {
+      conversationIds: conversations.map((item) => item.id),
+      messageIds: messages.map((item) => item.id),
+      campaignIds: campaigns.map((item) => item.id),
+      recipientIds,
+      scheduleIds: schedules.map((item) => item.id),
+      aggregateIds,
+      notificationCount,
+      runningImportCount,
+      processingOutboxCount,
+      activeCampaignCount: campaigns.filter(
+        (item) =>
+          ![
+            CampaignStatus.DRAFT,
+            CampaignStatus.CANCELLED,
+            CampaignStatus.COMPLETED,
+            CampaignStatus.FAILED,
+          ].includes(item.status as never),
+      ).length,
+      activeRecipientCount: campaigns.reduce(
+        (total, campaign) =>
+          total +
+          campaign.recipients.filter((item) =>
+            [
+              CampaignRecipientStatus.PENDING,
+              CampaignRecipientStatus.QUEUED,
+              CampaignRecipientStatus.PROCESSING,
+            ].includes(item.status as never),
+          ).length,
+        0,
+      ),
+      blockingScheduleCount: schedules.filter(
+        (item) =>
+          item.executionStatus === ScheduleExecutionStatus.CLAIMED ||
+          item.executionStatus === ScheduleExecutionStatus.QUEUED,
+      ).length,
+      mediaStorageKeys: [
+        ...new Set(
+          messages.flatMap((item) => (item.mediaStorageKey ? [item.mediaStorageKey] : [])),
+        ),
+      ],
+    };
+  }
+
+  private async purgeConnectionData(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    connectionId: string,
+    externalReference: string | null,
+    legacyRemoved: boolean,
+  ) {
+    const state = await this.assertConnectionPurgeAvailable(tx, tenantId, connectionId);
+    if (state.messageIds.length) {
+      await tx.campaignRecipient.updateMany({
+        where: { tenantId, messageId: { in: state.messageIds } },
+        data: { messageId: null },
       });
     }
-    const archivedHistory = await db.conversation.updateMany({
-      where: {
-        tenantId: connection.tenantId,
-        connectionId: connection.id,
-        archivedAt: null,
-      },
-      data: { archivedAt: removedAt, inboxArchivedAt: removedAt },
+    if (state.conversationIds.length) {
+      await tx.ticket.updateMany({
+        where: { tenantId, conversationId: { in: state.conversationIds } },
+        data: { conversationId: null },
+      });
+    }
+    if (state.aggregateIds.length) {
+      await tx.outboxEvent.deleteMany({
+        where: {
+          tenantId,
+          aggregateId: { in: state.aggregateIds },
+          status: { not: OutboxEventStatus.PROCESSING },
+        },
+      });
+    }
+    const mediaCleanupEvent = state.mediaStorageKeys.length
+      ? await tx.outboxEvent.create({
+          data: {
+            tenantId,
+            type: MESSAGING_MEDIA_CLEANUP_REQUESTED,
+            aggregateId: connectionId,
+            payload: { connectionId, objectKeys: state.mediaStorageKeys },
+          },
+          select: { id: true },
+        })
+      : null;
+    const deletedConversations = await tx.conversation.deleteMany({
+      where: { tenantId, connectionId },
     });
+    const deletedMessages = await tx.message.deleteMany({ where: { tenantId, connectionId } });
+    const deletedRecipients = state.campaignIds.length
+      ? await tx.campaignRecipient.deleteMany({
+          where: { tenantId, campaignId: { in: state.campaignIds } },
+        })
+      : { count: 0 };
+    const deletedCampaigns = await tx.campaign.deleteMany({ where: { tenantId, connectionId } });
+    const deletedNotifications = await tx.notification.deleteMany({
+      where: { tenantId, connectionId },
+    });
+    const deletedSchedules = await tx.schedule.deleteMany({ where: { tenantId, connectionId } });
+    const unlinkedContacts = await this.removeConnectionFromContacts(
+      tx,
+      tenantId,
+      connectionId,
+      externalReference,
+    );
+    await this.removeConnectionFromRoleMetadata(tx, tenantId, connectionId);
+    const deletedConnection = await tx.messagingConnection.deleteMany({
+      where: {
+        tenantId,
+        id: connectionId,
+        ...(legacyRemoved
+          ? {}
+          : { status: MessagingConnectionStatus.ERROR, serviceEnabled: false }),
+      },
+    });
+    if (deletedConnection.count !== 1) {
+      throw new ConflictException(
+        "A conexão foi alterada durante a exclusão. Atualize a tela e tente novamente.",
+      );
+    }
     return {
-      removedConversationHistoryCount: closed.count + archivedHistory.count,
-      closedChatConversationCount: closed.count,
+      mediaCleanupEventId: mediaCleanupEvent?.id ?? null,
+      mediaStorageKeys: state.mediaStorageKeys,
+      counts: {
+        deletedConversationCount: deletedConversations.count,
+        deletedMessageCount: state.messageIds.length + deletedMessages.count,
+        deletedCampaignCount: deletedCampaigns.count,
+        deletedCampaignRecipientCount: deletedRecipients.count,
+        deletedNotificationCount: deletedNotifications.count,
+        deletedScheduleCount: deletedSchedules.count,
+        unlinkedContactCount: unlinkedContacts,
+      },
     };
+  }
+
+  private async removeConnectionFromContacts(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    connectionId: string,
+    externalReference: string | null,
+  ) {
+    const references = [...new Set([connectionId, externalReference].filter(Boolean))] as string[];
+    const contacts = await tx.contact.findMany({
+      where: {
+        tenantId,
+        OR: [{ instanceIds: { hasSome: references } }, { instance: { in: references } }],
+      },
+      select: { id: true, instance: true, instanceIds: true },
+    });
+    for (const contact of contacts) {
+      const instanceIds = contact.instanceIds.filter((item) => !references.includes(item));
+      const instance =
+        contact.instance && references.includes(contact.instance)
+          ? (instanceIds[0] ?? null)
+          : contact.instance;
+      await tx.contact.update({
+        where: { id: contact.id },
+        data: { instance, instanceIds },
+      });
+    }
+    return contacts.length;
+  }
+
+  private async removeConnectionFromRoleMetadata(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    connectionId: string,
+  ) {
+    const roles = await tx.role.findMany({
+      where: { tenantId },
+      select: { id: true, metadata: true },
+    });
+    for (const role of roles) {
+      if (!role.metadata || typeof role.metadata !== "object" || Array.isArray(role.metadata))
+        continue;
+      const metadata = { ...(role.metadata as Prisma.JsonObject) };
+      let changed = false;
+      if (Array.isArray(metadata.connectionIds)) {
+        const connectionIds = metadata.connectionIds.filter((item) => item !== connectionId);
+        changed ||= connectionIds.length !== metadata.connectionIds.length;
+        metadata.connectionIds = connectionIds;
+      }
+      if (Array.isArray(metadata.chatScopes)) {
+        const chatScopes = metadata.chatScopes.filter(
+          (item) =>
+            !item ||
+            typeof item !== "object" ||
+            Array.isArray(item) ||
+            (item as Prisma.JsonObject).connectionId !== connectionId,
+        );
+        changed ||= chatScopes.length !== metadata.chatScopes.length;
+        metadata.chatScopes = chatScopes;
+      }
+      if (changed) {
+        await tx.role.update({ where: { id: role.id }, data: { metadata } });
+      }
+    }
+  }
+
+  private async cleanupConnectionMedia(eventId: string | null, keys: string[]) {
+    if (!eventId || !keys.length) return "completed" as const;
+    if (this.mediaCleanup) {
+      return (await this.mediaCleanup.process(eventId))
+        ? ("completed" as const)
+        : ("pending" as const);
+    }
+    if (!this.mediaStorage) return "pending" as const;
+    const results = await Promise.allSettled(
+      keys.map((key) => this.mediaStorage?.deleteObject(key)),
+    );
+    const failed = results.find((result) => result.status === "rejected");
+    await this.prisma.outboxEvent.update({
+      where: { id: eventId },
+      data: failed
+        ? {
+            status: OutboxEventStatus.FAILED,
+            lastError: sanitizeEnsureError(failed.reason),
+          }
+        : {
+            status: OutboxEventStatus.PROCESSED,
+            processedAt: new Date(),
+            lastError: null,
+          },
+    });
+    return failed ? ("pending" as const) : ("completed" as const);
   }
 
   async findByEvolutionInstance(instanceName: string) {
@@ -1097,6 +1600,8 @@ export class MessagingConnectionsService {
       messagesUpsertPresent: !!webhook?.events?.includes("MESSAGES_UPSERT"),
       messagesEditedPresent: !!webhook?.events?.includes("MESSAGES_EDITED"),
       messagesDeletePresent: !!webhook?.events?.includes("MESSAGES_DELETE"),
+      qrCodeUpdatedPresent: !!webhook?.events?.includes("QRCODE_UPDATED"),
+      connectionUpdatePresent: !!webhook?.events?.includes("CONNECTION_UPDATE"),
       secretBackendConfigured: !!config.webhookSecret,
       secretEvolutionConfigured: !!evolutionSecret,
       secretMatch:
@@ -1116,6 +1621,9 @@ export class MessagingConnectionsService {
     owner?: { ownerExternalId?: string | null; ownerPhoneNormalized?: string | null },
   ) {
     const current = await this.prisma.messagingConnection.findUniqueOrThrow({ where: { id } });
+    if (status === MessagingConnectionStatus.CONNECTED && current.externalReference) {
+      await this.clearQrCode(current.externalReference);
+    }
     const ownerData = {
       ownerExternalId: owner?.ownerExternalId ?? undefined,
       ownerPhoneNormalized: owner?.ownerPhoneNormalized ?? undefined,
@@ -1378,14 +1886,30 @@ function normalizeAutomaticAttachment(
   return { ...value } satisfies Prisma.InputJsonObject;
 }
 
-const INSTANCE_REMOVAL_CLOSE_MESSAGE = "Conversa encerrada via remoção da instância";
-
 type ConnectionWithArchive = Prisma.MessagingConnectionGetPayload<object> & {
   archivedAt?: Date | null;
 };
 
+type QrCodeResult = {
+  connectionId: string;
+  qrCodeBase64: string | null;
+  status: string;
+};
+
 export function evolutionQrBase64(response: { base64?: string; qrcode?: { base64?: string } }) {
   return response.qrcode?.base64 ?? response.base64 ?? null;
+}
+
+function normalizeQrCode(value: string | null | undefined) {
+  const normalized = value?.trim();
+  if (!normalized || normalized.length > 1_500_000) return null;
+  if (/^data:image\/(?:png|jpe?g|webp);base64,[a-z0-9+/=\s]+$/i.test(normalized)) {
+    return normalized.replace(/\s+/g, "");
+  }
+  if (/^[a-z0-9+/=\s]+$/i.test(normalized)) {
+    return `data:image/png;base64,${normalized.replace(/\s+/g, "")}`;
+  }
+  return null;
 }
 
 export function translateEvolutionState(value: string | null | undefined) {

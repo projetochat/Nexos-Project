@@ -29,8 +29,19 @@ function row(overrides: Record<string, unknown> = {}) {
 function database(queryResults: unknown[][]) {
   const tx = {
     $queryRaw: vi.fn(),
-    messagingConnection: { count: vi.fn().mockResolvedValue(1) },
-    department: { count: vi.fn().mockResolvedValue(1) },
+    messagingConnection: {
+      count: vi.fn().mockResolvedValue(1),
+      findMany: vi.fn().mockResolvedValue([{ id: "connection-a" }]),
+    },
+    department: {
+      count: vi.fn().mockResolvedValue(1),
+      findFirst: vi.fn().mockResolvedValue({
+        id: "department-a",
+        connections: [{ connectionId: "connection-a" }],
+      }),
+      findMany: vi.fn().mockResolvedValue([{ id: "tenant-a:atendimento", name: "Atendimento" }]),
+    },
+    departmentConnection: { upsert: vi.fn().mockResolvedValue({}) },
     role: { count: vi.fn().mockResolvedValue(1) },
     tenantMembership: { count: vi.fn().mockResolvedValue(1) },
   };
@@ -73,6 +84,100 @@ describe("OnboardingService", () => {
       progress: { currentStep: 4, maxCompletedStep: 3 },
     });
     expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it("repairs the seeded department link before completing the department step", async () => {
+    const updated = row({ currentStep: 4, maxCompletedStep: 3, version: 4 });
+    const { prisma, tx } = database([[row({ currentStep: 3, maxCompletedStep: 2 })], [updated]]);
+    tx.department.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "tenant-a:atendimento" });
+
+    await new OnboardingService(prisma as never).updateProgress(
+      { currentStep: 4, maxCompletedStep: 3, version: 3 },
+      admin as never,
+    );
+
+    expect(tx.departmentConnection.upsert).toHaveBeenCalledWith({
+      where: {
+        tenantId_departmentId_connectionId: {
+          tenantId: "tenant-a",
+          departmentId: "tenant-a:atendimento",
+          connectionId: "connection-a",
+        },
+      },
+      create: {
+        tenantId: "tenant-a",
+        departmentId: "tenant-a:atendimento",
+        connectionId: "connection-a",
+      },
+      update: {},
+    });
+  });
+
+  it("repairs an affected completed tenant only for the selected connected instance", async () => {
+    const { prisma, tx } = database([]);
+    tx.department.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "tenant-a:atendimento" });
+
+    const result = await new OnboardingService(prisma as never).ensureDefaultDepartmentConnection(
+      "connection-a",
+      admin as never,
+    );
+
+    expect(result).toEqual({
+      departmentId: "tenant-a:atendimento",
+      connectionId: "connection-a",
+      repaired: true,
+    });
+    expect(tx.messagingConnection.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: "tenant-a", id: "connection-a" }),
+        take: 1,
+      }),
+    );
+  });
+
+  it("reuses a legacy Atendimento department whose id is not the seeded id", async () => {
+    const { prisma, tx } = database([]);
+    tx.department.findFirst.mockResolvedValueOnce(null);
+    tx.department.findMany.mockResolvedValueOnce([
+      { id: "legacy-department-uuid", name: "  ATENDIMENTO  " },
+    ]);
+
+    await expect(
+      new OnboardingService(prisma as never).ensureDefaultDepartmentConnection(
+        "connection-a",
+        admin as never,
+      ),
+    ).resolves.toEqual({
+      departmentId: "legacy-department-uuid",
+      connectionId: "connection-a",
+      repaired: true,
+    });
+
+    expect(tx.departmentConnection.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: {
+          tenantId: "tenant-a",
+          departmentId: "legacy-department-uuid",
+          connectionId: "connection-a",
+        },
+      }),
+    );
+  });
+
+  it("does not expose the recovery operation to a regular profile", async () => {
+    const { prisma } = database([]);
+
+    await expect(
+      new OnboardingService(prisma as never).ensureDefaultDepartmentConnection("connection-a", {
+        ...admin,
+        roleKey: "agent",
+      } as never),
+    ).rejects.toMatchObject({ response: { code: "ONBOARDING_ADMIN_REQUIRED" } });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it("rejects a stale writer and returns the current server state", async () => {
@@ -144,6 +249,13 @@ describe("OnboardingService", () => {
     expect(result.checklist).toMatchObject({
       tagsReviewed: true,
       quickRepliesReviewed: false,
+    });
+    expect(prisma.department.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        tenantId: "tenant-a",
+        active: true,
+        connections: expect.any(Object),
+      }),
     });
   });
 

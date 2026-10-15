@@ -461,7 +461,7 @@ export function QuickReplyEditor({
         </label>
         <Field
           label="Atalho *"
-          hint="Somente letras e hífen, sem barra. Ex.: bom-dia, bt, obg"
+          hint="Somente letras, números e hífen, sem barra. Ex.: bom-dia, bt2, obg"
           error={shortcutError || undefined}
         >
           <Input
@@ -635,7 +635,7 @@ function duplicateShortcut(value: string, clone: boolean) {
 }
 
 function sanitizeQuickReplyShortcut(value: string) {
-  return value.replace(/[^\p{L}-]/gu, "").toLocaleLowerCase("pt-BR");
+  return value.replace(/[^\p{L}\p{N}-]/gu, "").toLocaleLowerCase("pt-BR");
 }
 
 function previewQuickReplyText(value: string) {

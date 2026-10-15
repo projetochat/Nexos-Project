@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -27,5 +27,13 @@ export class OnboardingController {
   @Post("complete")
   complete(@Body() dto: CompleteOnboardingDto, @CurrentUser() current: AuthenticatedUser) {
     return this.onboarding.complete(dto, current);
+  }
+
+  @Post("department-connection/:connectionId")
+  ensureDepartmentConnection(
+    @Param("connectionId") connectionId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.onboarding.ensureDefaultDepartmentConnection(connectionId, current);
   }
 }

@@ -20,6 +20,7 @@ import { useSession } from "@/lib/session";
 import {
   conversationApi,
   crmApi,
+  onboardingApi,
   organizationApi,
   type ApiConversation,
   type ApiContact,
@@ -63,6 +64,7 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
     staleTime: 0,
     refetchOnMount: "always",
   });
+  const refetchDepartments = departmentsQuery.refetch;
   const instanceCatalogQuery = useQuery({
     queryKey: ["trixus", "contact-options"],
     queryFn: crmApi.contactOptions,
@@ -221,21 +223,41 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
   );
 
   const continueWithConnection = React.useCallback(
-    (selectedConnectionId: string) => {
+    async (selectedConnectionId: string) => {
       if (!request) return;
       const existing = existingForConnection(selectedConnectionId);
       if (existing) {
         void openExistingConversation(existing);
         return;
       }
-      const departments = departmentsForConnection(
-        departmentsQuery.data ?? [],
-        selectedConnectionId,
-      );
+      let departments = departmentsForConnection(departmentsQuery.data ?? [], selectedConnectionId);
       if (departments.length === 0) {
-        toast.error("Nenhum departamento permitido para esta instância.");
-        close();
-        return;
+        if (!isTenantAdmin) {
+          toast.error("Nenhum departamento permitido para esta instância.");
+          close();
+          return;
+        }
+        setBusy(true);
+        try {
+          await onboardingApi.ensureDepartmentConnection(selectedConnectionId);
+          const refreshed = await refetchDepartments();
+          departments = departmentsForConnection(refreshed.data ?? [], selectedConnectionId);
+        } catch (error) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível vincular o departamento à instância.",
+          );
+          close();
+          return;
+        } finally {
+          setBusy(false);
+        }
+        if (departments.length === 0) {
+          toast.error("Nenhum departamento permitido para esta instância.");
+          close();
+          return;
+        }
       }
       const favorite = isTenantAdmin
         ? undefined
@@ -255,6 +277,7 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
       existingForConnection,
       isTenantAdmin,
       openExistingConversation,
+      refetchDepartments,
       request,
     ],
   );
@@ -319,7 +342,7 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
       return;
     }
     if (linkedReferences.length === 1) {
-      continueWithConnection(resolved[0].id);
+      void continueWithConnection(resolved[0].id);
       return;
     }
     setStep("instance");
@@ -401,7 +424,7 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
               key={instance.id}
               type="button"
               disabled={busy}
-              onClick={() => continueWithConnection(instance.id)}
+              onClick={() => void continueWithConnection(instance.id)}
               className="flex min-h-12 w-full items-center gap-3 rounded-lg border border-border px-4 text-left hover:bg-surface-1"
             >
               <span

@@ -134,4 +134,47 @@ describe("live update webhook admission while service pauses", () => {
     await expect(request(test.controller)).rejects.toThrow("retention unavailable");
     expect(test.selected).not.toHaveBeenCalled();
   });
+
+  it("captures a delayed QR before updating the connection status", async () => {
+    const connection = { id: "connection-a", tenantId: "tenant-a" };
+    const captureEvolutionQrCode = vi.fn().mockResolvedValue(true);
+    const updateConnectionStatus = vi.fn().mockResolvedValue(connection);
+    const controller = new EvolutionWebhookController(
+      new JwtService(),
+      {
+        findByEvolutionInstance: vi.fn().mockResolvedValue(connection),
+        captureEvolutionQrCode,
+        updateConnectionStatus,
+      } as never,
+      {
+        translate: vi.fn().mockReturnValue({
+          kind: "connection",
+          instanceName: "test-instance",
+          status: "CONNECTING",
+          qrCodeBase64: "data:image/png;base64,cXItY29kZQ==",
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { deferIfPaused: vi.fn().mockResolvedValue(false) } as never,
+    );
+
+    await expect(
+      controller.receive(
+        { instance: "test-instance", event: "qrcode.updated" },
+        undefined,
+        "isolated-webhook-secret",
+      ),
+    ).resolves.toMatchObject({ ok: true, kind: "connection" });
+    expect(captureEvolutionQrCode).toHaveBeenCalledWith(
+      "connection-a",
+      "test-instance",
+      "data:image/png;base64,cXItY29kZQ==",
+    );
+    expect(captureEvolutionQrCode.mock.invocationCallOrder[0]).toBeLessThan(
+      updateConnectionStatus.mock.invocationCallOrder[0],
+    );
+  });
 });

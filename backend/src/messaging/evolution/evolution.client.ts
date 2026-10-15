@@ -489,10 +489,10 @@ export class EvolutionClient {
       });
 
       const data = await readJson(response, options.maxResponseBytes);
-      if (!response.ok) {
+      if (!response.ok || evolutionSemanticError(data)) {
         throw classifyEvolutionProviderError({
-          status: response.status,
-          statusText: response.statusText,
+          status: response.ok ? 502 : response.status,
+          statusText: response.ok ? "Evolution returned an error payload" : response.statusText,
           data,
           endpointPath: path,
           method: options.method,
@@ -518,6 +518,16 @@ export class EvolutionClient {
       clearTimeout(timeout);
     }
   }
+}
+
+function evolutionSemanticError(data: unknown) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  const payload = data as { error?: unknown; success?: unknown; status?: unknown };
+  return (
+    payload.error === true ||
+    payload.success === false ||
+    (typeof payload.status === "string" && payload.status.toLowerCase() === "error")
+  );
 }
 
 async function readJson(response: Response, maxBytes?: number) {

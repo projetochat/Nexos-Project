@@ -749,19 +749,27 @@ describe("trixus-api auth client", () => {
       expect(JSON.parse(String(init?.body))).toEqual({ confirmation: "REMOVER" });
       return responseJson(200, {
         id: "connection-a",
-        removed: true,
-        archived: true,
-        status: "removed",
+        deleted: true,
         providerInstanceExisted: false,
         idempotent: true,
+        mediaCleanup: "completed",
+        deletedConversationCount: 2,
+        deletedMessageCount: 4,
+        deletedCampaignCount: 1,
+        deletedCampaignRecipientCount: 3,
+        deletedNotificationCount: 5,
+        deletedScheduleCount: 1,
+        unlinkedContactCount: 2,
       });
     });
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(connectionsApi.remove("connection-a")).resolves.toMatchObject({
-      removed: true,
-      archived: true,
-      status: "removed",
+      deleted: true,
+      mediaCleanup: "completed",
+      deletedConversationCount: 2,
+      deletedMessageCount: 4,
+      unlinkedContactCount: 2,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

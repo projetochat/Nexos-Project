@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   form: vi.fn(),
   send: vi.fn(),
   departments: vi.fn(),
+  ensureDepartmentConnection: vi.fn(),
   role: "operator",
   connections: [
     { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
@@ -81,6 +82,9 @@ vi.mock("@/lib/trixus-api", () => ({
   organizationApi: {
     listChatDepartments: () => mocks.departments(),
   },
+  onboardingApi: {
+    ensureDepartmentConnection: (...args: unknown[]) => mocks.ensureDepartmentConnection(...args),
+  },
   messageApi: { sendText: (...args: unknown[]) => mocks.send(...args) },
 }));
 
@@ -139,6 +143,11 @@ beforeEach(() => {
     is_group: false,
   });
   mocks.listConversations.mockResolvedValue({ items: [] });
+  mocks.ensureDepartmentConnection.mockResolvedValue({
+    departmentId: "tenant-a:atendimento",
+    connectionId: "a",
+    repaired: true,
+  });
   mocks.departments.mockResolvedValue([
     {
       id: "department-a",
@@ -587,5 +596,29 @@ describe("new conversation contact picker", () => {
 
     expect(mocks.create).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain("Escolher Departamento");
+  });
+
+  it("repairs the missing default department link for the tenant administrator", async () => {
+    mocks.role = "admin";
+    mocks.connections = [
+      { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
+    ];
+    mocks.departments.mockResolvedValueOnce([]).mockResolvedValue([
+      {
+        id: "tenant-a:atendimento",
+        name: "Atendimento",
+        connectionIds: ["a"],
+        favoriteConnectionIds: ["a"],
+      },
+    ]);
+    await mount();
+
+    await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
+    await flush();
+
+    expect(mocks.ensureDepartmentConnection).toHaveBeenCalledWith("a");
+    expect(document.body.textContent).toContain("Escolher Departamento");
+    expect(document.body.textContent).toContain("Atendimento");
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 });

@@ -6,7 +6,7 @@ import {
   Injectable,
 } from "@nestjs/common";
 import type { AuthenticatedUser } from "../auth/auth.types";
-import { Prisma } from "../generated/prisma";
+import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { CompleteOnboardingDto } from "./dto/complete-onboarding.dto";
 import { UpdateOnboardingProgressDto } from "./dto/update-onboarding-progress.dto";
@@ -36,7 +36,12 @@ type Checklist = {
 
 type OnboardingDatabase = Pick<
   PrismaService,
-  "$queryRaw" | "messagingConnection" | "department" | "role" | "tenantMembership"
+  | "$queryRaw"
+  | "messagingConnection"
+  | "department"
+  | "departmentConnection"
+  | "role"
+  | "tenantMembership"
 >;
 
 @Injectable()
@@ -85,6 +90,9 @@ export class OnboardingService {
           message: "Conclua a etapa atual antes de avançar.",
         });
       }
+      if (maxCompletedStep >= 3 && existing.maxCompletedStep < 3) {
+        await this.ensureDefaultDepartmentConnectionTx(tx, current.tenantId);
+      }
       const checklist = await this.checklist(tx, current.tenantId, {
         ...existing,
         currentStep,
@@ -131,6 +139,7 @@ export class OnboardingService {
         });
       }
 
+      await this.ensureDefaultDepartmentConnectionTx(tx, current.tenantId);
       const checklist = await this.checklist(tx, current.tenantId, existing);
       if (
         !checklist.instanceConnected ||
@@ -167,6 +176,13 @@ export class OnboardingService {
         tagsReviewed: true,
       });
     });
+  }
+
+  async ensureDefaultDepartmentConnection(connectionId: string, current: AuthenticatedUser) {
+    this.assertAdministrator(current);
+    return this.prisma.$transaction((tx) =>
+      this.ensureDefaultDepartmentConnectionTx(tx, current.tenantId, connectionId),
+    );
   }
 
   private assertAdministrator(current: AuthenticatedUser) {
@@ -237,9 +253,32 @@ export class OnboardingService {
     const [instanceConnected, activeDepartment, administratorProfile, activeAdministrator] =
       await Promise.all([
         db.messagingConnection.count({
-          where: { tenantId, status: "CONNECTED", archivedAt: null },
+          where: {
+            tenantId,
+            providerType: MessagingProviderType.EVOLUTION,
+            status: MessagingConnectionStatus.CONNECTED,
+            archivedAt: null,
+            serviceEnabled: true,
+          },
         }),
-        db.department.count({ where: { tenantId, active: true } }),
+        db.department.count({
+          where: {
+            tenantId,
+            active: true,
+            connections: {
+              some: {
+                tenantId,
+                connection: {
+                  tenantId,
+                  providerType: MessagingProviderType.EVOLUTION,
+                  status: MessagingConnectionStatus.CONNECTED,
+                  archivedAt: null,
+                  serviceEnabled: true,
+                },
+              },
+            },
+          },
+        }),
         db.role.count({ where: { tenantId, key: "tenant_admin" } }),
         db.tenantMembership.count({
           where: {
@@ -258,6 +297,87 @@ export class OnboardingService {
       tagsReviewed: row.maxCompletedStep >= 6,
       quickRepliesReviewed: row.maxCompletedStep >= 7,
     };
+  }
+
+  private async ensureDefaultDepartmentConnectionTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    requestedConnectionId?: string,
+  ) {
+    const connectionWhere = {
+      tenantId,
+      providerType: MessagingProviderType.EVOLUTION,
+      status: MessagingConnectionStatus.CONNECTED,
+      archivedAt: null,
+      serviceEnabled: true,
+      ...(requestedConnectionId ? { id: requestedConnectionId } : {}),
+    };
+    const linkedDepartment = await tx.department.findFirst({
+      where: {
+        tenantId,
+        active: true,
+        connections: { some: { tenantId, connection: connectionWhere } },
+      },
+      select: {
+        id: true,
+        connections: { where: { connection: connectionWhere }, select: { connectionId: true } },
+      },
+    });
+    const linkedConnectionId = linkedDepartment?.connections[0]?.connectionId;
+    if (linkedDepartment && linkedConnectionId) {
+      return {
+        departmentId: linkedDepartment.id,
+        connectionId: linkedConnectionId,
+        repaired: false,
+      };
+    }
+
+    const connections = await tx.messagingConnection.findMany({
+      where: connectionWhere,
+      select: { id: true },
+      take: requestedConnectionId ? 1 : 2,
+    });
+    if (connections.length === 0) {
+      throw new BadRequestException({
+        code: "ONBOARDING_CONNECTED_INSTANCE_REQUIRED",
+        message: "Conecte uma instância do WhatsApp antes de configurar o departamento.",
+      });
+    }
+    if (!requestedConnectionId && connections.length !== 1) {
+      throw new BadRequestException({
+        code: "ONBOARDING_INSTANCE_SELECTION_REQUIRED",
+        message: "Selecione a instância que deve ser vinculada ao departamento padrão.",
+      });
+    }
+
+    const departments = await tx.department.findMany({
+      where: { tenantId, active: true },
+      orderBy: { id: "asc" },
+      select: { id: true, name: true },
+    });
+    const department = departments.find(
+      (item) => normalizeDepartmentName(item.name) === "atendimento",
+    );
+    if (!department) {
+      throw new BadRequestException({
+        code: "ONBOARDING_DEFAULT_DEPARTMENT_REQUIRED",
+        message: "Cadastre ou reative o departamento Atendimento antes de continuar.",
+      });
+    }
+
+    const connectionId = connections[0].id;
+    await tx.departmentConnection.upsert({
+      where: {
+        tenantId_departmentId_connectionId: {
+          tenantId,
+          departmentId: department.id,
+          connectionId,
+        },
+      },
+      create: { tenantId, departmentId: department.id, connectionId },
+      update: {},
+    });
+    return { departmentId: department.id, connectionId, repaired: true };
   }
 
   private serialize(current: AuthenticatedUser, row: OnboardingRow | null, checklist: Checklist) {
@@ -308,6 +428,15 @@ export class OnboardingService {
       current: this.serialize(current, row, await this.checklist(db, current.tenantId, row)),
     });
   }
+}
+
+function normalizeDepartmentName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
 }
 
 function onboardingNotRequired() {

@@ -74,7 +74,9 @@ export class EvolutionWebhookTranslator {
         kind: "connection",
         instanceName: payload.instance,
         status: MessagingConnectionStatus.CONNECTING,
-        qrCodeBase64: readNestedString(payload.data, ["qrcode", "base64"]),
+        qrCodeBase64:
+          readNestedString(payload.data, ["qrcode", "base64"]) ??
+          readString(payload.data, "base64"),
       } as const;
     }
     return { kind: "ignored", reason: "UNSUPPORTED_EVENT" } as const;

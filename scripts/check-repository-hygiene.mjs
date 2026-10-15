@@ -43,7 +43,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/src/messaging/evolution/evolution-webhook.controller.spec.ts",
-    "b0b1ca23a657e74c5b96a00f7bc73c4b6473df7ea6b192bd32ff2fe2f113fc15",
+    "98e77cb89e0fb7548b71d4725998c7559d9ad353a6d272f37abefef3c6ad1107",
   ],
   [
     "backend/src/messaging/evolution/evolution.client.spec.ts",
@@ -75,7 +75,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "src/lib/trixus-api.test.ts",
-    "bf5d526cf1cf1c8e536548f4653044b8f19505cfb58e3096fe6541dbe573a12b",
+    "a03cfa8f634bbfb833c82c3f2d9ec95f21bee089d3654981ba0be3d6db30b42a",
   ],
   [
     "backend/src/platform/platform.service.spec.ts",

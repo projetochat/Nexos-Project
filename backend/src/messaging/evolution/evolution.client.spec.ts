@@ -179,6 +179,18 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("rejects an Evolution HTTP 200 response that carries a semantic error", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(response({ error: true, message: "Instance unavailable" }));
+
+    await expect(new EvolutionClient().connect("instance-a")).rejects.toMatchObject({
+      code: MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+      retryable: true,
+      httpStatus: 502,
+    });
+  });
+
   it("downloads inbound media through Evolution getBase64FromMediaMessage", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       response({

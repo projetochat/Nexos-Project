@@ -10,10 +10,12 @@ import { DevelopmentMessagingProvider } from "./development-messaging.provider";
 import { ContactProfilePictureSyncService } from "./contact-profile-picture-sync.service";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { EvolutionMessagingProvider } from "./evolution/evolution-messaging.provider";
+import { EvolutionQrCodeStore } from "./evolution/evolution-qr-code.store";
 import { EvolutionStartupService } from "./evolution/evolution-startup.service";
 import { EvolutionWebhookController } from "./evolution/evolution-webhook.controller";
 import { EvolutionWebhookTranslator } from "./evolution/evolution-webhook.translator";
 import { MessagingMediaStorageService } from "./media/messaging-media-storage.service";
+import { MessagingMediaCleanupService } from "./messaging-media-cleanup.service";
 import { VoiceAudioTranscoderService } from "./media/voice-audio-transcoder.service";
 import { MessagingConnectionsController } from "./messaging-connections.controller";
 import { MessagingConnectionsService } from "./messaging-connections.service";
@@ -42,11 +44,13 @@ import { MessagingServicePauseService } from "./messaging-service-pause.service"
     EvolutionClient,
     EvolutionStartupService,
     EvolutionMessagingProvider,
+    EvolutionQrCodeStore,
     EvolutionWebhookTranslator,
     MessagingConnectionsService,
     MessagingServicePauseService,
     MessagingProviderRegistry,
     MessagingMediaStorageService,
+    MessagingMediaCleanupService,
     VoiceAudioTranscoderService,
     MessagingOutboundService,
     SenderDisplayNameService,

@@ -41,7 +41,6 @@ import {
 import { QrGenerationLoadingOverlay } from "@/components/qr-generation-loading-overlay";
 import { createOnboardingConnectionWithQr } from "@/components/tenant-onboarding-connection";
 import { usePhotoCropper } from "@/hooks/use-photo-cropper";
-import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import {
   TrixusApiError,
   apiErrorMessageWithRequestId,
@@ -63,7 +62,7 @@ import {
   buildOnboardingAttendantPayload,
   canAdvanceOnboardingStep,
   formatOnboardingConnectedAt,
-  isOnboardingInstanceNotFound,
+  hasActiveDepartmentConnection,
   onboardingRoleColorClass,
   onboardingStepAfterRefresh,
   shouldPollOnboardingConnection,
@@ -677,70 +676,81 @@ const InstanceStep = React.forwardRef<
 >(function InstanceStep({ onServerChange, onFooterStateChange }, ref) {
   const queryClient = useQueryClient();
   const connections = useQuery({ queryKey: CONNECTIONS_QUERY_KEY, queryFn: connectionsApi.list });
+  const refetchConnections = connections.refetch;
   const visible = (connections.data ?? []).filter((item) => item.status !== "removed");
   const [name, setName] = React.useState("");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [qr, setQr] = React.useState<string | null>(null);
+  const [qrSessionOpen, setQrSessionOpen] = React.useState(false);
   const [connectionError, setConnectionError] = React.useState<string | null>(null);
-  const [orphanedConnectionId, setOrphanedConnectionId] = React.useState<string | null>(null);
   const createRequestActive = React.useRef(false);
   const qrRequestActive = React.useRef(false);
   const selected = visible.find((item) => item.id === selectedId) ?? visible[0];
+  const selectedPollingId = selected?.id;
+  const selectedNeedsPolling = shouldPollOnboardingConnection(selected);
 
   React.useEffect(() => {
     if (!selectedId && visible[0]) setSelectedId(visible[0].id);
   }, [selectedId, visible]);
 
   React.useEffect(() => {
-    if (!shouldPollOnboardingConnection(selected) || orphanedConnectionId === selected?.id) return;
+    if (!selectedNeedsPolling || !selectedPollingId) return;
     let active = true;
+    let timeoutId: number | undefined;
     const poll = async () => {
       try {
-        const updated = await connectionsApi.status(selected.id);
+        const qrResult = qrSessionOpen ? await connectionsApi.qrStatus(selectedPollingId) : null;
+        const updated = qrResult ? null : await connectionsApi.status(selectedPollingId);
         if (!active) return;
-        queryClient.setQueryData<ApiMessagingConnection[]>(CONNECTIONS_QUERY_KEY, (current = []) =>
-          current.map((item) => (item.id === updated.id ? updated : item)),
-        );
-        if (updated.provider?.reason === "INSTANCE_NOT_FOUND") {
-          setOrphanedConnectionId(updated.id);
-          setConnectionError(
-            "A instância não existe mais no provedor. Remova este vínculo órfão para recriá-la com segurança.",
+        if (updated) {
+          queryClient.setQueryData<ApiMessagingConnection[]>(
+            CONNECTIONS_QUERY_KEY,
+            (current = []) => current.map((item) => (item.id === updated.id ? updated : item)),
           );
-          return;
         }
-        if (updated.status === "connected") {
+        if (qrResult?.qrCodeBase64) setQr(qrResult.qrCodeBase64);
+        if (updated?.provider?.reason === "INSTANCE_NOT_FOUND") {
+          setConnectionError(
+            "A sessão externa não existe mais. Gere um novo QR Code para recuperá-la sem perder o histórico.",
+          );
+        }
+        if ((qrResult?.status ?? updated?.status) === "connected") {
           setConnectionError(null);
           setQr(null);
+          setQrSessionOpen(false);
+          await refetchConnections();
           await onServerChange();
-        }
-      } catch (error) {
-        if (isOnboardingInstanceNotFound(error)) {
-          setOrphanedConnectionId(selected.id);
-          setConnectionError(
-            "A instância não foi encontrada no provedor. Remova este vínculo órfão antes de tentar novamente.",
-          );
           return;
         }
+      } catch {
         setConnectionError(
           "Não foi possível verificar a conexão. Confira sua internet e tente novamente.",
         );
+      } finally {
+        if (active) timeoutId = window.setTimeout(() => void poll(), 2_000);
       }
     };
     void poll();
-    const timer = window.setInterval(() => void poll(), 3_000);
     return () => {
       active = false;
-      window.clearInterval(timer);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [onServerChange, orphanedConnectionId, queryClient, selected]);
+  }, [
+    onServerChange,
+    qrSessionOpen,
+    queryClient,
+    refetchConnections,
+    selectedNeedsPolling,
+    selectedPollingId,
+  ]);
 
   const create = useMutation({
     mutationFn: () => createOnboardingConnectionWithQr(name.trim()),
     onSuccess: async (connection) => {
       setConnectionError(null);
-      setOrphanedConnectionId(null);
       setSelectedId(connection.id);
       setQr(connection.qrCodeBase64 ?? null);
+      setQrSessionOpen(connection.status !== "connected");
       await connections.refetch();
       await onServerChange();
     },
@@ -756,53 +766,26 @@ const InstanceStep = React.forwardRef<
   });
   const requestQr = useMutation({
     mutationFn: (connection: ApiMessagingConnection) => connectionsApi.qr(connection.id),
+    onMutate: () => {
+      setQr(null);
+      setQrSessionOpen(true);
+    },
     onSuccess: async (result) => {
       setConnectionError(null);
       setQr(result.qrCodeBase64);
+      setQrSessionOpen(result.status !== "connected");
       await connections.refetch();
       await onServerChange();
     },
     onError: (error) => {
-      if (selected && isOnboardingInstanceNotFound(error)) {
-        setOrphanedConnectionId(selected.id);
-        setConnectionError(
-          "A instância não foi encontrada no provedor. Remova este vínculo órfão para recriá-la.",
-        );
-      } else {
-        setConnectionError(apiErrorMessageWithRequestId(error));
-      }
+      setQrSessionOpen(false);
+      setConnectionError(apiErrorMessageWithRequestId(error));
       toast.error(apiErrorMessageWithRequestId(error));
     },
     onSettled: () => {
       qrRequestActive.current = false;
     },
   });
-  const removeOrphan = useMutation({
-    mutationFn: (connection: ApiMessagingConnection) => connectionsApi.remove(connection.id),
-    onSuccess: async (_result, connection) => {
-      setName(connection.name);
-      setQr(null);
-      setSelectedId(null);
-      setOrphanedConnectionId(null);
-      setConnectionError(null);
-      await connections.refetch();
-      await onServerChange();
-      toast.success("Vínculo órfão removido. O histórico foi preservado.");
-    },
-    onError: (error) => toast.error(connectionRemoveErrorMessage(error)),
-  });
-
-  const confirmRemoveOrphan = () => {
-    if (!selected || selected.id !== orphanedConnectionId || removeOrphan.isPending) return;
-    if (
-      !window.confirm(
-        `Remover a instância órfã “${selected.name}” para recriá-la? O histórico de conversas será preservado.`,
-      )
-    )
-      return;
-    removeOrphan.mutate(selected);
-  };
-
   const startCreate = React.useCallback(() => {
     if (createRequestActive.current || create.isPending) return;
     createRequestActive.current = true;
@@ -824,12 +807,7 @@ const InstanceStep = React.forwardRef<
     !qrGenerationPending &&
     (visible.length === 0
       ? name.trim().length >= 2
-      : Boolean(
-          selected &&
-          selected.status !== "connected" &&
-          selected.id !== orphanedConnectionId &&
-          !qr,
-        ));
+      : Boolean(selected && selected.status !== "connected" && !qrSessionOpen));
 
   React.useEffect(() => {
     onFooterStateChange({ canGenerate: canGenerateQr, busy: qrGenerationPending });
@@ -859,30 +837,14 @@ const InstanceStep = React.forwardRef<
         >
           <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
           <p className="min-w-0 flex-1">{connectionError}</p>
-          {selected?.id === orphanedConnectionId ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={removeOrphan.isPending}
-              onClick={confirmRemoveOrphan}
-            >
-              {removeOrphan.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-              Remover e recriar
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!selected || requestQr.isPending}
-              onClick={() => selected && startQrRequest(selected)}
-            >
-              <RefreshCw className="h-4 w-4" /> Tentar novamente
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!selected || requestQr.isPending}
+            onClick={() => selected && startQrRequest(selected)}
+          >
+            <RefreshCw className="h-4 w-4" /> Tentar novamente
+          </Button>
         </div>
       )}
       {connections.isPending ? (
@@ -993,10 +955,13 @@ const InstanceStep = React.forwardRef<
                     Leia o QR Code e aguarde a confirmação.
                   </p>
                 </div>
-              ) : requestQr.isPending ? (
+              ) : qrSessionOpen ? (
                 <div>
                   <Spinner size={28} />
-                  <p className="mt-3 text-sm">Aguarde, QR Code está sendo gerado!</p>
+                  <p className="mt-3 text-sm">Aguarde, o novo QR Code está sendo gerado.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    A instância e todo o histórico estão preservados.
+                  </p>
                 </div>
               ) : (
                 <div className="text-muted-foreground">
@@ -1031,19 +996,31 @@ const InstanceStep = React.forwardRef<
       )}
       <QrGenerationLoadingOverlay open={qrGenerationPending} />
       <Modal
-        open={!!qr && selected?.status !== "connected"}
-        onClose={() => setQr(null)}
+        open={qrSessionOpen && selected?.status !== "connected"}
+        onClose={() => {
+          setQrSessionOpen(false);
+          setQr(null);
+        }}
         title={`QR Code - ${selected?.name ?? name.trim()}`}
         size="sm"
       >
         <div className="text-center">
-          <img
-            src={qr ?? undefined}
-            alt={`QR Code - ${selected?.name ?? name.trim()}`}
-            className="mx-auto max-h-[70dvh] max-w-full rounded-lg border border-border bg-white p-3"
-          />
+          {qr ? (
+            <img
+              src={qr}
+              alt={`QR Code - ${selected?.name ?? name.trim()}`}
+              className="mx-auto max-h-[70dvh] max-w-full rounded-lg border border-border bg-white p-3"
+            />
+          ) : (
+            <div className="flex min-h-64 flex-col items-center justify-center gap-3">
+              <Spinner size={28} />
+              <p className="text-sm text-muted-foreground">Gerando um novo QR Code...</p>
+            </div>
+          )}
           <p className="mt-3 text-sm text-muted-foreground">
-            Leia o QR Code e aguarde a confirmação efetiva da conexão.
+            {qr
+              ? "Leia o QR Code e aguarde a confirmação efetiva da conexão."
+              : "A instância e todo o histórico estão preservados."}
           </p>
         </div>
       </Modal>
@@ -1074,13 +1051,6 @@ function DepartmentsStep({
   const [bootstrapping, setBootstrapping] = React.useState(false);
   const [bootstrapError, setBootstrapError] = React.useState<string | null>(null);
   const bootstrapStarted = React.useRef(false);
-  React.useEffect(
-    () =>
-      onBusyChange(
-        departments.isPending || connections.isPending || bootstrapping || !!bootstrapError,
-      ),
-    [bootstrapError, bootstrapping, connections.isPending, departments.isPending, onBusyChange],
-  );
   React.useEffect(() => {
     if (!connectionId && connections.data?.[0]) setConnectionId(connections.data[0].id);
   }, [connectionId, connections.data]);
@@ -1169,6 +1139,39 @@ function DepartmentsStep({
     },
     onError: (error) => toast.error((error as Error).message),
   });
+  React.useEffect(() => {
+    const missingRequiredConnection =
+      bootstrapDefaults &&
+      !hasActiveDepartmentConnection(departments.data ?? [], connections.data ?? []);
+    onBusyChange(
+      departments.isPending ||
+        departments.isFetching ||
+        connections.isPending ||
+        connections.isFetching ||
+        departments.isError ||
+        connections.isError ||
+        bootstrapping ||
+        remove.isPending ||
+        saveOfficial.isPending ||
+        !!bootstrapError ||
+        missingRequiredConnection,
+    );
+  }, [
+    bootstrapDefaults,
+    bootstrapError,
+    bootstrapping,
+    connections.data,
+    connections.isError,
+    connections.isFetching,
+    connections.isPending,
+    departments.data,
+    departments.isError,
+    departments.isFetching,
+    departments.isPending,
+    onBusyChange,
+    remove.isPending,
+    saveOfficial.isPending,
+  ]);
   return (
     <CatalogStep
       title=""

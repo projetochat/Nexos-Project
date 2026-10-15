@@ -1,5 +1,6 @@
 import {
   TrixusApiError,
+  type ApiDepartment,
   type ApiMessagingConnection,
   type ApiRole,
   type ApiTenantOnboardingStatus,
@@ -43,6 +44,30 @@ export function shouldPollOnboardingConnection(connection?: ApiMessagingConnecti
   return (
     !!connection &&
     (connection.status !== "connected" || !(connection.ownerPhoneMasked || connection.ownerPhone))
+  );
+}
+
+export function hasActiveDepartmentConnection(
+  departments: ApiDepartment[],
+  connections: Array<
+    Pick<ApiMessagingConnection, "id" | "status"> &
+      Partial<Pick<ApiMessagingConnection, "providerType" | "serviceEnabled">>
+  >,
+) {
+  const connectedIds = new Set(
+    connections
+      .filter(
+        (connection) =>
+          connection.status === "connected" &&
+          (connection.providerType === undefined || connection.providerType === "evolution") &&
+          connection.serviceEnabled !== false,
+      )
+      .map((connection) => connection.id),
+  );
+  return departments.some(
+    (department) =>
+      department.active !== false &&
+      department.connectionIds.some((connectionId) => connectedIds.has(connectionId)),
   );
 }
 

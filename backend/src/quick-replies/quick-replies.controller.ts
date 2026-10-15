@@ -371,8 +371,8 @@ export function normalizeMessages(messages?: QuickReplyMessageDto[]) {
 
 function normalizeShortcut(value: string) {
   const shortcut = clean(value).toLocaleLowerCase("pt-BR");
-  if (!/^[\p{L}-]+$/u.test(shortcut)) {
-    throw new BadRequestException("O atalho deve conter somente letras e hífen.");
+  if (!/^[\p{L}\p{N}-]+$/u.test(shortcut)) {
+    throw new BadRequestException("O atalho deve conter somente letras, números e hífen.");
   }
   return shortcut;
 }

@@ -3,6 +3,7 @@ import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
 import { describe, expect, it } from "vitest";
 import { CreateQuickReplyDto } from "./dto/create-quick-reply.dto";
+import { UpdateQuickReplyDto } from "./dto/update-quick-reply.dto";
 import { normalizeMessages } from "./quick-replies.controller";
 
 const validateReply = (extra: object) =>
@@ -16,6 +17,13 @@ const validateReply = (extra: object) =>
   );
 
 describe("quick reply sequence validation", () => {
+  it("accepts letters and numbers in the shortcut while keeping other characters blocked", async () => {
+    expect(await validateReply({ shortcut: "status2026" })).toEqual([]);
+    expect(await validate(plainToInstance(UpdateQuickReplyDto, { shortcut: "menu2" }))).toEqual([]);
+    expect((await validateReply({ shortcut: "status 2026" })).length).toBeGreaterThan(0);
+    expect((await validateReply({ shortcut: "status_2026" })).length).toBeGreaterThan(0);
+  });
+
   it("accepts ten messages and rejects eleven before persistence", async () => {
     const ten = Array.from({ length: 10 }, (_, index) => ({ text: `Mensagem ${index + 1}` }));
     expect(await validateReply({ messages: ten })).toEqual([]);

@@ -11,7 +11,9 @@ export class UpdateQuickReplyDto extends QuickReplySequenceDto {
   @IsOptional()
   @IsString()
   @Length(1, 40)
-  @Matches(/^[\p{L}-]+$/u, { message: "O atalho deve conter somente letras e hífen." })
+  @Matches(/^[\p{L}\p{N}-]+$/u, {
+    message: "O atalho deve conter somente letras, números e hífen.",
+  })
   shortcut?: string;
 
   @IsOptional()

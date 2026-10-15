@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   ATTENDANT_DEFAULT_PERMISSIONS,
@@ -15,6 +16,7 @@ import {
   buildOnboardingAttendantPayload,
   canAdvanceOnboardingStep,
   formatOnboardingConnectedAt,
+  hasActiveDepartmentConnection,
   isOnboardingInstanceNotFound,
   onboardingStepAfterRefresh,
   onboardingRoleColorClass,
@@ -25,6 +27,7 @@ import {
   apiErrorMessageWithRequestId,
   type ApiTenantOnboardingStatus,
   type ApiMessagingConnection,
+  type ApiDepartment,
 } from "@/lib/trixus-api";
 
 function status(
@@ -50,6 +53,30 @@ function status(
 }
 
 describe("onboarding step requirements", () => {
+  it("only accepts an active department linked to a connected Evolution instance", () => {
+    const department = {
+      id: "department-a",
+      active: true,
+      connectionIds: ["connection-a"],
+    } as ApiDepartment;
+    const connection = {
+      id: "connection-a",
+      status: "connected",
+      providerType: "evolution",
+    } as ApiMessagingConnection;
+
+    expect(hasActiveDepartmentConnection([department], [connection])).toBe(true);
+    expect(
+      hasActiveDepartmentConnection([{ ...department, connectionIds: [] }], [connection]),
+    ).toBe(false);
+    expect(
+      hasActiveDepartmentConnection([department], [{ ...connection, status: "disconnected" }]),
+    ).toBe(false);
+    expect(hasActiveDepartmentConnection([{ ...department, active: false }], [connection])).toBe(
+      false,
+    );
+  });
+
   it("uses the QR returned by the initial Evolution creation", async () => {
     const api = {
       createEvolution: vi.fn().mockResolvedValue({
@@ -200,5 +227,16 @@ describe("onboarding step requirements", () => {
         ),
       ),
     ).toContain("requestId: request-onboarding-qr");
+  });
+
+  it("recovers a missing external session without offering to remove the internal instance", () => {
+    const source = readFileSync(
+      new URL("./tenant-onboarding-boundary.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain("connectionsApi.qrStatus");
+    expect(source).toContain("recuperá-la sem perder o histórico");
+    expect(source).not.toContain("Remover e recriar");
+    expect(source).not.toContain("connectionsApi.remove(connection.id)");
   });
 });

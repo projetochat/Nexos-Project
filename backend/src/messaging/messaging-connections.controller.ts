@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Inject,
   Param,
   Patch,
@@ -147,9 +148,19 @@ export class MessagingConnectionsController {
   }
 
   @Get(":id/qr")
+  @Header("Cache-Control", "no-store, no-cache, private, max-age=0")
+  @Header("Pragma", "no-cache")
   @RequirePermissions("connections.update")
   qrCode(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.connections.qrCode(id, current);
+  }
+
+  @Get(":id/qr/current")
+  @Header("Cache-Control", "no-store, no-cache, private, max-age=0")
+  @Header("Pragma", "no-cache")
+  @RequirePermissions("connections.update")
+  qrCodeStatus(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.qrCodeStatus(id, current);
   }
 
   @Patch(":id/logout")

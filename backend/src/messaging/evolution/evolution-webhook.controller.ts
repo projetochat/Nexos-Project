@@ -109,6 +109,13 @@ export class EvolutionWebhookController {
       ignoredReason: translated.kind === "ignored" ? translated.reason : null,
       httpResult: 200,
     });
+    if (translated.kind === "connection" && translated.qrCodeBase64) {
+      await this.connections.captureEvolutionQrCode(
+        connection.id,
+        translated.instanceName,
+        translated.qrCodeBase64,
+      );
+    }
     if (await this.pause?.deferIfPaused(connection, translated)) {
       return { ok: true, kind: translated.kind, deferred: true };
     }

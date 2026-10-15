@@ -154,16 +154,18 @@ function Page() {
       if (connection.status === "connected") {
         setQr(null);
         toast.success(`${connection.name} conectada`);
-      } else if (connection.qrCodeBase64) {
+      } else {
         setQr({
           connectionId: connection.id,
           name: connection.name,
-          value: connection.qrCodeBase64,
+          value: connection.qrCodeBase64 ?? null,
           status: connection.status,
         });
-        toast.success("Conexão criada. Leia o QR Code para concluir.");
-      } else {
-        toast.success("Conexão criada");
+        toast.success(
+          connection.qrCodeBase64
+            ? "Conexão criada. Leia o QR Code para concluir."
+            : "Conexão criada. Gerando o QR Code...",
+        );
       }
       novo.hide();
     },
@@ -187,30 +189,43 @@ function Page() {
     },
     onError: (e) => toast.error((e as Error).message),
   });
+  const qrConnectionId = qr?.connectionId;
+  const qrConnectionName = qr?.name;
 
   React.useEffect(() => {
-    if (!qr) return;
+    if (!qrConnectionId || !qrConnectionName) return;
     let active = true;
 
-    const syncConnectionStatus = async () => {
+    let timeoutId: number | undefined;
+    const syncQrCode = async () => {
       try {
-        const updated = await connectionsApi.status(qr.connectionId);
+        const result = await connectionsApi.qrStatus(qrConnectionId);
         if (!active) return;
-        qc.setQueryData<ApiMessagingConnection[]>(["trixus", "messaging-connections"], (current) =>
-          current?.map((item) => (item.id === updated.id ? updated : item)),
-        );
+        if (result.status.toLowerCase() === "connected") {
+          setQr(null);
+          qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+          toast.success(`${qrConnectionName} conectada`);
+          return;
+        }
+        setQr((current) => {
+          if (current?.connectionId !== result.connectionId) return current;
+          const value = result.qrCodeBase64 ?? current.value;
+          if (value === current.value && result.status === current.status) return current;
+          return { ...current, value, status: result.status };
+        });
       } catch {
-        // A leitura em segundo plano não deve interromper a leitura do QR Code.
+        // Uma falha transitória não remove um QR já exibido nem o vínculo da instância.
+      } finally {
+        if (active) timeoutId = window.setTimeout(() => void syncQrCode(), 2_000);
       }
     };
 
-    void syncConnectionStatus();
-    const intervalId = window.setInterval(() => void syncConnectionStatus(), 3_000);
+    void syncQrCode();
     return () => {
       active = false;
-      window.clearInterval(intervalId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [qc, qr]);
+  }, [qc, qrConnectionId, qrConnectionName]);
   const update = useMutation({
     mutationFn: async ({
       connection,
@@ -243,6 +258,14 @@ function Page() {
       connection,
       result: await connectionsApi.qr(connection.id),
     }),
+    onMutate: (connection) => {
+      setQr({
+        connectionId: connection.id,
+        name: connection.name,
+        value: null,
+        status: "connecting",
+      });
+    },
     onSuccess: ({ connection, result }) => {
       if (result.status.toLowerCase() === "connected") {
         setQr(null);
@@ -257,7 +280,10 @@ function Page() {
       }
       qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => {
+      setQr((current) => (current ? { ...current, status: "error" } : current));
+      toast.error((e as Error).message);
+    },
   });
   const logout = useMutation({
     mutationFn: connectionsApi.logout,
@@ -275,7 +301,7 @@ function Page() {
       qc.invalidateQueries({ queryKey: ["operations", "history"] });
       qc.invalidateQueries({ queryKey: ["trixus", "groups"] });
       setRemoving(null);
-      toast.success("Conexão removida");
+      toast.success("Instância excluída permanentemente");
     },
     onError: (e) => toast.error(connectionRemoveErrorMessage(e)),
   });
@@ -2385,8 +2411,15 @@ function QrModal({
           />
         </div>
       ) : (
-        <div className="p-8 text-center text-sm text-muted-foreground">
-          QR indisponivel. Atualize o status ou tente conectar novamente.
+        <div className="flex flex-col items-center gap-3 p-8 text-center text-sm text-muted-foreground">
+          {qr?.status !== "error" ? (
+            <RefreshCw className="h-6 w-6 animate-spin text-blue-600" aria-hidden="true" />
+          ) : (
+            <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden="true" />
+          )}
+          {qr?.status === "error"
+            ? "Não foi possível gerar o QR Code. Feche esta janela e tente novamente."
+            : "Gerando um novo QR Code. A instância e todo o histórico estão preservados."}
         </div>
       )}
     </Modal>
@@ -2427,7 +2460,7 @@ function RemoveConnectionModal({
             onClick={() => connection && onConfirm(connection)}
             disabled={busy || confirmation !== "REMOVER"}
           >
-            <Trash2 className="h-3.5 w-3.5" /> Remover
+            <Trash2 className="h-3.5 w-3.5" /> Excluir permanentemente
           </Button>
         </>
       }
@@ -2438,8 +2471,10 @@ function RemoveConnectionModal({
             Instância: <strong className="font-semibold">"{connection?.name}"</strong>
           </p>
           <p className="mt-1">
-            A conexão e todas as conversas vinculadas serão removidas das áreas operacionais. Os
-            contatos serão preservados e o histórico ficará arquivado de forma recuperável.
+            A instância, conversas, mensagens, mídias, campanhas, destinatários, notificações,
+            agendamentos e importações vinculadas serão excluídos permanentemente. Contatos,
+            departamentos e chamados serão preservados sem vínculo com a instância. Esta ação não
+            pode ser desfeita.
           </p>
         </div>
         <div className="space-y-2">

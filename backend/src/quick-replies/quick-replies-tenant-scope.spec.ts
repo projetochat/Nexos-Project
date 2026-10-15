@@ -229,6 +229,33 @@ describe("quick replies tenant-wide catalog", () => {
     expect(prisma.quickReply.update).not.toHaveBeenCalled();
   });
 
+  it("normalizes and persists a shortcut containing letters and numbers", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue(quickReply({ shortcut: "/status2026", normalizedShortcut: "status2026" }));
+    const prisma = {
+      quickReply: {
+        findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(null),
+        create,
+        update: vi.fn(),
+      },
+    };
+
+    await controllerWith(prisma).create(
+      { title: "Status 2026", shortcut: "STATUS2026", content: "Olá" },
+      current,
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          shortcut: "/status2026",
+          normalizedShortcut: "status2026",
+        }),
+      }),
+    );
+  });
+
   it("keeps rejecting an active duplicate before looking for archived records", async () => {
     const prisma = {
       quickReply: {
