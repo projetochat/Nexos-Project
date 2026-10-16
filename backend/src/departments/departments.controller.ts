@@ -170,11 +170,22 @@ export class DepartmentsController {
   @Get("connection-options")
   @RequireAnyPermission("departments.read", "departments.create", "departments.update")
   async connectionOptions(@CurrentUser() current: AuthenticatedUser) {
-    return this.prisma.messagingConnection.findMany({
+    const connections = await this.prisma.messagingConnection.findMany({
       where: { tenantId: current.tenantId, providerType: "EVOLUTION", archivedAt: null },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, status: true, color: true, logoUrl: true },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        serviceEnabled: true,
+        color: true,
+        logoUrl: true,
+      },
     });
+    return connections.map((connection) => ({
+      ...connection,
+      status: connection.status.toLowerCase(),
+    }));
   }
 
   @Get(":id")

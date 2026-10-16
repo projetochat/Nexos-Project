@@ -4,6 +4,40 @@ import { DepartmentsController } from "./departments.controller";
 import { UpdateDepartmentDto } from "./dto/update-department.dto";
 
 describe("DepartmentsController", () => {
+  it("returns department connection options using the public lowercase contract", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "connection-a",
+        name: "WhatsApp HML",
+        status: "CONNECTED",
+        serviceEnabled: false,
+        color: "#22c55e",
+        logoUrl: null,
+      },
+    ]);
+    const controller = new DepartmentsController(
+      { messagingConnection: { findMany } } as never,
+      {} as never,
+    );
+
+    await expect(controller.connectionOptions({ tenantId: "tenant-a" } as never)).resolves.toEqual([
+      expect.objectContaining({
+        id: "connection-a",
+        status: "connected",
+        serviceEnabled: false,
+      }),
+    ]);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: "tenant-a",
+          providerType: "EVOLUTION",
+          archivedAt: null,
+        },
+      }),
+    );
+  });
+
   it("lists inactive departments only when administration explicitly requests all", async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const controller = new DepartmentsController(

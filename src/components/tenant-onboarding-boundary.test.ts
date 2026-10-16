@@ -72,6 +72,9 @@ describe("onboarding step requirements", () => {
     expect(
       hasActiveDepartmentConnection([department], [{ ...connection, status: "disconnected" }]),
     ).toBe(false);
+    expect(
+      hasActiveDepartmentConnection([department], [{ ...connection, serviceEnabled: false }]),
+    ).toBe(false);
     expect(hasActiveDepartmentConnection([{ ...department, active: false }], [connection])).toBe(
       false,
     );
@@ -238,5 +241,27 @@ describe("onboarding step requirements", () => {
     expect(source).toContain("recuperá-la sem perder o histórico");
     expect(source).not.toContain("Remover e recriar");
     expect(source).not.toContain("connectionsApi.remove(connection.id)");
+  });
+
+  it("uses the official snapshot-protected department deletion flow", () => {
+    const source = readFileSync(
+      new URL("./tenant-onboarding-boundary.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain("<DeletionConfirmDialog");
+    expect(source).toContain("organizationApi.departmentDeletionPreview(deleting.id, signal)");
+    expect(source).toContain(
+      "organizationApi.deleteDepartment(deleting.id, snapshotToken, signal)",
+    );
+    expect(source).toContain("organizationApi.roleDeletionPreview(deleting.id, signal)");
+    expect(source).toContain("organizationApi.deleteRole(deleting.id, snapshotToken, signal)");
+    expect(source).toContain("quickReplyApi.deletionPreview(deleting.id, signal)");
+    expect(source).toContain("quickReplyApi.archive(deleting.id, snapshotToken, signal)");
+    expect(source).toContain("crmApi.tagDeletionPreview(deleting.id, signal)");
+    expect(source).toContain("crmApi.archiveTag(deleting.id, snapshotToken, signal)");
+    expect(source).not.toContain("remove.mutate(item.id)");
+    expect(source).not.toContain("mutationFn: organizationApi.deleteRole");
+    expect(source).not.toContain("mutationFn: quickReplyApi.archive");
+    expect(source).not.toContain("mutationFn: crmApi.archiveTag");
   });
 });

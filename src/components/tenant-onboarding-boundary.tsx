@@ -30,6 +30,7 @@ import { toast } from "sonner";
 
 import { Avatar, Badge, Button, Card, Field, Input, Select } from "@/components/ui-kit";
 import { DepartmentIcon } from "@/components/department-icon";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { ErrorState, Spinner } from "@/components/feedback";
 import { Modal } from "@/components/modal";
 import {
@@ -1048,6 +1049,7 @@ function DepartmentsStep({
   const [connectionId, setConnectionId] = React.useState("");
   const [creating, setCreating] = React.useState(false);
   const [editing, setEditing] = React.useState<ApiDepartment | null>(null);
+  const [deleting, setDeleting] = React.useState<ApiDepartment | null>(null);
   const [bootstrapping, setBootstrapping] = React.useState(false);
   const [bootstrapError, setBootstrapError] = React.useState<string | null>(null);
   const bootstrapStarted = React.useRef(false);
@@ -1112,14 +1114,6 @@ function DepartmentsStep({
     departments.isPending,
     onServerChange,
   ]);
-  const remove = useMutation({
-    mutationFn: organizationApi.deleteDepartment,
-    onSuccess: async () => {
-      await departments.refetch();
-      await onServerChange();
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
   const saveOfficial = useMutation({
     mutationFn: ({ id, data }: { id?: string; data: DepartamentoFormData }) =>
       id
@@ -1151,7 +1145,6 @@ function DepartmentsStep({
         departments.isError ||
         connections.isError ||
         bootstrapping ||
-        remove.isPending ||
         saveOfficial.isPending ||
         !!bootstrapError ||
         missingRequiredConnection,
@@ -1169,7 +1162,6 @@ function DepartmentsStep({
     departments.isFetching,
     departments.isPending,
     onBusyChange,
-    remove.isPending,
     saveOfficial.isPending,
   ]);
   return (
@@ -1213,27 +1205,53 @@ function DepartmentsStep({
             />
           }
           onEdit={() => setEditing(item)}
-          onDelete={() => remove.mutate(item.id)}
+          onDelete={() => setDeleting(item)}
         />
       ))}
       overlay={
-        <React.Suspense fallback={null}>
-          <OfficialDepartmentForm
-            open={creating}
-            onClose={() => setCreating(false)}
-            departments={departments.data ?? []}
-            connections={connections.data ?? []}
-            onSubmit={(data) => saveOfficial.mutate({ data })}
+        <>
+          <React.Suspense fallback={null}>
+            <OfficialDepartmentForm
+              open={creating}
+              onClose={() => setCreating(false)}
+              departments={departments.data ?? []}
+              connections={connections.data ?? []}
+              onSubmit={(data) => saveOfficial.mutate({ data })}
+            />
+            <OfficialDepartmentForm
+              open={!!editing}
+              onClose={() => setEditing(null)}
+              initial={editing ?? undefined}
+              departments={departments.data ?? []}
+              connections={connections.data ?? []}
+              onSubmit={(data) => editing && saveOfficial.mutate({ id: editing.id, data })}
+            />
+          </React.Suspense>
+          <DeletionConfirmDialog
+            open={!!deleting}
+            resourceKey={`onboarding-department:${deleting?.id ?? "none"}`}
+            onOpenChange={(open) => {
+              if (!open) setDeleting(null);
+            }}
+            loadImpact={(signal) => {
+              if (!deleting) return Promise.reject(new Error("Departamento não selecionado."));
+              return organizationApi.departmentDeletionPreview(deleting.id, signal);
+            }}
+            onConfirm={({ snapshotToken, signal }) => {
+              if (!deleting) return Promise.reject(new Error("Departamento não selecionado."));
+              return organizationApi.deleteDepartment(deleting.id, snapshotToken, signal);
+            }}
+            onDeleted={() => {
+              toast.success("Departamento excluído");
+              setDeleting(null);
+              void (async () => {
+                await departments.refetch();
+                await onServerChange();
+              })();
+            }}
+            formatError={apiErrorMessageWithRequestId}
           />
-          <OfficialDepartmentForm
-            open={!!editing}
-            onClose={() => setEditing(null)}
-            initial={editing ?? undefined}
-            departments={departments.data ?? []}
-            connections={connections.data ?? []}
-            onSubmit={(data) => editing && saveOfficial.mutate({ id: editing.id, data })}
-          />
-        </React.Suspense>
+        </>
       }
     />
   );
@@ -1256,6 +1274,7 @@ function RolesStep({
   const grantablePermissionIds = useSession((state) => state.user?.permissions ?? []);
   const [creating, setCreating] = React.useState(false);
   const [editing, setEditing] = React.useState<ApiRole | null>(null);
+  const [deleting, setDeleting] = React.useState<ApiRole | null>(null);
   const [bootstrapping, setBootstrapping] = React.useState(false);
   const [bootstrapError, setBootstrapError] = React.useState<string | null>(null);
   const bootstrapStarted = React.useRef(false);
@@ -1393,14 +1412,6 @@ function RolesStep({
     scopeOptions.data,
     scopeOptions.isPending,
   ]);
-  const remove = useMutation({
-    mutationFn: organizationApi.deleteRole,
-    onSuccess: async () => {
-      await roles.refetch();
-      await onServerChange();
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
   const saveOfficial = useMutation({
     mutationFn: ({ id, data }: { id?: string; data: PerfilFormData }) => {
       const metadata = {
@@ -1484,30 +1495,56 @@ function RolesStep({
               }
               icon={<ShieldCheck className={onboardingRoleColorClass(item)} />}
               onEdit={admin ? undefined : () => setEditing(item)}
-              onDelete={admin ? undefined : () => remove.mutate(item.id)}
+              onDelete={admin ? undefined : () => setDeleting(item)}
             />
           );
         })}
       overlay={
-        <React.Suspense fallback={null}>
-          <OfficialProfileForm
-            open={creating}
-            onClose={() => setCreating(false)}
-            roles={roles.data ?? []}
-            connections={scopeOptions.data?.connections ?? []}
-            grantablePermissionIds={grantablePermissionIds}
-            onSubmit={(data) => saveOfficial.mutate({ data })}
+        <>
+          <React.Suspense fallback={null}>
+            <OfficialProfileForm
+              open={creating}
+              onClose={() => setCreating(false)}
+              roles={roles.data ?? []}
+              connections={scopeOptions.data?.connections ?? []}
+              grantablePermissionIds={grantablePermissionIds}
+              onSubmit={(data) => saveOfficial.mutate({ data })}
+            />
+            <OfficialProfileForm
+              open={!!editing}
+              onClose={() => setEditing(null)}
+              initial={editing ?? undefined}
+              roles={roles.data ?? []}
+              connections={scopeOptions.data?.connections ?? []}
+              grantablePermissionIds={grantablePermissionIds}
+              onSubmit={(data) => editing && saveOfficial.mutate({ id: editing.id, data })}
+            />
+          </React.Suspense>
+          <DeletionConfirmDialog
+            open={!!deleting}
+            resourceKey={`onboarding-role:${deleting?.id ?? "none"}`}
+            onOpenChange={(open) => {
+              if (!open) setDeleting(null);
+            }}
+            loadImpact={(signal) => {
+              if (!deleting) return Promise.reject(new Error("Perfil não selecionado."));
+              return organizationApi.roleDeletionPreview(deleting.id, signal);
+            }}
+            onConfirm={({ snapshotToken, signal }) => {
+              if (!deleting) return Promise.reject(new Error("Perfil não selecionado."));
+              return organizationApi.deleteRole(deleting.id, snapshotToken, signal);
+            }}
+            onDeleted={() => {
+              toast.success("Perfil excluído");
+              setDeleting(null);
+              void (async () => {
+                await roles.refetch();
+                await onServerChange();
+              })();
+            }}
+            formatError={apiErrorMessageWithRequestId}
           />
-          <OfficialProfileForm
-            open={!!editing}
-            onClose={() => setEditing(null)}
-            initial={editing ?? undefined}
-            roles={roles.data ?? []}
-            connections={scopeOptions.data?.connections ?? []}
-            grantablePermissionIds={grantablePermissionIds}
-            onSubmit={(data) => editing && saveOfficial.mutate({ id: editing.id, data })}
-          />
-        </React.Suspense>
+        </>
       }
     />
   );
@@ -1828,6 +1865,7 @@ function QuickRepliesStep({
   });
   const [creating, setCreating] = React.useState(false);
   const [editing, setEditing] = React.useState<ApiQuickReply | null>(null);
+  const [deleting, setDeleting] = React.useState<ApiQuickReply | null>(null);
   const [bootstrapping, setBootstrapping] = React.useState(false);
   const [bootstrapError, setBootstrapError] = React.useState<string | null>(null);
   const bootstrapStarted = React.useRef(false);
@@ -1863,13 +1901,6 @@ function QuickRepliesStep({
       }
     })();
   }, [bootstrapDefaults, replies, replies.data, replies.isPending]);
-  const remove = useMutation({
-    mutationFn: quickReplyApi.archive,
-    onSuccess: async () => {
-      await replies.refetch();
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
   return (
     <CatalogStep
       title=""
@@ -1887,7 +1918,7 @@ function QuickRepliesStep({
       }
       items={[...(replies.data ?? [])]
         .sort((left, right) => {
-          const order = DEFAULT_QUICK_REPLIES.map((item) => item.shortcut);
+          const order: string[] = DEFAULT_QUICK_REPLIES.map((item) => item.shortcut);
           const leftIndex = order.indexOf(normalized(left.shortcut));
           const rightIndex = order.indexOf(normalized(right.shortcut));
           return (
@@ -1902,32 +1933,55 @@ function QuickRepliesStep({
             subtitle={`/${item.shortcut} · ${item.content}`}
             icon={<Zap className="text-primary" />}
             onEdit={() => setEditing(item)}
-            onDelete={() => remove.mutate(item.id)}
+            onDelete={() => setDeleting(item)}
           />
         ))}
       overlay={
-        <React.Suspense fallback={null}>
-          <OfficialQuickReplyEditor
-            open={creating}
-            onClose={() => setCreating(false)}
-            initial={null}
-            existingReplies={replies.data ?? []}
-            onSaved={() => {
-              setCreating(false);
+        <>
+          <React.Suspense fallback={null}>
+            <OfficialQuickReplyEditor
+              open={creating}
+              onClose={() => setCreating(false)}
+              initial={null}
+              existingReplies={replies.data ?? []}
+              onSaved={() => {
+                setCreating(false);
+                void replies.refetch();
+              }}
+            />
+            <OfficialQuickReplyEditor
+              open={!!editing}
+              onClose={() => setEditing(null)}
+              initial={editing}
+              existingReplies={replies.data ?? []}
+              onSaved={() => {
+                setEditing(null);
+                void replies.refetch();
+              }}
+            />
+          </React.Suspense>
+          <DeletionConfirmDialog
+            open={!!deleting}
+            resourceKey={`onboarding-quick-reply:${deleting?.id ?? "none"}`}
+            onOpenChange={(open) => {
+              if (!open) setDeleting(null);
+            }}
+            loadImpact={(signal) => {
+              if (!deleting) return Promise.reject(new Error("Mensagem não selecionada."));
+              return quickReplyApi.deletionPreview(deleting.id, signal);
+            }}
+            onConfirm={({ snapshotToken, signal }) => {
+              if (!deleting) return Promise.reject(new Error("Mensagem não selecionada."));
+              return quickReplyApi.archive(deleting.id, snapshotToken, signal);
+            }}
+            onDeleted={() => {
+              toast.success("Mensagem rápida excluída");
+              setDeleting(null);
               void replies.refetch();
             }}
+            formatError={apiErrorMessageWithRequestId}
           />
-          <OfficialQuickReplyEditor
-            open={!!editing}
-            onClose={() => setEditing(null)}
-            initial={editing}
-            existingReplies={replies.data ?? []}
-            onSaved={() => {
-              setEditing(null);
-              void replies.refetch();
-            }}
-          />
-        </React.Suspense>
+        </>
       }
     />
   );
@@ -1943,6 +1997,7 @@ function TagsStep({
   const tags = useQuery({ queryKey: TAGS_QUERY_KEY, queryFn: crmApi.listTags });
   const [creating, setCreating] = React.useState(false);
   const [editing, setEditing] = React.useState<ApiTag | null>(null);
+  const [deleting, setDeleting] = React.useState<ApiTag | null>(null);
   const [bootstrapping, setBootstrapping] = React.useState(false);
   const [bootstrapError, setBootstrapError] = React.useState<string | null>(null);
   const bootstrapStarted = React.useRef(false);
@@ -1978,13 +2033,6 @@ function TagsStep({
       }
     })();
   }, [bootstrapDefaults, tags, tags.data, tags.isPending]);
-  const remove = useMutation({
-    mutationFn: crmApi.archiveTag,
-    onSuccess: async () => {
-      await tags.refetch();
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
   return (
     <CatalogStep
       title=""
@@ -2017,34 +2065,57 @@ function TagsStep({
             subtitle={item.descricao || item.cor}
             icon={<Tag className="h-5 w-5" style={{ color: item.cor }} />}
             onEdit={() => setEditing(item)}
-            onDelete={() => remove.mutate(item.id)}
+            onDelete={() => setDeleting(item)}
           />
         ))}
       overlay={
-        <React.Suspense fallback={null}>
-          <OfficialTagForm
-            open={creating}
-            onClose={() => setCreating(false)}
-            tags={tags.data ?? []}
-            onSubmit={async (data) => {
-              await crmApi.createTag(data);
-              setCreating(false);
-              await tags.refetch();
+        <>
+          <React.Suspense fallback={null}>
+            <OfficialTagForm
+              open={creating}
+              onClose={() => setCreating(false)}
+              tags={tags.data ?? []}
+              onSubmit={async (data) => {
+                await crmApi.createTag(data);
+                setCreating(false);
+                await tags.refetch();
+              }}
+            />
+            <OfficialTagForm
+              open={!!editing}
+              onClose={() => setEditing(null)}
+              initial={editing ?? undefined}
+              tags={tags.data ?? []}
+              onSubmit={async (data) => {
+                if (!editing) return;
+                await crmApi.updateTag(editing.id, data);
+                setEditing(null);
+                await tags.refetch();
+              }}
+            />
+          </React.Suspense>
+          <DeletionConfirmDialog
+            open={!!deleting}
+            resourceKey={`onboarding-tag:${deleting?.id ?? "none"}`}
+            onOpenChange={(open) => {
+              if (!open) setDeleting(null);
             }}
-          />
-          <OfficialTagForm
-            open={!!editing}
-            onClose={() => setEditing(null)}
-            initial={editing ?? undefined}
-            tags={tags.data ?? []}
-            onSubmit={async (data) => {
-              if (!editing) return;
-              await crmApi.updateTag(editing.id, data);
-              setEditing(null);
-              await tags.refetch();
+            loadImpact={(signal) => {
+              if (!deleting) return Promise.reject(new Error("Etiqueta não selecionada."));
+              return crmApi.tagDeletionPreview(deleting.id, signal);
             }}
+            onConfirm={({ snapshotToken, signal }) => {
+              if (!deleting) return Promise.reject(new Error("Etiqueta não selecionada."));
+              return crmApi.archiveTag(deleting.id, snapshotToken, signal);
+            }}
+            onDeleted={() => {
+              toast.success("Etiqueta excluída");
+              setDeleting(null);
+              void tags.refetch();
+            }}
+            formatError={apiErrorMessageWithRequestId}
           />
-        </React.Suspense>
+        </>
       }
     />
   );

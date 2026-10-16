@@ -1,8 +1,9 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, Pencil, Trash2 } from "lucide-react";
+import { DeletionConfirmDialog } from "./deletion-confirm-dialog";
 import { Button, Field, Input } from "./ui-kit";
-import { ConfirmDialog, Modal } from "./modal";
+import { Modal } from "./modal";
 import { GreetingMessageEditor } from "./greeting-message-editor";
 import { schedulesApi, type QuickReplyAttachment } from "@/lib/trixus-api";
 import { scheduleWritePayload, type ApiSchedule } from "@/lib/schedule-types";
@@ -317,31 +318,28 @@ export function ScheduleMessageModal({
           </section>
         </div>
       </Modal>
-      <ConfirmDialog
+      <DeletionConfirmDialog
         open={!!removing}
-        onClose={() => !busy && setRemoving(null)}
-        title="Excluir mensagem agendada?"
-        description="Deseja realmente excluir esta mensagem agendada?"
-        confirmLabel="Excluir"
-        destructive
-        onConfirm={() => {
-          if (!removing) return;
-          setBusy(true);
-          setError("");
-          void schedulesApi
-            .remove(removing.id)
-            .then(async () => {
-              setRemoving(null);
-              if (editing?.id === removing.id) resetForm();
-              await refresh();
-            })
-            .catch((cause) =>
-              setError(
-                cause instanceof Error ? cause.message : "Não foi possível excluir o agendamento.",
-              ),
-            )
-            .finally(() => setBusy(false));
+        resourceKey={`conversation-schedule:${removing?.id ?? "none"}`}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setRemoving(null);
         }}
+        loadImpact={(signal) => {
+          if (!removing) return Promise.reject(new Error("Agendamento não selecionado."));
+          return schedulesApi.deletionImpact(removing.id, signal);
+        }}
+        onConfirm={({ snapshotToken, signal }) => {
+          if (!removing) return Promise.reject(new Error("Agendamento não selecionado."));
+          return schedulesApi.remove(removing.id, snapshotToken, signal);
+        }}
+        onDeleted={() => {
+          if (editing?.id === removing?.id) resetForm();
+          setRemoving(null);
+          void refresh();
+        }}
+        formatError={(cause) =>
+          cause instanceof Error ? cause.message : "Não foi possível excluir o agendamento."
+        }
       />
     </>
   );

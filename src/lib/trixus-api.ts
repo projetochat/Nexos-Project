@@ -1213,9 +1213,14 @@ export const organizationApi = {
   ) => apiRequest<ApiDepartment[]>(`/departments${queryString(params)}`),
   listChatDepartments: () => apiRequest<ApiDepartment[]>("/departments/chat-scope"),
   departmentConnectionOptions: () =>
-    apiRequest<Array<Pick<ApiMessagingConnection, "id" | "name" | "status" | "color" | "logoUrl">>>(
-      "/departments/connection-options",
-    ),
+    apiRequest<
+      Array<
+        Pick<
+          ApiMessagingConnection,
+          "id" | "name" | "status" | "serviceEnabled" | "color" | "logoUrl"
+        >
+      >
+    >("/departments/connection-options"),
   createDepartment: (data: {
     name: string;
     description?: string | null;
