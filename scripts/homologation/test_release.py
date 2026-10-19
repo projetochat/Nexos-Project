@@ -286,6 +286,19 @@ class HomologationReleaseTest(unittest.TestCase):
             self.assertEqual(run.call_args_list[-1].args[0],
                              ["/usr/bin/docker", "rm", "-f", "owned-postgres"])
 
+    def test_redis_signature_ignores_volatile_ttl_statistics(self):
+        before = """# Keyspace
+db6:keys=32,expires=30,avg_ttl=269259949,subexpiry=0
+db0:keys=11,expires=0,avg_ttl=0,subexpiry=0
+"""
+        after = """# Keyspace
+db0:keys=11,expires=0,avg_ttl=0,subexpiry=0
+db6:keys=32,expires=30,avg_ttl=269240101,subexpiry=2
+"""
+        expected = [("db0", 11, 0), ("db6", 32, 30)]
+        self.assertEqual(release._stable_redis_signature(before), expected)
+        self.assertEqual(release._stable_redis_signature(after), expected)
+
 
 if __name__ == "__main__":
     unittest.main()

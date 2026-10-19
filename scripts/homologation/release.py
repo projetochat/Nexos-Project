@@ -436,9 +436,21 @@ def _safe_extract(archive, folder):
     command(["/usr/bin/tar", "-xf", str(archive), "-C", str(folder)], timeout=600)
 
 
+def _stable_redis_signature(output):
+    """Keep only keyspace values that survive a restore and passage of time."""
+    result = []
+    for line in output.splitlines():
+        if not line.startswith("db"):
+            continue
+        match = re.fullmatch(r"(db\d+):keys=(\d+),expires=(\d+)(?:,.*)?", line.strip())
+        require(match is not None, "Fingerprint Redis invalido")
+        result.append((match.group(1), int(match.group(2)), int(match.group(3))))
+    return sorted(result)
+
+
 def _redis_signature(compose, service):
     output = command(compose + ["exec", "-T", service, "redis-cli", "--raw", "INFO", "keyspace"])
-    return sorted(line.strip() for line in output.splitlines() if line.startswith("db"))
+    return _stable_redis_signature(output)
 
 
 def _verify_redis_restore(image, archive, expected, prefix):
@@ -466,7 +478,7 @@ def _verify_redis_restore(image, archive, expected, prefix):
                 raise CheckError("Redis descartavel nao iniciou")
             output = command(["/usr/bin/docker", "exec", name, "redis-cli", "--raw",
                               "INFO", "keyspace"])
-            actual = sorted(line.strip() for line in output.splitlines() if line.startswith("db"))
+            actual = _stable_redis_signature(output)
             require(actual == expected, "Fingerprint Redis restaurado divergente")
         finally:
             subprocess.run(["/usr/bin/docker", "rm", "-f", name], stdout=subprocess.DEVNULL,
