@@ -286,18 +286,25 @@ class HomologationReleaseTest(unittest.TestCase):
             self.assertEqual(run.call_args_list[-1].args[0],
                              ["/usr/bin/docker", "rm", "-f", "owned-postgres"])
 
-    def test_redis_signature_ignores_volatile_ttl_statistics(self):
+    def test_redis_signature_ignores_expiring_keys_and_volatile_ttl_statistics(self):
         before = """# Keyspace
 db6:keys=32,expires=30,avg_ttl=269259949,subexpiry=0
-db0:keys=11,expires=0,avg_ttl=0,subexpiry=0
+db0:keys=14,expires=3,avg_ttl=9000,subexpiry=0
+db7:keys=2,expires=2,avg_ttl=3000,subexpiry=0
 """
         after = """# Keyspace
 db0:keys=11,expires=0,avg_ttl=0,subexpiry=0
-db6:keys=32,expires=30,avg_ttl=269240101,subexpiry=2
+db6:keys=2,expires=0,avg_ttl=0,subexpiry=0
 """
-        expected = [("db0", 11, 0), ("db6", 32, 30)]
+        expected = [("db0", 11), ("db6", 2)]
         self.assertEqual(release._stable_redis_signature(before), expected)
         self.assertEqual(release._stable_redis_signature(after), expected)
+
+    def test_redis_signature_rejects_persistent_key_loss(self):
+        before = "db0:keys=14,expires=3,avg_ttl=9000,subexpiry=0"
+        after = "db0:keys=10,expires=0,avg_ttl=0,subexpiry=0"
+        self.assertNotEqual(release._stable_redis_signature(before),
+                            release._stable_redis_signature(after))
 
 
 if __name__ == "__main__":

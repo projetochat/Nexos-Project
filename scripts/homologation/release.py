@@ -437,14 +437,19 @@ def _safe_extract(archive, folder):
 
 
 def _stable_redis_signature(output):
-    """Keep only keyspace values that survive a restore and passage of time."""
+    """Compare only persistent keys; expiring keys may vanish during restore checks."""
     result = []
     for line in output.splitlines():
         if not line.startswith("db"):
             continue
         match = re.fullmatch(r"(db\d+):keys=(\d+),expires=(\d+)(?:,.*)?", line.strip())
         require(match is not None, "Fingerprint Redis invalido")
-        result.append((match.group(1), int(match.group(2)), int(match.group(3))))
+        keys = int(match.group(2))
+        expires = int(match.group(3))
+        require(expires <= keys, "Fingerprint Redis invalido")
+        persistent = keys - expires
+        if persistent:
+            result.append((match.group(1), persistent))
     return sorted(result)
 
 
