@@ -52,3 +52,9 @@ backend/src/generated/prisma/
 # Local development backups
 .codex-backups/
 .task-backups/
+
+# Local task runtime caches
+.task-temp/**/node-compile-cache/
+
+# Local release packages
+.release-artifacts/*.bundle
