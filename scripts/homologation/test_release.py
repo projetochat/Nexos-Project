@@ -282,9 +282,19 @@ class HomologationReleaseTest(unittest.TestCase):
             with patch.object(release, "command", side_effect=fake_command), \
                  patch.object(release.subprocess, "run", side_effect=process_results) as run, \
                  self.assertRaises(release.CheckError):
-                release._verify_dump_restore("postgres:16-alpine", dump, "public", "owned")
+                release._verify_dump_restore_once("postgres:16-alpine", dump, "public", "owned")
             self.assertEqual(run.call_args_list[-1].args[0],
                              ["/usr/bin/docker", "rm", "-f", "owned-postgres"])
+
+    def test_disposable_restore_retries_transient_postgres_shutdown(self):
+        transient = release.CheckError("database system is shutting down")
+        with patch.object(release, "_verify_dump_restore_once",
+                          side_effect=[transient, None]) as restore, \
+             patch.object(release.time, "sleep") as sleep:
+            release._verify_dump_restore("postgres:15-alpine", Path("dump"),
+                                         "evolution_api", "retry")
+        self.assertEqual(restore.call_count, 2)
+        sleep.assert_called_once_with(2)
 
     def test_redis_signature_ignores_expiring_keys_and_volatile_ttl_statistics(self):
         before = """# Keyspace

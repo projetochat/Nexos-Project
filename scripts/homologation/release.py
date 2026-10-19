@@ -389,7 +389,7 @@ def _container_archive(container, source, target):
     command(["/usr/bin/tar", "-tf", str(target)], timeout=300)
 
 
-def _verify_dump_restore(image, dump, schema, prefix):
+def _verify_dump_restore_once(image, dump, schema, prefix):
     name = prefix + "-postgres"
     restore_password = secrets.token_urlsafe(24)
     check = subprocess.run(["/usr/bin/docker", "inspect", name], stdout=subprocess.DEVNULL,
@@ -423,6 +423,19 @@ def _verify_dump_restore(image, dump, schema, prefix):
     finally:
         subprocess.run(["/usr/bin/docker", "rm", "-f", name], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=60, check=False)
+
+
+def _verify_dump_restore(image, dump, schema, prefix):
+    for attempt in range(1, 4):
+        try:
+            _verify_dump_restore_once(image, dump, schema, prefix)
+            return
+        except CheckError:
+            if attempt == 3:
+                raise
+            print(f"HML_REPETINDO_RESTAURACAO_DESCARTAVEL tentativa={attempt + 1}",
+                  flush=True)
+            time.sleep(2)
 
 
 def _safe_extract(archive, folder):
