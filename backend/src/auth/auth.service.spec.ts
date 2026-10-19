@@ -346,6 +346,100 @@ describe("AuthService session hydration", () => {
     );
   });
 
+  it("previews a customer portal invitation without exposing its token hash", async () => {
+    const prisma = {
+      userInvitation: {
+        findFirst: vi.fn().mockResolvedValue({
+          email: "clara@cliente.test",
+          expiresAt: new Date("2026-10-23T12:00:00Z"),
+          tokenHash: "must-not-leak",
+          tenant: { id: "tenant-a", name: "Trixus", slug: "trixus" },
+          role: { key: "customer_portal", name: "Portal do cliente" },
+          contact: {
+            id: "contact-a",
+            name: "Clara",
+            customerAccessProfile: "COLLABORATOR",
+            customer: { id: "customer-a", name: "SDE" },
+            customerDepartment: { id: "customer-department-a", name: "Financeiro" },
+            customerBranch: { id: "branch-a", name: "Unidade01" },
+          },
+        }),
+      },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+
+    const result = await service.invitationPreview("plain-token");
+
+    expect(result).toEqual({
+      email: "clara@cliente.test",
+      expiresAt: new Date("2026-10-23T12:00:00Z"),
+      tenant: { id: "tenant-a", name: "Trixus", slug: "trixus" },
+      profile: "COLLABORATOR",
+      contact: {
+        id: "contact-a",
+        name: "Clara",
+        customer: { id: "customer-a", name: "SDE" },
+        department: { id: "customer-department-a", name: "Financeiro" },
+        branch: { id: "branch-a", name: "Unidade01" },
+      },
+    });
+    expect(result).not.toHaveProperty("tokenHash");
+  });
+
+  it("links an accepted portal invitation to the contact without changing global credentials", async () => {
+    const passwordHash = await hash("SenhaExistente@2026", 4);
+    const contactUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const tx = {
+      user: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "shared-user",
+          email: "clara@cliente.test",
+          name: "Nome global preservado",
+          passwordHash,
+          status: "ACTIVE",
+        }),
+        create: vi.fn(),
+      },
+      tenantMembership: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({ id: "portal-membership" }),
+      },
+      departmentMembership: { deleteMany: vi.fn(), createMany: vi.fn() },
+      contact: { updateMany: contactUpdateMany },
+      userInvitation: { update: vi.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      userInvitation: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "invite-portal",
+          email: "clara@cliente.test",
+          tenantId: "tenant-a",
+          roleId: "role-portal",
+          departmentIds: [],
+          contactId: "contact-a",
+          contact: { id: "contact-a", name: "Clara" },
+          tenant: { slug: "trixus" },
+          role: { id: "role-portal", key: "customer_portal" },
+        }),
+      },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    vi.spyOn(service, "loginTenant").mockResolvedValue({ accessToken: "access" } as never);
+
+    await service.acceptInvitation({ token: "invite-token", password: "SenhaExistente@2026" });
+
+    expect(contactUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: "contact-a",
+        tenantId: "tenant-a",
+        archivedAt: null,
+      },
+      data: { portalMembershipId: "portal-membership", portalAccessActive: true },
+    });
+    expect(tx.user.create).not.toHaveBeenCalled();
+  });
+
   it("uses the tenant responsible name when an administrator accepts without typing a name", async () => {
     const userCreate = vi.fn().mockImplementation(({ data }) => ({ id: "admin-1", ...data }));
     const membershipUpsert = vi.fn().mockResolvedValue({ id: "membership-a" });

@@ -9,7 +9,9 @@ export class CreateTicketDto {
   @IsOptional() @IsString() requesterUserId?: string;
   @IsOptional() @IsString() requesterContactId?: string;
   @IsOptional() @IsString() customerId?: string;
+  @IsOptional() @IsString() customerDepartmentId?: string;
+  @IsOptional() @IsString() originBranchId?: string;
   @IsOptional() @IsString() conversationId?: string;
-  @IsString() departmentId!: string;
+  @IsOptional() @IsString() departmentId?: string;
   @IsOptional() @IsString() assignedMembershipId?: string | null;
 }

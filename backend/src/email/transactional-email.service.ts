@@ -9,6 +9,14 @@ type TenantAdministratorInvitation = {
   expiresAt: Date;
 };
 
+type CustomerPortalInvitation = {
+  to: string;
+  contactName: string;
+  customerName: string;
+  acceptUrl: string;
+  expiresAt: Date;
+};
+
 @Injectable()
 export class TransactionalEmailService {
   private readonly logger = new Logger(TransactionalEmailService.name);
@@ -62,6 +70,38 @@ export class TransactionalEmailService {
     return { delivered: true, provider: "resend" as const, messageId: result.id ?? null };
   }
 
+  async sendCustomerPortalInvitation(input: CustomerPortalInvitation) {
+    if (!this.isResendConfigured()) {
+      this.logger.warn("Convite do portal do cliente não enviado por e-mail em ambiente local.");
+      return { delivered: false, provider: "local-preview" as const };
+    }
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: this.fromAddress(),
+        to: [input.to],
+        subject: `Ative seu acesso ao portal da ${input.customerName}`,
+        text: customerPortalInvitationText(input),
+        html: customerPortalInvitationHtml(input),
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      this.logger.error(`Falha ao enviar convite do portal pelo Resend (${response.status}).`);
+      throw new ServiceUnavailableException({
+        code: "CUSTOMER_PORTAL_INVITATION_DELIVERY_FAILED",
+        message: "Não foi possível enviar o convite de acesso do cliente.",
+        providerStatus: response.status,
+      });
+    }
+    const result = (await response.json()) as { id?: string };
+    return { delivered: true, provider: "resend" as const, messageId: result.id ?? null };
+  }
+
   private isResendConfigured() {
     return Boolean(this.apiKey() && this.fromAddress());
   }
@@ -77,6 +117,33 @@ export class TransactionalEmailService {
   private environment() {
     return this.config.get<string>("NODE_ENV")?.trim().toLowerCase() ?? "development";
   }
+}
+
+function customerPortalInvitationText(input: CustomerPortalInvitation) {
+  return [
+    `Olá, ${input.contactName}.`,
+    "",
+    `Você recebeu um convite para acessar o portal da ${input.customerName}.`,
+    "Use o link abaixo para criar sua senha e ativar o acesso:",
+    input.acceptUrl,
+    "",
+    `O convite expira em ${formatExpiration(input.expiresAt)}.`,
+  ].join("\n");
+}
+
+function customerPortalInvitationHtml(input: CustomerPortalInvitation) {
+  const name = escapeHtml(input.contactName);
+  const customerName = escapeHtml(input.customerName);
+  const url = escapeHtml(input.acceptUrl);
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:560px;margin:0 auto">
+      <h1 style="font-size:24px;margin-bottom:16px">Ativar meu acesso</h1>
+      <p>Olá, ${name}.</p>
+      <p>Você recebeu um convite para acessar o portal da <strong>${customerName}</strong>.</p>
+      <p style="margin:28px 0"><a href="${url}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#176ef2;color:#fff;text-decoration:none;font-weight:600">Ativar acesso</a></p>
+      <p style="font-size:13px;color:#64748b">Este convite expira em ${escapeHtml(formatExpiration(input.expiresAt))}.</p>
+    </div>
+  `.trim();
 }
 
 function invitationText(input: TenantAdministratorInvitation) {

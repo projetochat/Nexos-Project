@@ -28,7 +28,9 @@ describe("tenant permission navigation", () => {
     expect(canAccessTenantRoute("/chamados/ticket-1", ["tickets.read"], { tickets: false })).toBe(
       false,
     );
+    expect(canAccessTenantRoute("/clientes", ["contacts.read"], { tickets: false })).toBe(false);
     expect(canAccessTenantRoute("/chamados", ["tickets.read"], { tickets: true })).toBe(true);
+    expect(canAccessTenantRoute("/clientes", ["contacts.read"], { tickets: true })).toBe(true);
   });
 
   it("uses permissions for every tenant role and preserves the platform admin home", () => {

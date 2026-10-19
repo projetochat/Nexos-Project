@@ -29,6 +29,7 @@ export type SessionUser = {
   nome: string;
   email: string;
   role: Role;
+  roleKey?: string;
   empresaId?: string;
   empresaNome?: string;
   avatarUrl?: string;
@@ -88,6 +89,7 @@ const TENANT_HOME_CANDIDATES = [
   "/chatbot",
   "/automacoes",
   "/agente-ia",
+  "/clientes",
   "/chamados",
   "/configuracoes",
 ] as const;
@@ -111,7 +113,7 @@ export function canAccessTenantRoute(
   const route = matchingTenantRoute(pathname);
   if (!route) return false;
   if (route === "/campanhas" && modules?.campaigns === false) return false;
-  if (route === "/chamados" && modules?.tickets === false) return false;
+  if ((route === "/clientes" || route === "/chamados") && modules?.tickets === false) return false;
   const required = TENANT_ROUTE_PERMISSIONS[route];
   return required.some((permission) => permissions?.includes(permission));
 }

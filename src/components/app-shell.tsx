@@ -107,7 +107,10 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
   },
   {
     title: "Chamados",
-    items: [{ to: "/chamados", label: "Chamados", icon: Ticket }],
+    items: [
+      { to: "/clientes", label: "Clientes", icon: Users },
+      { to: "/chamados", label: "Chamados", icon: Ticket },
+    ],
   },
 ];
 

@@ -214,8 +214,51 @@ export type ApiCustomer = {
   contato_responsavel: string | null;
   cor: string;
   contactCount?: number;
+  personType: "PHYSICAL" | "LEGAL";
+  status: "ACTIVE" | "PROSPECT" | "SUSPENDED" | "CANCELLED";
+  legalName: string | null;
+  document: string | null;
+  addressFullEnabled: boolean;
+  postalCode: string | null;
+  street: string | null;
+  addressNumber: string | null;
+  addressWithoutNumber: boolean;
+  complement: string | null;
+  neighborhood: string | null;
+  city: string;
+  state: string;
+  country: string | null;
+  branchCount?: number;
+  departmentCount?: number;
+  branches?: ApiCustomerBranch[];
+  departments?: ApiCustomerDepartment[];
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type ApiCustomerBranch = {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiCustomerDepartment = {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  name: string;
+  managerContactId: string | null;
+  managerContact?: { id: string; name: string } | null;
+  manager?: { id: string; name: string } | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ApiTag = {
@@ -278,6 +321,11 @@ export type ApiContact = {
   normalizedPhone: string;
   avatar_url: string | null;
   customer_id: string | null;
+  customerBranchId?: string | null;
+  customerBranch?: Pick<ApiCustomerBranch, "id" | "name" | "city" | "state"> | null;
+  customerDepartmentId?: string | null;
+  customerDepartment?: Pick<ApiCustomerDepartment, "id" | "name"> | null;
+  customerAccessProfile?: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS" | null;
   email: string | null;
   /** Nome legado; use contactDepartment como fonte canônica do departamento cadastrado. */
   departamento: string | null;
@@ -705,10 +753,30 @@ export type ApiTicketStatus =
   | "AGUARDANDO"
   | "RESOLVIDO"
   | "FECHADO"
-  | "CANCELADO";
+  | "CANCELADO"
+  | "NOVO"
+  | "AGUARDANDO_APROVACAO"
+  | "NA_FILA"
+  | "EM_EXECUCAO"
+  | "CONCLUIDA"
+  | "VALIDADO"
+  | "REPROVADO";
 
-export type ApiTicketPriority = "BAIXA" | "NORMAL" | "ALTA" | "URGENTE";
+export type ApiTicketPriority = "BAIXA" | "NORMAL" | "ALTA" | "URGENTE" | "ALTISSIMA";
 export type ApiTicketCategory = "SUPORTE" | "DEV" | "FINANCEIRO" | "OPERACIONAL";
+export type ApiTicketSubstatus =
+  | "OPENED_IN_SANKHYA"
+  | "FORWARDED_TO_THIRD_PARTY"
+  | "WAITING"
+  | "WAITING_INFRASTRUCTURE";
+export type ApiTicketDialogType =
+  | "RESPONSE"
+  | "TRANSFER"
+  | "APPROVAL_REQUEST"
+  | "SOLUTION"
+  | "CANCELLATION"
+  | "APPROVAL_DECISION"
+  | "SOLUTION_VALIDATION";
 
 export type ApiTicket = {
   id: string;
@@ -719,9 +787,12 @@ export type ApiTicket = {
   status: ApiTicketStatus;
   priority: ApiTicketPriority;
   category: ApiTicketCategory;
+  substatus: ApiTicketSubstatus | null;
   department: { id: string; name: string; color: string } | null;
   requesterContact: { id: string; name: string; email: string | null; phone: string } | null;
   customer: { id: string; name: string; email: string | null; phone: string | null } | null;
+  customerDepartment: { id: string; name: string; managerContactId: string | null } | null;
+  originBranch: { id: string; name: string; city: string; state: string } | null;
   conversation: { id: string; protocol: string | null; status: string } | null;
   assignedMembership: { id: string; user: { id: string; name: string; email: string } } | null;
   createdByMembership: { id: string; user: { id: string; name: string; email: string } };
@@ -730,6 +801,10 @@ export type ApiTicket = {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  startedAt: string | null;
+  approvedAt: string | null;
+  solvedAt: string | null;
+  validatedAt: string | null;
   archivedAt?: string | null;
 };
 
@@ -738,9 +813,26 @@ export type ApiTicketComment = {
   bodyText: string;
   bodyHtmlSanitized: string | null;
   internal: boolean;
+  dialogType: ApiTicketDialogType;
+  editedAt: string | null;
   createdAt: string;
   updatedAt: string;
   authorMembership: { id: string; user: { id: string; name: string; email: string } };
+};
+
+export type ApiTicketSummary = {
+  total: number;
+  counts: Record<ApiTicketStatus, number>;
+};
+
+export type ApiTicketApproval = {
+  id: string;
+  kind: "SUPPORT" | "DEVELOPMENT" | "SOLUTION_VALIDATION";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  approverMembershipId: string | null;
+  approverContactId: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
 };
 
 export type ApiTicketAttachment = {
@@ -955,6 +1047,11 @@ type ListParams = {
   pageSize?: number;
 };
 
+type ListCustomersParams = ListParams & {
+  personType?: ApiCustomer["personType"];
+  status?: ApiCustomer["status"];
+};
+
 type ListContactsParams = ListParams & {
   linked?: "all" | "linked" | "unlinked";
   instance?: string;
@@ -972,6 +1069,20 @@ type CustomerPayload = {
   notes?: string | null;
   responsibleContactName?: string | null;
   color?: string;
+  personType?: ApiCustomer["personType"];
+  status?: ApiCustomer["status"];
+  legalName?: string | null;
+  document?: string | null;
+  addressFullEnabled?: boolean;
+  postalCode?: string | null;
+  street?: string | null;
+  addressNumber?: string | null;
+  addressWithoutNumber?: boolean;
+  complement?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
 };
 
 type ContactPayload = {
@@ -979,6 +1090,9 @@ type ContactPayload = {
   phone: string;
   email?: string | null;
   customerId?: string | null;
+  customerBranchId?: string | null;
+  customerDepartmentId?: string | null;
+  customerAccessProfile?: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS" | null;
   departmentId?: string | null;
   contactDepartmentId?: string | null;
   contactProfileId?: string | null;
@@ -1113,6 +1227,24 @@ export async function acceptTenantInvitationWithTrixusApi(input: {
   return loginResponseToSessionUser(data);
 }
 
+export type ApiInvitationPreview = {
+  email: string;
+  expiresAt: string;
+  tenant: { id: string; name: string; slug: string };
+  profile: string;
+  contact: {
+    id: string;
+    name: string;
+    customer: { id: string; name: string } | null;
+    department: { id: string; name: string } | null;
+    branch: { id: string; name: string } | null;
+  } | null;
+};
+
+export function invitationPreviewWithTrixusApi(token: string) {
+  return apiRequest<ApiInvitationPreview>(`/auth/invitations/preview${queryString({ token })}`);
+}
+
 export async function hydrateWithTrixusApi() {
   const data = await apiRequest<MeResponse>("/auth/me");
   const role = roleMap[data.user.roleKey] ?? "operator";
@@ -1122,6 +1254,7 @@ export async function hydrateWithTrixusApi() {
     nome: data.user.name,
     email: data.user.email,
     role,
+    roleKey: data.user.roleKey,
     empresaId: data.tenant.id,
     empresaNome: data.tenant.name,
     avatarUrl: data.user.avatarUrl ?? undefined,
@@ -1385,7 +1518,7 @@ export const onboardingApi = {
 };
 
 export const crmApi = {
-  listCustomers: (params: ListParams = {}) =>
+  listCustomers: (params: ListCustomersParams = {}) =>
     apiRequest<PaginatedResponse<ApiCustomer>>(`/crm/customers${queryString(params)}`),
   getCustomer: (id: string) => apiRequest<ApiCustomer>(`/crm/customers/${id}`),
   createCustomer: (data: CustomerPayload) =>
@@ -1398,6 +1531,56 @@ export const crmApi = {
   deleteCustomer: (id: string) =>
     apiRequest<ApiCustomer>(`/crm/customers/${id}`, { method: "DELETE" }),
   listCustomerContacts: (id: string) => apiRequest<ApiContact[]>(`/crm/customers/${id}/contacts`),
+  listCustomerBranches: (id: string) =>
+    apiRequest<ApiCustomerBranch[]>(`/crm/customers/${id}/branches`),
+  createCustomerBranch: (
+    id: string,
+    data: Pick<ApiCustomerBranch, "name" | "city" | "state"> &
+      Partial<Pick<ApiCustomerBranch, "status">>,
+  ) =>
+    apiRequest<ApiCustomerBranch>(`/crm/customers/${id}/branches`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateCustomerBranch: (
+    id: string,
+    branchId: string,
+    data: Pick<ApiCustomerBranch, "name" | "city" | "state"> &
+      Partial<Pick<ApiCustomerBranch, "status">>,
+  ) =>
+    apiRequest<ApiCustomerBranch>(`/crm/customers/${id}/branches/${branchId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteCustomerBranch: (id: string, branchId: string) =>
+    apiRequest<ApiCustomerBranch>(`/crm/customers/${id}/branches/${branchId}`, {
+      method: "DELETE",
+    }),
+  listCustomerDepartments: (id: string) =>
+    apiRequest<ApiCustomerDepartment[]>(`/crm/customers/${id}/departments`),
+  createCustomerDepartment: (
+    id: string,
+    data: Pick<ApiCustomerDepartment, "name"> &
+      Partial<Pick<ApiCustomerDepartment, "managerContactId" | "active">>,
+  ) =>
+    apiRequest<ApiCustomerDepartment>(`/crm/customers/${id}/departments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateCustomerDepartment: (
+    id: string,
+    departmentId: string,
+    data: Pick<ApiCustomerDepartment, "name"> &
+      Partial<Pick<ApiCustomerDepartment, "managerContactId" | "active">>,
+  ) =>
+    apiRequest<ApiCustomerDepartment>(`/crm/customers/${id}/departments/${departmentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteCustomerDepartment: (id: string, departmentId: string) =>
+    apiRequest<ApiCustomerDepartment>(`/crm/customers/${id}/departments/${departmentId}`, {
+      method: "DELETE",
+    }),
 
   listContacts: (params: ListContactsParams = {}) =>
     apiRequest<PaginatedResponse<ApiContact>>(`/crm/contacts${queryString(params)}`),
@@ -2053,6 +2236,19 @@ export const connectionsApi = {
 };
 
 export const ticketApi = {
+  inviteCustomerContact: (contactId: string) =>
+    apiRequest<{
+      id?: string;
+      contactId: string;
+      email?: string;
+      status: "pending" | "active";
+      expiresAt?: string;
+      acceptUrl?: string;
+      delivery?: { delivered: boolean; provider: string };
+    }>(`/tickets/portal/contacts/${contactId}/invitations`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
   list: (
     params: {
       search?: string;
@@ -2068,6 +2264,17 @@ export const ticketApi = {
       sort?: string;
     } = {},
   ) => apiRequest<PaginatedResponse<ApiTicket>>(`/tickets${queryString(params)}`),
+  summary: (
+    params: {
+      search?: string;
+      status?: ApiTicketStatus;
+      priority?: ApiTicketPriority;
+      category?: ApiTicketCategory;
+      departmentId?: string;
+      customerId?: string;
+      conversationId?: string;
+    } = {},
+  ) => apiRequest<ApiTicketSummary>(`/tickets/summary${queryString(params)}`),
   get: (id: string) => apiRequest<ApiTicket>(`/tickets/${id}`),
   create: (data: {
     title: string;
@@ -2078,15 +2285,15 @@ export const ticketApi = {
     assignedMembershipId?: string | null;
     requesterContactId?: string | null;
     customerId?: string | null;
+    customerDepartmentId?: string | null;
+    originBranchId?: string | null;
     conversationId?: string | null;
   }) => apiRequest<ApiTicket>("/tickets", { method: "POST", body: JSON.stringify(data) }),
   update: (
     id: string,
     data: Partial<Pick<ApiTicket, "title" | "priority" | "category">> & {
       descriptionHtml?: string;
-      requesterContactId?: string | null;
-      customerId?: string | null;
-      conversationId?: string | null;
+      substatus?: ApiTicketSubstatus | null;
     },
   ) => apiRequest<ApiTicket>(`/tickets/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   updateStatus: (id: string, status: ApiTicketStatus) =>
@@ -2117,6 +2324,57 @@ export const ticketApi = {
     apiRequest<ApiTicketComment>(`/tickets/${id}/comments`, {
       method: "POST",
       body: JSON.stringify({ bodyHtml, internal: true }),
+    }),
+  updateComment: (id: string, commentId: string, bodyHtml: string) =>
+    apiRequest<ApiTicketComment>(`/tickets/${id}/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ bodyHtml }),
+    }),
+  respond: (id: string, bodyHtml: string) =>
+    apiRequest<ApiTicketComment>(`/tickets/${id}/actions/respond`, {
+      method: "POST",
+      body: JSON.stringify({ bodyHtml }),
+    }),
+  transfer: (
+    id: string,
+    data: { bodyHtml: string; departmentId: string; assignedMembershipId?: string | null },
+  ) =>
+    apiRequest<unknown>(`/tickets/${id}/actions/transfer`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  requestApproval: (
+    id: string,
+    data: { bodyHtml: string; approverMembershipId?: string; approverContactId?: string },
+  ) =>
+    apiRequest<unknown>(`/tickets/${id}/actions/request-approval`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  solve: (id: string, bodyHtml: string) =>
+    apiRequest<unknown>(`/tickets/${id}/actions/solve`, {
+      method: "POST",
+      body: JSON.stringify({ bodyHtml }),
+    }),
+  cancel: (id: string, bodyHtml: string) =>
+    apiRequest<unknown>(`/tickets/${id}/actions/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ bodyHtml }),
+    }),
+  validateSolution: (id: string, data: { decision: "APPROVED" | "REJECTED"; bodyHtml?: string }) =>
+    apiRequest<ApiTicketComment>(`/tickets/${id}/actions/validate-solution`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  approvals: (id: string) => apiRequest<ApiTicketApproval[]>(`/tickets/${id}/approvals`),
+  decideApproval: (
+    id: string,
+    approvalId: string,
+    data: { decision: "APPROVED" | "REJECTED"; bodyHtml?: string },
+  ) =>
+    apiRequest<unknown>(`/tickets/${id}/approvals/${approvalId}/decision`, {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
   attachments: (id: string) => apiRequest<ApiTicketAttachment[]>(`/tickets/${id}/attachments`),
   uploadAttachment: async (id: string, file: File) => {
@@ -3231,6 +3489,7 @@ function loginResponseToSessionUser(data: LoginResponse): SessionUser {
     nome: data.user.name,
     email: data.user.email,
     role,
+    roleKey: data.user.roleKey,
     empresaId: data.tenant.id,
     empresaNome: data.tenant.name,
     avatarUrl: data.user.avatarUrl ?? undefined,

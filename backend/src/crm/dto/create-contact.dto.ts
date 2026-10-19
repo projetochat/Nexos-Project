@@ -12,6 +12,7 @@ import {
 } from "class-validator";
 
 export const CONTACT_COMPANY_ROLES = ["COLABORADOR", "SUPERVISOR", "GERENTE", "DIRETORIA"] as const;
+export const CUSTOMER_ACCESS_PROFILES = ["COLLABORATOR", "MANAGER", "FULL_ACCESS"] as const;
 
 export class CreateContactDto {
   @IsString()
@@ -33,6 +34,18 @@ export class CreateContactDto {
   @IsOptional()
   @IsUUID()
   customerId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  customerBranchId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  customerDepartmentId?: string | null;
+
+  @IsOptional()
+  @IsIn(CUSTOMER_ACCESS_PROFILES)
+  customerAccessProfile?: (typeof CUSTOMER_ACCESS_PROFILES)[number] | null;
 
   @IsOptional()
   @IsUUID()

@@ -57,7 +57,9 @@ import { ContactProfilePictureSyncService } from "../messaging/contact-profile-p
 import { EvolutionClient } from "../messaging/evolution/evolution.client";
 import { CreateContactDto } from "./dto/create-contact.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
+import { CustomerBranchDto, CustomerDepartmentDto } from "./dto/customer-structure.dto";
 import { ListContactsQueryDto } from "./dto/list-contacts-query.dto";
+import { ListCustomersQueryDto } from "./dto/list-customers-query.dto";
 import { PaginationDto } from "./dto/pagination.dto";
 import { UpdateContactDto } from "./dto/update-contact.dto";
 import { UpdateCustomerDto } from "./dto/update-customer.dto";
@@ -211,10 +213,18 @@ class BulkUpdateContactsDto {
 }
 const customerInclude = {
   contacts: { where: { archivedAt: null }, select: { id: true } },
+  branches: { where: { archivedAt: null }, orderBy: { name: "asc" as const } },
+  customerDepartments: {
+    where: { archivedAt: null },
+    orderBy: { name: "asc" as const },
+    include: { managerContact: { select: { id: true, name: true } } },
+  },
 } satisfies Prisma.CustomerInclude;
 
 const contactInclude = {
   customer: { select: { id: true, name: true, color: true } },
+  customerBranch: { select: { id: true, name: true, city: true, state: true } },
+  customerDepartment: { select: { id: true, name: true } },
   contactDepartment: { select: { id: true, name: true, color: true } },
   contactProfile: { select: { id: true, name: true, color: true } },
   tags: { include: { tag: true } },
@@ -252,12 +262,17 @@ export class CrmController {
 
   @Get("customers")
   @RequirePermissions("contacts.read")
-  async listCustomers(@Query() query: PaginationDto, @CurrentUser() current: AuthenticatedUser) {
+  async listCustomers(
+    @Query() query: ListCustomersQueryDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
     const { page, pageSize, skip } = pagination(query);
     const q = query.q?.trim();
     const where: Prisma.CustomerWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
+      ...(query.personType ? { personType: query.personType } : {}),
+      ...(query.status ? { status: query.status } : {}),
       ...(q
         ? {
             OR: [
@@ -265,6 +280,7 @@ export class CrmController {
               { email: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
               { responsibleContactName: { contains: q, mode: "insensitive" } },
+              { document: { contains: q, mode: "insensitive" } },
             ],
           }
         : {}),
@@ -304,11 +320,25 @@ export class CrmController {
       data: {
         tenantId: current.tenantId,
         name: dto.name.trim(),
+        personType: dto.personType,
+        status: dto.status,
         email: normalizeNullableEmail(dto.email),
         phone: cleanNullable(dto.phone),
         notes: cleanNullable(dto.notes),
         responsibleContactName: cleanNullable(dto.responsibleContactName),
         color: dto.color ?? "#3B82F6",
+        legalName: cleanNullable(dto.legalName),
+        document: cleanNullable(dto.document),
+        addressFullEnabled: dto.addressFullEnabled,
+        postalCode: cleanNullable(dto.postalCode),
+        street: cleanNullable(dto.street),
+        addressNumber: cleanNullable(dto.addressNumber),
+        addressWithoutNumber: dto.addressWithoutNumber,
+        complement: cleanNullable(dto.complement),
+        neighborhood: cleanNullable(dto.neighborhood),
+        city: cleanNullable(dto.city),
+        state: cleanNullable(dto.state)?.toUpperCase(),
+        country: cleanNullable(dto.country),
       },
       include: customerInclude,
     });
@@ -328,11 +358,25 @@ export class CrmController {
       where: { id },
       data: {
         name: dto.name?.trim(),
+        personType: dto.personType,
+        status: dto.status,
         email: normalizeEmailUpdate(dto.email),
         phone: nullableUpdate(dto.phone),
         notes: nullableUpdate(dto.notes),
         responsibleContactName: nullableUpdate(dto.responsibleContactName),
         color: dto.color,
+        legalName: nullableUpdate(dto.legalName),
+        document: nullableUpdate(dto.document),
+        addressFullEnabled: dto.addressFullEnabled,
+        postalCode: nullableUpdate(dto.postalCode),
+        street: nullableUpdate(dto.street),
+        addressNumber: nullableUpdate(dto.addressNumber),
+        addressWithoutNumber: dto.addressWithoutNumber,
+        complement: nullableUpdate(dto.complement),
+        neighborhood: nullableUpdate(dto.neighborhood),
+        city: nullableUpdate(dto.city),
+        state: dto.state === undefined ? undefined : cleanNullable(dto.state)?.toUpperCase(),
+        country: nullableUpdate(dto.country),
       },
       include: customerInclude,
     });
@@ -380,6 +424,180 @@ export class CrmController {
         additionalFieldsViewer: current,
       }),
     );
+  }
+
+  @Get("customers/:id/branches")
+  @RequirePermissions("contacts.read")
+  async listCustomerBranches(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    await this.findCustomerOrThrow(id, current.tenantId);
+    return this.prisma.customerBranch.findMany({
+      where: { tenantId: current.tenantId, customerId: id, archivedAt: null },
+      orderBy: [{ name: "asc" }],
+    });
+  }
+
+  @Post("customers/:id/branches")
+  @RequirePermissions("contacts.create")
+  async createCustomerBranch(
+    @Param("id") id: string,
+    @Body() dto: CustomerBranchDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerOrThrow(id, current.tenantId);
+    const archived = await this.prisma.customerBranch.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        customerId: id,
+        name: dto.name.trim(),
+        archivedAt: { not: null },
+      },
+      select: { id: true },
+    });
+    if (archived) {
+      return this.prisma.customerBranch.update({
+        where: { id: archived.id },
+        data: {
+          city: dto.city.trim(),
+          state: dto.state.trim().toUpperCase(),
+          status: dto.status ?? "ACTIVE",
+          archivedAt: null,
+        },
+      });
+    }
+    return this.prisma.customerBranch.create({
+      data: {
+        tenantId: current.tenantId,
+        customerId: id,
+        name: dto.name.trim(),
+        city: dto.city.trim(),
+        state: dto.state.trim().toUpperCase(),
+        status: dto.status,
+      },
+    });
+  }
+
+  @Patch("customers/:id/branches/:branchId")
+  @RequirePermissions("contacts.update")
+  async updateCustomerBranch(
+    @Param("id") id: string,
+    @Param("branchId") branchId: string,
+    @Body() dto: CustomerBranchDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerBranchOrThrow(id, branchId, current.tenantId);
+    return this.prisma.customerBranch.update({
+      where: { id: branchId },
+      data: {
+        name: dto.name.trim(),
+        city: dto.city.trim(),
+        state: dto.state.trim().toUpperCase(),
+        status: dto.status,
+      },
+    });
+  }
+
+  @Delete("customers/:id/branches/:branchId")
+  @RequirePermissions("contacts.delete")
+  async deleteCustomerBranch(
+    @Param("id") id: string,
+    @Param("branchId") branchId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerBranchOrThrow(id, branchId, current.tenantId);
+    return this.prisma.customerBranch.update({
+      where: { id: branchId },
+      data: { archivedAt: new Date() },
+    });
+  }
+
+  @Get("customers/:id/departments")
+  @RequirePermissions("contacts.read")
+  async listCustomerDepartments(
+    @Param("id") id: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerOrThrow(id, current.tenantId);
+    return this.prisma.customerDepartment.findMany({
+      where: { tenantId: current.tenantId, customerId: id, archivedAt: null },
+      include: { managerContact: { select: { id: true, name: true } } },
+      orderBy: [{ name: "asc" }],
+    });
+  }
+
+  @Post("customers/:id/departments")
+  @RequirePermissions("contacts.create")
+  async createCustomerDepartment(
+    @Param("id") id: string,
+    @Body() dto: CustomerDepartmentDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerOrThrow(id, current.tenantId);
+    await this.assertCustomerManager(dto.managerContactId, id, current.tenantId);
+    const archived = await this.prisma.customerDepartment.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        customerId: id,
+        name: dto.name.trim(),
+        archivedAt: { not: null },
+      },
+      select: { id: true },
+    });
+    if (archived) {
+      return this.prisma.customerDepartment.update({
+        where: { id: archived.id },
+        data: {
+          managerContactId: dto.managerContactId ?? null,
+          active: dto.active ?? true,
+          archivedAt: null,
+        },
+        include: { managerContact: { select: { id: true, name: true } } },
+      });
+    }
+    return this.prisma.customerDepartment.create({
+      data: {
+        tenantId: current.tenantId,
+        customerId: id,
+        name: dto.name.trim(),
+        managerContactId: dto.managerContactId ?? null,
+        active: dto.active ?? true,
+      },
+      include: { managerContact: { select: { id: true, name: true } } },
+    });
+  }
+
+  @Patch("customers/:id/departments/:departmentId")
+  @RequirePermissions("contacts.update")
+  async updateCustomerDepartment(
+    @Param("id") id: string,
+    @Param("departmentId") departmentId: string,
+    @Body() dto: CustomerDepartmentDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerDepartmentOrThrow(id, departmentId, current.tenantId);
+    await this.assertCustomerManager(dto.managerContactId, id, current.tenantId);
+    return this.prisma.customerDepartment.update({
+      where: { id: departmentId },
+      data: {
+        name: dto.name.trim(),
+        managerContactId: dto.managerContactId === undefined ? undefined : dto.managerContactId,
+        active: dto.active,
+      },
+      include: { managerContact: { select: { id: true, name: true } } },
+    });
+  }
+
+  @Delete("customers/:id/departments/:departmentId")
+  @RequirePermissions("contacts.delete")
+  async deleteCustomerDepartment(
+    @Param("id") id: string,
+    @Param("departmentId") departmentId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerDepartmentOrThrow(id, departmentId, current.tenantId);
+    return this.prisma.customerDepartment.update({
+      where: { id: departmentId },
+      data: { archivedAt: new Date() },
+    });
   }
 
   @Get("contacts")
@@ -1510,6 +1728,9 @@ export class CrmController {
             email: normalizeNullableEmail(dto.email),
             avatarUrl: cleanNullable(dto.avatarUrl),
             customerId: links.customerId,
+            customerBranchId: links.customerBranchId,
+            customerDepartmentId: links.customerDepartmentId,
+            customerAccessProfile: dto.customerAccessProfile ?? null,
             departmentId: links.departmentId,
             contactDepartmentId: links.contactDepartmentId,
             contactProfileId: links.contactProfileId,
@@ -1538,6 +1759,9 @@ export class CrmController {
             email: normalizeNullableEmail(dto.email),
             avatarUrl: cleanNullable(dto.avatarUrl),
             customerId: links.customerId,
+            customerBranchId: links.customerBranchId,
+            customerDepartmentId: links.customerDepartmentId,
+            customerAccessProfile: dto.customerAccessProfile ?? null,
             departmentId: links.departmentId,
             contactDepartmentId: links.contactDepartmentId,
             contactProfileId: links.contactProfileId,
@@ -1606,7 +1830,7 @@ export class CrmController {
         });
       }
     }
-    const links = await this.resolveContactLinks(dto, current.tenantId);
+    const links = await this.resolveContactLinks(dto, current.tenantId, currentContact.customerId);
     try {
       const contact = await this.prisma.$transaction(async (tx) => {
         if (dto.tagIds) {
@@ -1643,6 +1867,24 @@ export class CrmController {
             email: normalizeEmailUpdate(dto.email),
             avatarUrl: nullableUpdate(dto.avatarUrl),
             customerId: dto.customerId === undefined ? undefined : links.customerId,
+            customerBranchId:
+              dto.customerId === null
+                ? null
+                : dto.customerBranchId === undefined
+                  ? undefined
+                  : links.customerBranchId,
+            customerDepartmentId:
+              dto.customerId === null
+                ? null
+                : dto.customerDepartmentId === undefined
+                  ? undefined
+                  : links.customerDepartmentId,
+            customerAccessProfile:
+              dto.customerId === null
+                ? null
+                : dto.customerAccessProfile === undefined
+                  ? undefined
+                  : dto.customerAccessProfile,
             departmentId: dto.departmentId === undefined ? undefined : links.departmentId,
             contactDepartmentId:
               dto.contactDepartmentId === undefined ? undefined : links.contactDepartmentId,
@@ -1781,6 +2023,41 @@ export class CrmController {
     }
   }
 
+  private async findCustomerBranchOrThrow(customerId: string, branchId: string, tenantId: string) {
+    const branch = await this.prisma.customerBranch.findFirst({
+      where: { id: branchId, customerId, tenantId, archivedAt: null },
+    });
+    if (!branch) throw new NotFoundException("Filial do cliente não encontrada.");
+    return branch;
+  }
+
+  private async findCustomerDepartmentOrThrow(
+    customerId: string,
+    departmentId: string,
+    tenantId: string,
+  ) {
+    const department = await this.prisma.customerDepartment.findFirst({
+      where: { id: departmentId, customerId, tenantId, archivedAt: null },
+    });
+    if (!department) throw new NotFoundException("Departamento do cliente não encontrado.");
+    return department;
+  }
+
+  private async assertCustomerManager(
+    managerContactId: string | null | undefined,
+    customerId: string,
+    tenantId: string,
+  ) {
+    if (!managerContactId) return;
+    const contact = await this.prisma.contact.findFirst({
+      where: { id: managerContactId, customerId, tenantId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!contact) {
+      throw new BadRequestException("O gestor deve ser um contato ativo deste cliente.");
+    }
+  }
+
   private async findContactOrThrow(id: string, tenantId: string) {
     const contact = await this.prisma.contact.findFirst({
       where: { id, tenantId, archivedAt: null },
@@ -1793,6 +2070,8 @@ export class CrmController {
   private async resolveContactLinks(
     dto: {
       customerId?: string | null;
+      customerBranchId?: string | null;
+      customerDepartmentId?: string | null;
       departmentId?: string | null;
       contactDepartmentId?: string | null;
       contactProfileId?: string | null;
@@ -1802,12 +2081,41 @@ export class CrmController {
       tagIds?: string[];
     },
     tenantId: string,
+    currentCustomerId?: string | null,
   ) {
     if (dto.customerId) {
       const customer = await this.prisma.customer.findFirst({
         where: { id: dto.customerId, tenantId, archivedAt: null },
       });
       if (!customer) throw new BadRequestException("Cliente inexistente para este tenant.");
+    }
+
+    const effectiveCustomerId = dto.customerId === undefined ? currentCustomerId : dto.customerId;
+    const customerBranchId = dto.customerBranchId || null;
+    if (customerBranchId) {
+      if (!effectiveCustomerId) {
+        throw new BadRequestException("Selecione o cliente antes de vincular uma filial.");
+      }
+      const branch = await this.prisma.customerBranch.findFirst({
+        where: { id: customerBranchId, tenantId, archivedAt: null },
+        select: { customerId: true },
+      });
+      if (!branch || (effectiveCustomerId && branch.customerId !== effectiveCustomerId)) {
+        throw new BadRequestException("Filial inexistente para este cliente.");
+      }
+    }
+    const customerDepartmentId = dto.customerDepartmentId || null;
+    if (customerDepartmentId) {
+      if (!effectiveCustomerId) {
+        throw new BadRequestException("Selecione o cliente antes de vincular um departamento.");
+      }
+      const department = await this.prisma.customerDepartment.findFirst({
+        where: { id: customerDepartmentId, tenantId, archivedAt: null },
+        select: { customerId: true },
+      });
+      if (!department || (effectiveCustomerId && department.customerId !== effectiveCustomerId)) {
+        throw new BadRequestException("Departamento inexistente para este cliente.");
+      }
     }
 
     if (dto.departmentId) {
@@ -1884,6 +2192,8 @@ export class CrmController {
 
     return {
       customerId: dto.customerId || null,
+      customerBranchId,
+      customerDepartmentId,
       departmentId: dto.departmentId || null,
       contactDepartmentId: dto.contactDepartmentId || null,
       contactProfileId: dto.contactProfileId || null,
@@ -2393,7 +2703,28 @@ export class CrmController {
       notas: customer.notes,
       contato_responsavel: customer.responsibleContactName,
       cor: customer.color,
+      personType: customer.personType,
+      status: customer.status,
+      legalName: customer.legalName,
+      document: customer.document,
+      addressFullEnabled: customer.addressFullEnabled,
+      postalCode: customer.postalCode,
+      street: customer.street,
+      addressNumber: customer.addressNumber,
+      addressWithoutNumber: customer.addressWithoutNumber,
+      complement: customer.complement,
+      neighborhood: customer.neighborhood,
+      city: customer.city,
+      state: customer.state,
+      country: customer.country,
       contactCount: customer.contacts.length,
+      branchCount: customer.branches.length,
+      departmentCount: customer.customerDepartments.length,
+      branches: customer.branches,
+      departments: customer.customerDepartments.map((department) => ({
+        ...department,
+        manager: department.managerContact,
+      })),
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt,
     };
@@ -2422,6 +2753,11 @@ export class CrmController {
       normalizedPhone: contact.normalizedPhone,
       avatar_url: contact.avatarUrl,
       customer_id: contact.customerId,
+      customerBranchId: contact.customerBranchId,
+      customerBranch: contact.customerBranch,
+      customerDepartmentId: contact.customerDepartmentId,
+      customerDepartment: contact.customerDepartment,
+      customerAccessProfile: contact.customerAccessProfile,
       email: contact.email,
       departamento: contact.departmentName,
       departmentId: contact.departmentId,

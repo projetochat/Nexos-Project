@@ -308,7 +308,8 @@ export function DeletionConfirmDialog({
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent
         aria-busy={isBusy}
-        className="flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-xl flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl"
+        overlayClassName="z-[290]"
+        className="z-[300] flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-xl flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl"
         onEscapeKeyDown={(event) => {
           if (isCommitting) event.preventDefault();
         }}
@@ -480,7 +481,6 @@ export function DeletionConfirmDialog({
                   </ul>
                 </section>
               )}
-
             </div>
           ) : null}
         </div>

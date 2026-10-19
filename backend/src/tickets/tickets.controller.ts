@@ -28,9 +28,18 @@ import { UpdateTicketAssigneeDto } from "./dto/update-ticket-assignee.dto";
 import { UpdateTicketDepartmentDto } from "./dto/update-ticket-department.dto";
 import { UpdateTicketStatusDto } from "./dto/update-ticket-status.dto";
 import { UpdateTicketDto } from "./dto/update-ticket.dto";
+import { UpdateTicketCommentDto } from "./dto/update-ticket-comment.dto";
+import {
+  DecideTicketApprovalDto,
+  RequestTicketApprovalDto,
+  TicketResponseDto,
+  TransferTicketDto,
+  ValidateTicketSolutionDto,
+} from "./dto/ticket-workflow.dto";
 import { TicketsService } from "./tickets.service";
 import { RequireTenantFeature } from "../platform/tenant-feature.decorator";
 import { TenantFeatureGuard } from "../platform/tenant-feature.guard";
+import { InviteCustomerContactDto } from "./dto/invite-customer-contact.dto";
 
 @Controller("tickets")
 @RequireTenantFeature("tickets")
@@ -44,10 +53,26 @@ export class TicketsController {
     return this.ticketsService.list(query, current);
   }
 
+  @Get("summary")
+  @RequirePermissions("tickets.read")
+  summary(@Query() query: ListTicketsQueryDto, @CurrentUser() current: AuthenticatedUser) {
+    return this.ticketsService.summary(query, current);
+  }
+
   @Post()
   @RequirePermissions("tickets.create")
   create(@Body() dto: CreateTicketDto, @CurrentUser() current: AuthenticatedUser) {
     return this.ticketsService.create(dto, current);
+  }
+
+  @Post("portal/contacts/:contactId/invitations")
+  @RequirePermissions("contacts.update")
+  inviteCustomerContact(
+    @Param("contactId") contactId: string,
+    @Body() _dto: InviteCustomerContactDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.inviteCustomerContact(contactId, current);
   }
 
   @Get(":id")
@@ -126,6 +151,94 @@ export class TicketsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     return this.ticketsService.createComment(id, dto, current);
+  }
+
+  @Patch(":id/comments/:commentId")
+  @RequirePermissions("tickets.update")
+  updateComment(
+    @Param("id") id: string,
+    @Param("commentId") commentId: string,
+    @Body() dto: UpdateTicketCommentDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.updateComment(id, commentId, dto, current);
+  }
+
+  @Post(":id/actions/respond")
+  @RequirePermissions("tickets.update")
+  respond(
+    @Param("id") id: string,
+    @Body() dto: TicketResponseDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.respond(id, dto, current);
+  }
+
+  @Post(":id/actions/transfer")
+  @RequirePermissions("tickets.update")
+  transfer(
+    @Param("id") id: string,
+    @Body() dto: TransferTicketDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.transfer(id, dto, current);
+  }
+
+  @Post(":id/actions/request-approval")
+  @RequirePermissions("tickets.update")
+  requestApproval(
+    @Param("id") id: string,
+    @Body() dto: RequestTicketApprovalDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.requestApproval(id, dto, current);
+  }
+
+  @Get(":id/approvals")
+  @RequirePermissions("tickets.read")
+  approvals(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.ticketsService.approvals(id, current);
+  }
+
+  @Post(":id/approvals/:approvalId/decision")
+  @RequirePermissions("tickets.update")
+  decideApproval(
+    @Param("id") id: string,
+    @Param("approvalId") approvalId: string,
+    @Body() dto: DecideTicketApprovalDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.decideApproval(id, approvalId, dto, current);
+  }
+
+  @Post(":id/actions/solve")
+  @RequirePermissions("tickets.update")
+  solve(
+    @Param("id") id: string,
+    @Body() dto: TicketResponseDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.solve(id, dto, current);
+  }
+
+  @Post(":id/actions/cancel")
+  @RequirePermissions("tickets.update")
+  cancel(
+    @Param("id") id: string,
+    @Body() dto: TicketResponseDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.cancel(id, dto, current);
+  }
+
+  @Post(":id/actions/validate-solution")
+  @RequirePermissions("tickets.update")
+  validateSolution(
+    @Param("id") id: string,
+    @Body() dto: ValidateTicketSolutionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.validateSolution(id, dto, current);
   }
 
   @Post(":id/attachments")

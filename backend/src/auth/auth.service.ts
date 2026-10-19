@@ -518,15 +518,18 @@ export class AuthService {
     const tokenHash = hashToken(dto.token);
     const invitation = await this.prisma.userInvitation.findFirst({
       where: { tokenHash, status: "PENDING", expiresAt: { gt: new Date() } },
-      include: { tenant: true, role: true },
+      include: { tenant: true, role: true, contact: true },
     });
     if (!invitation) throw new UnauthorizedException("Convite inválido ou expirado.");
+    if (invitation.contactId && (!invitation.contact || invitation.contact.archivedAt)) {
+      throw new UnauthorizedException("Convite de contato não está mais ativo.");
+    }
     const requestedName = dto.name?.trim();
     const tenantAdministratorName =
       invitation.role.key === "tenant_admin"
         ? invitation.tenant.responsibleName?.trim()
         : undefined;
-    const invitationName = requestedName || tenantAdministratorName;
+    const invitationName = invitation.contact?.name || requestedName || tenantAdministratorName;
 
     await this.prisma.$transaction(async (tx) => {
       let user = await tx.user.findUnique({ where: { email: invitation.email } });
@@ -544,6 +547,16 @@ export class AuthService {
             passwordHash: await hash(dto.password, 12),
           },
         });
+      }
+      if (invitation.contactId) {
+        const existingMembership = await tx.tenantMembership.findUnique({
+          where: { tenantId_userId: { tenantId: invitation.tenantId, userId: user.id } },
+        });
+        if (existingMembership && existingMembership.roleId !== invitation.roleId) {
+          throw new UnauthorizedException(
+            "Este e-mail já possui outro acesso nesta organização. Solicite o vínculo explícito ao administrador.",
+          );
+        }
       }
       const membership = await tx.tenantMembership.upsert({
         where: {
@@ -571,6 +584,16 @@ export class AuthService {
           skipDuplicates: true,
         });
       }
+      if (invitation.contactId) {
+        await tx.contact.updateMany({
+          where: {
+            id: invitation.contactId,
+            tenantId: invitation.tenantId,
+            archivedAt: null,
+          },
+          data: { portalMembershipId: membership.id, portalAccessActive: true },
+        });
+      }
       await tx.userInvitation.update({
         where: { id: invitation.id },
         data: { status: "ACCEPTED", acceptedAt: new Date() },
@@ -582,6 +605,43 @@ export class AuthService {
       password: dto.password,
       tenantSlug: invitation.tenant.slug,
     });
+  }
+
+  async invitationPreview(token: string) {
+    const invitation = await this.prisma.userInvitation.findFirst({
+      where: {
+        tokenHash: hashToken(token),
+        status: "PENDING",
+        expiresAt: { gt: new Date() },
+      },
+      include: {
+        tenant: { select: { id: true, name: true, slug: true } },
+        role: { select: { key: true, name: true } },
+        contact: {
+          include: {
+            customer: { select: { id: true, name: true } },
+            customerDepartment: { select: { id: true, name: true } },
+            customerBranch: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!invitation) throw new UnauthorizedException("Convite inválido ou expirado.");
+    return {
+      email: invitation.email,
+      expiresAt: invitation.expiresAt,
+      tenant: invitation.tenant,
+      profile: invitation.contact?.customerAccessProfile ?? invitation.role.name,
+      contact: invitation.contact
+        ? {
+            id: invitation.contact.id,
+            name: invitation.contact.name,
+            customer: invitation.contact.customer,
+            department: invitation.contact.customerDepartment,
+            branch: invitation.contact.customerBranch,
+          }
+        : null,
+    };
   }
 
   async completeRequiredPasswordChange(dto: {

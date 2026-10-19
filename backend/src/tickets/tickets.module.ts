@@ -8,9 +8,10 @@ import { StorageModule } from "./storage/storage.module";
 import { TicketsController } from "./tickets.controller";
 import { TicketsService } from "./tickets.service";
 import { TicketAttachmentCleanupService } from "./ticket-attachment-cleanup.service";
+import { EmailModule } from "../email/email.module";
 
 @Module({
-  imports: [AuthModule, PrismaModule, RealtimeModule, StorageModule, PlatformModule],
+  imports: [AuthModule, PrismaModule, RealtimeModule, StorageModule, PlatformModule, EmailModule],
   controllers: [TicketsController],
   providers: [TicketsService, AttachmentSecurityScanner, TicketAttachmentCleanupService],
   exports: [TicketsService],

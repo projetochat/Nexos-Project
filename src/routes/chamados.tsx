@@ -1,12 +1,27 @@
 import { RichTextEditor } from "@/components/ticket-rich-text-editor";
 import * as React from "react";
-import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, Eye, Paperclip, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
+import {
+  Ban,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Code2,
+  Download,
+  Eye,
+  Headphones,
+  ListChecks,
+  MoreHorizontal,
+  Paperclip,
+  Plus,
+  Send,
+  Ticket,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
-  Badge,
   Button,
   Card,
   EmptyState,
@@ -18,6 +33,12 @@ import {
 } from "@/components/ui-kit";
 import { Modal } from "@/components/modal";
 import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import {
+  Select as RichSelect,
+  SelectContent as RichSelectContent,
+  SelectItem as RichSelectItem,
+  SelectTrigger as RichSelectTrigger,
+} from "@/components/ui/select";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { formatPhoneForDisplay } from "@/lib/input-masks";
@@ -36,6 +57,7 @@ import {
   type ApiTicketCategory,
   type ApiTicketPriority,
   type ApiTicketStatus,
+  type ApiTicketSubstatus,
   type ApiUserMembership,
 } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
@@ -57,21 +79,33 @@ export const Route = createFileRoute("/chamados")({
 });
 
 const statuses: ApiTicketStatus[] = [
-  "ABERTO",
-  "EM_ANDAMENTO",
-  "AGUARDANDO",
-  "RESOLVIDO",
-  "FECHADO",
+  "NOVO",
+  "AGUARDANDO_APROVACAO",
+  "NA_FILA",
+  "EM_EXECUCAO",
+  "CONCLUIDA",
+  "VALIDADO",
+  "REPROVADO",
   "CANCELADO",
 ];
-const priorities: ApiTicketPriority[] = ["BAIXA", "NORMAL", "ALTA", "URGENTE"];
+const priorities: ApiTicketPriority[] = ["BAIXA", "NORMAL", "ALTA", "URGENTE", "ALTISSIMA"];
 const categories: ApiTicketCategory[] = ["SUPORTE", "DEV", "FINANCEIRO", "OPERACIONAL"];
 const listKey = ["tickets", "list"] as const;
+const summaryKey = ["tickets", "summary"] as const;
 const maxAttachmentSizeMb = 10;
+const maxAttachmentCount = 10;
+const allowedAttachmentMimeTypes = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "text/plain",
+]);
 
 function ChamadosPage() {
   const qc = useQueryClient();
   const permissions = useSession((state) => state.user?.permissions ?? []);
+  const isCustomerPortal = useSession((state) => state.user?.roleKey === "customer_portal");
   const canCreate = permissions.includes("tickets.create");
   const canUpdate = permissions.includes("tickets.update");
   const canUpdateStatus = canUpdate;
@@ -84,7 +118,8 @@ function ChamadosPage() {
   const setNewTicketOpen = novo.set;
   const [query, setQuery] = React.useState("");
   const [status, setStatus] = React.useState<ApiTicketStatus | "">("");
-  const [priority, setPriority] = React.useState<ApiTicketPriority | "">("");
+  const [customerId, setCustomerId] = React.useState("");
+  const [departmentId, setDepartmentId] = React.useState("");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [editingTicket, setEditingTicket] = React.useState<ApiTicket | null>(null);
   const [duplicatingTicket, setDuplicatingTicket] = React.useState<ApiTicket | null>(null);
@@ -92,7 +127,8 @@ function ChamadosPage() {
   const params = {
     search: query || undefined,
     status: status || undefined,
-    priority: priority || undefined,
+    customerId: customerId || undefined,
+    departmentId: departmentId || undefined,
     conversationId: search.conversationId,
     pageSize: 25,
   };
@@ -100,9 +136,32 @@ function ChamadosPage() {
     queryKey: [...listKey, params],
     queryFn: () => ticketApi.list(params),
   });
+  const ticketSummary = useQuery({
+    queryKey: [...summaryKey, params],
+    queryFn: () =>
+      ticketApi.summary({
+        search: params.search,
+        status: params.status,
+        customerId: params.customerId,
+        departmentId: params.departmentId,
+        conversationId: params.conversationId,
+      }),
+    enabled: !isCustomerPortal,
+  });
+  const options = useTicketOptions(!isCustomerPortal);
+  const summary = {
+    new: ticketSummary.data?.counts.NOVO ?? 0,
+    approval: ticketSummary.data?.counts.AGUARDANDO_APROVACAO ?? 0,
+    queue: ticketSummary.data?.counts.NA_FILA ?? 0,
+    running: ticketSummary.data?.counts.EM_EXECUCAO ?? 0,
+    done: ticketSummary.data?.counts.CONCLUIDA ?? 0,
+    validated: ticketSummary.data?.counts.VALIDADO ?? 0,
+    rejected: ticketSummary.data?.counts.REPROVADO ?? 0,
+  };
 
   const refreshTickets = React.useCallback(() => {
     qc.invalidateQueries({ queryKey: listKey });
+    qc.invalidateQueries({ queryKey: summaryKey });
     if (selectedId) qc.invalidateQueries({ queryKey: ["tickets", "detail", selectedId] });
   }, [qc, selectedId]);
   React.useEffect(
@@ -125,8 +184,8 @@ function ChamadosPage() {
     <AppShell>
       <PageContainer>
         <SectionHeader
-          title="Chamados"
-          subtitle={`${num(tickets.data?.total ?? 0)} chamado(s) em PostgreSQL.`}
+          title={isCustomerPortal ? "Meus chamados" : "Chamados"}
+          subtitle={`${num(tickets.data?.total ?? 0)} chamados em acompanhamento.`}
           actions={
             canCreate ? (
               <Button variant="primary" size="sm" onClick={novo.show}>
@@ -137,22 +196,51 @@ function ChamadosPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-[1fr_180px_180px]">
-            <div className="col-span-2 md:col-span-1">
+          <div
+            className={`grid grid-cols-2 gap-3 ${isCustomerPortal ? "lg:grid-cols-[1fr_220px]" : "lg:grid-cols-[minmax(280px,1.6fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_minmax(150px,.7fr)]"}`}
+          >
+            <div className="col-span-2 lg:col-span-1">
               <Field label="Busca">
                 <SearchInput
                   value={query}
                   onChange={setQuery}
-                  placeholder="Buscar protocolo, título, contact ou customer"
+                  placeholder="Buscar por ID, título ou solicitante"
                 />
               </Field>
             </div>
+            {!isCustomerPortal && (
+              <Field label="Cliente">
+                <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+                  <option value="">Todos</option>
+                  {options.customers.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nome}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            {!isCustomerPortal && (
+              <Field label="Departamento">
+                <Select
+                  value={departmentId}
+                  onChange={(event) => setDepartmentId(event.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {options.departments.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
             <Field label="Status">
               <Select
                 value={status}
                 onChange={(event) => setStatus(event.target.value as ApiTicketStatus | "")}
               >
-                <option value="">Todos os status</option>
+                <option value="">Todos</option>
                 {statuses.map((item) => (
                   <option key={item} value={item}>
                     {statusLabel(item)}
@@ -160,21 +248,35 @@ function ChamadosPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Prioridade">
-              <Select
-                value={priority}
-                onChange={(event) => setPriority(event.target.value as ApiTicketPriority | "")}
-              >
-                <option value="">Todas prioridades</option>
-                {priorities.map((item) => (
-                  <option key={item} value={item}>
-                    {priorityLabel(item)}
-                  </option>
-                ))}
-              </Select>
-            </Field>
           </div>
         </Card>
+
+        {!isCustomerPortal && (
+          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+            <SummaryCard label="Novos" value={summary.new} tone="green" icon={<Ticket />} />
+            <SummaryCard
+              label="Aguardando aprovação"
+              value={summary.approval}
+              tone="purple"
+              icon={<Clock3 />}
+            />
+            <SummaryCard label="Na fila" value={summary.queue} tone="green" icon={<ListChecks />} />
+            <SummaryCard label="Em execução" value={summary.running} tone="amber" icon={<Send />} />
+            <SummaryCard
+              label="Concluída"
+              value={summary.done}
+              tone="blue"
+              icon={<CheckCircle2 />}
+            />
+            <SummaryCard
+              label="Validados"
+              value={summary.validated}
+              tone="blue"
+              icon={<CheckCircle2 />}
+            />
+            <SummaryCard label="Reprovados" value={summary.rejected} tone="red" icon={<Ban />} />
+          </div>
+        )}
 
         {tickets.isLoading ? (
           <Card>Carregando chamados...</Card>
@@ -192,106 +294,136 @@ function ChamadosPage() {
             }
           />
         ) : (
-          <Card className="overflow-hidden p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full table-fixed text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-widest text-muted-foreground">
-                    <th className="px-4 py-3">Protocolo</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Prioridade</th>
-                    <th className="px-4 py-3">Título</th>
-                    <th className="px-4 py-3">Contact/Customer</th>
-                    <th className="px-4 py-3">Departamento</th>
-                    <th className="px-4 py-3">Responsável</th>
-                    <th className="w-32 px-4 py-3 text-center">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tickets.data.items.map((ticket) => (
-                    <tr
-                      key={ticket.id}
-                      className="cursor-pointer border-b border-border/60 hover:bg-surface-1"
-                      onDoubleClick={() => setSelectedId(ticket.id)}
-                      title="Clique duas vezes para visualizar o chamado"
-                    >
-                      <td className="px-4 py-3 font-mono text-xs">{ticket.protocol}</td>
-                      <td className="px-4 py-3">
-                        <Badge tone={statusTone(ticket.status)}>{statusLabel(ticket.status)}</Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone={priorityTone(ticket.priority)}>
-                          {priorityLabel(ticket.priority)}
-                        </Badge>
-                      </td>
-                      <td className="max-w-[280px] truncate px-4 py-3 font-medium">
-                        {ticket.title}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        {ticket.requesterContact?.name ?? ticket.customer?.name ?? "Sem vínculo"}
-                      </td>
-                      <td className="px-4 py-3">{ticket.department?.name ?? "Sem departamento"}</td>
-                      <td className="px-4 py-3 text-xs">
-                        {ticket.assignedMembership?.user.name ?? "Fila"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-center gap-1">
-                          {canCreate && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Duplicar chamado"
-                              aria-label={`Duplicar chamado ${ticket.protocol}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setDuplicatingTicket(ticket);
-                              }}
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {canUpdate && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Editar chamado"
-                              aria-label={`Editar chamado ${ticket.protocol}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setEditingTicket(ticket);
-                              }}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {canDelete && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="trash-action"
-                              title="Excluir chamado"
-                              aria-label={`Excluir chamado ${ticket.protocol}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setDeletingTicket(ticket);
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <>
+            <div className="space-y-3 md:hidden">
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <span>{num(tickets.data.total)} chamados encontrados</span>
+                <span>Ordenar por</span>
+              </div>
+              {tickets.data.items.map((ticket) => (
+                <button
+                  key={ticket.id}
+                  type="button"
+                  onClick={() => setSelectedId(ticket.id)}
+                  className="w-full rounded-xl border border-border bg-card p-4 text-left shadow-card"
+                >
+                  <div className="grid grid-cols-[.8fr_2fr] gap-3">
+                    <TicketDatum
+                      label="Nº do chamado"
+                      value={`#${ticket.protocol.replace(/^#/, "")}`}
+                      strong
+                    />
+                    <TicketDatum label="Título" value={ticket.title} link />
+                    <TicketDatum label="Cliente" value={ticket.customer?.name ?? "Sem vínculo"} />
+                    <TicketDatum
+                      label="Departamento"
+                      value={ticket.department?.name ?? "Sem departamento"}
+                    />
+                    <TicketDatum
+                      label="Solicitante"
+                      value={ticket.requesterContact?.name ?? ticket.createdByMembership.user.name}
+                    />
+                    <TicketDatum
+                      label="Prioridade"
+                      value={priorityLabel(ticket.priority)}
+                      dot={priorityDot(ticket.priority)}
+                    />
+                    <TicketDatum
+                      label="Tipo"
+                      value={categoryLabel(ticket.category)}
+                      dot={ticket.category === "DEV" ? "#ef4444" : "#1687ff"}
+                    />
+                    <TicketDatum
+                      label="Status"
+                      value={statusLabel(ticket.status)}
+                      dot={statusDot(ticket.status)}
+                    />
+                    <TicketDatum label="Dt. abertura" value={formatDate(ticket.createdAt)} icon />
+                    <TicketDatum label="Dt. aprovação" value="-" icon />
+                    <TicketDatum
+                      label="Dt. conclusão"
+                      value={ticket.closedAt ? formatDate(ticket.closedAt) : "-"}
+                      icon
+                    />
+                  </div>
+                </button>
+              ))}
             </div>
-          </Card>
+            <Card className="hidden overflow-hidden p-0 md:block">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1100px] table-fixed text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-widest text-muted-foreground">
+                      <th className="w-20 px-3 py-3">ID</th>
+                      <th className="w-[290px] px-3 py-3">Título</th>
+                      <th className="px-4 py-3">Prioridade</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Tipo</th>
+                      <th className="px-4 py-3">Cliente</th>
+                      <th className="px-4 py-3">Departamento</th>
+                      <th className="px-4 py-3">Solicitante</th>
+                      <th className="px-4 py-3">Dt. abertura</th>
+                      <th className="px-4 py-3">Dt. conclusão</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tickets.data.items.map((ticket) => (
+                      <tr
+                        key={ticket.id}
+                        className="cursor-pointer border-b border-border/60 hover:bg-surface-1"
+                        onClick={() => setSelectedId(ticket.id)}
+                      >
+                        <td className="px-3 py-3 font-mono text-xs">
+                          {ticket.protocol.replace(/^#/, "")}
+                        </td>
+                        <td className="max-w-[290px] truncate px-3 py-3 font-medium text-primary underline-offset-2 hover:underline">
+                          {ticket.title}
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusDot color={priorityDot(ticket.priority)} />
+                          {priorityLabel(ticket.priority)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusDot color={statusDot(ticket.status)} />
+                          {statusLabel(ticket.status)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="rounded-full border border-primary/40 px-2 py-0.5 text-xs text-primary">
+                            {categoryLabel(ticket.category)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          {ticket.customer?.name ?? "Sem vínculo"}
+                        </td>
+                        <td className="px-4 py-3">
+                          {ticket.department?.name ?? "Sem departamento"}
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          {ticket.requesterContact?.name ?? ticket.createdByMembership.user.name}
+                        </td>
+                        <td className="px-4 py-3 text-xs">{formatDate(ticket.createdAt)}</td>
+                        <td className="px-4 py-3 text-xs">
+                          {ticket.closedAt ? formatDate(ticket.closedAt) : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
+                <span>
+                  Mostrando {tickets.data.items.length} de {tickets.data.total} registros
+                </span>
+                <span>1 / {Math.max(1, Math.ceil(tickets.data.total / 25))}</span>
+              </div>
+            </Card>
+          </>
         )}
 
         {canCreate && (
           <TicketEditor
             open={novo.open}
+            customerPortal={isCustomerPortal}
             initialConversationId={search.conversationId}
             onClose={novo.hide}
             onSaved={(ticket) => {
@@ -310,10 +442,14 @@ function ChamadosPage() {
           canComment={canComment}
           canUploadAttachment={canUploadAttachment}
           canDeleteAttachment={canDeleteAttachment}
+          canDelete={canDelete}
+          customerPortal={isCustomerPortal}
+          onDelete={(ticket) => setDeletingTicket(ticket)}
         />
         {canCreate && (
           <TicketEditor
             open={!!duplicatingTicket}
+            customerPortal={isCustomerPortal}
             initialTicket={duplicatingTicket}
             clone
             onClose={() => setDuplicatingTicket(null)}
@@ -327,6 +463,7 @@ function ChamadosPage() {
         {canUpdate && (
           <TicketEditor
             open={!!editingTicket}
+            customerPortal={isCustomerPortal}
             initialTicket={editingTicket}
             onClose={() => setEditingTicket(null)}
             onSaved={(ticket) => {
@@ -353,12 +490,304 @@ function ChamadosPage() {
           onDeleted={() => {
             toast.success("Chamado excluído permanentemente.");
             setDeletingTicket(null);
+            setSelectedId(null);
             refreshTickets();
           }}
           formatError={(error) => (error instanceof Error ? error.message : "Falha ao excluir.")}
         />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: number;
+  tone: "green" | "purple" | "amber" | "blue" | "red";
+  icon: React.ReactElement;
+}) {
+  const styles = {
+    green: "border-emerald-200 bg-emerald-50/80 text-emerald-600",
+    purple: "border-violet-200 bg-violet-50/80 text-violet-600",
+    amber: "border-amber-200 bg-amber-50/80 text-amber-600",
+    blue: "border-blue-200 bg-blue-50/80 text-blue-600",
+    red: "border-red-200 bg-red-50/80 text-red-600",
+  } as const;
+  return (
+    <div
+      className={`flex min-h-20 items-center justify-between rounded-xl border p-4 ${styles[tone]}`}
+    >
+      <div>
+        <p className="text-sm text-foreground/75">{label}</p>
+        <p className="mt-1 text-2xl font-semibold text-foreground">{value}</p>
+      </div>
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-current/10 [&>svg]:h-5 [&>svg]:w-5">
+        {icon}
+      </span>
+    </div>
+  );
+}
+
+function StatusDot({ color }: { color: string }) {
+  return (
+    <span
+      className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+      style={{ backgroundColor: color }}
+    />
+  );
+}
+
+function TicketDatum({
+  label,
+  value,
+  strong,
+  link,
+  dot,
+  icon,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  link?: boolean;
+  dot?: string;
+  icon?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs text-primary/75">{label}</p>
+      <p
+        className={`truncate text-sm ${strong ? "font-semibold" : ""} ${link ? "text-primary" : ""}`}
+      >
+        {icon && <CalendarDays className="mr-1 inline h-3.5 w-3.5" />}
+        {dot && <StatusDot color={dot} />}
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ReadonlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <Field label={`${label} *`}>
+      <Input value={value} readOnly />
+    </Field>
+  );
+}
+
+function DateRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mb-2 grid grid-cols-[1fr_auto] gap-3 text-sm">
+      <span className="flex items-center gap-2 text-muted-foreground">
+        <CalendarDays className="h-4 w-4 text-primary" />
+        {label}
+      </span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+function DialogBubble({
+  side,
+  initials: avatar,
+  author,
+  date,
+  editedDate,
+  title,
+  body,
+  tone,
+  onEdit,
+}: {
+  side: "left" | "right";
+  initials: string;
+  author: string;
+  date: string;
+  editedDate?: string;
+  title?: string;
+  body: string;
+  tone: "gray" | "blue" | "green" | "orange" | "red";
+  onEdit?: () => void;
+}) {
+  const toneClass = {
+    blue: "bg-blue-50/90",
+    green: "bg-emerald-50/90",
+    orange: "bg-orange-50/90",
+    red: "bg-red-50/90",
+    gray: "bg-surface-2",
+  }[tone];
+  const avatarNode = (
+    <span
+      className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold ${side === "right" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}
+    >
+      {avatar}
+    </span>
+  );
+  return (
+    <div className={`flex items-start gap-3 ${side === "right" ? "justify-end" : "justify-start"}`}>
+      {side === "left" && avatarNode}
+      <div className={`group relative max-w-[86%] rounded-xl px-4 py-3 ${toneClass}`}>
+        {onEdit && (
+          <button
+            type="button"
+            aria-label="Editar diálogo"
+            onClick={onEdit}
+            className="absolute right-2 top-2 rounded-md p-1 opacity-0 transition hover:bg-black/5 group-hover:opacity-100 focus:opacity-100"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        )}
+        <div className="flex flex-wrap gap-x-4 text-xs">
+          <strong>{author}</strong>
+          <span className="text-muted-foreground">{date}</span>
+          {editedDate && <span className="text-muted-foreground">Editado em {editedDate}</span>}
+        </div>
+        {title && <h3 className="mt-2 border-b border-border pb-2 font-semibold">{title}</h3>}
+        <p className="mt-2 whitespace-pre-wrap text-sm">{body}</p>
+      </div>
+      {side === "right" && avatarNode}
+    </div>
+  );
+}
+
+function dialogTone(
+  type: import("@/lib/trixus-api").ApiTicketDialogType,
+): "gray" | "blue" | "green" | "orange" | "red" {
+  return (
+    {
+      RESPONSE: "gray",
+      TRANSFER: "orange",
+      APPROVAL_REQUEST: "green",
+      SOLUTION: "blue",
+      CANCELLATION: "red",
+      APPROVAL_DECISION: "green",
+      SOLUTION_VALIDATION: "blue",
+    } satisfies Record<
+      import("@/lib/trixus-api").ApiTicketDialogType,
+      "gray" | "blue" | "green" | "orange" | "red"
+    >
+  )[type];
+}
+
+function actionLabel(action: "reply" | "transfer" | "approval" | "solve" | "cancel") {
+  return {
+    reply: "Responder",
+    transfer: "Transferir Chamado",
+    approval: "Solicitar aprovação",
+    solve: "Solucionar chamado",
+    cancel: "Cancelar Chamado",
+  }[action];
+}
+
+function actionPanelTone(action: "reply" | "transfer" | "approval" | "solve" | "cancel") {
+  return {
+    reply: "border-border bg-card",
+    transfer: "border-orange-200 bg-orange-50/70",
+    approval: "border-emerald-200 bg-emerald-50/70",
+    solve: "border-blue-200 bg-blue-50/70",
+    cancel: "border-red-200 bg-red-50/70",
+  }[action];
+}
+
+function initials(value: string) {
+  return (
+    value
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "?"
+  );
+}
+
+function statusDot(status: ApiTicketStatus) {
+  return {
+    ABERTO: "#16a34a",
+    EM_ANDAMENTO: "#f59e0b",
+    AGUARDANDO: "#9333ea",
+    RESOLVIDO: "#1687ff",
+    FECHADO: "#64748b",
+    CANCELADO: "#ef4444",
+    NOVO: "#16a34a",
+    AGUARDANDO_APROVACAO: "#9333ea",
+    NA_FILA: "#16a34a",
+    EM_EXECUCAO: "#f59e0b",
+    CONCLUIDA: "#1687ff",
+    VALIDADO: "#2563eb",
+    REPROVADO: "#ef4444",
+  }[status];
+}
+
+function priorityDot(priority: ApiTicketPriority) {
+  return {
+    BAIXA: "#60a5fa",
+    NORMAL: "#9ca3af",
+    ALTA: "#ef4444",
+    URGENTE: "#ef4444",
+    ALTISSIMA: "#111827",
+  }[priority];
+}
+
+type TicketEditorSelectOption<T extends string> = {
+  value: T;
+  label: string;
+  color?: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  iconClassName?: string;
+};
+
+function TicketEditorSelect<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: T;
+  options: TicketEditorSelectOption<T>[];
+  onChange: (value: T) => void;
+  ariaLabel: string;
+}) {
+  const selected = options.find((option) => option.value === value) ?? options[0];
+
+  const marker = (option: TicketEditorSelectOption<T>) => {
+    const Icon = option.icon;
+    if (Icon) {
+      return <Icon aria-hidden="true" className={`h-4 w-4 ${option.iconClassName ?? ""}`} />;
+    }
+    return (
+      <span
+        aria-hidden="true"
+        className="h-3.5 w-3.5 shrink-0 rounded-full border border-black/5"
+        style={{ backgroundColor: option.color }}
+      />
+    );
+  };
+
+  return (
+    <RichSelect value={value} onValueChange={(nextValue) => onChange(nextValue as T)}>
+      <RichSelectTrigger
+        aria-label={ariaLabel}
+        className="h-10 rounded-lg border-border bg-surface-1 hover:border-primary/50"
+      >
+        <div data-ticket-select-value className="flex min-w-0 items-center gap-2">
+          {selected && marker(selected)}
+          <span className="truncate">{selected?.label}</span>
+        </div>
+      </RichSelectTrigger>
+      <RichSelectContent className="z-[250]">
+        {options.map((option) => (
+          <RichSelectItem key={option.value} value={option.value} className="py-2">
+            <span className="flex min-w-0 items-center gap-2">
+              {marker(option)}
+              <span className="truncate">{option.label}</span>
+            </span>
+          </RichSelectItem>
+        ))}
+      </RichSelectContent>
+    </RichSelect>
   );
 }
 
@@ -369,6 +798,7 @@ function TicketEditor({
   initialConversationId,
   initialTicket,
   clone = false,
+  customerPortal = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -376,8 +806,9 @@ function TicketEditor({
   initialConversationId?: string;
   initialTicket?: ApiTicket | null;
   clone?: boolean;
+  customerPortal?: boolean;
 }) {
-  const options = useTicketOptions(open);
+  const options = useTicketOptions(open && !customerPortal);
   const initialConversation = useQuery({
     queryKey: ["tickets", "prefill-conversation", initialConversationId],
     queryFn: () => conversationApi.get(initialConversationId!),
@@ -398,10 +829,13 @@ function TicketEditor({
   const [requesterSearch, setRequesterSearch] = React.useState("");
   const [requesterResultsOpen, setRequesterResultsOpen] = React.useState(false);
   const [customerId, setCustomerId] = React.useState("");
+  const [customerDepartmentId, setCustomerDepartmentId] = React.useState("");
+  const [originBranchId, setOriginBranchId] = React.useState("");
   const [conversationId, setConversationId] = React.useState("");
   const [assignedMembershipId, setAssignedMembershipId] = React.useState("");
-  const [attachment, setAttachment] = React.useState<File | null>(null);
+  const [attachments, setAttachments] = React.useState<File[]>([]);
   const [busy, setBusy] = React.useState(false);
+  const submittingRef = React.useRef(false);
   const initializedSessionRef = React.useRef<string | null>(null);
   const conversationPrefillRef = React.useRef<string | null>(null);
   const descriptionPrefillRef = React.useRef<string | null>(null);
@@ -419,6 +853,16 @@ function TicketEditor({
     queryKey: ["tickets", "requester-contacts", requesterSearch],
     queryFn: () => crmApi.listContacts({ q: requesterSearch.trim() || undefined, pageSize: 20 }),
     enabled: open,
+  });
+  const customerDepartments = useQuery({
+    queryKey: ["tickets", "customer-departments", customerId],
+    queryFn: () => crmApi.listCustomerDepartments(customerId),
+    enabled: open && !customerPortal && !!customerId,
+  });
+  const customerBranches = useQuery({
+    queryKey: ["tickets", "customer-branches", customerId],
+    queryFn: () => crmApi.listCustomerBranches(customerId),
+    enabled: open && !customerPortal && !!customerId,
   });
 
   React.useEffect(() => {
@@ -444,15 +888,17 @@ function TicketEditor({
     setDescription(initialTicket?.descriptionHtmlSanitized ?? initialTicket?.descriptionText ?? "");
     setCategory(initialTicket?.category ?? "SUPORTE");
     setPriority(initialTicket?.priority ?? "NORMAL");
-    setDepartmentId(initialTicket?.department?.id ?? "");
+    setDepartmentId(initialTicket?.department?.id ?? (customerPortal ? "portal-context" : ""));
     setContactId(initialTicket?.requesterContact?.id ?? "");
     setRequesterSearch(initialTicket?.requesterContact?.name ?? "");
     setRequesterResultsOpen(false);
     setCustomerId(initialTicket?.customer?.id ?? "");
+    setCustomerDepartmentId(initialTicket?.customerDepartment?.id ?? "");
+    setOriginBranchId(initialTicket?.originBranch?.id ?? "");
     setConversationId(initialTicket?.conversation?.id ?? initialConversationId ?? "");
     setAssignedMembershipId(initialTicket?.assignedMembership?.id ?? "");
-    setAttachment(null);
-  }, [clone, initialConversationId, initialTicket, open, sessionKey]);
+    setAttachments([]);
+  }, [clone, customerPortal, initialConversationId, initialTicket, open, sessionKey]);
 
   React.useEffect(() => {
     if (!open || initialTicket || initialConversationId || departmentId || !defaultDepartmentId)
@@ -504,6 +950,12 @@ function TicketEditor({
     if (!title.trim()) return toast.error("Informe o título.");
     if (!description.trim()) return toast.error("Informe a descrição.");
     if (!departmentId) return toast.error("Selecione o departamento.");
+    if (customerDepartments.data?.length && !customerDepartmentId)
+      return toast.error("Selecione o departamento do cliente.");
+    if (customerBranches.data?.length && !originBranchId)
+      return toast.error("Selecione a filial de origem.");
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setBusy(true);
     try {
       const descriptionHtml = /<[^>]+>/.test(description) ? description : textToHtml(description);
@@ -518,9 +970,6 @@ function TicketEditor({
           descriptionHtml,
           category,
           priority,
-          requesterContactId: contactId || null,
-          customerId: customerId || null,
-          conversationId: conversationId || null,
         });
         if (assignedMembershipId !== (initialTicket.assignedMembership?.id ?? "")) {
           ticket = await ticketApi.updateAssignee(ticket.id, assignedMembershipId || null);
@@ -534,18 +983,63 @@ function TicketEditor({
           departmentId,
           requesterContactId: contactId || null,
           customerId: customerId || null,
+          customerDepartmentId: customerDepartmentId || null,
+          originBranchId: originBranchId || null,
           conversationId: conversationId || null,
           assignedMembershipId: assignedMembershipId || null,
         });
       }
-      if (attachment) await ticketApi.uploadAttachment(ticket.id, attachment);
+      const failedAttachments: string[] = [];
+      for (const file of attachments) {
+        try {
+          await ticketApi.uploadAttachment(ticket.id, file);
+        } catch {
+          failedAttachments.push(file.name);
+        }
+      }
+      if (failedAttachments.length) {
+        toast.error(
+          `${ticket.protocol} foi ${initialTicket && !clone ? "atualizado" : "criado"}, mas ${failedAttachments.length} anexo(s) não foram enviados. Revise os tipos permitidos e tente anexá-los no chamado.`,
+        );
+        onSaved(ticket);
+        return;
+      }
       toast.success(initialTicket && !clone ? "Chamado atualizado." : `${ticket.protocol} criado`);
       onSaved(ticket);
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
+  };
+
+  const addAttachments = (selectedFiles: File[]) => {
+    const validFiles = selectedFiles.filter((file) => {
+      if (!allowedAttachmentMimeTypes.has(file.type.toLowerCase())) {
+        toast.error(`${file.name} não possui um formato permitido.`);
+        return false;
+      }
+      if (file.size <= maxAttachmentSizeMb * 1024 * 1024) return true;
+      toast.error(`${file.name} excede o limite permitido de ${maxAttachmentSizeMb} MB.`);
+      return false;
+    });
+    setAttachments((current) => {
+      const known = new Set(
+        current.map((file) => `${file.name}:${file.size}:${file.lastModified}`),
+      );
+      const unique = validFiles.filter((file) => {
+        const key = `${file.name}:${file.size}:${file.lastModified}`;
+        if (known.has(key)) return false;
+        known.add(key);
+        return true;
+      });
+      const available = Math.max(0, maxAttachmentCount - current.length);
+      if (unique.length > available) {
+        toast.error(`É possível anexar até ${maxAttachmentCount} arquivos por chamado.`);
+      }
+      return [...current, ...unique.slice(0, available)];
+    });
   };
 
   return (
@@ -556,130 +1050,166 @@ function TicketEditor({
         initialTicket && !clone ? "Editar Chamado" : clone ? "Duplicar Chamado" : "Novo Chamado"
       }
       size="xl"
+      className="max-w-5xl"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
           <Button variant="primary" size="sm" disabled={busy} onClick={submit}>
-            {busy ? "Salvando..." : initialTicket && !clone ? "Salvar" : "Criar Chamado"}
+            {busy ? "Salvando..." : initialTicket && !clone ? "Salvar" : "Salvar Chamado"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
           <Field label="Cliente *">
-            <Select
-              value={customerId}
-              onChange={(event) => {
-                dirtyFieldsRef.current.customer = true;
-                setCustomerId(event.target.value);
-              }}
-            >
-              <option value="">Selecione...</option>
-              {options.customers.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.nome}
-                </option>
-              ))}
-            </Select>
+            {customerPortal ? (
+              <Input value="Definido pelo seu acesso" readOnly />
+            ) : (
+              <Select
+                value={customerId}
+                onChange={(event) => {
+                  dirtyFieldsRef.current.customer = true;
+                  setCustomerId(event.target.value);
+                  setCustomerDepartmentId("");
+                  setOriginBranchId("");
+                }}
+              >
+                <option value="">Selecione...</option>
+                {options.customers.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nome}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Field>
           <Field label="Departamento *">
-            <Select
-              value={departmentId}
-              onChange={(event) => {
-                dirtyFieldsRef.current.department = true;
-                setDepartmentId(event.target.value);
-              }}
-            >
-              <option value="">Selecione...</option>
-              {options.departments.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </Select>
+            {customerPortal ? (
+              <Input value="Definido pelo seu acesso" readOnly />
+            ) : (
+              <Select
+                value={customerDepartmentId}
+                onChange={(event) => setCustomerDepartmentId(event.target.value)}
+                disabled={!customerId}
+              >
+                <option value="">Selecione...</option>
+                {(customerDepartments.data ?? []).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Field>
           <Field label="Solicitante *">
-            <div
-              className="relative"
-              onFocusCapture={() => setRequesterResultsOpen(true)}
-              onBlurCapture={() => window.setTimeout(() => setRequesterResultsOpen(false), 120)}
-            >
-              <SearchInput
-                value={requesterSearch}
-                onChange={(value) => {
-                  dirtyFieldsRef.current.requester = true;
-                  setRequesterSearch(value);
-                  setContactId("");
-                  setRequesterResultsOpen(true);
-                }}
-                placeholder="Buscar contato..."
-              />
-              {requesterResultsOpen && (
-                <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-elevated">
-                  {requesterContacts.isFetching ? (
-                    <p className="px-3 py-3 text-sm text-muted-foreground">Buscando contatos...</p>
-                  ) : requesterContacts.data?.items.length ? (
-                    requesterContacts.data.items.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className="flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-1"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => {
-                          dirtyFieldsRef.current.requester = true;
-                          setContactId(item.id);
-                          setRequesterSearch(item.nome);
-                          setRequesterResultsOpen(false);
-                        }}
-                      >
-                        <span className="min-w-0 truncate font-medium">{item.nome}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {item.telefone
-                            ? formatPhoneForDisplay(item.telefone)
-                            : item.email || "Sem telefone"}
-                        </span>
-                      </button>
-                    ))
-                  ) : (
-                    <p className="px-3 py-3 text-sm text-muted-foreground">
-                      Nenhum contato encontrado.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+            {customerPortal ? (
+              <Input value="Você" readOnly />
+            ) : (
+              <div
+                className="relative"
+                onFocusCapture={() => setRequesterResultsOpen(true)}
+                onBlurCapture={() => window.setTimeout(() => setRequesterResultsOpen(false), 120)}
+              >
+                <SearchInput
+                  value={requesterSearch}
+                  onChange={(value) => {
+                    dirtyFieldsRef.current.requester = true;
+                    setRequesterSearch(value);
+                    setContactId("");
+                    setRequesterResultsOpen(true);
+                  }}
+                  placeholder="Buscar contato..."
+                />
+                {requesterResultsOpen && (
+                  <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-elevated">
+                    {requesterContacts.isFetching ? (
+                      <p className="px-3 py-3 text-sm text-muted-foreground">
+                        Buscando contatos...
+                      </p>
+                    ) : requesterContacts.data?.items.length ? (
+                      requesterContacts.data.items.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className="flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-1"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            dirtyFieldsRef.current.requester = true;
+                            setContactId(item.id);
+                            setRequesterSearch(item.nome);
+                            setRequesterResultsOpen(false);
+                          }}
+                        >
+                          <span className="min-w-0 truncate font-medium">{item.nome}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {item.telefone
+                              ? formatPhoneForDisplay(item.telefone)
+                              : item.email || "Sem telefone"}
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="px-3 py-3 text-sm text-muted-foreground">
+                        Nenhum contato encontrado.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </Field>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          <Field label="Tipo *">
-            <Select
-              value={category}
-              onChange={(event) => setCategory(event.target.value as ApiTicketCategory)}
-            >
-              {categories.map((item) => (
-                <option key={item} value={item}>
-                  {categoryLabel(item)}
-                </option>
-              ))}
-            </Select>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+          <Field label="Filial de origem *">
+            {customerPortal ? (
+              <Input value="Definida pelo seu acesso" readOnly />
+            ) : (
+              <Select
+                value={originBranchId}
+                onChange={(event) => setOriginBranchId(event.target.value)}
+                disabled={!customerId}
+                aria-label="Filial de origem"
+              >
+                <option value="">Selecione...</option>
+                {(customerBranches.data ?? []).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Field>
-          <Field label="Prioridade">
-            <Select
+          <Field label="Prioridade *" asLabel={false}>
+            <TicketEditorSelect
+              ariaLabel="Prioridade"
               value={priority}
-              onChange={(event) => setPriority(event.target.value as ApiTicketPriority)}
-            >
-              {priorities.map((item) => (
-                <option key={item} value={item}>
-                  {priorityLabel(item)}
-                </option>
-              ))}
-            </Select>
+              onChange={setPriority}
+              options={priorities
+                .filter((item) => item !== "BAIXA")
+                .map((item) => ({
+                  value: item,
+                  label: priorityLabel(item),
+                  color: priorityDot(item),
+                }))}
+            />
           </Field>
-          <Field label="Data/hora de abertura">
-            <Input value={new Date().toLocaleString("pt-BR")} readOnly />
+          <Field label="Tipo do Chamado *" asLabel={false}>
+            <TicketEditorSelect
+              ariaLabel="Tipo do Chamado"
+              value={category}
+              onChange={setCategory}
+              options={categories
+                .filter((item) => item === "SUPORTE" || item === "DEV")
+                .map((item) => ({
+                  value: item,
+                  label: item === "DEV" ? "Desenvolvimento (DEV)" : categoryLabel(item),
+                  icon: item === "SUPORTE" ? Headphones : Code2,
+                  iconClassName: item === "SUPORTE" ? "text-primary" : "text-destructive",
+                }))}
+            />
           </Field>
         </div>
         <Field label="Título *">
@@ -701,23 +1231,73 @@ function TicketEditor({
             }}
           />
         </Field>
-        <div className="rounded-lg border border-dashed border-border bg-surface-1 p-4">
-          <p className="mb-2 text-sm font-medium">
-            Atrixus <span className="font-normal text-muted-foreground">(opcional)</span>
-          </p>
-          <label className="flex min-h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card text-sm text-muted-foreground hover:border-primary hover:text-primary">
+        <div className="rounded-lg border border-dashed border-border bg-surface-1 p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">
+              Anexos <span className="text-destructive">*</span>
+            </p>
+            <span aria-live="polite" className="text-xs text-muted-foreground">
+              {attachments.length}/{maxAttachmentCount} arquivos
+            </span>
+          </div>
+          <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card px-3 py-2 text-sm text-muted-foreground hover:border-primary hover:text-primary focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
             <Paperclip className="h-4 w-4" />
-            {attachment ? attachment.name : "Escolher arquivos"}
+            {attachments.length ? "Adicionar mais arquivos" : "Escolher arquivos"}
             <input
               type="file"
-              accept="*/*"
-              className="hidden"
-              onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.txt"
+              multiple
+              className="sr-only"
+              onChange={(event) => {
+                addAttachments(Array.from(event.target.files ?? []));
+                event.target.value = "";
+              }}
             />
           </label>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Aceita documentos, imagens, planilhas e demais tipos de arquivo (máx.{" "}
-            {maxAttachmentSizeMb} MB).
+          {attachments.length > 0 && (
+            <div
+              className="mt-2 grid max-h-28 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2"
+              aria-label="Arquivos selecionados"
+            >
+              {attachments.map((file) => {
+                const key = `${file.name}:${file.size}:${file.lastModified}`;
+                return (
+                  <div
+                    key={key}
+                    className="flex min-h-9 items-center justify-between gap-2 rounded-md border border-border bg-card px-2 py-1"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate text-xs" title={file.name}>
+                        {file.name}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {Math.max(1, Math.ceil(file.size / 1024))} KB
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 min-h-0 w-7 shrink-0 p-0"
+                      aria-label={`Remover arquivo ${file.name}`}
+                      onClick={() =>
+                        setAttachments((current) =>
+                          current.filter(
+                            (item) => `${item.name}:${item.size}:${item.lastModified}` !== key,
+                          ),
+                        )
+                      }
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            PDF, PNG, JPG, WEBP e TXT · máximo de {maxAttachmentSizeMb} MB por arquivo.
           </p>
         </div>
       </div>
@@ -734,6 +1314,9 @@ function TicketDetail({
   canComment,
   canUploadAttachment,
   canDeleteAttachment,
+  canDelete,
+  onDelete,
+  customerPortal,
 }: {
   ticketId: string | null;
   onClose: () => void;
@@ -743,8 +1326,10 @@ function TicketDetail({
   canComment: boolean;
   canUploadAttachment: boolean;
   canDeleteAttachment: boolean;
+  canDelete: boolean;
+  onDelete: (ticket: ApiTicket) => void;
+  customerPortal: boolean;
 }) {
-  const navigate = useNavigate();
   const ticket = useQuery({
     queryKey: ["tickets", "detail", ticketId],
     queryFn: () => ticketApi.get(ticketId!),
@@ -760,28 +1345,102 @@ function TicketDetail({
     queryFn: () => ticketApi.attachments(ticketId!),
     enabled: !!ticketId,
   });
+  const approvals = useQuery({
+    queryKey: ["tickets", "approvals", ticketId],
+    queryFn: () => ticketApi.approvals(ticketId!),
+    enabled: !!ticketId,
+  });
   const [comment, setComment] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-  const [viewMode, setViewMode] = React.useState(true);
+  const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
+  const currentUserId = useSession((state) => state.user?.id);
+  const [action, setAction] = React.useState<
+    "reply" | "transfer" | "approval" | "solve" | "cancel"
+  >("reply");
+  const [assignedMembershipId, setAssignedMembershipId] = React.useState("");
+  const options = useTicketOptions(!!ticketId && !customerPortal);
   const item = ticket.data;
 
   React.useEffect(() => {
-    setViewMode(true);
+    setAction("reply");
+    setComment("");
+    setEditingCommentId(null);
   }, [ticketId]);
 
   const refresh = () => {
     ticket.refetch();
     comments.refetch();
     attachments.refetch();
+    approvals.refetch();
     onChanged();
+  };
+
+  const decidePendingApproval = async (decision: "APPROVED" | "REJECTED") => {
+    const pending = approvals.data?.find((entry) => entry.status === "PENDING");
+    if (!ticketId || !pending) return;
+    if (decision === "REJECTED" && !comment.trim())
+      return toast.error("Informe o motivo da recusa.");
+    setBusy(true);
+    try {
+      await ticketApi.decideApproval(ticketId, pending.id, {
+        decision,
+        bodyHtml: comment.trim() ? (/^</.test(comment) ? comment : textToHtml(comment)) : undefined,
+      });
+      setComment("");
+      refresh();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const validateSolution = async (decision: "APPROVED" | "REJECTED") => {
+    if (!ticketId) return;
+    if (decision === "REJECTED" && !comment.trim())
+      return toast.error("Informe o motivo da recusa.");
+    setBusy(true);
+    try {
+      await ticketApi.validateSolution(ticketId, {
+        decision,
+        bodyHtml: comment.trim() ? (/^</.test(comment) ? comment : textToHtml(comment)) : undefined,
+      });
+      setComment("");
+      refresh();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const addComment = async () => {
     if (!ticketId || !comment.trim()) return;
     setBusy(true);
     try {
-      await ticketApi.createComment(ticketId, textToHtml(comment));
+      const bodyHtml = /<[^>]+>/.test(comment) ? comment : textToHtml(comment);
+      if (editingCommentId) {
+        await ticketApi.updateComment(ticketId, editingCommentId, bodyHtml);
+      } else if (action === "transfer") {
+        if (!assignedMembershipId) throw new Error("Selecione uma fila ou responsável.");
+        if (!item?.department?.id) throw new Error("O chamado precisa de um departamento.");
+        await ticketApi.transfer(ticketId, {
+          bodyHtml,
+          departmentId: item.department.id,
+          assignedMembershipId,
+        });
+      } else if (action === "approval") {
+        await ticketApi.requestApproval(ticketId, { bodyHtml });
+      } else if (action === "solve") {
+        await ticketApi.solve(ticketId, bodyHtml);
+      } else if (action === "cancel") {
+        await ticketApi.cancel(ticketId, bodyHtml);
+      } else {
+        await ticketApi.respond(ticketId, bodyHtml);
+      }
       setComment("");
+      setEditingCommentId(null);
+      setAction("reply");
       refresh();
     } catch (error) {
       toast.error((error as Error).message);
@@ -794,114 +1453,332 @@ function TicketDetail({
     <Modal
       open={!!ticketId}
       onClose={onClose}
-      title={item ? `${viewMode ? "Visualizar" : "Editar"} Chamado · ${item.protocol}` : "Chamado"}
+      title={item ? `#${item.protocol.replace(/^#/, "")}   ${item.title}` : "Chamado"}
       size="xl"
+      className="max-w-[1380px]"
       footer={
-        item && viewMode && (canUpdate || canUpdateStatus) ? (
-          <Button variant="secondary" size="sm" onClick={() => setViewMode(false)}>
-            <Pencil className="h-3.5 w-3.5" /> Editar
-          </Button>
+        item ? (
+          <>
+            {canDelete && !customerPortal && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mr-auto border-destructive text-destructive"
+                onClick={() => onDelete(item)}
+                disabled={busy}
+              >
+                <Trash2 className="h-4 w-4" /> Excluir
+              </Button>
+            )}
+            {customerPortal ? (
+              <Button variant="primary" size="sm" onClick={onClose} disabled={busy}>
+                Fechar
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
+                  Cancelar
+                </Button>
+                <Button variant="primary" size="sm" onClick={onClose} disabled={busy}>
+                  Salvar
+                </Button>
+              </>
+            )}
+          </>
         ) : undefined
       }
     >
       {!item ? (
         <div>Carregando...</div>
       ) : (
-        <div className="space-y-5">
-          <div className="grid gap-3 md:grid-cols-4">
-            {!viewMode && canUpdateStatus ? (
-              <Select
-                value={item.status}
-                onChange={async (event) => {
-                  await ticketApi.updateStatus(item.id, event.target.value as ApiTicketStatus);
-                  refresh();
-                }}
-              >
-                {statuses.map((status) => (
-                  <option key={status} value={status}>
-                    {statusLabel(status)}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
-            )}
-            {!viewMode && canUpdate ? (
-              <Select
-                value={item.priority}
-                onChange={async (event) => {
-                  await ticketApi.update(item.id, {
-                    priority: event.target.value as ApiTicketPriority,
-                  });
-                  refresh();
-                }}
-              >
-                {priorities.map((priority) => (
-                  <option key={priority} value={priority}>
-                    {priorityLabel(priority)}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <Badge tone={priorityTone(item.priority)}>{priorityLabel(item.priority)}</Badge>
-            )}
-          </div>
-          <Card className="p-4">
-            <p className="whitespace-pre-wrap text-sm">{item.descriptionText}</p>
-            <div className="mt-4 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
-              <span>Departamento: {item.department?.name ?? "Sem departamento"}</span>
-              <span>Responsável: {item.assignedMembership?.user.name ?? "Fila"}</span>
-              <span>Contact: {item.requesterContact?.name ?? "Sem vínculo"}</span>
-              <span>Customer: {item.customer?.name ?? "Sem vínculo"}</span>
-            </div>
-            {item.conversation && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mt-3"
-                onClick={() =>
-                  navigate({
-                    to: "/inbox/$conversationId",
-                    params: { conversationId: item.conversation!.id },
-                  })
-                }
-              >
-                Abrir conversas relacionada
-              </Button>
-            )}
-          </Card>
-          <section>
-            <h3 className="mb-2 text-sm font-semibold">Comentários</h3>
-            <div className="space-y-2">
+        <div className="grid min-h-[620px] gap-5 lg:grid-cols-[minmax(0,1fr)_390px]">
+          <section className="order-2 flex min-h-0 flex-col lg:order-1">
+            <div className="space-y-3">
+              <DialogBubble
+                side="left"
+                initials={initials(item.createdByMembership.user.name)}
+                author={item.requesterContact?.name ?? item.createdByMembership.user.name}
+                date={formatDate(item.createdAt)}
+                title="Descrição do chamado"
+                body={item.descriptionText ?? ""}
+                tone="blue"
+              />
               {comments.data?.map((entry) => (
-                <Card key={entry.id} className="p-3">
-                  <p className="text-xs text-muted-foreground">
-                    {entry.authorMembership.user.name} · {formatDate(entry.createdAt)}
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm">{entry.bodyText}</p>
-                </Card>
+                <DialogBubble
+                  key={entry.id}
+                  side="right"
+                  initials={initials(entry.authorMembership.user.name)}
+                  author={entry.authorMembership.user.name}
+                  date={formatDate(entry.createdAt)}
+                  editedDate={entry.editedAt ? formatDate(entry.editedAt) : undefined}
+                  body={entry.bodyText}
+                  tone={dialogTone(entry.dialogType)}
+                  onEdit={
+                    entry.authorMembership.user.id === currentUserId
+                      ? () => {
+                          setEditingCommentId(entry.id);
+                          setComment(entry.bodyHtmlSanitized ?? textToHtml(entry.bodyText));
+                          setAction("reply");
+                        }
+                      : undefined
+                  }
+                />
               ))}
             </div>
+            {approvals.data?.some((entry) => entry.status === "PENDING") && (
+              <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
+                <h3 className="font-semibold text-emerald-800">Aprovação pendente</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Registre um comentário para recusar ou aprove a solicitação.
+                </p>
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => decidePendingApproval("REJECTED")}
+                    disabled={busy}
+                  >
+                    Recusar
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => decidePendingApproval("APPROVED")}
+                    disabled={busy}
+                  >
+                    Aprovar
+                  </Button>
+                </div>
+              </div>
+            )}
+            {item.status === "CONCLUIDA" && (
+              <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+                <h3 className="font-semibold text-blue-800">Aprovação da solução</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Use o campo de resposta para informar o motivo em caso de recusa.
+                </p>
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => validateSolution("REJECTED")}
+                    disabled={busy}
+                  >
+                    Recusar
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => validateSolution("APPROVED")}
+                    disabled={busy}
+                  >
+                    Aprovar
+                  </Button>
+                </div>
+              </div>
+            )}
             {canComment && (
-              <div className="mt-3 flex gap-2">
-                <Input
-                  value={comment}
-                  onChange={(event) => setComment(event.target.value)}
-                  placeholder="Adicionar comentário interno"
-                />
-                <Button size="sm" onClick={addComment} disabled={busy}>
-                  Comentar
-                </Button>
+              <div className={`mt-4 rounded-xl border p-3 ${actionPanelTone(action)}`}>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="flex items-center gap-2 font-semibold">
+                    {editingCommentId ? "Editar diálogo" : actionLabel(action)}
+                  </h3>
+                  {!editingCommentId && !customerPortal && (
+                    <select
+                      value={action}
+                      onChange={(event) => setAction(event.target.value as typeof action)}
+                      className="min-h-9 rounded-lg border border-border bg-card px-3 text-sm"
+                    >
+                      <option value="reply">Responder</option>
+                      <option value="transfer">Transferir</option>
+                      <option value="approval">Solicitar aprovação</option>
+                      <option value="solve">Solucionar</option>
+                      <option value="cancel">Cancelar chamado</option>
+                    </select>
+                  )}
+                </div>
+                {action === "transfer" && (
+                  <Field label="Fila *">
+                    <Select
+                      value={assignedMembershipId}
+                      onChange={(event) => setAssignedMembershipId(event.target.value)}
+                    >
+                      <option value="">Selecione uma fila</option>
+                      {options.users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.user.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                )}
+                {action === "approval" && (
+                  <Field label="Aprovador *">
+                    <Input
+                      value={
+                        item.category === "DEV" ? "Gestor do contrato" : "Gerente do departamento"
+                      }
+                      readOnly
+                    />
+                  </Field>
+                )}
+                <div className="mt-3">
+                  <RichTextEditor value={comment} onChange={setComment} />
+                </div>
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setComment("");
+                      setEditingCommentId(null);
+                      setAction("reply");
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={addComment}
+                    disabled={busy || !comment.trim()}
+                  >
+                    <Plus className="h-4 w-4" /> Adicionar
+                  </Button>
+                </div>
               </div>
             )}
           </section>
-          <Attachments
-            ticketId={item.id}
-            items={attachments.data ?? []}
-            onChanged={refresh}
-            canUpload={canUploadAttachment}
-            canDelete={canDeleteAttachment}
-          />
+          <aside className="order-1 border-b border-border pb-4 lg:order-2 lg:border-b-0 lg:border-l lg:pl-5">
+            <div className="mb-4 flex gap-5 border-b border-border text-sm">
+              <button className="border-b-2 border-primary px-1 pb-2 font-semibold">Resumo</button>
+              <span className="pb-2 text-muted-foreground">
+                Anexos ({attachments.data?.length ?? 0})
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <ReadonlyField label="Cliente" value={item.customer?.name ?? "Sem vínculo"} />
+              <ReadonlyField
+                label="Departamento"
+                value={item.customerDepartment?.name ?? item.department?.name ?? "Sem departamento"}
+              />
+              <ReadonlyField
+                label="Solicitante"
+                value={item.requesterContact?.name ?? item.createdByMembership.user.name}
+              />
+              <ReadonlyField
+                label="Filial de origem"
+                value={item.originBranch?.name ?? "Sem filial"}
+              />
+              <Field label="Prioridade *">
+                {canUpdate && !customerPortal ? (
+                  <Select
+                    value={item.priority}
+                    onChange={async (event) => {
+                      await ticketApi.update(item.id, {
+                        priority: event.target.value as ApiTicketPriority,
+                      });
+                      refresh();
+                    }}
+                  >
+                    {priorities.map((value) => (
+                      <option key={value} value={value}>
+                        {priorityLabel(value)}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input value={priorityLabel(item.priority)} readOnly />
+                )}
+              </Field>
+              <ReadonlyField label="Tipo do Chamado" value={categoryLabel(item.category)} />
+            </div>
+            <div className="my-4 border-t border-border pt-4">
+              <h3 className="mb-3 font-semibold">Datas</h3>
+              <DateRow label="Data de abertura" value={formatDate(item.createdAt)} />
+              <DateRow
+                label="Data de aprovação"
+                value={item.approvedAt ? formatDate(item.approvedAt) : "-"}
+              />
+              <DateRow
+                label="Data de início"
+                value={item.startedAt ? formatDate(item.startedAt) : "-"}
+              />
+              <DateRow
+                label="Data da solução"
+                value={item.solvedAt ? formatDate(item.solvedAt) : "-"}
+              />
+              <DateRow
+                label="Data de validação"
+                value={item.validatedAt ? formatDate(item.validatedAt) : "-"}
+              />
+              <DateRow label="Última atualização" value={formatDate(item.updatedAt)} />
+            </div>
+            <div className="border-t border-border pt-4">
+              <Field label="Status atual">
+                {canUpdateStatus && !customerPortal ? (
+                  <Select
+                    value={item.status}
+                    onChange={async (event) => {
+                      await ticketApi.updateStatus(item.id, event.target.value as ApiTicketStatus);
+                      refresh();
+                    }}
+                  >
+                    {statuses.map((value) => (
+                      <option key={value} value={value}>
+                        {statusLabel(value)}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input value={statusLabel(item.status)} readOnly />
+                )}
+              </Field>
+              <Field label="Sub-status">
+                <Select
+                  value={item.substatus ?? "OPENED_IN_SANKHYA"}
+                  disabled={!canUpdate || customerPortal}
+                  onChange={async (event) => {
+                    await ticketApi.update(item.id, {
+                      substatus: event.target.value as ApiTicketSubstatus,
+                    });
+                    refresh();
+                  }}
+                >
+                  <option value="OPENED_IN_SANKHYA">Chamado aberto na Sankhya</option>
+                  <option value="FORWARDED_TO_THIRD_PARTY">
+                    Chamado encaminhado para terceiro
+                  </option>
+                  <option value="WAITING">Aguardando</option>
+                  <option value="WAITING_INFRASTRUCTURE">Aguardando posição da infra</option>
+                </Select>
+              </Field>
+              <p className="mt-3 text-xs text-muted-foreground">Responsável atual</p>
+              <div className="mt-1 flex items-center gap-2 font-semibold">
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 text-sm text-primary">
+                  {initials(item.assignedMembership?.user.name ?? "Fila")}
+                </span>
+                {item.assignedMembership?.user.name ?? "Fila"}
+              </div>
+              {!customerPortal && (
+                <>
+                  <p className="mt-4 text-xs text-muted-foreground">Etiquetas</p>
+                  <Button variant="ghost" size="sm" className="mt-1">
+                    <Plus className="h-4 w-4" /> Adicionar etiqueta
+                  </Button>
+                </>
+              )}
+            </div>
+            <div className="mt-5">
+              <Attachments
+                ticketId={item.id}
+                items={attachments.data ?? []}
+                onChanged={refresh}
+                canUpload={canUploadAttachment}
+                canDelete={canDeleteAttachment}
+              />
+            </div>
+          </aside>
         </div>
       )}
     </Modal>
@@ -922,19 +1799,30 @@ function Attachments({
   canDelete: boolean;
 }) {
   const [busy, setBusy] = React.useState(false);
-  const upload = async (file: File | undefined) => {
-    if (!file) return;
-    if (file.size > maxAttachmentSizeMb * 1024 * 1024) {
-      toast.error(`O arquivo excede o limite permitido de ${maxAttachmentSizeMb} MB.`);
-      return;
+  const upload = async (selectedFiles: File[]) => {
+    const available = Math.max(0, maxAttachmentCount - items.length);
+    if (selectedFiles.length > available) {
+      toast.error(`É possível manter até ${maxAttachmentCount} arquivos por chamado.`);
     }
+    const files = selectedFiles.slice(0, available).filter((file) => {
+      if (!allowedAttachmentMimeTypes.has(file.type.toLowerCase())) {
+        toast.error(`${file.name} não possui um formato permitido.`);
+        return false;
+      }
+      if (file.size <= maxAttachmentSizeMb * 1024 * 1024) return true;
+      toast.error(`${file.name} excede o limite permitido de ${maxAttachmentSizeMb} MB.`);
+      return false;
+    });
+    if (!files.length) return;
     setBusy(true);
     try {
-      await ticketApi.uploadAttachment(ticketId, file);
-      toast.success("Atrixus enviado");
+      const results = await Promise.allSettled(
+        files.map((file) => ticketApi.uploadAttachment(ticketId, file)),
+      );
+      const failed = results.filter((result) => result.status === "rejected").length;
+      if (failed) toast.error(`${failed} anexo(s) não foram enviados.`);
+      if (failed < results.length) toast.success(`${results.length - failed} anexo(s) enviados.`);
       onChanged();
-    } catch (error) {
-      toast.error((error as Error).message);
     } finally {
       setBusy(false);
     }
@@ -963,10 +1851,14 @@ function Attachments({
             <Paperclip className="h-3.5 w-3.5" /> {busy ? "Enviando..." : "Anexar"}
             <input
               type="file"
-              accept="*/*"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.txt"
+              multiple
               className="hidden"
               disabled={busy}
-              onChange={(event) => upload(event.target.files?.[0])}
+              onChange={(event) => {
+                void upload(Array.from(event.target.files ?? []));
+                event.target.value = "";
+              }}
             />
           </label>
         )}
@@ -1129,15 +2021,25 @@ function statusLabel(status: ApiTicketStatus) {
       RESOLVIDO: "Resolvido",
       FECHADO: "Fechado",
       CANCELADO: "Cancelado",
+      NOVO: "Novo",
+      AGUARDANDO_APROVACAO: "Aguardando aprovação",
+      NA_FILA: "Na fila",
+      EM_EXECUCAO: "Em execução",
+      CONCLUIDA: "Concluída",
+      VALIDADO: "Validado",
+      REPROVADO: "Reprovado",
     } satisfies Record<ApiTicketStatus, string>
   )[status];
 }
 function priorityLabel(priority: ApiTicketPriority) {
   return (
-    { BAIXA: "Baixa", NORMAL: "Normal", ALTA: "Alta", URGENTE: "Urgente" } satisfies Record<
-      ApiTicketPriority,
-      string
-    >
+    {
+      BAIXA: "Baixa",
+      NORMAL: "Normal",
+      ALTA: "Alta",
+      URGENTE: "Urgente",
+      ALTISSIMA: "Altíssima",
+    } satisfies Record<ApiTicketPriority, string>
   )[priority];
 }
 function categoryLabel(category: ApiTicketCategory) {

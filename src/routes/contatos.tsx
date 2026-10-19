@@ -5954,7 +5954,7 @@ function normalizeCountrySort(value: string) {
     .toLowerCase();
 }
 
-function CountryCodeSelect({
+export function CountryCodeSelect({
   value,
   onChange,
   compact = false,

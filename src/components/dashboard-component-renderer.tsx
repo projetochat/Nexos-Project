@@ -87,7 +87,7 @@ export function DashboardComponentRenderer({
           aria-label={`Visualização ${visualization}`}
         >
           {visualization === "columns" && (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={compact ? height : "100%"}>
               <BarChart data={normalized} margin={DASHBOARD_CHART_MARGIN}>
                 <CartesianGrid stroke="var(--border)" vertical={false} />
                 <XAxis
@@ -129,7 +129,7 @@ export function DashboardComponentRenderer({
           )}
 
           {visualization === "bars" && (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={compact ? height : "100%"}>
               <BarChart
                 data={normalized}
                 layout="vertical"

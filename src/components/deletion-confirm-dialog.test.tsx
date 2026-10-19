@@ -99,6 +99,10 @@ describe("DeletionConfirmDialog", () => {
     await renderDialog();
 
     expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')?.className).toContain("z-[300]");
+    expect(document.querySelector('[data-state="open"][aria-hidden="true"]')?.className).toContain(
+      "z-[290]",
+    );
     expect(document.body.textContent).toContain("Registro retornado pelo backend");
     expect(document.body.textContent).toContain("REG-42");
     expect(document.body.textContent).toContain("Contatos vinculados");

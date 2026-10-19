@@ -8,6 +8,7 @@ import {
   createImpersonationHandoff,
   exchangeImpersonationHandoff,
   hydrateWithTrixusApi,
+  invitationPreviewWithTrixusApi,
   loginWithTrixusApi,
   completeRequiredPasswordChangeWithTrixusApi,
   selectTenantWithTrixusApi,
@@ -225,6 +226,35 @@ describe("trixus-api auth client", () => {
     );
     expect(localStorage.getItem("trixus.api.accessToken")).toBe("invite-access");
     expect(localStorage.getItem("trixus.api.refreshToken")).toBe("invite-refresh");
+  });
+
+  it("loads the customer portal invitation details without exposing credentials", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      responseJson(200, {
+        email: "cliente@empresa.test",
+        expiresAt: "2026-10-23T12:00:00.000Z",
+        tenant: { id: "tenant-a", slug: "empresa", name: "Empresa" },
+        profile: "MANAGER",
+        contact: {
+          id: "contact-a",
+          name: "Cliente",
+          customer: { id: "customer-a", name: "Empresa Cliente" },
+          department: { id: "department-a", name: "Financeiro" },
+          branch: { id: "branch-a", name: "Matriz" },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(invitationPreviewWithTrixusApi("portal-token")).resolves.toMatchObject({
+      email: "cliente@empresa.test",
+      profile: "MANAGER",
+      contact: { name: "Cliente" },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/auth/invitations/preview?token=portal-token"),
+      expect.any(Object),
+    );
   });
 
   it("restores the owner session without a tenant membership after a page refresh", async () => {

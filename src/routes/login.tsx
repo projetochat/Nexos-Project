@@ -13,7 +13,12 @@ import {
   useSession,
   type Role,
 } from "@/lib/session";
-import type { RequiredPasswordChange, TenantSelectionRequired } from "@/lib/trixus-api";
+import {
+  invitationPreviewWithTrixusApi,
+  type ApiInvitationPreview,
+  type RequiredPasswordChange,
+  type TenantSelectionRequired,
+} from "@/lib/trixus-api";
 import { currentAppSurface } from "@/lib/app-surface";
 
 export const Route = createFileRoute("/login")({
@@ -47,11 +52,35 @@ function LoginPage() {
   const [showNewPassword, setShowNewPassword] = React.useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = React.useState(false);
   const [passwordChangeError, setPasswordChangeError] = React.useState<string | null>(null);
+  const [invitationPreview, setInvitationPreview] = React.useState<ApiInvitationPreview | null>(
+    null,
+  );
   const errorRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (user) navigate({ to: currentRoleHome(user.role) as never });
   }, [user, navigate]);
+
+  React.useEffect(() => {
+    if (!invite) {
+      setInvitationPreview(null);
+      return;
+    }
+    let active = true;
+    invitationPreviewWithTrixusApi(invite)
+      .then((preview) => {
+        if (!active) return;
+        setInvitationPreview(preview);
+        if (preview.contact?.name) setName(preview.contact.name);
+      })
+      .catch((previewError) => {
+        if (!active) return;
+        setError(normalizeInvitationError(previewError));
+      });
+    return () => {
+      active = false;
+    };
+  }, [invite]);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -174,7 +203,11 @@ function LoginPage() {
     try {
       await acceptTenantInvitation({ token: invite, password, name: name.trim() || undefined });
       const sessionUser = useSession.getState().user;
-      toast.success("Senha definida e acesso de administrador ativado.");
+      toast.success(
+        invitationPreview?.contact
+          ? "Acesso ao portal ativado."
+          : "Senha definida e acesso de administrador ativado.",
+      );
       navigate({ to: currentRoleHome(sessionUser?.role) as never });
     } catch (err) {
       const message = normalizeInvitationError(err);
@@ -211,20 +244,43 @@ function LoginPage() {
               </span>
             )}
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#071535] sm:text-4xl">
-              {invite ? "Defina sua senha" : "Entrar no Trixus"}
+              {invite
+                ? invitationPreview?.contact
+                  ? "Ativar meu acesso"
+                  : "Defina sua senha"
+                : "Entrar no Trixus"}
             </h1>
 
             {invite && (
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                Conclua o convite para acessar sua organização como administrador.
+                {invitationPreview?.contact
+                  ? `Você recebeu um convite para o portal da ${invitationPreview.contact.customer?.name ?? invitationPreview.tenant.name}.`
+                  : "Conclua o convite para acessar sua organização como administrador."}
               </p>
+            )}
+
+            {invite && invitationPreview?.contact && (
+              <div className="mt-5 rounded-xl border border-slate-200 bg-[#f7faff] p-4 text-sm">
+                {[
+                  ["Nome", invitationPreview.contact.name],
+                  ["E-mail", invitationPreview.email],
+                  ["Perfil", invitationProfileLabel(invitationPreview.profile)],
+                  ["Departamento", invitationPreview.contact.department?.name ?? "—"],
+                  ["Filial", invitationPreview.contact.branch?.name ?? "—"],
+                ].map(([label, value]) => (
+                  <div key={label} className="grid grid-cols-[7.5rem_1fr] gap-3 py-1.5">
+                    <span className="text-slate-500">{label}</span>
+                    <span className="font-semibold text-[#071535]">{value}</span>
+                  </div>
+                ))}
+              </div>
             )}
 
             <form
               onSubmit={invite ? handleInvitation : handleLogin}
               className="mt-6 space-y-4 sm:mt-7"
             >
-              {invite ? (
+              {invite && !invitationPreview?.contact ? (
                 <div>
                   <label
                     htmlFor="name"
@@ -340,7 +396,13 @@ function LoginPage() {
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Entrando...
                   </>
                 ) : (
-                  <>{invite ? "Definir senha e acessar" : "Entrar"}</>
+                  <>
+                    {invite
+                      ? invitationPreview?.contact
+                        ? "Ativar acesso"
+                        : "Definir senha e acessar"
+                      : "Entrar"}
+                  </>
                 )}
               </button>
             </form>
@@ -537,4 +599,14 @@ function normalizeInvitationError(error: unknown) {
     return "Não foi possível conectar ao sistema. Tente novamente em alguns instantes.";
   }
   return message || "Não foi possível concluir o convite agora.";
+}
+
+function invitationProfileLabel(profile: string) {
+  return (
+    {
+      COLLABORATOR: "Colaborador",
+      MANAGER: "Gerente",
+      FULL_ACCESS: "Acesso full",
+    }[profile] ?? profile
+  );
 }
