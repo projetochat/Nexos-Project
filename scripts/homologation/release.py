@@ -46,7 +46,8 @@ GIB = 1024**3
 MAX_ARCHIVE = 2 * GIB
 MAX_EXPANDED = 5 * GIB
 BASE = [
-    "/usr/bin/docker", "compose", "--project-directory", str(APP),
+    "/usr/bin/docker", "compose", "--project-name", PROJECT,
+    "--project-directory", str(APP),
     "--env-file", str(ENV), "-f", str(COMPOSE), "--profile", "release",
 ]
 

@@ -81,6 +81,11 @@ def make_archive(path, tags=None):
 class HomologationReleaseTest(unittest.TestCase):
     def test_fixed_namespace_and_canonical_urls_never_point_to_production(self):
         self.assertEqual(release.PROJECT, "trixus-hml")
+        self.assertEqual(
+            release.BASE[:5],
+            ["/usr/bin/docker", "compose", "--project-name", "trixus-hml",
+             "--project-directory"],
+        )
         self.assertEqual(release.STATE.as_posix(), "/var/lib/trixus-hml-release")
         self.assertEqual(release.APP.as_posix(), "/opt/trixus-hml/app")
         self.assertEqual(release.STORAGE.as_posix(), "/srv/trixus-hml-data")
