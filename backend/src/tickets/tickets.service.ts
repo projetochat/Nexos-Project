@@ -1909,7 +1909,11 @@ function exposeLocalTokens() {
 }
 
 function tenantAppUrl() {
-  return (process.env.TENANT_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  return (
+    process.env.TRIXUS_TENANT_APP_URL ??
+    process.env.TRIXUS_PUBLIC_APP_URL ??
+    "http://localhost:5173"
+  ).replace(/\/$/, "");
 }
 
 async function readLimitedRequest(req: Request, limitBytes: number) {

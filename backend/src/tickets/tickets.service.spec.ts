@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PERMISSIONS_KEY } from "../auth/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { TicketCategory, TicketPriority, TicketStatus } from "../generated/prisma";
@@ -15,6 +15,10 @@ const current = {
   platformRole: "USER",
   permissions: ["tickets.read", "tickets.create"],
 } satisfies AuthenticatedUser;
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("TicketsService tenant-wide temporary access policy", () => {
   it("allows an attendant to create a ticket in a tenant department without department membership", async () => {
@@ -494,6 +498,42 @@ describe("TicketsService PACK 11 workflow", () => {
       email: "clara@example.test",
       status: "pending",
     });
+  });
+
+  it("uses the configured tenant app URL in the customer portal invitation", async () => {
+    vi.stubEnv("TRIXUS_TENANT_APP_URL", "https://hom.trixus.com.br/");
+    vi.stubEnv("TENANT_APP_URL", "http://localhost:3000");
+
+    const prisma = prismaMock();
+    const email = {
+      assertInvitationDeliveryReady: vi.fn(),
+      sendCustomerPortalInvitation: vi
+        .fn()
+        .mockResolvedValue({ delivered: true, provider: "resend", messageId: "message-a" }),
+    };
+    prisma.contact.findFirst.mockResolvedValue({
+      id: "contact-a",
+      name: "Clara",
+      email: "clara@example.test",
+      customer: { id: "customer-a", name: "SDE" },
+      portalMembership: null,
+    });
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.$transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
+      callback(prisma),
+    );
+    prisma.role.upsert.mockResolvedValue({ id: "role-portal" });
+    prisma.userInvitation.create.mockResolvedValue({ id: "invitation-a" });
+
+    await serviceWith(prisma, undefined, email).inviteCustomerContact("contact-a", current);
+
+    expect(email.sendCustomerPortalInvitation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acceptUrl: expect.stringMatching(
+          /^https:\/\/hom\.trixus\.com\.br\/login\?invite=[A-Za-z0-9_-]+$/,
+        ),
+      }),
+    );
   });
 });
 
