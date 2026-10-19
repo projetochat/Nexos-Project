@@ -474,10 +474,12 @@ def _verify_redis_restore(image, archive, expected, prefix):
 
 
 def backup_state(compose, config, apps, release_dir):
+    print("HML_BACKUP_BANCOS", flush=True)
     main_dump = release_dir / "trixus-database.dump"
     evo_dump = release_dir / "evolution-database.dump"
     _dump(compose, "postgres", main_dump)
     _dump(compose, "evolution-postgres", evo_dump)
+    print("HML_BACKUP_REDIS", flush=True)
     for service in ("redis", "evolution-redis"):
         require(command(compose + ["exec", "-T", service, "redis-cli", "SAVE"]) == "OK",
                 "Redis nao confirmou snapshot")
@@ -488,20 +490,26 @@ def backup_state(compose, config, apps, release_dir):
     evo_redis_signature = _redis_signature(compose, "evolution-redis")
     _container_archive(_container(compose, "redis"), "/data", main_redis)
     _container_archive(_container(compose, "evolution-redis"), "/data", evo_redis)
+    print("HML_BACKUP_STORAGES", flush=True)
     _container_archive(apps["evolution-api"][0], "/evolution/instances", instances)
     storage = release_dir / "trixus-storage.tar"
     command(["/usr/bin/tar", "--one-file-system", "-cf", str(storage), "-C", str(STORAGE), "."],
             timeout=600)
     command(["/usr/bin/tar", "-tf", str(storage)], timeout=300)
     restore_prefix = "trixus-hml-restore-" + release_dir.name[:15].lower()
+    print("HML_VALIDANDO_RESTAURACAO_BANCO_PRINCIPAL", flush=True)
     _verify_dump_restore(config["services"]["postgres"]["image"], main_dump,
                          "public", restore_prefix + "-main")
+    print("HML_VALIDANDO_RESTAURACAO_EVOLUTION", flush=True)
     _verify_dump_restore(config["services"]["evolution-postgres"]["image"], evo_dump,
                          "evolution_api", restore_prefix + "-evo")
+    print("HML_VALIDANDO_RESTAURACAO_REDIS_PRINCIPAL", flush=True)
     _verify_redis_restore(config["services"]["redis"]["image"], main_redis,
                           main_redis_signature, restore_prefix + "-main")
+    print("HML_VALIDANDO_RESTAURACAO_REDIS_EVOLUTION", flush=True)
     _verify_redis_restore(config["services"]["evolution-redis"]["image"], evo_redis,
                           evo_redis_signature, restore_prefix + "-evo")
+    print("HML_VALIDANDO_RESTAURACAO_STORAGES", flush=True)
     with tempfile.TemporaryDirectory(prefix="tar-restore-", dir=STATE) as folder:
         _safe_extract(storage, Path(folder))
     with tempfile.TemporaryDirectory(prefix="tar-restore-", dir=STATE) as folder:
@@ -716,7 +724,18 @@ def publish(config, ports, apps, protected, production_before, sha, release_dir)
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             # A release HML antiga pode preceder a adicao do healthcheck do
             # frontend. A identidade HTTP ainda e obrigatoria no retorno.
-            healthy_apps(BASE, ports, stabilization=0, require_healthcheck=False)
+            rollback_health_error = None
+            for attempt in range(30):
+                try:
+                    healthy_apps(BASE, ports, stabilization=0, require_healthcheck=False)
+                    break
+                except CheckError as error:
+                    rollback_health_error = error
+                    if attempt == 29:
+                        raise CheckError(
+                            "Aplicacao anterior nao ficou saudavel durante retorno"
+                        ) from rollback_health_error
+                    time.sleep(2)
             check_protected(protected)
             require(production_fingerprint() == production_before,
                     "Producao ou GLPI mudou durante retorno")

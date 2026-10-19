@@ -201,9 +201,14 @@ class HomologationReleaseTest(unittest.TestCase):
             marker = release.STATE / "recovery-required"
             try:
                 with patch.object(release, "command", side_effect=fake_command), \
-                     patch.object(release, "healthy_apps"), \
+                     patch.object(
+                         release,
+                         "healthy_apps",
+                         side_effect=[release.CheckError("health starting"), None],
+                     ) as health, \
                      patch.object(release, "check_protected"), \
                      patch.object(release, "production_fingerprint", return_value={}), \
+                     patch.object(release.time, "sleep"), \
                      patch.object(release.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run, \
                      self.assertRaises(release.CheckError):
                     release.publish(value, {"backend": "3002", "frontend": "4174"}, apps,
@@ -211,6 +216,7 @@ class HomologationReleaseTest(unittest.TestCase):
                 starts = [call.args[0][-1] for call in run.call_args_list
                           if call.args[0][:2] == ["/usr/bin/docker", "start"]]
                 self.assertEqual(starts, ["evolution-id", "backend-id", "frontend-id"])
+                self.assertEqual(health.call_count, 2)
                 self.assertFalse(marker.exists())
                 self.assertEqual((release_dir / "status.txt").read_text().strip(),
                                  "HML_FALHA_ANTES_DA_MIGRACAO_APLICACAO_ANTERIOR_REINICIADA")
