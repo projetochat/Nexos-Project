@@ -601,14 +601,8 @@ export class DepartmentsController {
         "Os vínculos com o departamento serão removidos; os atendentes serão preservados.",
       ),
       deletionDependency(
-        "contacts",
-        "Contatos vinculados",
-        state.contacts.map((item) => ({ id: item.id, label: item.name, description: item.phone })),
-        "O departamento será removido dos contatos; os contatos serão preservados.",
-      ),
-      deletionDependency(
         "conversations",
-        "Conversas vinculadas",
+        "Atendimentos relacionados",
         state.conversations.map((item) => ({
           id: item.id,
           label: item.protocol || item.contact.name,
@@ -617,63 +611,10 @@ export class DepartmentsController {
         "As conversas ficarão sem departamento e serão preservadas.",
       ),
       deletionDependency(
-        "tickets",
-        "Chamados vinculados",
-        state.tickets.map((item) => ({
-          id: item.id,
-          label: item.protocol,
-          description: item.title,
-        })),
-        "Os chamados ficarão como “Sem departamento” e serão preservados.",
-      ),
-      deletionDependency(
-        "leads",
-        "Leads vinculados",
-        state.leads.map((item) => ({ id: item.id, label: item.contact.name })),
-        "Os leads ficarão sem departamento e serão preservados.",
-      ),
-      deletionDependency(
-        "quick-replies",
-        "Mensagens rápidas vinculadas",
-        state.quickReplies.map((item) => ({
-          id: item.id,
-          label: item.title,
-          description: `/${item.shortcut.replace(/^\//, "")}`,
-        })),
-        "As mensagens rápidas ficarão sem departamento e serão preservadas.",
-      ),
-      deletionDependency(
-        "automations",
-        "Automações vinculadas",
-        state.automations.map((item) => ({ id: item.id, label: item.name })),
-        "As automações ficarão sem departamento e serão preservadas.",
-      ),
-      deletionDependency(
-        "notifications",
-        "Notificações vinculadas",
-        state.notifications.map((item) => ({ id: item.id, label: item.title })),
-        "As notificações ficarão sem departamento e serão preservadas.",
-      ),
-      deletionDependency(
         "roles",
-        "Perfis de acesso referenciando o departamento",
+        "Perfis vinculados",
         state.roles.map((item) => ({ id: item.id, label: item.name })),
         "O departamento e a preferência de favorito serão removidos dos escopos.",
-      ),
-      deletionDependency(
-        "invitations",
-        "Convites referenciando o departamento",
-        state.invitations.map((item) => ({ id: item.id, label: item.email })),
-        "O departamento será removido dos convites; os convites serão preservados.",
-      ),
-      deletionDependency(
-        "connections",
-        "Instâncias vinculadas",
-        state.connections.map((item) => ({
-          id: item.connectionId,
-          label: item.connection.name,
-        })),
-        "Os vínculos entre departamento e instância serão removidos.",
       ),
     ];
     return {
@@ -692,25 +633,22 @@ export class DepartmentsController {
         invitations: state.invitations.map((item) => [item.id, item.updatedAt]),
       }),
       title: "Excluir Departamento?",
-      prompt:
-        "Revise os vínculos que serão removidos. Os registros relacionados serão preservados.",
+      prompt: `Deseja realmente excluir o departamento "${state.department.name}"?`,
       record: {
         name: state.department.name,
-        identifiers: [
-          { label: "Status", value: state.department.active ? "Ativo" : "Inativo" },
-        ],
+        identifiers: [],
       },
       dependencies,
       consequences: [
         {
           id: "department",
-          text: "O departamento será excluído definitivamente e não poderá ser recuperado.",
+          text: "Ao excluir este departamento, todos os vínculos com atendentes e perfis serão removidos. Os atendentes não serão excluídos.",
           irreversible: true,
         },
       ],
       confirmation: {
         level: "standard",
-        confirmLabel: "Confirmar",
+        confirmLabel: "Excluir",
       },
     };
   }

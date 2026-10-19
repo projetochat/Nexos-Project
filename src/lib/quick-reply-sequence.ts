@@ -52,6 +52,14 @@ export type SequenceDraft = {
   next: number;
   closeAfter: boolean;
 };
+
+export function quickReplyAttachmentMediaType(mimeType: string) {
+  if (mimeType.startsWith("image/")) return "image" as const;
+  if (mimeType.startsWith("video/")) return "video" as const;
+  if (mimeType.startsWith("audio/")) return "voice" as const;
+  return "document" as const;
+}
+
 export function createSequence(
   reply: ApiQuickReply,
   resolveText: (text: string) => string = (text) => text,

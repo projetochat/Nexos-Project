@@ -1485,6 +1485,7 @@ export class CrmController {
     const rows = await this.prisma.contactDepartment.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
       orderBy: { name: "asc" },
+      include: { _count: { select: { contacts: true } } },
     });
     return rows.map((item) => this.serializeContactCatalog(item));
   }
@@ -1562,13 +1563,15 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.assertContactCatalog("department", id, current.tenantId);
-    const item = await this.prisma.contactDepartment.update({
-      where: { id },
-      data: { archivedAt: new Date() },
-    });
-    await this.prisma.contact.updateMany({
-      where: { tenantId: current.tenantId, contactDepartmentId: id },
-      data: { contactDepartmentId: null },
+    const item = await this.prisma.$transaction(async (tx) => {
+      await tx.contact.updateMany({
+        where: { tenantId: current.tenantId, contactDepartmentId: id },
+        data: { contactDepartmentId: null },
+      });
+      return tx.contactDepartment.update({
+        where: { id },
+        data: { archivedAt: new Date() },
+      });
     });
     return this.serializeContactCatalog(item);
   }
@@ -1579,6 +1582,7 @@ export class CrmController {
     const rows = await this.prisma.contactProfile.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
       orderBy: { name: "asc" },
+      include: { _count: { select: { contacts: true } } },
     });
     return rows.map((item) => this.serializeContactCatalog(item));
   }
@@ -1653,13 +1657,15 @@ export class CrmController {
   @RequirePermissions("contacts.delete")
   async deleteContactProfile(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.assertContactCatalog("profile", id, current.tenantId);
-    const item = await this.prisma.contactProfile.update({
-      where: { id },
-      data: { archivedAt: new Date() },
-    });
-    await this.prisma.contact.updateMany({
-      where: { tenantId: current.tenantId, contactProfileId: id },
-      data: { contactProfileId: null },
+    const item = await this.prisma.$transaction(async (tx) => {
+      await tx.contact.updateMany({
+        where: { tenantId: current.tenantId, contactProfileId: id },
+        data: { contactProfileId: null },
+      });
+      return tx.contactProfile.update({
+        where: { id },
+        data: { archivedAt: new Date() },
+      });
     });
     return this.serializeContactCatalog(item);
   }
@@ -2804,6 +2810,7 @@ export class CrmController {
     archivedAt?: Date | null;
     createdAt?: Date;
     updatedAt?: Date;
+    _count?: { contacts: number };
   }) {
     return {
       id: item.id,
@@ -2814,6 +2821,7 @@ export class CrmController {
       archivedAt: item.archivedAt,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
+      contactCount: item._count?.contacts,
     };
   }
 

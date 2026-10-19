@@ -22,6 +22,81 @@ const current = {
 };
 
 describe("MessagingConnectionsService", () => {
+  it("recusa outro número na reconexão e preserva a identidade original", async () => {
+    const prisma = prismaMock();
+    const original = {
+      ...connection(),
+      status: MessagingConnectionStatus.DISCONNECTED,
+      ownerExternalId: "5511987654321@s.whatsapp.net",
+      ownerPhoneNormalized: "+5511987654321",
+      connectionErrorCode: null,
+    };
+    prisma.messagingConnection.findUniqueOrThrow.mockResolvedValue(original);
+    prisma.messagingConnection.update.mockImplementation(async ({ data }) => ({
+      ...original,
+      ...data,
+    }));
+    const evolution = { logout: vi.fn().mockResolvedValue({ ok: true }) };
+
+    const result = await new MessagingConnectionsService(
+      prisma as never,
+      evolution as never,
+    ).updateConnectionStatus("connection-a", MessagingConnectionStatus.CONNECTED, {
+      ownerExternalId: "5562999990000@s.whatsapp.net",
+      ownerPhoneNormalized: "+5562999990000",
+    });
+
+    expect(evolution.logout).toHaveBeenCalledWith("tenant-a-suporte");
+    expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
+      where: { id: "connection-a" },
+      data: {
+        status: MessagingConnectionStatus.ERROR,
+        connectionErrorCode: "OWNER_PHONE_MISMATCH",
+      },
+    });
+    expect(result).toMatchObject({
+      ownerPhoneNormalized: "+5511987654321",
+      connectionErrorCode: "OWNER_PHONE_MISMATCH",
+    });
+  });
+
+  it("aceita o mesmo número quando o nono dígito varia no identificador do provedor", async () => {
+    const prisma = prismaMock();
+    const original = {
+      ...connection(),
+      externalReference: null,
+      status: MessagingConnectionStatus.DISCONNECTED,
+      ownerExternalId: "5511987654321@s.whatsapp.net",
+      ownerPhoneNormalized: "+5511987654321",
+      connectionErrorCode: null,
+    };
+    prisma.messagingConnection.findUniqueOrThrow.mockResolvedValue(original);
+    prisma.messagingConnection.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.update.mockImplementation(async ({ data }) => ({
+      ...original,
+      ...data,
+    }));
+    const evolution = {
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+      fetchProfilePictureUrl: vi.fn().mockResolvedValue(null),
+      logout: vi.fn(),
+    };
+
+    const result = await new MessagingConnectionsService(
+      prisma as never,
+      evolution as never,
+    ).updateConnectionStatus("connection-a", MessagingConnectionStatus.CONNECTED, {
+      ownerExternalId: "551187654321@s.whatsapp.net",
+      ownerPhoneNormalized: "+551187654321",
+    });
+
+    expect(evolution.logout).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: MessagingConnectionStatus.CONNECTED,
+      connectionErrorCode: null,
+    });
+  });
+
   it("separates the full administrative catalog from the Chat scope", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findMany.mockResolvedValue([connection()]);
@@ -579,7 +654,7 @@ describe("MessagingConnectionsService", () => {
     expect(prisma.messagingConnection.create).not.toHaveBeenCalled();
     expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
       where: { id: "connection-a" },
-      data: { status: MessagingConnectionStatus.CONNECTING },
+      data: { status: MessagingConnectionStatus.CONNECTING, connectionErrorCode: null },
     });
   });
 
@@ -603,7 +678,9 @@ describe("MessagingConnectionsService", () => {
 
   it("reconciles a connected provider during QR polling when its webhook was missed", async () => {
     const prisma = prismaMock();
-    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.messagingConnection.findFirst
+      .mockResolvedValueOnce(connection())
+      .mockResolvedValueOnce(null);
     prisma.messagingConnection.findUniqueOrThrow.mockResolvedValue(connection());
     prisma.messagingConnection.update.mockResolvedValue({
       ...connection(),
@@ -611,6 +688,9 @@ describe("MessagingConnectionsService", () => {
     });
     const evolution = {
       connectionState: vi.fn().mockResolvedValue({ instance: { state: "open" } }),
+      findInstance: vi.fn().mockResolvedValue({
+        ownerJid: "551199990000@s.whatsapp.net",
+      }),
       setWebhook: vi.fn().mockResolvedValue({ ok: true }),
       fetchProfilePictureUrl: vi.fn().mockResolvedValue(null),
     };
@@ -664,7 +744,7 @@ describe("MessagingConnectionsService", () => {
 
     expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
       where: { id: "connection-a" },
-      data: { status: MessagingConnectionStatus.DISCONNECTED },
+      data: { status: MessagingConnectionStatus.DISCONNECTED, connectionErrorCode: null },
     });
   });
 
@@ -696,6 +776,7 @@ describe("MessagingConnectionsService", () => {
         status: MessagingConnectionStatus.ERROR,
         ownerExternalId: "551199990000@s.whatsapp.net",
         ownerPhoneNormalized: "+551199990000",
+        connectionErrorCode: null,
       },
     });
   });
@@ -972,7 +1053,9 @@ describe("MessagingConnectionsService", () => {
 
   it("treats Evolution 404 as an idempotent provider success and purges locally", async () => {
     const prisma = prismaMock();
-    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.messagingConnection.findFirst
+      .mockResolvedValueOnce(connection())
+      .mockResolvedValueOnce(null);
     const evolution = {
       deleteInstance: vi
         .fn()
@@ -1290,7 +1373,9 @@ describe("MessagingConnectionsService", () => {
 
   it("ensures webhook exactly once when reconciliation sees a connected instance", async () => {
     const prisma = prismaMock();
-    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.messagingConnection.findFirst
+      .mockResolvedValueOnce(connection())
+      .mockResolvedValueOnce(null);
     prisma.messagingConnection.update.mockResolvedValue({
       ...connection(),
       status: MessagingConnectionStatus.CONNECTED,
@@ -1318,6 +1403,7 @@ describe("MessagingConnectionsService", () => {
         status: MessagingConnectionStatus.CONNECTED,
         ownerExternalId: "551199990000@s.whatsapp.net",
         ownerPhoneNormalized: "+551199990000",
+        connectionErrorCode: null,
       },
     });
   });

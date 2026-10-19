@@ -62,6 +62,7 @@ import {
 } from "@/lib/trixus-api";
 import {
   createSequence,
+  quickReplyAttachmentMediaType,
   quickReplyMessages,
   sendSequence,
   type SequenceDraft,
@@ -2200,13 +2201,7 @@ function Composer({
           const attachment = item.attachment;
           const blob = await (await fetch(attachment.dataUrl)).blob();
           if (controller.signal.aborted) throw new Error("Envio interrompido.");
-          const mediaType = attachment.mimeType.startsWith("image/")
-            ? "image"
-            : attachment.mimeType.startsWith("video/")
-              ? "video"
-              : attachment.mimeType.startsWith("audio/")
-                ? "audio"
-                : "document";
+          const mediaType = quickReplyAttachmentMediaType(attachment.mimeType);
           return messageApi.sendMedia(conversationId, blob, {
             fileName: attachment.fileName,
             mimeType: attachment.mimeType,

@@ -95,7 +95,7 @@ describe("DeletionConfirmDialog", () => {
     return { loadImpact, onConfirm, onOpenChange };
   }
 
-  it("renders backend identity, counts, operations and expandable records", async () => {
+  it("renders only the compact identity, impact counts and consequence summary", async () => {
     await renderDialog();
 
     expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
@@ -106,19 +106,13 @@ describe("DeletionConfirmDialog", () => {
     expect(document.body.textContent).toContain("Registro retornado pelo backend");
     expect(document.body.textContent).toContain("REG-42");
     expect(document.body.textContent).toContain("Contatos vinculados");
-    expect(document.body.textContent).toContain("Desvinculação:");
-    expect(document.body.textContent).toContain("Reassociação:");
-    expect(document.body.textContent).toContain("Exclusão:");
+    expect(document.body.textContent).toContain("Esta consequência foi fornecida pelo backend.");
+    expect(document.body.textContent).not.toContain("Desvinculação:");
+    expect(document.body.textContent).not.toContain("Reassociação:");
+    expect(document.body.textContent).not.toContain("Exclusão:");
     expect(document.body.textContent).not.toContain("Contato um");
-
-    const expand = Array.from(document.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Ver registros"),
-    )!;
-    await React.act(() => expand.click());
-
-    expect(expand.getAttribute("aria-expanded")).toBe("true");
-    expect(document.body.textContent).toContain("Contato um");
-    expect(document.body.textContent).toContain("5 registro(s) adicional(is)");
+    expect(document.body.textContent).not.toContain("Ver registros");
+    expect(document.body.textContent).not.toContain("Irreversível");
   });
 
   it("shows a backend blocker and never submits the deletion", async () => {
@@ -181,7 +175,7 @@ describe("DeletionConfirmDialog", () => {
     await renderDialog(baseImpact, { loadImpact });
 
     expect(document.body.textContent).toContain("Carregando dependências");
-    expect(findButton("Confirmar")?.disabled).toBe(true);
+    expect(findButton("Excluir")?.disabled).toBe(true);
 
     await React.act(() => reject(new Error("offline")));
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(

@@ -1391,6 +1391,7 @@ model MessagingConnection {
   externalReference         String?
   ownerExternalId           String?
   ownerPhoneNormalized      String?
+  connectionErrorCode       String?
   groupsLastSyncedAt        DateTime?
   groupsSyncStatus          String?                   @default("IDLE")
   groupsSyncError           String?

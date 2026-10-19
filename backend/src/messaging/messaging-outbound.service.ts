@@ -117,6 +117,7 @@ const dispatchInclude = {
 } satisfies Prisma.MessageInclude;
 
 const DISPATCHABLE_STATUSES = [MessageStatus.CREATED, MessageStatus.QUEUED] as const;
+const CONNECTION_OWNER_MISMATCH = "OWNER_PHONE_MISMATCH";
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type MessageWithRelations = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
@@ -925,6 +926,24 @@ export class MessagingOutboundService {
     }
     if (connection.serviceEnabled === false) {
       return { skipped: true, status: message.status, reason: "SERVICE_PAUSED" };
+    }
+    if (connection.connectionErrorCode === CONNECTION_OWNER_MISMATCH) {
+      const failed = await this.failMessage(message.id, input.tenantId, {
+        code: MessagingErrorCode.PROVIDER_UNAVAILABLE,
+        message: "Messaging connection is quarantined after an owner mismatch.",
+      });
+      this.publishStatus(
+        message,
+        MessageStatus.FAILED,
+        message.status,
+        failed?.updatedAt ?? new Date(),
+        failed?.providerErrorCode,
+      );
+      throw new OutboundDispatchError(
+        MessagingErrorCode.PROVIDER_UNAVAILABLE,
+        "Messaging connection is quarantined after an owner mismatch.",
+        false,
+      );
     }
     if (
       connection.status !== MessagingConnectionStatus.CONNECTED &&

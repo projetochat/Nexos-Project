@@ -283,6 +283,7 @@ export type ApiContactCatalog = {
   archivedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  contactCount?: number;
 };
 
 export type ApiContactCustomField = {
@@ -690,6 +691,7 @@ export type ApiMessagingConnection = {
   importGroupsStartDate?: string | null;
   ownerPhoneMasked?: string | null;
   ownerPhone?: string | null;
+  connectionErrorCode?: string | null;
   archivedAt?: string | null;
   provider?: {
     existsInProvider?: boolean;
@@ -2203,15 +2205,21 @@ export const connectionsApi = {
       body: JSON.stringify(kind ? { kind } : {}),
     }),
   qr: (id: string) =>
-    apiRequest<{ connectionId: string; qrCodeBase64: string | null; status: string }>(
-      `/messaging/connections/${id}/qr`,
-      { cache: "no-store" },
-    ),
+    apiRequest<{
+      connectionId: string;
+      qrCodeBase64: string | null;
+      status: string;
+      errorCode?: string | null;
+      expectedOwnerPhone?: string | null;
+    }>(`/messaging/connections/${id}/qr`, { cache: "no-store" }),
   qrStatus: (id: string) =>
-    apiRequest<{ connectionId: string; qrCodeBase64: string | null; status: string }>(
-      `/messaging/connections/${id}/qr/current`,
-      { cache: "no-store" },
-    ),
+    apiRequest<{
+      connectionId: string;
+      qrCodeBase64: string | null;
+      status: string;
+      errorCode?: string | null;
+      expectedOwnerPhone?: string | null;
+    }>(`/messaging/connections/${id}/qr/current`, { cache: "no-store" }),
   logout: (id: string) =>
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/logout`, {
       method: "PATCH",

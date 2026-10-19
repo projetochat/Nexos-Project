@@ -130,6 +130,6 @@ describe("ConversationPurgeService", () => {
     const impact = await service.contactImpact("contact-a", "tenant-a");
 
     expect(impact.blockedReason).toContain("campanha pendente ou em processamento");
-    expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Confirmar" });
+    expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Excluir" });
   });
 });

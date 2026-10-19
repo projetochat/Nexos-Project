@@ -4,12 +4,15 @@ import * as React from "react";
 import {
   AlertCircle,
   AlertTriangle,
-  ArrowRightLeft,
-  ChevronDown,
-  Link2Off,
+  Building2,
+  Headphones,
   LoaderCircle,
+  MessageCircle,
   RefreshCw,
-  Trash2,
+  ShieldCheck,
+  Tag,
+  UserRound,
+  UsersRound,
   X,
 } from "lucide-react";
 
@@ -93,27 +96,6 @@ type DeletionConfirmDialogProps = {
   formatError?: (error: unknown) => string;
 };
 
-const operationPresentation: Record<
-  DeletionDependencyOperation,
-  { label: string; icon: typeof Trash2; className: string }
-> = {
-  unlink: {
-    label: "Desvinculação",
-    icon: Link2Off,
-    className: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  },
-  reassign: {
-    label: "Reassociação",
-    icon: ArrowRightLeft,
-    className: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-  },
-  delete: {
-    label: "Exclusão",
-    icon: Trash2,
-    className: "border-destructive/30 bg-destructive/10 text-destructive",
-  },
-};
-
 const defaultError = () => "Não foi possível atualizar os dados. Tente novamente.";
 
 type DialogError = {
@@ -136,7 +118,6 @@ export function DeletionConfirmDialog({
   >("idle");
   const [error, setError] = React.useState<DialogError | null>(null);
   const [changedMessage, setChangedMessage] = React.useState<string | null>(null);
-  const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
   const [announcement, setAnnouncement] = React.useState("");
   const requestController = React.useRef<AbortController | null>(null);
   const submitController = React.useRef<AbortController | null>(null);
@@ -145,7 +126,6 @@ export function DeletionConfirmDialog({
   const onConfirmRef = React.useRef(onConfirm);
   const resourceKeyRef = React.useRef(resourceKey);
   const cancelRef = React.useRef<HTMLButtonElement>(null);
-  const listIdPrefix = React.useId();
 
   React.useEffect(() => {
     loadImpactRef.current = loadImpact;
@@ -163,7 +143,6 @@ export function DeletionConfirmDialog({
 
   const replaceImpact = React.useCallback((next: DeletionImpactPreview) => {
     setImpact(next);
-    setExpanded(new Set());
   }, []);
 
   const requestImpact = React.useCallback(
@@ -201,7 +180,6 @@ export function DeletionConfirmDialog({
       setImpact(null);
       setError(null);
       setChangedMessage(null);
-      setExpanded(new Set());
       setAnnouncement("");
       setPhase("idle");
       setBusy(false);
@@ -211,7 +189,6 @@ export function DeletionConfirmDialog({
     setImpact(null);
     setError(null);
     setChangedMessage(null);
-    setExpanded(new Set());
     void requestImpact("initial");
     return () => requestController.current?.abort();
   }, [open, requestImpact, resourceKey, setBusy]);
@@ -318,23 +295,13 @@ export function DeletionConfirmDialog({
           window.requestAnimationFrame(() => cancelRef.current?.focus({ preventScroll: true }));
         }}
       >
-        <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
-          <div className="flex min-w-0 flex-1 items-start gap-3">
-            <span
-              aria-hidden="true"
-              className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive"
-            >
-              <AlertTriangle className="h-5 w-5" />
-            </span>
-            <div className="min-w-0">
-              <AlertDialogTitle className="text-base leading-6 sm:text-lg">
-                {impact?.title ?? "Confirmar exclusão"}
-              </AlertDialogTitle>
-              <AlertDialogDescription className="mt-0.5 text-xs text-muted-foreground">
-                Revise o registro e os vínculos afetados antes de continuar.
-              </AlertDialogDescription>
-            </div>
-          </div>
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
+          <AlertDialogTitle className="min-w-0 flex-1 text-base leading-6 sm:text-lg">
+            {impact?.title ?? "Confirmar exclusão"}
+          </AlertDialogTitle>
+          <AlertDialogDescription className="sr-only">
+            Confirme os dados e os vínculos afetados antes de excluir.
+          </AlertDialogDescription>
           <AlertDialogCancel
             aria-label="Fechar"
             disabled={isCommitting}
@@ -360,25 +327,27 @@ export function DeletionConfirmDialog({
             />
           ) : impact ? (
             <div className="space-y-4 text-sm text-foreground">
-              <p className="text-muted-foreground">{impact.prompt}</p>
-
-              <section
-                aria-labelledby={`${listIdPrefix}-record`}
-                className="rounded-xl border border-border bg-surface-1 p-3.5"
-              >
-                <h3 id={`${listIdPrefix}-record`} className="font-semibold text-foreground">
-                  {impact.record.name}
-                </h3>
-                <dl className="mt-2 grid gap-1.5 text-xs sm:grid-cols-2">
+              <section className="flex items-start gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive"
+                >
+                  <AlertTriangle className="h-6 w-6" />
+                </span>
+                <div className="min-w-0 pt-1">
+                  <p className="text-muted-foreground">{impact.prompt}</p>
+                  {!impact.prompt.includes(impact.record.name) && (
+                    <p className="mt-1 font-semibold">Nome: &quot;{impact.record.name}&quot;</p>
+                  )}
                   {impact.record.identifiers.map((identifier) => (
-                    <div key={`${identifier.label}:${identifier.value}`} className="min-w-0">
-                      <dt className="text-muted-foreground">{identifier.label}</dt>
-                      <dd className="break-words font-medium text-foreground">
-                        {identifier.value}
-                      </dd>
-                    </div>
+                    <p
+                      key={`${identifier.label}:${identifier.value}`}
+                      className="mt-0.5 break-words font-semibold"
+                    >
+                      {identifier.label}: {identifier.value}
+                    </p>
                   ))}
-                </dl>
+                </div>
               </section>
 
               {changedMessage && (
@@ -407,75 +376,33 @@ export function DeletionConfirmDialog({
                 />
               )}
 
-              <section aria-labelledby={`${listIdPrefix}-dependencies`}>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <h3 id={`${listIdPrefix}-dependencies`} className="font-semibold">
-                    Vínculos afetados
-                  </h3>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={isBusy}
-                    onClick={() => void requestImpact("refresh")}
-                  >
-                    <RefreshCw
-                      aria-hidden="true"
-                      className={cn("h-3.5 w-3.5", phase === "refreshing" && "animate-spin")}
-                    />
-                    Atualizar
-                  </Button>
-                </div>
-                <ul className="space-y-2">
-                  {impact.dependencies.map((dependency, index) => {
-                    const rowKey = `${index}:${dependency.id}`;
-                    return (
+              {impact.dependencies.length > 0 && (
+                <section className="overflow-hidden rounded-xl border border-border bg-surface-1 px-4">
+                  <ul className="divide-y divide-border">
+                    {impact.dependencies.map((dependency) => (
                       <DependencyRow
-                        key={rowKey}
+                        key={dependency.id}
                         dependency={dependency}
-                        expanded={expanded.has(rowKey)}
-                        listId={`${listIdPrefix}-dependency-${index}`}
-                        onToggle={() =>
-                          setExpanded((current) => {
-                            const next = new Set(current);
-                            if (next.has(rowKey)) next.delete(rowKey);
-                            else next.add(rowKey);
-                            return next;
-                          })
-                        }
+                        contextTitle={impact.title}
                       />
-                    );
-                  })}
-                </ul>
-              </section>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
               {impact.consequences.length > 0 && (
                 <section
-                  aria-labelledby={`${listIdPrefix}-consequences`}
+                  aria-label="Consequências da exclusão"
                   className="rounded-xl border border-destructive/25 bg-destructive/10 p-3.5"
                 >
-                  <h3
-                    id={`${listIdPrefix}-consequences`}
-                    className="flex items-center gap-2 font-semibold text-foreground"
-                  >
-                    <AlertCircle aria-hidden="true" className="h-4 w-4 text-destructive" />
-                    Consequências
-                  </h3>
-                  <ul className="mt-2 space-y-2">
+                  <ul className="space-y-2">
                     {impact.consequences.map((consequence) => (
-                      <li key={consequence.id} className="flex items-start gap-2 text-sm">
-                        <span
+                      <li key={consequence.id} className="flex items-start gap-3 text-sm">
+                        <AlertCircle
                           aria-hidden="true"
-                          className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-destructive"
+                          className="mt-0.5 h-5 w-5 shrink-0 text-destructive"
                         />
-                        <span>
-                          {consequence.text}
-                          {consequence.irreversible && (
-                            <span className="ml-2 inline-flex rounded-full border border-destructive/30 px-2 py-0.5 text-[11px] font-semibold text-destructive">
-                              Irreversível
-                            </span>
-                          )}
-                        </span>
+                        <span>{consequence.text}</span>
                       </li>
                     ))}
                   </ul>
@@ -514,7 +441,7 @@ export function DeletionConfirmDialog({
                 ? "Excluindo…"
                 : impact?.blockedReason
                   ? "Exclusão bloqueada"
-                  : (impact?.confirmation.confirmLabel ?? "Confirmar")}
+                  : (impact?.confirmation.confirmLabel ?? "Excluir")}
           </Button>
         </div>
       </AlertDialogContent>
@@ -595,83 +522,30 @@ function StatusCard({
 
 function DependencyRow({
   dependency,
-  expanded,
-  listId,
-  onToggle,
+  contextTitle,
 }: {
   dependency: DeletionDependency;
-  expanded: boolean;
-  listId: string;
-  onToggle: () => void;
+  contextTitle: string;
 }) {
-  const presentation = operationPresentation[dependency.operation];
-  const Icon = presentation.icon;
-  const canExpand = (dependency.items?.length ?? 0) > 0;
-  const hiddenCount = Math.max(0, dependency.count - (dependency.items?.length ?? 0));
-
+  const Icon = dependencyIcon(dependency.id, dependency.label, contextTitle);
   return (
-    <li className="rounded-xl border border-border bg-surface-1 p-3.5">
-      <div className="flex items-start gap-3">
-        <span
-          aria-hidden="true"
-          className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
-            presentation.className,
-          )}
-        >
-          <Icon className="h-4 w-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <p className="font-medium text-foreground">{dependency.label}</p>
-            <span className="rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-semibold tabular-nums text-foreground">
-              {dependency.count}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">{presentation.label}:</span>{" "}
-            {dependency.operationLabel}
-          </p>
-          {canExpand && (
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-controls={listId}
-              className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-md text-xs font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-              onClick={onToggle}
-            >
-              {expanded ? "Ocultar registros" : "Ver registros"}
-              <ChevronDown
-                aria-hidden="true"
-                className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-180")}
-              />
-            </button>
-          )}
-        </div>
-      </div>
-      {canExpand && expanded && (
-        <div id={listId} className="mt-3 border-t border-border pt-3">
-          <ul className="space-y-2">
-            {dependency.items?.map((item, index) => (
-              <li key={`${index}:${item.id}`} className="min-w-0 rounded-lg bg-card px-3 py-2">
-                <p className="break-words text-sm font-medium text-foreground">{item.label}</p>
-                {item.description && (
-                  <p className="mt-0.5 break-words text-xs text-muted-foreground">
-                    {item.description}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-          {(dependency.hasMore || hiddenCount > 0) && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              {hiddenCount > 0
-                ? `${hiddenCount} registro(s) adicional(is) não exibido(s).`
-                : "Há outros registros não exibidos."}
-            </p>
-          )}
-        </div>
-      )}
+    <li className="flex min-h-12 items-center gap-3 py-3">
+      <Icon aria-hidden="true" className="h-5 w-5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 font-medium">{dependency.label}</span>
+      <span className="font-semibold tabular-nums">{dependency.count}</span>
     </li>
   );
+}
+
+function dependencyIcon(id: string, label: string, contextTitle: string) {
+  const value = `${id} ${label}`.toLowerCase();
+  if (contextTitle.toLowerCase().includes("etiqueta")) return Tag;
+  if (value.includes("perfil")) return ShieldCheck;
+  if (value.includes("atendente"))
+    return contextTitle.toLowerCase().includes("perfil") ? UsersRound : Headphones;
+  if (value.includes("empresa")) return Building2;
+  if (value.includes("etiqueta")) return Tag;
+  if (value.includes("contato")) return UserRound;
+  if (value.includes("conversa") || value.includes("histórico")) return MessageCircle;
+  return UsersRound;
 }

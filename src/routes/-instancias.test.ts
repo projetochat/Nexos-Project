@@ -104,4 +104,12 @@ describe("reconexão por QR Code", () => {
     expect(source).toContain("todo o histórico estão preservados");
     expect(source).not.toContain("QR indisponivel");
   });
+
+  it("interrompe a reconexão e orienta usar o número original quando outro número é lido", () => {
+    const source = readFileSync(new URL("./instancias.tsx", import.meta.url), "utf8");
+    expect(source).toContain('result.errorCode === "OWNER_PHONE_MISMATCH"');
+    expect(source).toContain("Número diferente recusado");
+    expect(source).toContain("Conecte o número original");
+    expect(source).toContain("active && shouldPoll");
+  });
 });

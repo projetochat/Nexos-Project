@@ -191,8 +191,8 @@ export class TagsController {
     return {
       snapshotToken,
       title: "Excluir Etiqueta?",
-      prompt: "A etiqueta será removida dos contatos e das audiências de campanhas abaixo.",
-      record: { name: tag.name, identifiers: [{ label: "Etiqueta", value: tag.name }] },
+      prompt: `Deseja realmente excluir a etiqueta "${tag.name}"?`,
+      record: { name: tag.name, identifiers: [] },
       dependencies: [
         {
           id: "contacts",
@@ -207,25 +207,15 @@ export class TagsController {
           })),
           hasMore: contactLinks.length > 10,
         },
-        {
-          id: "campaigns",
-          label: "Campanhas vinculadas",
-          count: campaigns.length,
-          operation: "unlink",
-          operationLabel:
-            "A referência da etiqueta será removida da audiência; as campanhas serão preservadas.",
-          items: campaigns.slice(0, 10).map((item) => ({
-            id: item.id,
-            label: item.name,
-            description: item.status,
-          })),
-          hasMore: campaigns.length > 10,
-        },
       ],
       consequences: [
-        { id: "tag", text: "A etiqueta será excluída definitivamente.", irreversible: true },
+        {
+          id: "tag",
+          text: "Ao excluir esta etiqueta, o vínculo com todos os contatos será removido. Os contatos não serão excluídos.",
+          irreversible: true,
+        },
       ],
-      confirmation: { level: "standard", confirmLabel: "Confirmar" },
+      confirmation: { level: "standard", confirmLabel: "Excluir" },
     };
   }
 

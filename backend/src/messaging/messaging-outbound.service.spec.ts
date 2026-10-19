@@ -814,6 +814,44 @@ describe("MessagingOutboundService", () => {
     expect(provider.send).not.toHaveBeenCalled();
   });
 
+  it("does not reconcile or send through a connection quarantined by an owner mismatch", async () => {
+    const provider = { send: vi.fn() };
+    const evolution = {
+      connectionState: vi.fn().mockResolvedValue({ instance: { state: "open" } }),
+    };
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValue(
+      message({
+        status: MessageStatus.QUEUED,
+        connection: {
+          ...connection(),
+          status: MessagingConnectionStatus.ERROR,
+          connectionErrorCode: "OWNER_PHONE_MISMATCH",
+        },
+      }),
+    );
+
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock(provider) as never,
+      dispatcherMock() as never,
+      undefined,
+      evolution as never,
+    );
+
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).rejects.toMatchObject({ retryable: false });
+    expect(evolution.connectionState).not.toHaveBeenCalled();
+    expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
   it("fails removed connections without provider fallback", async () => {
     const provider = { send: vi.fn() };
     const prisma = prismaMock();
@@ -877,7 +915,10 @@ function prismaMock() {
     conversation: { findFirst: vi.fn(), update: vi.fn() },
     contactCustomFieldValue: { findMany: vi.fn().mockResolvedValue([]) },
     departmentMembership: { findMany: vi.fn() },
-    messagingConnection: { findFirst: vi.fn().mockResolvedValue(connection()) },
+    messagingConnection: {
+      findFirst: vi.fn().mockResolvedValue(connection()),
+      update: vi.fn(),
+    },
     message: {
       findFirst: vi.fn(),
       create: vi.fn(),
@@ -913,6 +954,7 @@ function connection(overrides = {}) {
     timezone: "America/Sao_Paulo",
     archivedAt: null,
     serviceEnabled: true,
+    connectionErrorCode: null,
     ...overrides,
   };
 }

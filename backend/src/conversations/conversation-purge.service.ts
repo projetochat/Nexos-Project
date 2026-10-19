@@ -117,6 +117,7 @@ export class ConversationPurgeService {
         groupName: true,
         externalChatId: true,
         conversationType: true,
+        status: true,
         updatedAt: true,
         messages: {
           orderBy: { id: "asc" },
@@ -290,10 +291,6 @@ export class ConversationPurgeService {
   }
 
   private contactImpactFromState(state: ContactPurgeState): DeletionImpactPreview {
-    const messageCount = state.conversations.conversations.reduce(
-      (total, conversation) => total + conversation.messages.length,
-      0,
-    );
     const activeRecipientStatuses = new Set<CampaignRecipientStatus>([
       CampaignRecipientStatus.PENDING,
       CampaignRecipientStatus.QUEUED,
@@ -305,6 +302,9 @@ export class ConversationPurgeService {
     const processingOutbox = [...state.conversations.outbox, ...state.recipientOutbox].filter(
       (event) => event.status === OutboxEventStatus.PROCESSING,
     );
+    const activeConversationCount = state.conversations.conversations.filter(
+      (conversation) => conversation.status !== "FECHADA",
+    ).length;
     return {
       snapshotToken: deletionSnapshot({
         contact: [state.contact.id, state.contact.updatedAt],
@@ -329,64 +329,38 @@ export class ConversationPurgeService {
         preferenceCount: state.preferenceCount,
         leadCount: state.leadCount,
       }),
-      title: "Excluir contato e todo o histórico?",
-      prompt: "Esta exclusão remove o contato e todas as conversas associadas.",
+      title: "Excluir Contato?",
+      prompt: "Deseja realmente excluir este contato?",
       record: {
         name: state.contact.name,
         identifiers: [{ label: "WhatsApp", value: state.contact.phone }],
       },
       dependencies: [
         {
-          id: "conversations",
-          label: "Conversas",
+          id: "conversation-history",
+          label: "Históricos de conversas",
           count: state.conversations.conversations.length,
           operation: "delete",
           operationLabel: "Serão apagadas permanentemente",
         },
         {
-          id: "messages",
-          label: "Mensagens e mídias",
-          count: messageCount,
+          id: "active-conversations",
+          label: "Conversa ativa",
+          count: activeConversationCount,
           operation: "delete",
           operationLabel: "Serão apagadas permanentemente",
-        },
-        {
-          id: "campaigns",
-          label: "Destinatários de campanhas",
-          count: state.recipients.length,
-          operation: "delete",
-          operationLabel: "Serão removidos das campanhas",
-        },
-        {
-          id: "tickets",
-          label: "Chamados",
-          count: state.ticketCount,
-          operation: "unlink",
-          operationLabel: "Serão preservados sem o contato/conversa",
-        },
-        {
-          id: "auxiliary",
-          label: "Etiquetas, campos e preferências",
-          count: state.customFieldCount + state.tagCount + state.preferenceCount,
-          operation: "delete",
-          operationLabel: "Serão apagados com o contato",
         },
       ],
       consequences: [
         {
           id: "contact",
-          text: "O contato, conversas e mídias não poderão ser recuperados.",
+          text: "Ao excluir este contato, todos os históricos de conversas relacionados também serão excluídos.",
           irreversible: true,
-        },
-        {
-          id: "tickets",
-          text: "Chamados permanecem disponíveis para auditoria.",
-          irreversible: false,
         },
       ],
       confirmation: {
         level: "standard",
-        confirmLabel: "Confirmar",
+        confirmLabel: "Excluir",
       },
       ...(activeRecipients.length
         ? {

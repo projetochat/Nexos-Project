@@ -21,6 +21,7 @@ import {
   AlignJustify,
   AlignLeft,
   AlignRight,
+  AlertCircle,
   ArrowDownWideNarrow,
   Building2,
   Bold,
@@ -55,6 +56,7 @@ import {
   Type,
   Underline,
   Undo2,
+  UserRound,
   Redo2,
   X,
 } from "lucide-react";
@@ -3900,11 +3902,11 @@ function CustomersManagerModal({
     if (!deleting) return;
     try {
       await crmApi.deleteCustomer(deleting.id);
-      toast.success("Empresa excluida");
-      setDeleting(null);
       await load();
+      toast.success("Empresa excluida");
     } catch (error) {
       toast.error("Falha ao excluir empresa", { description: (error as Error).message });
+      throw error;
     }
   };
   return (
@@ -4033,7 +4035,11 @@ function CustomersManagerModal({
         open={!!deleting}
         title="Excluir Empresa do Contato?"
         description={
-          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="empresa" />
+          <DeleteLinkedContactCatalogMessage
+            name={deleting?.nome}
+            entityLabel="empresa"
+            contactCount={deleting?.contactCount ?? 0}
+          />
         }
         destructive
         confirmLabel="Excluir"
@@ -4108,11 +4114,11 @@ function DepartmentsManagerModal({
     if (!deleting) return;
     try {
       await crmApi.deleteContactDepartment(deleting.id);
-      toast.success("Departamento excluído");
-      setDeleting(null);
       await load();
+      toast.success("Departamento excluído");
     } catch (error) {
       toast.error("Falha ao excluir departamento", { description: (error as Error).message });
+      throw error;
     }
   };
 
@@ -4203,7 +4209,11 @@ function DepartmentsManagerModal({
         open={!!deleting}
         title="Excluir Departamento do Contato?"
         description={
-          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="departamento" />
+          <DeleteLinkedContactCatalogMessage
+            name={deleting?.nome}
+            entityLabel="departamento"
+            contactCount={deleting?.contactCount ?? 0}
+          />
         }
         destructive
         confirmLabel="Excluir"
@@ -4363,11 +4373,11 @@ function ContactProfilesManagerModal({
     if (!deleting) return;
     try {
       await crmApi.deleteContactProfile(deleting.id);
-      toast.success("Perfil excluído");
-      setDeleting(null);
       await load();
+      toast.success("Perfil excluído");
     } catch (error) {
       toast.error("Falha ao excluir perfil", { description: (error as Error).message });
+      throw error;
     }
   };
 
@@ -4475,7 +4485,11 @@ function ContactProfilesManagerModal({
         open={!!deleting}
         title="Excluir Perfil do Contato?"
         description={
-          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="perfil" />
+          <DeleteLinkedContactCatalogMessage
+            name={deleting?.nome}
+            entityLabel="perfil"
+            contactCount={deleting?.contactCount ?? 0}
+          />
         }
         destructive
         confirmLabel="Excluir"
@@ -4489,21 +4503,33 @@ function ContactProfilesManagerModal({
 function DeleteLinkedContactCatalogMessage({
   name,
   entityLabel,
+  contactCount,
 }: {
   name?: string | null;
   entityLabel: string;
+  contactCount: number;
 }) {
   const selectedName = name ?? `Sem ${entityLabel}`;
+  const ImpactIcon = entityLabel === "empresa" ? Building2 : UserRound;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       <p>
         Deseja realmente excluir o cadastro de {entityLabel}{" "}
         <strong className="font-semibold text-foreground">"{selectedName}"</strong>?
       </p>
-      <p className="text-xs italic text-muted-foreground">
-        Os Contatos vinculados serão desvinculados.
-      </p>
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 px-4 py-3 text-foreground">
+        <ImpactIcon aria-hidden="true" className="h-5 w-5 text-muted-foreground" />
+        <span className="flex-1 font-medium">Contatos vinculados</span>
+        <span className="font-semibold tabular-nums">{contactCount}</span>
+      </div>
+      <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-foreground">
+        <AlertCircle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+        <p>
+          Ao excluir est{entityLabel === "empresa" ? "a" : "e"} {entityLabel}, o vínculo com todos
+          os contatos será removido. Os contatos não serão excluídos.
+        </p>
+      </div>
     </div>
   );
 }

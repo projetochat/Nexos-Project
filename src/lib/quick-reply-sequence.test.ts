@@ -3,6 +3,7 @@ import type { ApiQuickReply } from "./trixus-api";
 import {
   assertQuickReplySaved,
   createSequence,
+  quickReplyAttachmentMediaType,
   quickReplyMessages,
   sendSequence,
 } from "./quick-reply-sequence";
@@ -28,6 +29,12 @@ const draft = () =>
   );
 
 describe("quick reply sequences", () => {
+  it("envia anexos de áudio como mensagem de voz do WhatsApp", () => {
+    expect(quickReplyAttachmentMediaType("audio/ogg")).toBe("voice");
+    expect(quickReplyAttachmentMediaType("audio/mpeg")).toBe("voice");
+    expect(quickReplyAttachmentMediaType("application/pdf")).toBe("document");
+  });
+
   it("rejects an outdated server response that kept only the combined text", () => {
     const messages = [{ text: "Primeira" }, { text: "Segunda" }];
     expect(() => assertQuickReplySaved(reply({ texto: "Primeira\nSegunda" }), messages, 0)).toThrow(

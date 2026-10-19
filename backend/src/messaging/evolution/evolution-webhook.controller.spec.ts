@@ -1,11 +1,15 @@
+import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JwtService } from "@nestjs/jwt";
 import { EvolutionWebhookController } from "./evolution-webhook.controller";
 import { MessageStatus } from "../../generated/prisma";
 import type { EvolutionWebhookTranslation } from "./evolution-webhook.translator";
 
+const webhookSecret = randomBytes(32).toString("hex");
+const otherWebhookSecret = randomBytes(32).toString("hex");
+
 beforeEach(() => {
-  vi.stubEnv("EVOLUTION_WEBHOOK_SECRET", "isolated-webhook-secret");
+  vi.stubEnv("EVOLUTION_WEBHOOK_SECRET", webhookSecret);
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network disabled")));
 });
 afterEach(() => {
@@ -61,7 +65,7 @@ const request = (controller: EvolutionWebhookController) =>
   controller.receive(
     { instance: "test-instance", event: "test-event" },
     undefined,
-    "isolated-webhook-secret",
+    webhookSecret,
   );
 
 describe("live update webhook admission while service pauses", () => {
@@ -69,7 +73,7 @@ describe("live update webhook admission while service pauses", () => {
     const test = fixture("edit");
     const token = new JwtService().sign(
       { app: "evolution", action: "webhook" },
-      { secret: "isolated-webhook-secret", expiresIn: 600 },
+      { secret: webhookSecret, expiresIn: 600 },
     );
     await expect(
       test.controller.receive(
@@ -86,7 +90,7 @@ describe("live update webhook admission while service pauses", () => {
       const token = new JwtService().sign(
         { app: "evolution", action: "webhook" },
         {
-          secret: reason === "expired" ? "isolated-webhook-secret" : "other-isolated-secret",
+          secret: reason === "expired" ? webhookSecret : otherWebhookSecret,
           expiresIn: reason === "expired" ? -1 : 600,
         },
       );
@@ -125,6 +129,19 @@ describe("live update webhook admission while service pauses", () => {
     test.selected.mockRejectedValue(new Error("isolated persistence failure"));
     await expect(request(test.controller)).rejects.toThrow("isolated persistence failure");
     expect(test.deferIfPaused).toHaveBeenCalledOnce();
+  });
+  it("ignora mensagens enquanto a instância está em quarentena por número diferente", async () => {
+    const test = fixture("edit");
+    (
+      test.connection as typeof test.connection & { connectionErrorCode?: string }
+    ).connectionErrorCode = "OWNER_PHONE_MISMATCH";
+
+    await expect(request(test.controller)).resolves.toEqual({
+      ok: true,
+      ignored: "OWNER_PHONE_MISMATCH",
+    });
+    expect(test.selected).not.toHaveBeenCalled();
+    expect(test.deferIfPaused).not.toHaveBeenCalled();
   });
   it("does not acknowledge a racing pause if forced retention fails", async () => {
     const test = fixture("delete", false);
@@ -165,7 +182,7 @@ describe("live update webhook admission while service pauses", () => {
       controller.receive(
         { instance: "test-instance", event: "qrcode.updated" },
         undefined,
-        "isolated-webhook-secret",
+        webhookSecret,
       ),
     ).resolves.toMatchObject({ ok: true, kind: "connection" });
     expect(captureEvolutionQrCode).toHaveBeenCalledWith(

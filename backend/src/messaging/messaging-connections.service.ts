@@ -28,7 +28,7 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
-import { phoneFromRemoteIdentity } from "./messaging-identity";
+import { normalizeRemotePhoneCandidates, phoneFromRemoteIdentity } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { EvolutionQrCodeStore } from "./evolution/evolution-qr-code.store";
 import {
@@ -45,6 +45,8 @@ import {
   resolveMessageType,
   validatePolicy,
 } from "./media/messaging-media-storage.service";
+
+export const CONNECTION_OWNER_MISMATCH = "OWNER_PHONE_MISMATCH";
 import type { QuickReplyAttachmentDto } from "../quick-replies/dto/quick-reply-message.dto";
 import {
   MESSAGING_MEDIA_CLEANUP_REQUESTED,
@@ -503,37 +505,15 @@ export class MessagingConnectionsService {
     const translatedStatus = translateEvolutionState(
       state.instance?.state ?? state.instance?.status,
     );
-    if (translatedStatus === MessagingConnectionStatus.CONNECTED) {
-      await this.ensureWebhookConfiguredSafely(connection.externalReference, connection.id);
-    }
     const ownerExternalId = instance.ownerJid ?? null;
     const ownerPhoneNormalized = normalizeOwnerPhone(ownerExternalId);
-    const profilePictureUrl =
+    const updated = await this.updateConnectionStatus(
+      connection.id,
+      translatedStatus,
       translatedStatus === MessagingConnectionStatus.CONNECTED
-        ? await this.fetchProfilePictureUrlSafely({
-            instanceName: connection.externalReference,
-            ownerExternalId,
-            ownerPhoneNormalized,
-          })
-        : undefined;
-    const updated = await this.prisma.messagingConnection.update({
-      where: { id: connection.id },
-      data: {
-        status: translatedStatus,
-        ownerExternalId: ownerExternalId ?? undefined,
-        ownerPhoneNormalized: ownerPhoneNormalized ?? undefined,
-        logoUrl: profilePictureUrl,
-      },
-    });
-    if (updated.status !== connection.status) {
-      this.realtime?.publishConnectionStatusUpdated({
-        tenantId: updated.tenantId,
-        connectionId: updated.id,
-        status: updated.status.toLowerCase(),
-        updatedAt: updated.updatedAt,
-      });
-    }
-    void this.historyImport?.enqueueForConnection(updated);
+        ? { ownerExternalId, ownerPhoneNormalized }
+        : undefined,
+    );
     return this.serialize(updated, { existsInProvider: true, webhookUrl: instance.Webhook?.url });
   }
 
@@ -578,10 +558,15 @@ export class MessagingConnectionsService {
           state.instance?.state ?? state.instance?.status,
         );
         if (providerStatus === MessagingConnectionStatus.CONNECTED) {
-          await this.clearQrCode(instanceName);
+          const instance = await this.evolution.findInstance(instanceName);
+          const ownerExternalId = instance?.ownerJid ?? null;
           connection = await this.updateConnectionStatus(
             connection.id,
             MessagingConnectionStatus.CONNECTED,
+            {
+              ownerExternalId,
+              ownerPhoneNormalized: normalizeOwnerPhone(ownerExternalId),
+            },
           );
         }
       } catch (error) {
@@ -631,10 +616,13 @@ export class MessagingConnectionsService {
         state.instance?.state ?? state.instance?.status ?? instance.connectionStatus,
       );
       if (providerStatus === MessagingConnectionStatus.CONNECTED) {
-        await this.clearQrCode(instanceName);
         const updated = await this.updateConnectionStatus(
           connection.id,
           MessagingConnectionStatus.CONNECTED,
+          {
+            ownerExternalId: instance.ownerJid ?? null,
+            ownerPhoneNormalized: normalizeOwnerPhone(instance.ownerJid ?? null),
+          },
         );
         return this.qrCodeResult(updated, null);
       }
@@ -731,7 +719,7 @@ export class MessagingConnectionsService {
   private async markQrConnecting(connection: ConnectionWithArchive, qrCodeBase64: string | null) {
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
-      data: { status: MessagingConnectionStatus.CONNECTING },
+      data: { status: MessagingConnectionStatus.CONNECTING, connectionErrorCode: null },
     });
     if (updated.status !== connection.status) {
       this.realtime?.publishConnectionStatusUpdated({
@@ -749,6 +737,12 @@ export class MessagingConnectionsService {
       connectionId: connection.id,
       qrCodeBase64,
       status: connection.status.toLowerCase(),
+      ...(connection.connectionErrorCode
+        ? { errorCode: connection.connectionErrorCode }
+        : {}),
+      ...(connection.ownerPhoneNormalized
+        ? { expectedOwnerPhone: maskPhone(connection.ownerPhoneNormalized) }
+        : {}),
     };
   }
 
@@ -989,7 +983,7 @@ export class MessagingConnectionsService {
     }
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
-      data: { status: MessagingConnectionStatus.DISCONNECTED },
+      data: { status: MessagingConnectionStatus.DISCONNECTED, connectionErrorCode: null },
     });
     this.realtime?.publishConnectionStatusUpdated({
       tenantId: updated.tenantId,
@@ -1621,13 +1615,47 @@ export class MessagingConnectionsService {
     owner?: { ownerExternalId?: string | null; ownerPhoneNormalized?: string | null },
   ) {
     const current = await this.prisma.messagingConnection.findUniqueOrThrow({ where: { id } });
+    if (
+      current.connectionErrorCode === CONNECTION_OWNER_MISMATCH &&
+      status !== MessagingConnectionStatus.CONNECTED
+    ) {
+      return current;
+    }
+    let resolvedOwner = owner;
+    if (
+      status === MessagingConnectionStatus.CONNECTED &&
+      current.externalReference &&
+      !resolvedOwner?.ownerPhoneNormalized
+    ) {
+      const instance = await this.evolution
+        .findInstance(current.externalReference)
+        .catch(() => null);
+      const ownerExternalId = instance?.ownerJid ?? null;
+      resolvedOwner = {
+        ownerExternalId,
+        ownerPhoneNormalized: normalizeOwnerPhone(ownerExternalId),
+      };
+    }
+    if (status === MessagingConnectionStatus.CONNECTED && !resolvedOwner?.ownerPhoneNormalized) {
+      return this.updateConnectionState(current, MessagingConnectionStatus.CONNECTING, {
+        connectionErrorCode: null,
+      });
+    }
+    if (
+      status === MessagingConnectionStatus.CONNECTED &&
+      current.ownerPhoneNormalized &&
+      resolvedOwner?.ownerPhoneNormalized &&
+      !sameOwnerPhone(current.ownerPhoneNormalized, resolvedOwner.ownerPhoneNormalized)
+    ) {
+      return this.rejectDifferentOwner(current, resolvedOwner.ownerPhoneNormalized);
+    }
+    const ownerData = {
+      ownerExternalId: resolvedOwner?.ownerExternalId ?? undefined,
+      ownerPhoneNormalized: resolvedOwner?.ownerPhoneNormalized ?? undefined,
+    };
     if (status === MessagingConnectionStatus.CONNECTED && current.externalReference) {
       await this.clearQrCode(current.externalReference);
     }
-    const ownerData = {
-      ownerExternalId: owner?.ownerExternalId ?? undefined,
-      ownerPhoneNormalized: owner?.ownerPhoneNormalized ?? undefined,
-    };
     if (status === MessagingConnectionStatus.CONNECTED && current.externalReference) {
       await this.ensureWebhookConfiguredSafely(current.externalReference, current.id);
     }
@@ -1635,18 +1663,19 @@ export class MessagingConnectionsService {
       status === MessagingConnectionStatus.CONNECTED
         ? await this.fetchProfilePictureUrlSafely({
             instanceName: current.externalReference,
-            ownerExternalId: owner?.ownerExternalId ?? current.ownerExternalId,
-            ownerPhoneNormalized: owner?.ownerPhoneNormalized ?? current.ownerPhoneNormalized,
+            ownerExternalId: resolvedOwner?.ownerExternalId ?? current.ownerExternalId,
+            ownerPhoneNormalized:
+              resolvedOwner?.ownerPhoneNormalized ?? current.ownerPhoneNormalized,
           })
         : undefined;
-    if (status === MessagingConnectionStatus.CONNECTED && owner?.ownerPhoneNormalized) {
+    if (status === MessagingConnectionStatus.CONNECTED && resolvedOwner?.ownerPhoneNormalized) {
       const duplicateOwner = await this.prisma.messagingConnection.findFirst({
         where: {
           tenantId: current.tenantId,
           id: { not: current.id },
           providerType: MessagingProviderType.EVOLUTION,
           status: MessagingConnectionStatus.CONNECTED,
-          ownerPhoneNormalized: owner.ownerPhoneNormalized,
+          ownerPhoneNormalized: resolvedOwner.ownerPhoneNormalized,
         },
       });
       if (duplicateOwner) {
@@ -1655,6 +1684,7 @@ export class MessagingConnectionsService {
           data: {
             status: MessagingConnectionStatus.ERROR,
             ...ownerData,
+            connectionErrorCode: null,
           },
         });
         this.realtime?.publishConnectionStatusUpdated({
@@ -1668,7 +1698,7 @@ export class MessagingConnectionsService {
     }
     const updated = await this.prisma.messagingConnection.update({
       where: { id },
-      data: { status, ...ownerData, logoUrl: profilePictureUrl },
+      data: { status, ...ownerData, logoUrl: profilePictureUrl, connectionErrorCode: null },
     });
     if (updated.status !== current.status) {
       this.realtime?.publishConnectionStatusUpdated({
@@ -1679,6 +1709,55 @@ export class MessagingConnectionsService {
       });
     }
     void this.historyImport?.enqueueForConnection(updated);
+    return updated;
+  }
+
+  private async rejectDifferentOwner(current: ConnectionWithArchive, attemptedOwnerPhone: string) {
+    if (current.externalReference) {
+      try {
+        await this.evolution.logout(current.externalReference);
+      } catch (error) {
+        this.logger.warn({
+          event: "messaging.connection.owner_mismatch_logout_failed",
+          connectionId: current.id,
+          tenantId: current.tenantId,
+          instanceName: sanitizeInstanceName(current.externalReference),
+          providerError: sanitizeProviderError(error),
+        });
+      }
+    }
+    this.logger.warn({
+      event: "messaging.connection.owner_mismatch_rejected",
+      connectionId: current.id,
+      tenantId: current.tenantId,
+      expectedOwnerPhone: maskPhone(current.ownerPhoneNormalized),
+      attemptedOwnerPhone: maskPhone(attemptedOwnerPhone),
+    });
+    return this.updateConnectionState(current, MessagingConnectionStatus.ERROR, {
+      connectionErrorCode: CONNECTION_OWNER_MISMATCH,
+    });
+  }
+
+  private async updateConnectionState(
+    current: ConnectionWithArchive,
+    status: MessagingConnectionStatus,
+    data: Pick<Prisma.MessagingConnectionUpdateInput, "connectionErrorCode">,
+  ) {
+    const updated = await this.prisma.messagingConnection.update({
+      where: { id: current.id },
+      data: { status, ...data },
+    });
+    if (
+      updated.status !== current.status ||
+      updated.connectionErrorCode !== current.connectionErrorCode
+    ) {
+      this.realtime?.publishConnectionStatusUpdated({
+        tenantId: updated.tenantId,
+        connectionId: updated.id,
+        status: updated.status.toLowerCase(),
+        updatedAt: updated.updatedAt,
+      });
+    }
     return updated;
   }
 
@@ -1862,6 +1941,7 @@ export class MessagingConnectionsService {
       importGroupsStartDate: connection.importGroupsStartDate,
       ownerPhoneMasked: maskPhone(connection.ownerPhoneNormalized),
       ownerPhone: connection.ownerPhoneNormalized,
+      connectionErrorCode: connection.connectionErrorCode,
       archivedAt: connection.archivedAt,
       provider,
       createdAt: connection.createdAt,
@@ -2035,6 +2115,13 @@ function cleanOptionalText(value: string | null | undefined) {
 function normalizeOwnerPhone(value: string | null) {
   const phone = phoneFromRemoteIdentity(value);
   return phone ? `+${phone}` : null;
+}
+
+function sameOwnerPhone(expected: string, received: string) {
+  const expectedCandidates = new Set(normalizeRemotePhoneCandidates(expected));
+  return normalizeRemotePhoneCandidates(received).some((candidate) =>
+    expectedCandidates.has(candidate),
+  );
 }
 
 function profilePictureLookupNumber(connection: {

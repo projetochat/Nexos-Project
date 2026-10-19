@@ -147,22 +147,38 @@ export function ConfirmDialog({
   destructive?: boolean;
   accent?: "destructive" | "primary";
   layerClassName?: string;
-  onConfirm: () => void;
+  onConfirm: () => void | null | Promise<void>;
   onClose: () => void;
 }) {
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const confirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm();
+      onClose();
+    } catch {
+      // The caller owns the error message; keep the dialog open for another attempt.
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={title}
       size="sm"
+      dismissible={!submitting}
       layerClassName={layerClassName}
       initialFocus={
         destructive || /excluir|remover/i.test(confirmLabel) ? "[data-confirm-action]" : undefined
       }
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="sm" disabled={submitting} onClick={onClose}>
             {cancelLabel}
           </Button>
           <Button
@@ -170,13 +186,11 @@ export function ConfirmDialog({
             size="sm"
             autoFocus={destructive || /excluir|remover/i.test(confirmLabel)}
             data-confirm-action
+            disabled={submitting}
             className="focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card"
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
+            onClick={() => void confirm()}
           >
-            {confirmLabel}
+            {submitting ? "Excluindo…" : confirmLabel}
           </Button>
         </>
       }

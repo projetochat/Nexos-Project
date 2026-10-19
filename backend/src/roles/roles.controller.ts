@@ -333,11 +333,11 @@ export class RolesController {
       : undefined;
     return {
       snapshotToken,
-      title: "Excluir Perfil de Acesso?",
+      title: "Excluir Perfil?",
       prompt: blockedReason
         ? "Desvincule ou atribua outro perfil aos atendentes antes de excluir este registro."
-        : "Confira os vínculos que serão removidos definitivamente com o perfil.",
-      record: { name: role.name, identifiers: [{ label: "Perfil", value: role.name }] },
+        : `Deseja realmente excluir o perfil "${role.name}"?`,
+      record: { name: role.name, identifiers: [] },
       dependencies: [
         {
           id: "memberships",
@@ -354,28 +354,17 @@ export class RolesController {
           })),
           hasMore: memberCount > 10,
         },
-        {
-          id: "invitations",
-          label: "Convites vinculados",
-          count: invitationCount,
-          operation: "delete",
-          operationLabel: "Os convites serão excluídos com o perfil.",
-          items: invitations.slice(0, 10).map((item) => ({
-            id: item.id,
-            label: item.email,
-            description: item.status,
-          })),
-          hasMore: invitationCount > 10,
-        },
       ],
       consequences: [
         {
           id: "permissions",
-          text: "As permissões e configurações deste perfil serão excluídas definitivamente.",
+          text: memberCount
+            ? "Este perfil não pode ser excluído enquanto houver atendentes vinculados."
+            : "Ao excluir este perfil, o vínculo dos atendentes com este perfil será removido. Os atendentes não serão excluídos.",
           irreversible: true,
         },
       ],
-      confirmation: { level: "standard", confirmLabel: "Confirmar" },
+      confirmation: { level: "standard", confirmLabel: "Excluir" },
       blockedReason,
     };
   }

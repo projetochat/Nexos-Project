@@ -109,12 +109,12 @@ describe("department physical deletion", () => {
 
     const impact = await controller.deletionPreview("department-a", current);
 
-    expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Confirmar" });
+    expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Excluir" });
     expect(impact.dependencies.find((item) => item.id === "memberships")).toMatchObject({
       count: 1,
       operation: "unlink",
     });
-    expect(impact.dependencies.find((item) => item.id === "tickets")).toMatchObject({ count: 1 });
+    expect(impact.dependencies.find((item) => item.id === "tickets")).toBeUndefined();
   });
 
   it("unlinks every supported dependency and sanitizes role and invitation scopes", async () => {

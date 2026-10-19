@@ -86,6 +86,8 @@ function Page() {
     name: string;
     value: string | null;
     status?: string;
+    errorCode?: string | null;
+    expectedOwnerPhone?: string | null;
   } | null>(null);
   const [removing, setRemoving] = React.useState<ApiMessagingConnection | null>(null);
   const [disconnecting, setDisconnecting] = React.useState<ApiMessagingConnection | null>(null);
@@ -198,9 +200,29 @@ function Page() {
 
     let timeoutId: number | undefined;
     const syncQrCode = async () => {
+      let shouldPoll = true;
       try {
         const result = await connectionsApi.qrStatus(qrConnectionId);
         if (!active) return;
+        if (result.errorCode === "OWNER_PHONE_MISMATCH") {
+          shouldPoll = false;
+          setQr((current) =>
+            current?.connectionId === result.connectionId
+              ? {
+                  ...current,
+                  value: null,
+                  status: "error",
+                  errorCode: result.errorCode,
+                  expectedOwnerPhone: result.expectedOwnerPhone,
+                }
+              : current,
+          );
+          void qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+          toast.error("Número diferente recusado", {
+            description: `Conecte o número original${result.expectedOwnerPhone ? ` ${result.expectedOwnerPhone}` : ""}.`,
+          });
+          return;
+        }
         if (result.status.toLowerCase() === "connected") {
           setQr(null);
           qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
@@ -216,7 +238,7 @@ function Page() {
       } catch {
         // Uma falha transitória não remove um QR já exibido nem o vínculo da instância.
       } finally {
-        if (active) timeoutId = window.setTimeout(() => void syncQrCode(), 2_000);
+        if (active && shouldPoll) timeoutId = window.setTimeout(() => void syncQrCode(), 2_000);
       }
     };
 
@@ -276,6 +298,8 @@ function Page() {
           name: connection.name,
           value: result.qrCodeBase64,
           status: result.status,
+          errorCode: result.errorCode,
+          expectedOwnerPhone: result.expectedOwnerPhone,
         });
       }
       qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
@@ -2391,7 +2415,14 @@ function QrModal({
   qr,
   onClose,
 }: {
-  qr: { connectionId: string; name: string; value: string | null; status?: string } | null;
+  qr: {
+    connectionId: string;
+    name: string;
+    value: string | null;
+    status?: string;
+    errorCode?: string | null;
+    expectedOwnerPhone?: string | null;
+  } | null;
   onClose: () => void;
 }) {
   return (
@@ -2417,9 +2448,11 @@ function QrModal({
           ) : (
             <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden="true" />
           )}
-          {qr?.status === "error"
-            ? "Não foi possível gerar o QR Code. Feche esta janela e tente novamente."
-            : "Gerando um novo QR Code. A instância e todo o histórico estão preservados."}
+          {qr?.errorCode === "OWNER_PHONE_MISMATCH"
+            ? `Este número foi recusado. Conecte o número original${qr.expectedOwnerPhone ? ` ${qr.expectedOwnerPhone}` : ""}.`
+            : qr?.status === "error"
+              ? "Não foi possível gerar o QR Code. Feche esta janela e tente novamente."
+              : "Gerando um novo QR Code. A instância e todo o histórico estão preservados."}
         </div>
       )}
     </Modal>

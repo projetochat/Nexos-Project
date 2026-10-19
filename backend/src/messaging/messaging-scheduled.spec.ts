@@ -350,7 +350,7 @@ describe("MessagingOutboundService scheduled messages", () => {
       }),
       deleteObject: vi.fn().mockResolvedValue(undefined),
     };
-    const { service, prisma } = setup({ mediaStorage });
+    const { service, prisma, tx } = setup({ mediaStorage });
     prisma.tenantMembership.findFirst.mockResolvedValue({
       id: "membership-a",
       role: {
@@ -377,7 +377,12 @@ describe("MessagingOutboundService scheduled messages", () => {
         },
       }),
     ).resolves.toMatchObject({ created: true });
-    expect(mediaStorage.storeDownloaded).toHaveBeenCalledOnce();
+    expect(mediaStorage.storeDownloaded).toHaveBeenCalledWith(
+      expect.objectContaining({ messageType: "VOICE" }),
+    );
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ type: "VOICE" }) }),
+    );
   });
 
   it("rejects delivery when the stored creator is no longer active", async () => {

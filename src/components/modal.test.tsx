@@ -44,6 +44,39 @@ it("focuses the delete action each time a confirmation opens", async () => {
   }
 });
 
+it("keeps an async confirmation open when deletion fails", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onConfirm = vi.fn().mockRejectedValue(new Error("failure"));
+  const onClose = vi.fn();
+  try {
+    await React.act(() =>
+      root.render(
+        <ConfirmDialog
+          open
+          title="Excluir?"
+          confirmLabel="Excluir"
+          destructive
+          onConfirm={onConfirm}
+          onClose={onClose}
+        />,
+      ),
+    );
+    const confirm = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Excluir",
+    )!;
+    await React.act(async () => confirm.click());
+    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Excluir?");
+  } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});
+
 it("does not expose close affordances for a mandatory modal", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const container = document.createElement("div");

@@ -14,7 +14,10 @@ import { randomUUID } from "node:crypto";
 import { evolutionConfigFromEnv } from "./evolution.config";
 import type { EvolutionWebhookPayload } from "./evolution.types";
 import { EvolutionWebhookTranslator } from "./evolution-webhook.translator";
-import { MessagingConnectionsService } from "../messaging-connections.service";
+import {
+  CONNECTION_OWNER_MISMATCH,
+  MessagingConnectionsService,
+} from "../messaging-connections.service";
 import { MessagingInboundService } from "../messaging-inbound.service";
 import { MessagingReactionService } from "../messaging-reaction.service";
 import { MessagingStatusService } from "../messaging-status.service";
@@ -115,6 +118,20 @@ export class EvolutionWebhookController {
         translated.instanceName,
         translated.qrCodeBase64,
       );
+    }
+    if (
+      connection.connectionErrorCode === CONNECTION_OWNER_MISMATCH &&
+      translated.kind !== "connection"
+    ) {
+      this.logger.warn({
+        event: "evolution.webhook.owner_mismatch_quarantined",
+        requestId,
+        instanceName: payload.instance,
+        connectionId: connection.id,
+        tenantId: connection.tenantId,
+        ignoredReason: CONNECTION_OWNER_MISMATCH,
+      });
+      return { ok: true, ignored: CONNECTION_OWNER_MISMATCH };
     }
     if (await this.pause?.deferIfPaused(connection, translated)) {
       return { ok: true, kind: translated.kind, deferred: true };
