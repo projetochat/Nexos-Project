@@ -1,4 +1,5 @@
 import { RichTextEditor } from "@/components/ticket-rich-text-editor";
+import { TicketRichTextContent } from "@/components/ticket-rich-text-content";
 import * as React from "react";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -68,7 +69,6 @@ import {
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
-import { sanitizeTicketEditorHtml } from "@/lib/ticket-editor-dom";
 
 export const Route = createFileRoute("/chamados")({
   validateSearch: (search) => ({
@@ -810,9 +810,9 @@ function DialogBubble({
         </div>
         {title && <h3 className="mt-2 border-b border-border pb-2 font-semibold">{title}</h3>}
         {bodyHtml ? (
-          <div
+          <TicketRichTextContent
+            html={bodyHtml}
             className="mt-2 break-words text-sm [&_a]:text-primary [&_a]:underline [&_img]:my-2 [&_img]:max-h-[32rem] [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
-            dangerouslySetInnerHTML={{ __html: sanitizeTicketEditorHtml(bodyHtml) }}
           />
         ) : (
           <p className="mt-2 whitespace-pre-wrap text-sm">{body}</p>

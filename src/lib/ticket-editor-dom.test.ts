@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import {
+  insertTicketEditorHtml,
+  normalizeTicketEditorHtml,
   readTicketEditorHtml,
   ticketEditorClipboardHtml,
   writeTicketEditorHtml,
@@ -44,6 +46,33 @@ describe("ticket editor DOM boundary", () => {
     expect(readTicketEditorHtml(editor)).toBe(
       '<strong>Antes</strong><img src="data:image/webp;base64,AAAA" alt="Captura">',
     );
+  });
+
+  it("normalizes the live editor before returning its value", () => {
+    const editor = document.createElement("div");
+    editor.innerHTML = '<em onmouseover="alert(1)">Texto</em><object>inseguro</object>';
+
+    expect(normalizeTicketEditorHtml(editor)).toBe("<em>Texto</em>inseguro");
+    expect(editor.innerHTML).toBe("<em>Texto</em>inseguro");
+  });
+
+  it("sanitizes inserted HTML even when a caller passes unsafe markup", () => {
+    const editor = document.createElement("div");
+    editor.textContent = "Antes";
+    document.body.append(editor);
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+
+    insertTicketEditorHtml(
+      editor,
+      '<script>alert(1)</script><a href="javascript:alert(1)">Depois</a>',
+      range,
+    );
+
+    expect(editor.querySelector("script, [href]")).toBeNull();
+    expect(editor.textContent).toBe("AntesDepois");
+    editor.remove();
   });
 
   it("converts a pasted image file into safe inline HTML", async () => {

@@ -67,6 +67,12 @@ export function readTicketEditorHtml(editor: HTMLElement | null): string {
   return sanitizeTicketEditorHtml(editor?.innerHTML ?? "");
 }
 
+export function normalizeTicketEditorHtml(editor: HTMLElement | null): string {
+  const safeHtml = readTicketEditorHtml(editor);
+  if (editor) writeTicketEditorHtml(editor, safeHtml);
+  return safeHtml;
+}
+
 export async function ticketEditorClipboardHtml(clipboardData: DataTransfer): Promise<string> {
   const image = Array.from(clipboardData.files).find((file) => file.type.startsWith("image/"));
   const clipboardHtml = clipboardData.getData("text/html");
@@ -96,7 +102,7 @@ export function insertTicketEditorHtml(
   const range = savedRange ?? (selection?.rangeCount ? selection.getRangeAt(0) : null);
   if (!selection || !range || !editor.contains(range.commonAncestorContainer)) return;
   range.deleteContents();
-  const fragment = range.createContextualFragment(html);
+  const fragment = range.createContextualFragment(sanitizeTicketEditorHtml(html));
   const lastNode = fragment.lastChild;
   range.insertNode(fragment);
   if (lastNode) range.setStartAfter(lastNode);

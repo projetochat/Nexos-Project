@@ -23,7 +23,7 @@ import { Modal } from "./modal";
 import { Button } from "./ui-kit";
 import {
   insertTicketEditorHtml,
-  readTicketEditorHtml,
+  normalizeTicketEditorHtml,
   ticketEditorClipboardHtml,
   writeTicketEditorHtml,
 } from "../lib/ticket-editor-dom";
@@ -52,8 +52,7 @@ export function RichTextEditor({
 
   const sync = () => {
     const editor = editorRef.current;
-    const safeHtml = readTicketEditorHtml(editor);
-    if (editor && editor.innerHTML !== safeHtml) writeTicketEditorHtml(editor, safeHtml);
+    const safeHtml = normalizeTicketEditorHtml(editor);
     onChange(safeHtml);
   };
   const saveSelection = () => {
