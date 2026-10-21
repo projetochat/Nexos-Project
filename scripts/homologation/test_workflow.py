@@ -15,6 +15,8 @@ class HomologationWorkflowTest(unittest.TestCase):
         self.assertIn("trixus-hml-release/backend:$GITHUB_SHA", text)
         self.assertIn("trixus-hml-release/migrate:$GITHUB_SHA", text)
         self.assertIn("trixus-hml-release/frontend:$GITHUB_SHA", text)
+        self.assertIn("--build-arg VITE_APP_MODE=homologation", text)
+        self.assertIn("retention-days: 14", text)
         self.assertIn("bash scripts/homologation/transfer.sh", text)
         self.assertNotIn("scripts/production/transfer.sh", text)
         self.assertNotIn("trixus-release/backend:$GITHUB_SHA", text)

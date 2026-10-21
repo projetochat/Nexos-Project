@@ -101,7 +101,7 @@ jobs:
             --build-arg VITE_TRIXUS_API_URL \
             --build-arg VITE_TRIXUS_PLATFORM_APP_URL \
             --build-arg VITE_TRIXUS_TENANT_APP_URL \
-            --build-arg VITE_APP_MODE=production \
+            --build-arg VITE_APP_MODE=homologation \
             --build-arg VITE_SUPABASE_URL \
             --build-arg VITE_SUPABASE_PUBLISHABLE_KEY \
             --build-arg VITE_SUPABASE_PROJECT_ID \
@@ -138,7 +138,7 @@ jobs:
         with:
           name: trixus-hml-linux-amd64-${{ github.sha }}
           path: release/
-          retention-days: 3
+          retention-days: 14
           compression-level: 0
           if-no-files-found: error
 

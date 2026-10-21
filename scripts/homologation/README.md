@@ -39,7 +39,10 @@ SSH.
 8. A Evolution só é religada depois que o novo backend está saudável. Sua API é
    certificada mesmo quando não há instâncias. Webhooks de instâncias existentes
    são ajustados para a URL canônica da HML e
-   certificados com segredo e os cinco eventos esperados. Zero instâncias é um
+   certificados com segredo e os sete eventos esperados, incluindo edição e
+   exclusão de mensagens. A leitura aceita tanto `byEvents`/`base64` quanto
+   `webhookByEvents`/`webhookBase64`, conforme a resposta da Evolution 2.3.7.
+   Zero instâncias é um
    resultado válido e não cria conta WhatsApp.
 9. Saúde local/pública, rejeição 401 do webhook anônimo, produção e GLPI são
    revalidados antes de registrar `DEPLOY_OK` e remover o marcador.

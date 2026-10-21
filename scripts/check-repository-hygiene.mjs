@@ -27,7 +27,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/src/auth/auth.service.spec.ts",
-    "35d418034a4d95abfc7c0fecd4ca10929b68a7a89b732e67380251e0274d5e12",
+    "2032dc45be1a8bfb88a0590e856d05d49527c74e2b521c28d6bb9d5fbbdc99d2",
   ],
   [
     "backend/src/config/environment.spec.ts",
@@ -75,7 +75,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "src/lib/trixus-api.test.ts",
-    "d40bb89f89b0ef5aa6c47054dba4d33b3ae9dbe23496af77d0749f1475bff572",
+    "ee02d7f7d814fe2122b39d487dafbea20bd984bbc8d7980dbd1c5e3dc83ad234",
   ],
   [
     "backend/src/platform/platform.service.spec.ts",

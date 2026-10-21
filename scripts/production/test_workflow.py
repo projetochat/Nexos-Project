@@ -7,6 +7,19 @@ WORKFLOW = ROOT / ".github" / "workflows" / "build-production.yml"
 
 
 class ProductionWorkflowTest(unittest.TestCase):
+    def test_workflow_pins_actions_and_keeps_release_available_for_promotion(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        for mutable in (
+            "actions/checkout@v",
+            "actions/setup-node@v",
+            "oven-sh/setup-bun@v",
+            "actions/upload-artifact@v",
+            "actions/download-artifact@v",
+        ):
+            self.assertNotIn(mutable, workflow)
+        self.assertIn("--build-arg VITE_APP_MODE=production", workflow)
+        self.assertIn("retention-days: 14", workflow)
+
     def test_pull_requests_build_every_production_image_without_publishing(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("pr-images:", workflow)

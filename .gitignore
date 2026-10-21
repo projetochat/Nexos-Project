@@ -54,7 +54,9 @@ backend/src/generated/prisma/
 .task-backups/
 
 # Local task runtime caches
-.task-temp/**/node-compile-cache/
+.task-logs/
+.task-temp/
+**/__pycache__/
 
 # Local release packages
-.release-artifacts/*.bundle
+.release-artifacts/

@@ -15,6 +15,7 @@ import release
 
 
 SHA = "a" * 40
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def temporary_directory():
@@ -91,7 +92,53 @@ class HomologationReleaseTest(unittest.TestCase):
         self.assertEqual(release.STORAGE.as_posix(), "/srv/trixus-hml-data")
         self.assertEqual(release.WEBHOOK_URL,
                          "https://api-hom.trixus.com.br/api/webhooks/evolution")
-        self.assertEqual(len(release.WEBHOOK_EVENTS), 5)
+        self.assertEqual(release.WEBHOOK_EVENTS, {
+            "MESSAGES_UPSERT", "MESSAGES_EDITED", "MESSAGES_UPDATE",
+            "MESSAGES_DELETE", "SEND_MESSAGE_UPDATE", "QRCODE_UPDATED",
+            "CONNECTION_UPDATE",
+        })
+
+    def test_webhook_certification_accepts_evolution_237_field_aliases(self):
+        runner = Path(release.__file__).read_text(encoding="utf-8")
+        auditor = (ROOT / "backend" / "scripts" / "audit-evolution-webhook.mjs").read_text(
+            encoding="utf-8"
+        )
+        for source in (runner, auditor):
+            self.assertIn("byEvents ??", source)
+            self.assertIn("webhookByEvents", source)
+            self.assertIn("base64 ??", source)
+            self.assertIn("webhookBase64", source)
+            self.assertIn("MESSAGES_EDITED", source)
+            self.assertIn("MESSAGES_DELETE", source)
+
+    def test_webhook_audit_rejects_missing_events_or_unsafe_flags(self):
+        expected = sorted(release.WEBHOOK_EVENTS)
+        valid = {
+            "ok": True,
+            "enabled": True,
+            "urlCorrect": True,
+            "eventsCorrect": True,
+            "eventCount": 7,
+            "events": expected,
+            "byEventsDisabled": True,
+            "base64Disabled": True,
+            "secretBackendConfigured": True,
+            "secretEvolutionConfigured": True,
+            "secretMatch": True,
+            "headerJwtKeyPresent": True,
+        }
+        self.assertTrue(release._webhook_audit_is_valid(valid))
+        for mutation in (
+            lambda value: value.update(eventCount=5),
+            lambda value: value.update(events=expected[:-2]),
+            lambda value: value.update(byEventsDisabled=False),
+            lambda value: value.update(base64Disabled=False),
+            lambda value: value.update(secretMatch=False),
+        ):
+            changed = copy.deepcopy(valid)
+            mutation(changed)
+            with self.subTest(changed=changed):
+                self.assertFalse(release._webhook_audit_is_valid(changed))
 
     def test_request_accepts_only_plan_or_deploy_and_bounded_archive(self):
         valid = ["plan", SHA, "b" * 64, "10"]

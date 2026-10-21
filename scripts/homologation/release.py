@@ -35,8 +35,9 @@ PUBLIC_FRONTEND = "https://hom.trixus.com.br"
 PUBLIC_BACKEND = "https://api-hom.trixus.com.br"
 WEBHOOK_URL = PUBLIC_BACKEND + "/api/webhooks/evolution"
 WEBHOOK_EVENTS = {
-    "MESSAGES_UPSERT", "MESSAGES_UPDATE", "SEND_MESSAGE_UPDATE",
-    "QRCODE_UPDATED", "CONNECTION_UPDATE",
+    "MESSAGES_UPSERT", "MESSAGES_EDITED", "MESSAGES_UPDATE",
+    "MESSAGES_DELETE", "SEND_MESSAGE_UPDATE", "QRCODE_UPDATED",
+    "CONNECTION_UPDATE",
 }
 
 SERVICES = ("backend", "migrate", "frontend")
@@ -551,6 +552,25 @@ def backup_state(compose, config, apps, release_dir):
     (release_dir / "backup-checksums.json").write_text(json.dumps(checksums, sort_keys=True))
 
 
+def _webhook_audit_is_valid(result):
+    expected = sorted(WEBHOOK_EVENTS)
+    return (
+        isinstance(result, dict)
+        and result.get("ok") is True
+        and result.get("enabled") is True
+        and result.get("urlCorrect") is True
+        and result.get("eventsCorrect") is True
+        and result.get("eventCount") == len(expected)
+        and result.get("events") == expected
+        and result.get("byEventsDisabled") is True
+        and result.get("base64Disabled") is True
+        and result.get("secretBackendConfigured") is True
+        and result.get("secretEvolutionConfigured") is True
+        and result.get("secretMatch") is True
+        and result.get("headerJwtKeyPresent") is True
+    )
+
+
 def configure_webhooks(compose):
     instances = command(compose + ["exec", "-T", "evolution-postgres", "sh", "-c",
         'psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" '
@@ -575,16 +595,14 @@ def configure_webhooks(compose):
             result = json.loads(output)
         except (TypeError, ValueError) as error:
             raise CheckError("Auditoria de webhook invalida") from error
-        require(result.get("urlCorrect") is True and result.get("messagesUpsertPresent") is True
-                and result.get("secretMatch") is True and result.get("headerJwtKeyPresent") is True,
-                "Webhook HML nao foi certificado")
+        require(_webhook_audit_is_valid(result), "Webhook HML nao foi certificado")
         verification = command(compose + ["run", "--rm", "--no-deps", "--pull", "never",
             "--name", f"trixus-hml-webhook-verify-{index}",
             "-e", f"EVOLUTION_INSTANCE_NAME={name}", "migrate", "bun", "-e", r"""
 const base=(process.env.EVOLUTION_BASE_URL||'').replace(/\/$/,'');
 const key=(process.env.EVOLUTION_API_KEY||'').trim();
 const expectedUrl='https://api-hom.trixus.com.br/api/webhooks/evolution';
-const expected=['CONNECTION_UPDATE','MESSAGES_UPDATE','MESSAGES_UPSERT','QRCODE_UPDATED','SEND_MESSAGE_UPDATE'];
+const expected=['CONNECTION_UPDATE','MESSAGES_DELETE','MESSAGES_EDITED','MESSAGES_UPDATE','MESSAGES_UPSERT','QRCODE_UPDATED','SEND_MESSAGE_UPDATE'];
 const instance=process.env.EVOLUTION_INSTANCE_NAME;
 const response=await fetch(`${base}/webhook/find/${encodeURIComponent(instance)}`,{headers:{apikey:key}});
 if(!response.ok) process.exit(2);
@@ -592,17 +610,33 @@ const value=await response.json();
 const events=[...(value.events||[])].sort();
 const secret=(process.env.EVOLUTION_WEBHOOK_SECRET||'').trim().replace(/^(['\"])(.*)\1$/,'$2').trim();
 const actual=(value.headers?.jwt_key||'').trim().replace(/^(['\"])(.*)\1$/,'$2').trim();
-const ok=value.enabled===true && value.url===expectedUrl && value.byEvents===false &&
-  value.base64===false && JSON.stringify(events)===JSON.stringify(expected) && !!secret && actual===secret;
-console.log(JSON.stringify({ok,eventCount:events.length}));
-if(!ok) process.exit(3);
+const byEvents=value.byEvents ?? value.webhookByEvents;
+const base64=value.base64 ?? value.webhookBase64;
+const audit={
+  enabled:value.enabled===true,
+  urlCorrect:value.url===expectedUrl,
+  eventsCorrect:JSON.stringify(events)===JSON.stringify(expected),
+  eventCount:events.length,
+  events,
+  byEventsDisabled:byEvents===false,
+  base64Disabled:base64===false,
+  secretBackendConfigured:!!secret,
+  secretEvolutionConfigured:!!actual,
+  secretMatch:!!secret && !!actual && actual===secret,
+  headerJwtKeyPresent:!!actual,
+};
+audit.ok=audit.enabled && audit.urlCorrect && audit.eventsCorrect &&
+  audit.eventCount===expected.length && audit.byEventsDisabled && audit.base64Disabled &&
+  audit.secretBackendConfigured && audit.secretEvolutionConfigured &&
+  audit.secretMatch && audit.headerJwtKeyPresent;
+console.log(JSON.stringify(audit));
+if(!audit.ok) process.exit(3);
 """], timeout=180)
         try:
             verified = json.loads(verification)
         except (TypeError, ValueError) as error:
             raise CheckError("Resposta final do webhook invalida") from error
-        require(verified == {"ok": True, "eventCount": len(WEBHOOK_EVENTS)},
-                "Eventos do webhook HML divergentes")
+        require(_webhook_audit_is_valid(verified), "Eventos do webhook HML divergentes")
     return len(names)
 
 
