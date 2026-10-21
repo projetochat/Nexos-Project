@@ -105,7 +105,14 @@ function PerfilPage() {
     setCustomerBubbleColor(user?.customerBubbleColor ?? DEFAULT_CUSTOMER_BUBBLE_COLOR);
     setCustomerBubbleTextColor(user?.customerBubbleTextColor ?? DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR);
     setChatBackgroundColor(user?.chatBackgroundColor ?? DEFAULT_CHAT_BACKGROUND_COLOR);
-  }, [user?.id]);
+  }, [
+    user?.chatBackgroundColor,
+    user?.chatBubbleColor,
+    user?.chatBubbleTextColor,
+    user?.customerBubbleColor,
+    user?.customerBubbleTextColor,
+    user?.id,
+  ]);
 
   const saveAppearance = async (reset = false) => {
     if (!user || savingAppearance) return;

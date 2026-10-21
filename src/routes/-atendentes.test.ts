@@ -70,7 +70,7 @@ it("alinha o olho na primeira coluna de ações e usa hover semântico ao bloque
   expect(source).toContain('className="mx-auto grid w-[196px] grid-cols-5 gap-1"');
   expect(source.match(/\? "action-hover-destructive"/g)).toHaveLength(2);
   expect(source.match(/: "action-hover-success"/g)).toHaveLength(2);
-  expect(source).toContain('aria-label={`Excluir ${a.nome}`}');
+  expect(source).toContain("aria-label={`Excluir ${a.nome}`}");
 });
 
 it("separa as ações por uma linha no card mobile", () => {

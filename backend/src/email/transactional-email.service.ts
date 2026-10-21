@@ -112,7 +112,9 @@ export class TransactionalEmailService {
 
   async sendDisconnectedInstanceAlert(input: DisconnectedInstanceAlert) {
     if (!this.isResendConfigured()) {
-      this.logger.warn("Alerta de instância desconectada não enviado por e-mail em ambiente local.");
+      this.logger.warn(
+        "Alerta de instância desconectada não enviado por e-mail em ambiente local.",
+      );
       return { delivered: false, provider: "local-preview" as const };
     }
     const instanceName = escapeHtml(input.instanceName);

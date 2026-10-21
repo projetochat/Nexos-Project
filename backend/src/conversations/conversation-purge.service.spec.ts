@@ -79,11 +79,7 @@ describe("ConversationPurgeService", () => {
     const storage = { deleteObject: vi.fn() };
     const service = new ConversationPurgeService(prisma as never, storage as never);
 
-    const result = await service.purgeConversation(
-      "conversation-a",
-      "0".repeat(64),
-      "tenant-a",
-    );
+    const result = await service.purgeConversation("conversation-a", "0".repeat(64), "tenant-a");
 
     expect(result.status).toBe("changed");
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -114,9 +110,11 @@ describe("ConversationPurgeService", () => {
       },
       conversation: { findMany: vi.fn().mockResolvedValue([]) },
       campaignRecipient: {
-        findMany: vi.fn().mockResolvedValue([
-          { id: "recipient-a", status: CampaignRecipientStatus.PROCESSING, updatedAt },
-        ]),
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "recipient-a", status: CampaignRecipientStatus.PROCESSING, updatedAt },
+          ]),
       },
       ticket: { count: vi.fn().mockResolvedValue(0) },
       contactCustomFieldValue: { count: vi.fn().mockResolvedValue(0) },

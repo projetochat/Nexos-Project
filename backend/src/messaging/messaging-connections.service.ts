@@ -741,9 +741,7 @@ export class MessagingConnectionsService {
       connectionId: connection.id,
       qrCodeBase64,
       status: connection.status.toLowerCase(),
-      ...(connection.connectionErrorCode
-        ? { errorCode: connection.connectionErrorCode }
-        : {}),
+      ...(connection.connectionErrorCode ? { errorCode: connection.connectionErrorCode } : {}),
       ...(connection.ownerPhoneNormalized
         ? { expectedOwnerPhone: maskPhone(connection.ownerPhoneNormalized) }
         : {}),

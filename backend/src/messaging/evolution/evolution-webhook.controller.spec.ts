@@ -62,11 +62,7 @@ function fixture(kind: (typeof variants)[number], enabled = true) {
   return { controller, selected, tx, prisma, deferIfPaused, connection, translated };
 }
 const request = (controller: EvolutionWebhookController) =>
-  controller.receive(
-    { instance: "test-instance", event: "test-event" },
-    undefined,
-    webhookSecret,
-  );
+  controller.receive({ instance: "test-instance", event: "test-event" }, undefined, webhookSecret);
 
 describe("live update webhook admission while service pauses", () => {
   it("accepts a fresh signed provider JWT", async () => {

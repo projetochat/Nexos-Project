@@ -122,7 +122,11 @@ describe("physical attendant deletion", () => {
   });
 
   it.each([
-    ["the tenant administrator", { role: { id: "role-admin", key: "tenant_admin", name: "Administrador" } }, "administrador"],
+    [
+      "the tenant administrator",
+      { role: { id: "role-admin", key: "tenant_admin", name: "Administrador" } },
+      "administrador",
+    ],
     ["the current user", { id: "membership-admin", userId: "user-admin" }, "próprio acesso"],
   ])("blocks %s", async (_label, overrides, expected) => {
     const { prisma } = fixture();
@@ -135,7 +139,13 @@ describe("physical attendant deletion", () => {
   });
 
   it("does not block historical authorship and snapshots every former Restrict relation", async () => {
-    const { prisma } = fixture({ tickets: 1, comments: 2, approvals: 3, attachments: 4, campaigns: 5 });
+    const { prisma } = fixture({
+      tickets: 1,
+      comments: 2,
+      approvals: 3,
+      attachments: 4,
+      campaigns: 5,
+    });
     const controller = new UsersController(prisma as never, {} as never);
 
     const impact = await controller.deletionPreview("membership-agent", current as never);
@@ -145,7 +155,11 @@ describe("physical attendant deletion", () => {
     );
     expect(impact.blockedReason).toBeUndefined();
     await expect(
-      controller.remove("membership-agent", { snapshotToken: impact.snapshotToken }, current as never),
+      controller.remove(
+        "membership-agent",
+        { snapshotToken: impact.snapshotToken },
+        current as never,
+      ),
     ).resolves.toEqual({ status: "deleted" });
     expect(prisma.ticket.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { createdByNameSnapshot: "Agente Local" } }),
@@ -186,12 +200,10 @@ describe("physical attendant deletion", () => {
     const { prisma, tx, values } = fixture();
     const controller = new UsersController(prisma as never, {} as never);
     const impact = await controller.deletionPreview("membership-agent", current as never);
-    prisma.$transaction.mockImplementationOnce(
-      async (callback: (client: typeof tx) => unknown) => {
-        values.open = 1;
-        return callback(tx);
-      },
-    );
+    prisma.$transaction.mockImplementationOnce(async (callback: (client: typeof tx) => unknown) => {
+      values.open = 1;
+      return callback(tx);
+    });
 
     const result = await controller.remove(
       "membership-agent",
@@ -211,7 +223,11 @@ describe("physical attendant deletion", () => {
     const impact = await controller.deletionPreview("membership-agent", current as never);
 
     await expect(
-      controller.remove("membership-agent", { snapshotToken: impact.snapshotToken }, current as never),
+      controller.remove(
+        "membership-agent",
+        { snapshotToken: impact.snapshotToken },
+        current as never,
+      ),
     ).resolves.toEqual({ status: "deleted" });
 
     expect(tx.message.updateMany).toHaveBeenCalledWith(

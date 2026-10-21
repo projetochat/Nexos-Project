@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { listOptionsFromText } from "./configuracoes.campos-contato";
+import { listOptionsFromText } from "@/lib/contact-custom-field-options";
 
 const source = readFileSync(new URL("./configuracoes.campos-contato.tsx", import.meta.url), "utf8");
 
@@ -42,8 +42,6 @@ describe("contact custom field list options", () => {
     expect(requiredToggleSource).not.toContain(
       'className="flex h-10 items-center justify-center rounded-lg border border-border bg-surface-1"',
     );
-    expect(source).toContain(
-      'className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-3"',
-    );
+    expect(source).toContain('className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-3"');
   });
 });

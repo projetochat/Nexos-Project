@@ -9,7 +9,7 @@ describe("department physical deletion UI contract", () => {
 
     expect(source).toContain("departmentDeactivationPreview");
     expect(source).toContain("deactivateDepartment");
-    expect(source).toContain('aria-label={`Excluir departamento ${d.name}`}');
+    expect(source).toContain("aria-label={`Excluir departamento ${d.name}`}");
     expect(source).toContain("<DeletionConfirmDialog");
     expect(source).toContain("departmentDeletionPreview");
     expect(source).toContain("deleteDepartment(deleting.id, snapshotToken, signal)");

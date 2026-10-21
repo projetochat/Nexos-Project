@@ -37,7 +37,8 @@ vi.mock("@/lib/trixus-api", () => ({
   crmApi: { contactOptions: vi.fn().mockResolvedValue({ instances: [] }) },
   organizationApi: { listChatDepartments: vi.fn().mockResolvedValue([]) },
 }));
-import { HistoricoPage, historyTotalLabel } from "../routes/-historico-page";
+import { historyTotalLabel } from "./history-total-label";
+import { HistoricoPage } from "../routes/-historico-page";
 
 it("pluralizes the filtered history total", () => {
   expect(historyTotalLabel(0)).toBe("0 registros encontrados.");

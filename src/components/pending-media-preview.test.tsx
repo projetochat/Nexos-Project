@@ -3,7 +3,8 @@ import * as React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { PendingMediaPreview, pendingMediaPreviewKind } from "./pending-media-preview";
+import { pendingMediaPreviewKind } from "@/lib/pending-media-preview";
+import { PendingMediaPreview } from "./pending-media-preview";
 
 describe("pending media preview", () => {
   let host: HTMLDivElement;

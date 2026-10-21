@@ -9,7 +9,7 @@ import {
   onboardingTagDescription,
   STEPS,
   SUPERVISOR_DEFAULT_PERMISSIONS,
-} from "@/components/tenant-onboarding-boundary";
+} from "@/lib/tenant-onboarding-defaults";
 import { createOnboardingConnectionWithQr } from "@/components/tenant-onboarding-connection";
 
 import {

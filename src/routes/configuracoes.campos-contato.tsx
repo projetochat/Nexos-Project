@@ -4,6 +4,7 @@ import {
   type CustomFieldFormat,
 } from "@/lib/custom-field-formats";
 import * as React from "react";
+import { listOptionsFromText } from "@/lib/contact-custom-field-options";
 import { createFileRoute } from "@tanstack/react-router";
 import { Copy, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -945,11 +946,6 @@ function emptyFieldForm(): FieldForm {
     note: "",
     optionsText: "",
   };
-}
-
-export function listOptionsFromText(value: string) {
-  const options = value.split(/\r?\n/);
-  return options.length ? options : [""];
 }
 
 function fieldToForm(field: ApiContactCustomField, clone = false): FieldForm {

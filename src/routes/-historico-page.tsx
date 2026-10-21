@@ -1,4 +1,5 @@
 import * as React from "react";
+import { historyTotalLabel } from "@/lib/history-total-label";
 import { useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, MessageSquarePlus } from "lucide-react";
@@ -475,10 +476,6 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
       </div>
     </AppShellFull>
   );
-}
-
-export function historyTotalLabel(total: number) {
-  return total === 1 ? "1 registro encontrado." : `${total} registros encontrados.`;
 }
 
 function conversationDisplayName(conversation: {

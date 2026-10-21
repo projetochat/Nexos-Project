@@ -66,14 +66,12 @@ describe("realtime instance access", () => {
       },
       impersonationSession: { findFirst: vi.fn() },
       conversation: {
-        findFirst: vi
-          .fn()
-          .mockImplementation(async ({ where }) => {
-            const identity = Array.isArray(where.AND) ? where.AND[0] : where;
-            return JSON.stringify(where).includes('"connectionId":{"in":["vocical"]}')
-              ? { id: identity.id }
-              : null;
-          }),
+        findFirst: vi.fn().mockImplementation(async ({ where }) => {
+          const identity = Array.isArray(where.AND) ? where.AND[0] : where;
+          return JSON.stringify(where).includes('"connectionId":{"in":["vocical"]}')
+            ? { id: identity.id }
+            : null;
+        }),
       },
     };
     const service = new RealtimeService({} as never, prisma as never);
