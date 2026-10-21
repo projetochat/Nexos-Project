@@ -15,6 +15,16 @@ describe("verify resource safety", () => {
     ).toMatchObject({ databaseName: "trixus_1200" });
   });
 
+  it("accepts the isolated homologation CI database", () => {
+    expect(
+      assertDisposableVerifyDatabase({
+        databaseUrl: "postgresql://127.0.0.1:5432/trixus_ci_homologation?schema=public",
+        nodeEnv: "test",
+        confirmation: "trixus_ci_homologation",
+      }),
+    ).toMatchObject({ databaseName: "trixus_ci_homologation" });
+  });
+
   it.each([
     [undefined, "test", "trixus_1200"],
     ["not-a-url", "test", "trixus_1200"],

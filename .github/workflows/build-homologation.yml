@@ -26,10 +26,10 @@ jobs:
         env:
           POSTGRES_USER: trixus
           POSTGRES_PASSWORD: ci-only-password
-          POSTGRES_DB: trixus_homologation_ci
+          POSTGRES_DB: trixus_ci_homologation
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U trixus -d trixus_homologation_ci"
+          --health-cmd "pg_isready -U trixus -d trixus_ci_homologation"
           --health-interval 5s --health-timeout 3s --health-retries 20
       redis:
         image: redis:7.4-alpine
@@ -39,9 +39,9 @@ jobs:
           --health-interval 5s --health-timeout 3s --health-retries 20
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_homologation_ci?schema=public
-      TRIXUS_TEST_DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_homologation_ci?schema=public
-      TRIXUS_VERIFY_DISPOSABLE_DATABASE: trixus_homologation_ci
+      DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_ci_homologation?schema=public
+      TRIXUS_TEST_DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_ci_homologation?schema=public
+      TRIXUS_VERIFY_DISPOSABLE_DATABASE: trixus_ci_homologation
       REDIS_URL: redis://127.0.0.1:6379
       TRIXUS_VERIFY_DISPOSABLE_REDIS: "true"
     steps:
