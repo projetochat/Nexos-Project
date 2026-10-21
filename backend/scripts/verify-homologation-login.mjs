@@ -7,16 +7,22 @@ const apiUrl = (
 ).replace(/\/$/, "");
 const accounts = [
   {
-    email: (process.env.SEED_ADMIN_EMAIL ?? "admin@trixus.app").trim(),
-    password: process.env.SEED_ADMIN_PASSWORD ?? "demo1234",
+    email: requiredEnvironment("TRIXUS_HOMOLOGATION_ADMIN_EMAIL"),
+    password: requiredEnvironment("TRIXUS_HOMOLOGATION_ADMIN_PASSWORD"),
     role: "tenant_admin",
   },
   {
-    email: (process.env.SEED_AGENT_EMAIL ?? "atendente@trixus.app").trim(),
-    password: process.env.SEED_AGENT_PASSWORD ?? "demo1234",
+    email: requiredEnvironment("TRIXUS_HOMOLOGATION_AGENT_EMAIL"),
+    password: requiredEnvironment("TRIXUS_HOMOLOGATION_AGENT_PASSWORD"),
     role: "agent",
   },
 ];
+
+function requiredEnvironment(name) {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name}_REQUIRED`);
+  return value;
+}
 
 async function main() {
   const health = await requestJson(`${apiUrl}/health`, { method: "GET" });

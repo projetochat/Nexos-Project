@@ -50,23 +50,31 @@ export class RealtimePublisher {
     );
   }
 
-  publishConversationCreated(input: {
-    tenantId: string;
-    conversationId: string;
-    conversation: unknown;
-  }) {
-    this.realtime.publish({ tenantId: input.tenantId }, "conversation.created", input);
+  publishConversationCreated(input: { tenantId: string; conversationId: string }) {
+    this.realtime.publish({ tenantId: input.tenantId }, "conversation.created", {
+      conversationId: input.conversationId,
+    });
   }
 
   publishConversationUpdated(input: {
     tenantId: string;
     conversationId: string;
-    conversation?: unknown;
     notificationQueue?: ConversationQueueTab | null;
+    tagNotification?: boolean;
     reason: string;
   }) {
-    this.realtime.publish({ tenantId: input.tenantId }, "conversation.updated", input);
-    this.realtime.publish({ conversationId: input.conversationId }, "conversation.updated", input);
+    const payload = {
+      conversationId: input.conversationId,
+      notificationQueue: input.notificationQueue,
+      tagNotification: input.tagNotification === true,
+      reason: input.reason,
+    };
+    this.realtime.publish({ tenantId: input.tenantId }, "conversation.updated", payload);
+    this.realtime.publish(
+      { conversationId: input.conversationId },
+      "conversation.updated",
+      payload,
+    );
   }
 
   publishAssignmentUpdated(input: {
@@ -104,8 +112,10 @@ export class RealtimePublisher {
     });
   }
 
-  publishContactUpdated(input: { tenantId: string; contactId: string; contact: unknown }) {
-    this.realtime.publish({ tenantId: input.tenantId }, "contact.updated", input);
+  publishContactUpdated(input: { tenantId: string; contactId: string }) {
+    this.realtime.publish({ tenantId: input.tenantId }, "contact.updated", {
+      contactId: input.contactId,
+    });
   }
 
   publishContactTagsUpdated(input: { tenantId: string; contactId: string; tags: unknown[] }) {

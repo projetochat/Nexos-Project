@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CrmController } from "./crm.controller";
+import { canReadContactAdditionalFields } from "../auth/contact-additional-fields-access";
 
 describe("contact additional fields access", () => {
   const controller = new CrmController(
@@ -9,14 +10,10 @@ describe("contact additional fields access", () => {
     {} as never,
     {} as never,
   ) as unknown as {
-    canReadAdditionalFields(current: unknown): boolean;
     serializeContact(
       contact: unknown,
-      meta: { includeAdditionalFields: boolean },
-    ): {
-      customFields: Record<string, unknown>;
-      customFieldValues: unknown[];
-    };
+      meta: { additionalFieldsViewer: { roleKey: string; permissions: string[] } },
+    ): Record<string, unknown>;
   };
 
   const contact = {
@@ -41,9 +38,16 @@ describe("contact additional fields access", () => {
     tags: [],
     customFieldValues: [
       {
+        tenantId: "tenant-a",
         fieldId: "field-a",
         value: "segredo",
-        field: { label: "Código", type: "TEXT" },
+        field: {
+          tenantId: "tenant-a",
+          label: "Código",
+          variableKey: "codigo",
+          type: "TEXT",
+          mask: null,
+        },
       },
     ],
     createdAt: new Date(),
@@ -51,24 +55,274 @@ describe("contact additional fields access", () => {
   };
 
   it("omits values without the specific permission", () => {
-    const allowed = controller.canReadAdditionalFields({ roleKey: "agent", permissions: [] });
-    expect(
-      controller.serializeContact(contact, { includeAdditionalFields: allowed }),
-    ).toMatchObject({ customFields: {}, customFieldValues: [] });
+    const result = controller.serializeContact(contact, {
+      additionalFieldsViewer: { roleKey: "agent", permissions: ["contacts.read"] },
+    });
+    expect(result).not.toHaveProperty("customFields");
+    expect(result).not.toHaveProperty("customFieldValues");
+    expect(JSON.stringify(result)).not.toContain("codigo");
+    expect(JSON.stringify(result)).not.toContain("segredo");
   });
 
-  it("returns values with the specific permission and for the administrator", () => {
+  it("returns values only with the specific permission", () => {
     expect(
-      controller.canReadAdditionalFields({
-        roleKey: "custom",
+      canReadContactAdditionalFields({
+        roleKey: "agent",
         permissions: ["contacts.additional_fields.read"],
       }),
     ).toBe(true);
-    expect(controller.canReadAdditionalFields({ roleKey: "tenant_admin", permissions: [] })).toBe(
-      true,
-    );
-    expect(controller.serializeContact(contact, { includeAdditionalFields: true })).toMatchObject({
+    expect(canReadContactAdditionalFields({ roleKey: "tenant_admin", permissions: [] })).toBe(true);
+    expect(canReadContactAdditionalFields({ roleKey: "agent", permissions: [] })).toBe(false);
+    expect(
+      controller.serializeContact(contact, {
+        additionalFieldsViewer: {
+          roleKey: "agent",
+          permissions: ["contacts.additional_fields.read"],
+        },
+      }),
+    ).toMatchObject({
+      customFields: { "field-a": "segredo" },
+      customFieldValues: [
+        expect.objectContaining({ fieldId: "field-a", variableKey: "codigo", value: "segredo" }),
+      ],
+    });
+  });
+
+  it("keeps values from another tenant hidden even for an authorized user", () => {
+    const foreignValue = {
+      ...contact,
+      customFieldValues: [
+        { ...contact.customFieldValues[0], tenantId: "tenant-b" },
+        {
+          ...contact.customFieldValues[0],
+          fieldId: "field-b",
+          field: { ...contact.customFieldValues[0].field, tenantId: "tenant-b" },
+        },
+      ],
+    };
+
+    const serialized = controller.serializeContact(foreignValue, {
+      additionalFieldsViewer: {
+        roleKey: "tenant_admin",
+        permissions: ["contacts.additional_fields.read"],
+      },
+    });
+    expect(serialized).toMatchObject({ customFields: {}, customFieldValues: [] });
+  });
+
+  it("returns only the values that belong to each authorized tenant", () => {
+    const tenantBContact = {
+      ...contact,
+      id: "contact-b",
+      tenantId: "tenant-b",
+      customFieldValues: [
+        {
+          ...contact.customFieldValues[0],
+          tenantId: "tenant-b",
+          fieldId: "field-b",
+          value: "tenant-b-value",
+          field: {
+            ...contact.customFieldValues[0].field,
+            tenantId: "tenant-b",
+            variableKey: "codigo_b",
+          },
+        },
+      ],
+    };
+
+    expect(
+      controller.serializeContact(contact, {
+        additionalFieldsViewer: {
+          roleKey: "tenant_admin",
+          permissions: ["contacts.additional_fields.read"],
+        },
+      }),
+    ).toMatchObject({
       customFields: { "field-a": "segredo" },
     });
+    expect(
+      controller.serializeContact(tenantBContact, {
+        additionalFieldsViewer: {
+          roleKey: "agent",
+          permissions: ["contacts.additional_fields.read"],
+        },
+      }),
+    ).toMatchObject({ customFields: { "field-b": "tenant-b-value" } });
+  });
+
+  it("does not return archived definitions or their values", () => {
+    const archived = {
+      ...contact,
+      customFieldValues: [
+        {
+          ...contact.customFieldValues[0],
+          field: { ...contact.customFieldValues[0].field, archivedAt: new Date() },
+        },
+      ],
+    };
+    const serialized = controller.serializeContact(archived, {
+      additionalFieldsViewer: {
+        roleKey: "tenant_admin",
+        permissions: ["contacts.additional_fields.read"],
+      },
+    });
+    expect(serialized).toMatchObject({ customFields: {}, customFieldValues: [] });
+    expect(JSON.stringify(serialized)).not.toContain("codigo");
+    expect(JSON.stringify(serialized)).not.toContain("segredo");
+  });
+
+  it("applies the same policy to contact list and detail endpoints", async () => {
+    const prisma = {
+      contact: {
+        findMany: vi.fn().mockResolvedValue([contact]),
+        count: vi.fn().mockResolvedValue(1),
+        findFirst: vi.fn().mockResolvedValue(contact),
+      },
+      $transaction: vi.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
+    };
+    const endpoints = new CrmController(
+      prisma as never,
+      {} as never,
+      {} as never,
+      { enqueueMissing: vi.fn() } as never,
+      {} as never,
+    );
+    const contactReader = {
+      tenantId: "tenant-a",
+      roleKey: "agent",
+      permissions: ["contacts.read"],
+    } as never;
+    const additionalFieldReader = {
+      tenantId: "tenant-a",
+      roleKey: "agent",
+      permissions: ["contacts.read", "contacts.additional_fields.read"],
+    } as never;
+
+    const listed = await endpoints.listContacts({} as never, contactReader);
+    expect(listed.items[0]).not.toHaveProperty("customFields");
+    expect(listed.items[0]).not.toHaveProperty("customFieldValues");
+    expect(JSON.stringify(listed)).not.toContain("codigo");
+    expect(JSON.stringify(listed)).not.toContain("segredo");
+
+    const detailed = await endpoints.findContact("contact-a", additionalFieldReader);
+    expect(detailed.customFieldValues).toEqual([
+      expect.objectContaining({ variableKey: "codigo", value: "segredo" }),
+    ]);
+  });
+
+  it.each([
+    "listContactCustomFields",
+    "createContactCustomField",
+    "reorderContactCustomFields",
+    "updateContactCustomField",
+    "deleteContactCustomField",
+  ] as const)(
+    "requires the specific read permission before returning definitions from %s",
+    (method) => {
+      expect(Reflect.getMetadata("permissions", CrmController.prototype[method])).toContain(
+        "contacts.additional_fields.read",
+      );
+    },
+  );
+
+  it("preserves hidden additional fields when editing only common contact data", async () => {
+    const update = vi.fn().mockResolvedValue({ ...contact, name: "Nome atualizado" });
+    const upsert = vi.fn();
+    const prisma = {
+      contact: { findFirst: vi.fn().mockResolvedValue(contact), update },
+      contactCustomField: { findMany: vi.fn() },
+      contactCustomFieldValue: { upsert },
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
+    };
+    const realtime = { publishContactUpdated: vi.fn() };
+    const endpoint = new CrmController(
+      prisma as never,
+      realtime as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await endpoint.updateContact(
+      "contact-a",
+      { name: "Nome atualizado", email: "novo@example.com" },
+      {
+        tenantId: "tenant-a",
+        roleKey: "agent",
+        permissions: ["contacts.update"],
+      } as never,
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ name: "Nome atualizado", email: "novo@example.com" }),
+      }),
+    );
+    expect(prisma.contactCustomField.findMany).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects an explicit additional-field mutation without the specific permission", async () => {
+    const endpoint = new CrmController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      endpoint.updateContact("contact-a", { customFields: { "field-a": "alterado" } }, {
+        tenantId: "tenant-a",
+        roleKey: "agent",
+        permissions: ["contacts.update"],
+      } as never),
+    ).rejects.toThrow("Permissão de Campos Adicionais");
+  });
+
+  it("updates only explicitly provided fields when authorized", async () => {
+    const upsert = vi.fn().mockResolvedValue({});
+    const prisma = {
+      contact: {
+        findFirst: vi.fn().mockResolvedValue(contact),
+        update: vi.fn().mockResolvedValue(contact),
+      },
+      contactCustomField: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "field-a",
+            tenantId: "tenant-a",
+            label: "Código",
+            type: "TEXT",
+            required: false,
+          },
+        ]),
+      },
+      contactCustomFieldValue: { upsert },
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
+    };
+    const endpoint = new CrmController(
+      prisma as never,
+      { publishContactUpdated: vi.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await endpoint.updateContact("contact-a", { customFields: { "field-a": "alterado" } }, {
+      tenantId: "tenant-a",
+      roleKey: "agent",
+      permissions: ["contacts.update", "contacts.additional_fields.read"],
+    } as never);
+
+    expect(prisma.contactCustomField.findMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", id: { in: ["field-a"] }, archivedAt: null },
+    });
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { contactId_fieldId: { contactId: "contact-a", fieldId: "field-a" } },
+        update: { value: "alterado" },
+      }),
+    );
   });
 });

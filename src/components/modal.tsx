@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { X, AlertTriangle } from "lucide-react";
-import { Button } from "./ui-kit";
+import { AlertTriangle } from "lucide-react";
+import { Button, CloseButton } from "./ui-kit";
 
 export function Modal({
   open,
@@ -15,6 +15,7 @@ export function Modal({
   initialFocus,
   closeOnBackdrop = true,
   dismissible = true,
+  layerClassName = "z-[200]",
 }: {
   open: boolean;
   onClose: () => void;
@@ -27,6 +28,7 @@ export function Modal({
   initialFocus?: string;
   closeOnBackdrop?: boolean;
   dismissible?: boolean;
+  layerClassName?: string;
 }) {
   const dialogRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
@@ -82,7 +84,7 @@ export function Modal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4">
+    <div className={`fixed inset-0 flex items-center justify-center p-2 sm:p-4 ${layerClassName}`}>
       <div
         data-modal-backdrop
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -101,15 +103,7 @@ export function Modal({
               <p className="mt-0.5 truncate text-xs text-muted-foreground">{description}</p>
             )}
           </div>
-          {dismissible && (
-            <button
-              onClick={onClose}
-              aria-label="Fechar"
-              className="rounded-md border border-border bg-surface-2 p-1.5 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+          {dismissible && <CloseButton onClick={onClose} />}
         </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {children}
@@ -131,8 +125,10 @@ export function ConfirmDialog({
   description,
   confirmLabel = "Confirmar",
   cancelLabel = "Cancelar",
+  pendingLabel,
   destructive,
   accent,
+  layerClassName,
   onConfirm,
   onClose,
 }: {
@@ -141,23 +137,49 @@ export function ConfirmDialog({
   description?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
+  pendingLabel?: string;
   destructive?: boolean;
   accent?: "destructive" | "primary";
-  onConfirm: () => void;
+  layerClassName?: string;
+  onConfirm: () => void | null | Promise<void>;
   onClose: () => void;
 }) {
+  const [submitting, setSubmitting] = React.useState(false);
+  const deleteAction = /^excluir\b/i.test(confirmLabel.trim());
+
+  const confirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm();
+      onClose();
+    } catch {
+      // The caller owns the error message; keep the dialog open for another attempt.
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={title}
       size="sm"
+      dismissible={!submitting}
+      layerClassName={layerClassName}
       initialFocus={
         destructive || /excluir|remover/i.test(confirmLabel) ? "[data-confirm-action]" : undefined
       }
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={deleteAction ? "h-8 rounded-lg sm:min-w-20" : undefined}
+            disabled={submitting}
+            onClick={onClose}
+          >
             {cancelLabel}
           </Button>
           <Button
@@ -165,13 +187,13 @@ export function ConfirmDialog({
             size="sm"
             autoFocus={destructive || /excluir|remover/i.test(confirmLabel)}
             data-confirm-action
-            className="focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card"
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
+            disabled={submitting}
+            className={`${deleteAction ? "h-8 rounded-lg sm:min-w-20 " : ""}focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card`}
+            onClick={() => void confirm()}
           >
-            {confirmLabel}
+            {submitting
+              ? (pendingLabel ?? (deleteAction ? "Excluindo…" : "Processando…"))
+              : confirmLabel}
           </Button>
         </>
       }

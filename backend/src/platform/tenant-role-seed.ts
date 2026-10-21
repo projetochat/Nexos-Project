@@ -1,10 +1,15 @@
 import type { PrismaService } from "../prisma/prisma.service";
-import { AGENT_PERMISSIONS, TENANT_ADMIN_PERMISSIONS } from "../auth/permissions.constants";
+import {
+  AGENT_PERMISSIONS,
+  SUPERVISOR_PERMISSIONS,
+  TENANT_ADMIN_PERMISSIONS,
+} from "../auth/permissions.constants";
 
 type Tx = Pick<PrismaService, "department" | "role" | "rolePermission" | "permission">;
 
 const roles = [
   ["tenant_admin", "Administrador", TENANT_ADMIN_PERMISSIONS],
+  ["supervisor", "Supervisor", SUPERVISOR_PERMISSIONS],
   ["agent", "Atendente", AGENT_PERMISSIONS],
 ] as const;
 
@@ -46,7 +51,9 @@ export async function seedTenantRoles(tx: Tx, tenantId: string) {
           key,
           name,
           system: true,
-          ...(key === "agent" ? { metadata: { departmentIds: [department.id] } } : {}),
+          ...(key === "agent" || key === "supervisor"
+            ? { metadata: { departmentIds: [department.id] } }
+            : {}),
         },
       });
       await tx.rolePermission.deleteMany({ where: { roleId: role.id } });
@@ -57,5 +64,8 @@ export async function seedTenantRoles(tx: Tx, tenantId: string) {
       return [key, role] as const;
     }),
   );
-  return Object.fromEntries(entries) as unknown as Record<"tenant_admin" | "agent", { id: string }>;
+  return Object.fromEntries(entries) as unknown as Record<
+    "tenant_admin" | "supervisor" | "agent",
+    { id: string }
+  >;
 }

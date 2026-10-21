@@ -30,7 +30,7 @@ export function MessageStatusIcon({
     <span className="ml-1 inline-flex align-middle" role="img" aria-label={label} title={label}>
       <Icon
         aria-hidden="true"
-        className={`h-4 w-4 ${status === "read" ? "text-sky-300" : status === "failed" ? "text-red-300" : "text-slate-300"}`}
+        className={`h-4 w-4 ${status === "read" ? "text-sky-600" : status === "failed" ? "text-red-600" : "text-slate-500"}`}
       />
     </span>
   );

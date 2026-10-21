@@ -69,7 +69,9 @@ services:
       CACHE_REDIS_PREFIX_KEY: evolution
       WEBHOOK_GLOBAL_ENABLED: "false"
       WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
+      WEBHOOK_EVENTS_MESSAGES_EDITED: "true"
       WEBHOOK_EVENTS_MESSAGES_UPDATE: "true"
+      WEBHOOK_EVENTS_MESSAGES_DELETE: "true"
       WEBHOOK_EVENTS_SEND_MESSAGE_UPDATE: "true"
       WEBHOOK_EVENTS_QRCODE_UPDATED: "true"
       WEBHOOK_EVENTS_CONNECTION_UPDATE: "true"
@@ -78,7 +80,7 @@ services:
       - evolution-instances:/evolution/instances
     ports:
       # Apache terminates TLS and proxies the existing Evolution domain to this loopback-only port.
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${EVOLUTION_PORT:-8080}:8080"
 
   backend:
     build:
@@ -155,7 +157,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "127.0.0.1:4173:4173"
+      - "127.0.0.1:${FRONTEND_PORT:-4173}:4173"
 
   migrate:
     profiles: ["release"]

@@ -26,3 +26,15 @@ it("accepts browser audio MIME parameters emitted by MediaRecorder", () => {
     validatePolicy(MessageType.VOICE, "audio/ogg; codecs=opus", 55 * 1024),
   ).not.toThrow();
 });
+
+it("defaults audio and voice media to 32 MiB", () => {
+  vi.stubEnv("TRIXUS_MESSAGE_MAX_AUDIO_SIZE_MB", undefined);
+  expect(() => validatePolicy(MessageType.AUDIO, "audio/mpeg", 32 * 1024 * 1024)).not.toThrow();
+  expect(() => validatePolicy(MessageType.VOICE, "audio/ogg", 32 * 1024 * 1024 + 1)).toThrow();
+});
+
+it("defaults video media to 64 MiB", () => {
+  vi.stubEnv("TRIXUS_MESSAGE_MAX_VIDEO_SIZE_MB", undefined);
+  expect(() => validatePolicy(MessageType.VIDEO, "video/mp4", 64 * 1024 * 1024)).not.toThrow();
+  expect(() => validatePolicy(MessageType.VIDEO, "video/mp4", 64 * 1024 * 1024 + 1)).toThrow();
+});

@@ -1,5 +1,9 @@
 # Deploy do backend na VPS
 
+> **HISTORICO — NAO EXECUTAR (06/10/2026):** este fluxo manual foi substituido
+> por [PRODUCTION-AUTOMATION.md](./PRODUCTION-AUTOMATION.md). Os comandos abaixo
+> permanecem apenas como registro e nao autorizam acesso a VPS ou migracao.
+
 Este procedimento prepara apenas API, banco, Redis, migrations e storage do backend. Ele nao altera nem publica a interface; o frontend deve continuar sendo entregue pelo mecanismo ja aprovado para ele. Um proxy reverso deve encaminhar apenas o dominio e os caminhos de API/WebSocket definidos pelo frontend atual para `127.0.0.1:3001`.
 
 ## Pre-requisitos e dados persistentes
@@ -31,6 +35,6 @@ Antes de qualquer migration, gere um dump consistente de PostgreSQL e uma copia 
 
 ## Ambiente local
 
-O `docker-compose.yml` e exclusivo para desenvolvimento. O nome padrao agora e `trixus-local`, mas pode ser isolado com `COMPOSE_PROJECT_NAME=trixus-local-<apelido>`. Seus volumes mudam junto com o project name: manter o mesmo nome preserva dados; trocar o nome cria dados novos. Para um ambiente limpo, copie `.env.example`, execute `docker compose up -d`, `bun run backend:prisma:generate`, `bun run backend:prisma:migrate:deploy` e `bun run backend:prisma:seed`.
+O `docker-compose.yml` e exclusivo para desenvolvimento. O nome padrao agora e `trixus-local`, mas pode ser isolado com `COMPOSE_PROJECT_NAME=trixus-local-<apelido>`. Seus volumes mudam junto com o project name: manter o mesmo nome preserva dados; trocar o nome cria dados novos. Esta secao e historica e nao e um procedimento executavel.
 
 Para o webhook Evolution em desenvolvimento com Docker Desktop, `host.docker.internal` e apropriado. Na VPS, use uma URL HTTPS publica para `EVOLUTION_WEBHOOK_PUBLIC_URL`; nao use esse hostname como destino publico.

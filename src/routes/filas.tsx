@@ -126,12 +126,14 @@ function Page() {
 
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-border bg-surface-1 p-2">
-      <div className="mx-auto flex h-4 w-4 items-center justify-center text-muted-foreground">
-        {icon}
+    <div className="flex min-h-20 flex-col rounded-lg border border-border bg-surface-1 p-2 text-left">
+      <div className="w-full text-[10px] uppercase text-muted-foreground">{label}</div>
+      <div className="mt-auto flex items-center justify-between gap-1 pt-1">
+        <div className="font-mono text-lg font-semibold">{num(value)}</div>
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-surface-2 text-muted-foreground">
+          {icon}
+        </span>
       </div>
-      <div className="mt-1 font-mono text-lg font-semibold">{num(value)}</div>
-      <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseFilters,
   UseGuards,
@@ -21,6 +22,7 @@ import { PlanEntitlementService } from "./plan-entitlement.service";
 import { PlatformExceptionFilter } from "./platform-exception.filter";
 import {
   CancelSubscriptionDto,
+  ChangePlatformPasswordDto,
   CreatePlatformClientDto,
   CreateInvoiceDto,
   CreatePlanDto,
@@ -28,6 +30,7 @@ import {
   InvoiceStatusDto,
   UpdateInvoiceDto,
   PlatformListQueryDto,
+  PlatformDashboardQueryDto,
   ReasonDto,
   StartImpersonationHandoffDto,
   StartImpersonationDto,
@@ -37,6 +40,7 @@ import {
   UpdateSubscriptionDto,
   UpdateTenantAdministratorCredentialsDto,
   UpdateTenantConfigurationDto,
+  UpdatePlatformDashboardConfigurationDto,
 } from "./platform.dto";
 
 @Controller("platform")
@@ -45,10 +49,33 @@ import {
 export class PlatformController {
   constructor(@Inject(PlatformService) private readonly platform: PlatformService) {}
 
+  @Patch("me/password")
+  changeOwnPassword(
+    @Body() dto: ChangePlatformPasswordDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.changeOwnPassword(dto, current);
+  }
+
   @Get("dashboard")
   @RequirePlatformPermissions("platform.tenants.read")
-  dashboard() {
-    return this.platform.dashboard();
+  dashboard(@Query() query: PlatformDashboardQueryDto) {
+    return this.platform.dashboard(query);
+  }
+
+  @Get("dashboard/configuration")
+  @RequirePlatformPermissions("platform.tenants.read")
+  dashboardConfiguration(@CurrentUser() current: AuthenticatedUser) {
+    return this.platform.dashboardConfiguration(current);
+  }
+
+  @Put("dashboard/configuration")
+  @RequirePlatformPermissions("platform.settings.update")
+  updateDashboardConfiguration(
+    @Body() dto: UpdatePlatformDashboardConfigurationDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.updateDashboardConfiguration(dto, current);
   }
 
   @Get("health")

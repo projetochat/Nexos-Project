@@ -60,6 +60,23 @@ describe("RealtimeAuthService", () => {
     });
   });
 
+  it("rejects a new socket while tenant onboarding is pending", async () => {
+    const service = serviceWith({ onboardingStatus: "PENDING" });
+    await expect(service.authenticate("access-token")).rejects.toMatchObject({
+      code: "REALTIME_ONBOARDING_PENDING",
+    });
+  });
+
+  it.each([undefined, "COMPLETED"])(
+    "preserves realtime access for legacy or completed onboarding state %s",
+    async (onboardingStatus) => {
+      const service = serviceWith({ onboardingStatus });
+      await expect(service.authenticate("access-token")).resolves.toMatchObject({
+        tenantId: "tenant-a",
+      });
+    },
+  );
+
   it("revalidates membership state for every established socket event", async () => {
     const service = serviceWith();
     const context = await service.authenticate("access-token");
@@ -87,6 +104,17 @@ describe("RealtimeAuthService", () => {
       code: "REALTIME_TOKEN_INVALID",
     });
   });
+
+  it("disconnects an established socket when onboarding becomes pending", async () => {
+    const service = serviceWith({ onboardingStatus: "COMPLETED" });
+    const context = await service.authenticate("access-token");
+    const prisma = (service as unknown as { prisma: { $queryRaw: ReturnType<typeof vi.fn> } })
+      .prisma;
+    prisma.$queryRaw.mockResolvedValueOnce([{ status: "PENDING" }]);
+    await expect(service.assertSession(context)).rejects.toMatchObject({
+      code: "REALTIME_ONBOARDING_PENDING",
+    });
+  });
 });
 
 function serviceWith(
@@ -101,6 +129,7 @@ function serviceWith(
     impersonationSessionId?: string;
     surface?: "platform" | "tenant";
     aud?: "trixus-platform" | "trixus-tenant";
+    onboardingStatus?: "PENDING" | "COMPLETED";
   } = {},
 ) {
   const jwt = {
@@ -123,6 +152,9 @@ function serviceWith(
   };
   const config = { get: vi.fn().mockReturnValue("test-access-secret-minimum-32-chars") };
   const prisma = {
+    $queryRaw: vi
+      .fn()
+      .mockResolvedValue(options.onboardingStatus ? [{ status: options.onboardingStatus }] : []),
     authSession: {
       findFirst: vi
         .fn()

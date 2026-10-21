@@ -187,7 +187,8 @@ function TenantDetailPage() {
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
+              size="sm"
               onClick={() => setAccessOpen(false)}
               disabled={accessBusy}
             >

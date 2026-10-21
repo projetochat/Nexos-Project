@@ -2,6 +2,7 @@ import type { ApiConversationStatus, OperationalPeriod } from "@/lib/trixus-api"
 
 export type OperationalReportFilters = {
   period: OperationalPeriod;
+  conversationType?: "all" | "contacts" | "groups";
   q?: string;
   departmentId?: string;
   status?: ApiConversationStatus;

@@ -9,6 +9,7 @@ import {
   readStoredHandoffImpersonation,
   readStoredPlatformImpersonation,
   selectTenantWithTrixusApi,
+  TrixusApiError,
   type RequiredPasswordChange,
   type TenantSelectionRequired,
 } from "@/lib/trixus-api";
@@ -28,10 +29,17 @@ export type SessionUser = {
   nome: string;
   email: string;
   role: Role;
+  roleKey?: string;
   empresaId?: string;
   empresaNome?: string;
   avatarUrl?: string;
   keepSidebarCollapsed?: boolean;
+  chatBubbleColor?: string;
+  chatBubbleTextColor?: string;
+  customerBubbleColor?: string;
+  customerBubbleTextColor?: string;
+  chatBackgroundColor?: string;
+  chatBackgroundMode?: "IMAGE" | "COLOR";
   permissions?: string[];
 };
 
@@ -87,6 +95,7 @@ const TENANT_HOME_CANDIDATES = [
   "/chatbot",
   "/automacoes",
   "/agente-ia",
+  "/clientes",
   "/chamados",
   "/configuracoes",
 ] as const;
@@ -110,7 +119,7 @@ export function canAccessTenantRoute(
   const route = matchingTenantRoute(pathname);
   if (!route) return false;
   if (route === "/campanhas" && modules?.campaigns === false) return false;
-  if (route === "/chamados" && modules?.tickets === false) return false;
+  if ((route === "/clientes" || route === "/chamados") && modules?.tickets === false) return false;
   const required = TENANT_ROUTE_PERMISSIONS[route];
   return required.some((permission) => permissions?.includes(permission));
 }
@@ -192,7 +201,9 @@ export function currentRoleHome(
   return role === "super_admin" ? "/admin" : tenantHomeForPermissions(permissions);
 }
 
-export async function hydrateSession(): Promise<void> {
+export async function hydrateSession(
+  options: { preserveUserOnTransientError?: boolean } = {},
+): Promise<void> {
   const impersonation = readStoredPlatformImpersonation();
   const handoffImpersonation = readStoredHandoffImpersonation();
   try {
@@ -224,6 +235,16 @@ export async function hydrateSession(): Promise<void> {
       error: null,
     });
   } catch (error) {
+    const definiteAuthenticationFailure =
+      error instanceof TrixusApiError && (error.status === 401 || error.status === 403);
+    if (
+      options.preserveUserOnTransientError &&
+      useSession.getState().user &&
+      !definiteAuthenticationFailure
+    ) {
+      useSession.setState({ hydrated: true, error: null });
+      return;
+    }
     useSession.setState({ user: null, hydrated: true, error: (error as Error).message });
   }
 }

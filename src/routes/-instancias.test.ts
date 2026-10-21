@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { TrixusApiError } from "@/lib/trixus-api";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import {
@@ -23,6 +24,27 @@ function connection(overrides: Partial<ApiMessagingConnection>): ApiMessagingCon
 }
 
 describe("instancias removal UX", () => {
+  it("requires the exact confirmation and explains the permanent deletion scope", () => {
+    const source = readFileSync(new URL("./instancias.tsx", import.meta.url), "utf8");
+    expect(source).toContain('confirmation !== "REMOVER"');
+    expect(source).toContain("setConfirmation(event.target.value.toUpperCase())");
+    expect(source).toContain('Digite "REMOVER" para confirmar');
+    expect(source).not.toContain("removeConversationHistory");
+    expect(source).toContain("serão excluídos permanentemente");
+    expect(source).toContain("Contatos,");
+    expect(source).toContain("departamentos e chamados serão preservados sem vínculo");
+    expect(source).toContain("Esta ação não");
+    expect(source).toContain("pode ser desfeita");
+    expect(source).toContain("Excluir permanentemente");
+    expect(source).toContain("trash-action h-8 rounded-lg sm:min-w-20");
+    expect(source).toContain('className="h-8 rounded-lg sm:min-w-20"');
+    expect(source).toContain("<AlertTriangle");
+    expect(source).toContain("text-sm text-foreground");
+    expect(source).toContain('className="mt-1 text-muted-foreground"');
+    expect(source).toContain("const closeDestructiveFlow = () =>");
+    expect(source.match(/onClose=\{closeDestructiveFlow\}/g)).toHaveLength(2);
+  });
+
   it("shows a specific message for in-use connection conflicts", () => {
     expect(
       connectionRemoveErrorMessage(new TrixusApiError("Conflict", 409, "CONNECTION_IN_USE")),
@@ -70,5 +92,32 @@ describe("nomes de instâncias", () => {
   it("ignora a própria instância durante a edição", () => {
     const connections = [connection({ id: "a", name: "Comercial" })];
     expect(instanceNameAlreadyExists("Comercial", connections, "a")).toBe(false);
+  });
+});
+
+describe("controles temporariamente ocultos", () => {
+  it("mantém atendimento ativo e importação desabilitada na criação sem exibir os controles", () => {
+    const source = readFileSync(new URL("./instancias.tsx", import.meta.url), "utf8");
+    expect(source).toContain("const SHOW_INSTANCE_SERVICE_CONTROLS = false");
+    expect(source).toContain("serviceEnabled,");
+    expect(source).toContain("importHistoryEnabled: serviceEnabled && importHistory");
+  });
+});
+
+describe("reconexão por QR Code", () => {
+  it("mantém o modal aberto e consulta o QR assíncrono sem remover a instância", () => {
+    const source = readFileSync(new URL("./instancias.tsx", import.meta.url), "utf8");
+    expect(source).toContain("connectionsApi.qrStatus");
+    expect(source).toContain("Gerando um novo QR Code");
+    expect(source).toContain("todo o histórico estão preservados");
+    expect(source).not.toContain("QR indisponivel");
+  });
+
+  it("interrompe a reconexão e orienta usar o número original quando outro número é lido", () => {
+    const source = readFileSync(new URL("./instancias.tsx", import.meta.url), "utf8");
+    expect(source).toContain('result.errorCode === "OWNER_PHONE_MISMATCH"');
+    expect(source).toContain("Número diferente recusado");
+    expect(source).toContain("Conecte o número original");
+    expect(source).toContain("active && shouldPoll");
   });
 });

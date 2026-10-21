@@ -1,9 +1,20 @@
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Eye, EyeOff, KeyRound, Lock, LockOpen, MoreVertical, Settings2 } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  KeyRound,
+  LayoutGrid,
+  List,
+  Lock,
+  LockOpen,
+  MoreVertical,
+  Settings2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AdminContainer } from "@/components/admin-shell";
-import { DashboardDateInput } from "@/components/dashboard-filters";
+import { GridPaginationFooter } from "@/components/grid-pagination-footer";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Modal } from "@/components/modal";
 import {
   DropdownMenu,
@@ -23,10 +34,10 @@ import {
 } from "@/components/ui-kit";
 import { fmtDate } from "@/lib/format";
 import { Switch } from "@/components/ui/switch";
-import { DASHBOARD_PERIOD_OPTIONS, datesForOperationalPeriod } from "@/lib/operational-filters";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   platformApi,
-  type OperationalPeriod,
   type PlatformPlan,
   type PlatformTenant,
   type PlatformTenantConfiguration,
@@ -56,13 +67,12 @@ type TenantListRow = PlatformTenant & {
 };
 
 function TenantsAdmin() {
+  const isMobile = useIsMobile();
+  const [viewMode, setViewMode] = React.useState<"cards" | "list">("list");
+  const viewModeTouched = React.useRef(false);
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [planId, setPlanId] = React.useState("");
-  const [period, setPeriod] = React.useState<OperationalPeriod>("today");
-  const initialDates = React.useMemo(() => datesForOperationalPeriod("today"), []);
-  const [dateFrom, setDateFrom] = React.useState(initialDates.start);
-  const [dateTo, setDateTo] = React.useState(initialDates.end);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(25);
   const [data, setData] = React.useState({
@@ -76,6 +86,14 @@ function TenantsAdmin() {
   const [credentialTenant, setCredentialTenant] = React.useState<TenantListRow | null>(null);
   const [configurationTenant, setConfigurationTenant] = React.useState<TenantListRow | null>(null);
 
+  React.useEffect(() => {
+    if (isMobile) {
+      setViewMode("cards");
+      return;
+    }
+    if (!viewModeTouched.current) setViewMode("list");
+  }, [isMobile]);
+
   const load = React.useCallback(
     () =>
       Promise.all([
@@ -83,8 +101,6 @@ function TenantsAdmin() {
           q: q || undefined,
           status: status || undefined,
           planId: planId || undefined,
-          dateFrom: dateFrom ? new Date(`${dateFrom}T00:00:00`).toISOString() : undefined,
-          dateTo: dateTo ? new Date(`${dateTo}T23:59:59.999`).toISOString() : undefined,
           page,
           pageSize,
         }),
@@ -96,108 +112,208 @@ function TenantsAdmin() {
           setError(null);
         })
         .catch((reason) => setError((reason as Error).message)),
-    [dateFrom, dateTo, page, pageSize, planId, q, status],
+    [page, pageSize, planId, q, status],
   );
 
   React.useEffect(() => void load(), [load]);
-  React.useEffect(() => setPage(1), [dateFrom, dateTo, pageSize, planId, q, status]);
+  React.useEffect(() => setPage(1), [pageSize, planId, q, status]);
+  const hasActiveFilters = Boolean(q || status || planId);
+
+  function clearFilters() {
+    setQ("");
+    setStatus("");
+    setPlanId("");
+    setPage(1);
+  }
+
+  const paginationFooter = (
+    <GridPaginationFooter
+      visible={data.items.length}
+      total={data.total}
+      page={page}
+      totalPages={data.totalPages}
+      pageSize={pageSize}
+      onPage={(nextPage) => setPage(nextPage)}
+      onPageSize={(nextPageSize) => setPageSize(nextPageSize)}
+      ariaLabelPrefix="tenants"
+    />
+  );
 
   return (
     <AdminContainer>
       <SectionHeader title="Tenants" subtitle="Consulta das tenants cadastradas." />
       <Card className="mb-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <Field label="Busca">
-            <SearchInput
-              value={q}
-              onChange={setQ}
-              placeholder="Buscar por nome, cliente ou responsável..."
-            />
-          </Field>
-          <Field label="Plano">
-            <Select value={planId} onChange={(event) => setPlanId(event.target.value)}>
-              <option value="">Todos</option>
-              {plans.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Status">
-            <Select value={status} onChange={(event) => setStatus(event.target.value)}>
-              <option value="">Todos</option>
-              <option value="ACTIVE">Ativo</option>
-              <option value="TRIAL">Em configuração</option>
-              <option value="SUSPENDED">Suspenso</option>
-              <option value="TERMINATED">Cancelado</option>
-            </Select>
-          </Field>
-          <Field label="Período">
-            <Select
-              value={period}
-              onChange={(event) => {
-                const nextPeriod = event.target.value as OperationalPeriod;
-                setPeriod(nextPeriod);
-                if (nextPeriod !== "custom") {
-                  const dates = datesForOperationalPeriod(nextPeriod);
-                  setDateFrom(dates.start);
-                  setDateTo(dates.end);
-                }
-              }}
-            >
-              {DASHBOARD_PERIOD_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Dt. Inicial">
-            <DashboardDateInput
-              value={dateFrom}
-              readOnly={period !== "custom"}
-              onChange={setDateFrom}
-            />
-          </Field>
-          <Field label="Dt. Final">
-            <DashboardDateInput
-              value={dateTo}
-              readOnly={period !== "custom"}
-              onChange={setDateTo}
-            />
-          </Field>
+        <div
+          className={`grid grid-cols-2 gap-3 md:grid-cols-2 ${
+            hasActiveFilters ? "xl:grid-cols-[repeat(6,minmax(0,1fr))_auto]" : "xl:grid-cols-6"
+          }`}
+          data-platform-filter-grid
+        >
+          <div className="col-span-2 min-w-0 md:col-span-1 xl:col-span-4">
+            <Field label="Busca">
+              <SearchInput
+                value={q}
+                onChange={setQ}
+                placeholder="Buscar por nome, cliente ou responsável..."
+              />
+            </Field>
+          </div>
+          <div className="min-w-0">
+            <Field label="Plano">
+              <Select value={planId} onChange={(event) => setPlanId(event.target.value)}>
+                <option value="">Todos</option>
+                {plans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <div className="min-w-0">
+            <Field label="Status">
+              <Select value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="">Todos</option>
+                <option value="ACTIVE">Ativo</option>
+                <option value="TRIAL">Em configuração</option>
+                <option value="SUSPENDED">Suspenso</option>
+                <option value="TERMINATED">Cancelado</option>
+              </Select>
+            </Field>
+          </div>
+          {hasActiveFilters && (
+            <div className="col-span-2 flex justify-end md:col-span-1 md:items-end">
+              <ClearFiltersButton onClick={clearFilters} />
+            </div>
+          )}
         </div>
       </Card>
-      <Card className="p-0">
-        {error && (
-          <div className="border-b border-border p-4 text-sm text-destructive">{error}</div>
-        )}
-        <div className="overflow-x-auto px-4">
+      <div className="mb-3 hidden justify-end gap-1 md:flex" aria-label="Visualização das tenants">
+        <Button
+          type="button"
+          variant={viewMode === "cards" ? "primary" : "secondary"}
+          size="icon"
+          aria-label="Visualizar tenants em cards"
+          aria-pressed={viewMode === "cards"}
+          onClick={() => {
+            viewModeTouched.current = true;
+            setViewMode("cards");
+          }}
+        >
+          <LayoutGrid className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant={viewMode === "list" ? "primary" : "secondary"}
+          size="icon"
+          aria-label="Visualizar tenants em lista"
+          aria-pressed={viewMode === "list"}
+          onClick={() => {
+            viewModeTouched.current = true;
+            setViewMode("list");
+          }}
+        >
+          <List className="h-4 w-4" />
+        </Button>
+      </div>
+      {error && <div className="mb-3 text-sm text-destructive">{error}</div>}
+      <div
+        data-platform-card-shell
+        className={
+          viewMode === "cards"
+            ? "md:overflow-hidden md:rounded-xl md:border md:border-border md:bg-card md:shadow-card"
+            : "hidden"
+        }
+      >
+        <div
+          data-platform-mobile-list
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:p-4 xl:grid-cols-3"
+        >
+          {(data.items as TenantListRow[]).map((tenant) => {
+            const client = tenant.client ?? tenant.platformClient;
+            const campaigns =
+              tenant.maxCampaigns ?? tenant.plan?.limits?.campaigns ?? tenant.campaigns ?? 0;
+            return (
+              <article key={tenant.id} className="rounded-xl border border-border bg-surface-1 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate font-semibold">{client?.name ?? tenant.name}</h2>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{tenant.slug}</p>
+                  </div>
+                  <TenantStatus value={tenant.status} />
+                </div>
+                <dl className="mt-3 grid gap-2 border-y border-border/70 py-3 text-sm">
+                  <MobileTenantDetail
+                    label="Responsável"
+                    value={tenant.responsibleName ?? client?.responsibleName ?? "Não informado"}
+                  />
+                  <MobileTenantDetail
+                    label="E-mail"
+                    value={tenant.responsibleEmail ?? client?.responsibleEmail ?? "Não informado"}
+                  />
+                  <MobileTenantDetail label="Plano" value={tenant.plan?.name ?? "Sem plano"} />
+                  <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                    <MobileTenantMetric
+                      label="Instâncias"
+                      value={tenant.maxConnections ?? tenant.connections}
+                    />
+                    <MobileTenantMetric
+                      label="Usuários"
+                      value={tenant.maxUsers ?? tenant.activeUsers}
+                    />
+                    <MobileTenantMetric label="Campanhas" value={campaigns} />
+                  </div>
+                </dl>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    Criada em {formatTenantTableDate(tenant.createdAt)}
+                  </span>
+                  <TenantCardActions
+                    tenant={tenant}
+                    onView={() => setSelectedTenant(tenant)}
+                    onCredentials={() => setCredentialTenant(tenant)}
+                    onConfiguration={() => setConfigurationTenant(tenant)}
+                  />
+                </div>
+              </article>
+            );
+          })}
+          {!data.items.length && (
+            <div className="col-span-full py-10 text-center text-sm text-muted-foreground">
+              Nenhum tenant encontrado.
+            </div>
+          )}
+        </div>
+        <div className="hidden md:block" data-platform-card-pagination>
+          {paginationFooter}
+        </div>
+      </div>
+      <Card padding={false} className={viewMode === "list" ? "overflow-hidden p-0" : "hidden"}>
+        <div data-platform-desktop-table className="overflow-x-auto">
           <table className="w-full min-w-[1160px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <th className="py-3">Cliente</th>
-                <th>Responsável</th>
-                <th>Tenant</th>
-                <th>Plano</th>
-                <th className="text-center">Instâncias</th>
-                <th className="text-center">Usuários</th>
-                <th className="text-center">Campanhas</th>
-                <th className="text-center">Dt./Hora</th>
+            <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground [&_th]:px-3 [&_th]:py-3 [&_th]:font-medium">
+              <tr>
+                <th className="!px-4 py-3 font-medium">Cliente</th>
+                <th className="px-3 py-3 font-medium">Responsável</th>
+                <th className="px-3 py-3 font-medium">Tenant</th>
+                <th className="px-3 py-3 font-medium">Plano</th>
+                <th className="px-3 py-3 text-center font-medium">Instâncias</th>
+                <th className="px-3 py-3 text-center font-medium">Usuários</th>
+                <th className="px-3 py-3 text-center font-medium">Campanhas</th>
+                <th className="px-3 py-3 text-center font-medium">Dt./Hora</th>
                 <th>Status</th>
-                <th className="text-center">Ações</th>
+                <th className="px-4 py-3 text-center font-medium">Ações</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-border [&_td]:px-3 [&_td]:py-3">
               {(data.items as TenantListRow[]).map((tenant) => {
                 const client = tenant.client ?? tenant.platformClient;
                 const campaigns =
                   tenant.maxCampaigns ?? tenant.plan?.limits?.campaigns ?? tenant.campaigns ?? 0;
                 return (
-                  <tr key={tenant.id} className="border-b border-border/70 hover:bg-surface-1">
-                    <td className="py-3 font-medium">{client?.name ?? tenant.name}</td>
-                    <td>
+                  <tr key={tenant.id} className="transition hover:bg-surface-1">
+                    <td className="!px-4 py-3 font-medium">{client?.name ?? tenant.name}</td>
+                    <td className="px-3 py-3">
                       <div className="font-medium">
                         {tenant.responsibleName ?? client?.responsibleName ?? "Não informado"}
                       </div>
@@ -206,48 +322,27 @@ function TenantsAdmin() {
                       </div>
                     </td>
                     <td className="font-medium">{tenant.slug}</td>
-                    <td>{tenant.plan?.name ?? "Sem plano"}</td>
-                    <td className="text-center">{tenant.maxConnections ?? tenant.connections}</td>
-                    <td className="text-center">{tenant.maxUsers ?? tenant.activeUsers}</td>
-                    <td className="text-center">{campaigns}</td>
-                    <td className="text-center">{formatTenantTableDate(tenant.createdAt)}</td>
-                    <td>
+                    <td className="px-3 py-3">{tenant.plan?.name ?? "Sem plano"}</td>
+                    <td className="px-3 py-3 text-center">
+                      {tenant.maxConnections ?? tenant.connections}
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      {tenant.maxUsers ?? tenant.activeUsers}
+                    </td>
+                    <td className="px-3 py-3 text-center">{campaigns}</td>
+                    <td className="px-3 py-3 text-center">
+                      {formatTenantTableDate(tenant.createdAt)}
+                    </td>
+                    <td className="px-3 py-3">
                       <TenantStatus value={tenant.status} />
                     </td>
-                    <td className="text-center">
-                      <DropdownMenu modal={false}>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            aria-label={`Ações da Tenant ${tenant.slug}`}
-                            className="action-hover-primary inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-1 text-muted-foreground transition"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56">
-                          <DropdownMenuItem
-                            onSelect={() => setSelectedTenant(tenant)}
-                            className="cursor-pointer focus:bg-blue-50 focus:text-blue-700 dark:focus:bg-blue-950/40 dark:focus:text-blue-300"
-                          >
-                            <Eye /> Visualizar
-                          </DropdownMenuItem>
-                          {tenant.status === "ACTIVE" && (
-                            <DropdownMenuItem
-                              onSelect={() => setCredentialTenant(tenant)}
-                              className="cursor-pointer focus:bg-amber-50 focus:text-amber-700 dark:focus:bg-amber-950/40 dark:focus:text-amber-300"
-                            >
-                              <KeyRound /> Gerenciar credenciais
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            onSelect={() => setConfigurationTenant(tenant)}
-                            className="cursor-pointer focus:bg-blue-50 focus:text-blue-700 dark:focus:bg-blue-950/40 dark:focus:text-blue-300"
-                          >
-                            <Settings2 /> Configuração da Tenant
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    <td className="px-4 py-3 text-center">
+                      <TenantActions
+                        tenant={tenant}
+                        onView={() => setSelectedTenant(tenant)}
+                        onCredentials={() => setCredentialTenant(tenant)}
+                        onConfiguration={() => setConfigurationTenant(tenant)}
+                      />
                     </td>
                   </tr>
                 );
@@ -260,43 +355,7 @@ function TenantsAdmin() {
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span>
-              Mostrando {data.items.length} de {data.total}
-            </span>
-            <Select
-              value={pageSize}
-              onChange={(event) => setPageSize(Number(event.target.value))}
-              className="h-8 min-h-8 w-20 py-1"
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-            </Select>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((value) => value - 1)}
-            >
-              ‹
-            </Button>
-            <span>
-              {page} / {data.totalPages}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={page >= data.totalPages}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              ›
-            </Button>
-          </div>
-        </div>
+        {paginationFooter}
       </Card>
       <TenantSummaryModal tenant={selectedTenant} onClose={() => setSelectedTenant(null)} />
       <TenantCredentialsModal
@@ -316,6 +375,131 @@ function TenantsAdmin() {
         }}
       />
     </AdminContainer>
+  );
+}
+
+function TenantCardActions({
+  tenant,
+  onView,
+  onCredentials,
+  onConfiguration,
+}: {
+  tenant: TenantListRow;
+  onView: () => void;
+  onCredentials: () => void;
+  onConfiguration: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1" aria-label="Ações da tenant">
+      <TenantCardActionIcon icon={Eye} label="Visualizar" onClick={onView} />
+      {tenant.status === "ACTIVE" && (
+        <TenantCardActionIcon
+          icon={KeyRound}
+          label="Gerenciar credenciais"
+          tone="warning"
+          onClick={onCredentials}
+        />
+      )}
+      <TenantCardActionIcon
+        icon={Settings2}
+        label="Configuração da Tenant"
+        onClick={onConfiguration}
+      />
+    </div>
+  );
+}
+
+function TenantCardActionIcon({
+  icon: Icon,
+  label,
+  tone = "primary",
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  tone?: "primary" | "warning";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface-1 text-muted-foreground transition ${
+        tone === "warning"
+          ? "hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 dark:hover:border-amber-800 dark:hover:bg-amber-950/40 dark:hover:text-amber-300"
+          : "action-hover-primary"
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
+}
+
+function TenantActions({
+  tenant,
+  onView,
+  onCredentials,
+  onConfiguration,
+}: {
+  tenant: TenantListRow;
+  onView: () => void;
+  onCredentials: () => void;
+  onConfiguration: () => void;
+}) {
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Ações da Tenant ${tenant.slug}`}
+          className="action-hover-primary inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-1 text-muted-foreground transition"
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem
+          onSelect={onView}
+          className="cursor-pointer focus:bg-blue-50 focus:text-blue-700 dark:focus:bg-blue-950/40 dark:focus:text-blue-300"
+        >
+          <Eye /> Visualizar
+        </DropdownMenuItem>
+        {tenant.status === "ACTIVE" && (
+          <DropdownMenuItem
+            onSelect={onCredentials}
+            className="cursor-pointer focus:bg-amber-50 focus:text-amber-700 dark:focus:bg-amber-950/40 dark:focus:text-amber-300"
+          >
+            <KeyRound /> Gerenciar credenciais
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onSelect={onConfiguration}
+          className="cursor-pointer focus:bg-blue-50 focus:text-blue-700 dark:focus:bg-blue-950/40 dark:focus:text-blue-300"
+        >
+          <Settings2 /> Configuração da Tenant
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function MobileTenantDetail({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 justify-between gap-4">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-right font-medium">{value}</dd>
+    </div>
+  );
+}
+
+function MobileTenantMetric({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0 border-r border-border/70 last:border-r-0">
+      <dt className="truncate text-[11px] text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 font-semibold">{value}</dd>
+    </div>
   );
 }
 
@@ -441,10 +625,14 @@ function TenantConfigurationModal({
       size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={saving}>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={() => void save()} disabled={loading || saving || !configuration}>
+          <Button
+            className="save-action-button"
+            onClick={() => void save()}
+            disabled={loading || saving || !configuration}
+          >
             {saving ? "Salvando..." : "Salvar"}
           </Button>
         </>
@@ -565,10 +753,14 @@ function TenantCredentialsModal({
   const [newPassword, setNewPassword] = React.useState("");
   const [passwordUnlocked, setPasswordUnlocked] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [saving, setSaving] = React.useState(false);
+  const [loadingAdministrator, setLoadingAdministrator] = React.useState(false);
+  const [administratorLoadError, setAdministratorLoadError] = React.useState<string | null>(null);
   const passwordRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
+    setErrors({});
     setResponsibleName(tenant?.responsibleName ?? client?.responsibleName ?? "");
     setResponsibleEmail(
       (tenant?.responsibleEmail ?? client?.responsibleEmail ?? "").toLocaleLowerCase("en-US"),
@@ -576,17 +768,80 @@ function TenantCredentialsModal({
     setNewPassword("");
     setPasswordUnlocked(false);
     setShowPassword(false);
+    setAdministratorLoadError(null);
+    if (!tenant) {
+      setLoadingAdministrator(false);
+      return;
+    }
+
+    let current = true;
+    setLoadingAdministrator(true);
+    void platformApi
+      .tenant(tenant.id)
+      .then((detail) => {
+        if (!current) return;
+        const administrator = detail.detail.users.find(
+          (membership) => membership.status === "ACTIVE" && membership.role.key === "tenant_admin",
+        );
+        if (administrator) {
+          setResponsibleName(administrator.user.name);
+          setResponsibleEmail(administrator.user.email.toLocaleLowerCase("en-US"));
+        }
+      })
+      .catch((reason) => {
+        if (!current) return;
+        setAdministratorLoadError(
+          (reason as Error).message || "Não foi possível carregar o usuário administrador.",
+        );
+      })
+      .finally(() => {
+        if (current) setLoadingAdministrator(false);
+      });
+
+    return () => {
+      current = false;
+    };
   }, [client?.responsibleEmail, client?.responsibleName, tenant]);
+
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if (responsibleName.trim()) delete next.responsibleName;
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(responsibleEmail.trim())) delete next.responsibleEmail;
+      if (!passwordUnlocked || newPassword.length >= 6) delete next.newPassword;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [newPassword, passwordUnlocked, responsibleEmail, responsibleName]);
 
   const save = async () => {
     if (!tenant) return;
+    if (loadingAdministrator || administratorLoadError) return;
     const name = responsibleName.trim();
     const email = responsibleEmail.trim().toLowerCase();
-    if (!name) return toast.error("Informe o nome do responsável.");
+    const nextErrors: Record<string, boolean> = {
+      ...(!name ? { responsibleName: true } : {}),
+      ...(!email ? { responsibleEmail: true } : {}),
+      ...(passwordUnlocked && !newPassword ? { newPassword: true } : {}),
+    };
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors);
+      showRequiredFieldsToast(
+        [
+          ["responsibleName", "Nome do responsável"],
+          ["responsibleEmail", "E-mail do responsável"],
+          ["newPassword", "Nova senha"],
+        ]
+          .filter(([key]) => nextErrors[key])
+          .map(([, label]) => label),
+      );
+      return;
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setErrors({ responsibleEmail: true });
       return toast.error("Informe um e-mail válido.");
     }
     if (passwordUnlocked && newPassword.length < 6) {
+      setErrors({ newPassword: true });
       return toast.error("A nova senha deve ter ao menos 6 caracteres.");
     }
     setSaving(true);
@@ -615,21 +870,32 @@ function TenantCredentialsModal({
       size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={saving}>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={() => void save()} disabled={saving}>
+          <Button
+            className="save-action-button"
+            onClick={() => void save()}
+            disabled={saving || loadingAdministrator || Boolean(administratorLoadError)}
+          >
             {saving ? "Salvando..." : "Salvar"}
           </Button>
         </>
       }
     >
+      {administratorLoadError && (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          {administratorLoadError}
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Nome do responsável *">
           <Input
             value={responsibleName}
             onChange={(event) => setResponsibleName(event.target.value)}
-            disabled={saving}
+            disabled={saving || loadingAdministrator}
+            className={requiredFieldClassName(Boolean(errors.responsibleName))}
+            aria-invalid={Boolean(errors.responsibleName)}
           />
         </Field>
         <Field label="E-mail do responsável *">
@@ -637,7 +903,9 @@ function TenantCredentialsModal({
             type="email"
             value={responsibleEmail}
             onChange={(event) => setResponsibleEmail(event.target.value.toLocaleLowerCase("en-US"))}
-            disabled={saving}
+            disabled={saving || loadingAdministrator}
+            className={requiredFieldClassName(Boolean(errors.responsibleEmail))}
+            aria-invalid={Boolean(errors.responsibleEmail)}
           />
         </Field>
         <Field label={passwordUnlocked ? "Nova senha *" : "Nova senha"}>
@@ -650,7 +918,8 @@ function TenantCredentialsModal({
               onChange={(event) => setNewPassword(event.target.value)}
               disabled={!passwordUnlocked || saving}
               placeholder={passwordUnlocked ? "Digite a nova senha" : "Senha protegida"}
-              className="pr-20"
+              className={`pr-20 ${requiredFieldClassName(Boolean(errors.newPassword))}`}
+              aria-invalid={Boolean(errors.newPassword)}
             />
             <button
               type="button"
@@ -682,6 +951,10 @@ function TenantCredentialsModal({
               </button>
             )}
           </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Se o primeiro acesso ainda estiver pendente, esta senha será temporária e deverá ser
+            substituída pelo administrador ao entrar.
+          </p>
         </Field>
       </div>
     </Modal>

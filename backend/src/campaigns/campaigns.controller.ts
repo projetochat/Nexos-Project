@@ -16,6 +16,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { CampaignsService } from "./campaigns.service";
+import { ConfirmDeletionDto } from "../common/deletion-impact";
 import { RequireTenantFeature } from "../platform/tenant-feature.decorator";
 import { TenantFeatureGuard } from "../platform/tenant-feature.guard";
 import {
@@ -71,8 +72,18 @@ export class CampaignsController {
 
   @Delete("campaigns/:id")
   @RequirePermissions("campaigns.delete")
-  archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    return this.campaigns.archive(id, current);
+  remove(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.campaigns.remove(id, dto.snapshotToken, current);
+  }
+
+  @Get("campaigns/:id/deletion-impact")
+  @RequirePermissions("campaigns.delete")
+  deletionImpact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.campaigns.deletionImpact(id, current);
   }
 
   @Post("campaigns/:id/start")

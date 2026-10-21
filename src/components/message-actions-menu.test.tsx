@@ -6,6 +6,49 @@ import { expect, it, vi } from "vitest";
 import { MessageActionsMenu } from "./message-actions-menu";
 import type { ApiMessage } from "@/lib/trixus-api";
 
+it("anchors a context-menu request at the pointer position", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const qc = new QueryClient();
+  try {
+    await React.act(() =>
+      root.render(
+        <QueryClientProvider client={qc}>
+          <MessageActionsMenu
+            message={
+              {
+                id: "context-image",
+                conversation_id: "c1",
+                sender: "contact",
+                type: "image",
+                content: "",
+                status: "delivered",
+                created_at: "2026-10-08T12:00:00Z",
+                media_data: { state: "ready" },
+              } as ApiMessage
+            }
+            onReact={vi.fn().mockResolvedValue(undefined)}
+            onDownload={vi.fn().mockResolvedValue(undefined)}
+            openRequest={1}
+            openPosition={{ x: 320, y: 240 }}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const anchor = host.querySelector<HTMLElement>('span[aria-hidden="true"]');
+    expect(anchor?.className).toContain("fixed");
+    expect(anchor?.style.left).toBe("320px");
+    expect(anchor?.style.top).toBe("240px");
+    expect(document.querySelectorAll('[aria-label="Ações da mensagem"]').length).toBeGreaterThan(1);
+  } finally {
+    await React.act(() => root.unmount());
+    host.remove();
+    qc.clear();
+  }
+});
+
 it("opens message actions, handles reply/copy/reaction/download and restricts unsupported actions", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div");
@@ -15,8 +58,7 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
   const reply = vi.fn(),
     react = vi.fn().mockResolvedValue(undefined),
     download = vi.fn().mockResolvedValue(undefined),
-    copy = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
+    copy = vi.fn().mockResolvedValue({ mode: "rich" });
   try {
     await React.act(() =>
       root.render(
@@ -40,6 +82,7 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
             canEdit
             canDelete
             canSend
+            onCopyMessage={copy}
           />
         </QueryClientProvider>,
       ),
@@ -50,6 +93,8 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
     const button = (label: string) =>
       [...document.querySelectorAll("button")].find((item) => item.textContent === label)!;
     await open();
+    const actionSurfaces = document.querySelectorAll('[aria-label="Ações da mensagem"]');
+    expect(actionSurfaces.item(actionSurfaces.length - 1).className).toContain("w-52");
     expect(button("Editar").disabled).toBe(true);
     expect(button("Apagar").disabled).toBe(true);
     expect(button("Reenviar").disabled).toBe(true);
@@ -57,7 +102,7 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
     expect(reply).toHaveBeenCalledOnce();
     await open();
     await React.act(() => button("Copiar").click());
-    expect(copy).toHaveBeenCalledWith("Legenda");
+    expect(copy).toHaveBeenCalledWith(expect.objectContaining({ id: "m1", type: "image" }));
     await open();
     await React.act(() => button("Salvar como…").click());
     expect(download).toHaveBeenCalledOnce();
@@ -67,6 +112,50 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
     await open();
     await React.act(() => button("Informações").click());
     expect(document.body.textContent).toContain("Informações da mensagem");
+  } finally {
+    await React.act(() => root.unmount());
+    host.remove();
+    qc.clear();
+  }
+});
+
+it("allows copying a ready image without a caption", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const copyMessage = vi.fn().mockResolvedValue({ mode: "rich" as const });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const qc = new QueryClient();
+  const message = {
+    id: "image-only",
+    conversation_id: "c1",
+    sender: "contact",
+    type: "image",
+    content: "",
+    status: "delivered",
+    created_at: "2026-10-05T12:00:00Z",
+    media_data: { state: "ready" },
+  } as ApiMessage;
+  try {
+    await React.act(() =>
+      root.render(
+        <QueryClientProvider client={qc}>
+          <MessageActionsMenu
+            message={message}
+            onReact={vi.fn().mockResolvedValue(undefined)}
+            onDownload={vi.fn().mockResolvedValue(undefined)}
+            onCopyMessage={copyMessage}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await React.act(() => host.querySelector("button")!.click());
+    const copyAction = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Copiar",
+    );
+    expect(copyAction?.disabled).toBe(false);
+    await React.act(() => copyAction?.click());
+    expect(copyMessage).toHaveBeenCalledWith(message);
   } finally {
     await React.act(() => root.unmount());
     host.remove();

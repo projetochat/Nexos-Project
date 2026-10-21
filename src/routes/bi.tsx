@@ -171,12 +171,14 @@ function BiChart({
 
 function Insight({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-border bg-surface-1 p-4">
-      <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
-        {icon}
-        {label}
+    <div className="flex min-h-24 flex-col rounded-lg border border-border bg-surface-1 p-4">
+      <div className="w-full text-xs uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="mt-auto flex items-center justify-between gap-3 pt-2">
+        <p className="font-mono text-2xl font-semibold">{num(value)}</p>
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-info/15 text-info">
+          {icon}
+        </span>
       </div>
-      <p className="mt-3 font-mono text-2xl font-semibold">{num(value)}</p>
     </div>
   );
 }

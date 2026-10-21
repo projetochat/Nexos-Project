@@ -19,10 +19,17 @@ describe("catálogos independentes do escopo do Chat", () => {
   });
 
   it("mantém o catálogo de Contatos independente e usa o escopo Chat só ao conversar", () => {
-    const source = readFileSync(new URL("../routes/contatos.tsx", import.meta.url), "utf8");
-    expect(source).toContain("setInstances(sortByOptionLabel(options.instances");
-    expect(source).toContain("enabled: canStartConversation");
-    expect(source).toContain("resolveContactInstances(contact.instanceIds, chatInstances)");
+    const contacts = readFileSync(new URL("../routes/contatos.tsx", import.meta.url), "utf8");
+    const orchestrator = readFileSync(
+      new URL("../components/active-conversation-orchestrator.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(contacts).toContain("setInstances(sortByOptionLabel(options.instances");
+    expect(contacts).toContain("<ActiveConversationOrchestrator");
+    expect(orchestrator).toContain("enabled: !!request && canStart");
+    expect(orchestrator).toContain("contactInstanceReferences(request.contact)");
+    expect(orchestrator).toContain("resolveConnectedContactInstances(request.contact, permitted)");
+    expect(orchestrator).toContain('setStep("forbidden")');
   });
 
   it("usa os catálogos do Chat nos filtros operacionais", () => {
@@ -39,9 +46,10 @@ describe("catálogos independentes do escopo do Chat", () => {
     expect(reports).toContain("organizationApi.listChatDepartments");
   });
 
-  it("intersecta as instâncias de Contatos com o escopo permitido no modal do Inbox", () => {
+  it("usa no modal do Inbox somente o catálogo já filtrado pelo escopo do Chat", () => {
     const source = readFileSync(new URL("../routes/inbox.index.tsx", import.meta.url), "utf8");
-    expect(source).toContain("new Set(availableConnections.map((connection) => connection.id))");
-    expect(source).toContain("filter((instance) => allowedIds.has(instance.id))");
+    expect(source).toContain("availableConnections.map((connection) => ({");
+    expect(source).toContain("instances={instances}");
+    expect(source).not.toContain("contactOptions.instances");
   });
 });

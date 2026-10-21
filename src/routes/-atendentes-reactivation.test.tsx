@@ -50,7 +50,7 @@ it("reactivates an inactive account without requesting a password", async () => 
     let password = document.querySelector<HTMLInputElement>('[aria-label="Senha do atendente"]')!;
     expect(password.disabled).toBe(true);
     await React.act(async () =>
-      document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Ativo"]')!.click(),
     );
     password = document.querySelector<HTMLInputElement>('[aria-label="Senha do atendente"]')!;
     expect(password.disabled).toBe(true);
@@ -135,7 +135,8 @@ it("requires a password after unlocking password editing", async () => {
     )!;
     await React.act(async () => save.click());
     expect(submit).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Senha mínima de 6 caracteres.");
+    expect(password.getAttribute("aria-invalid")).toBe("true");
+    expect(document.body.textContent).not.toContain("Senha mínima de 6 caracteres.");
   } finally {
     await React.act(async () => root.unmount());
     host.remove();

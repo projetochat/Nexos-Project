@@ -52,17 +52,23 @@ const baseGroup = {
     externalReference: "instance-a",
     status: MessagingConnectionStatus.CONNECTED,
     color: "#22c55e",
+    ownerExternalId: "5562992728679@s.whatsapp.net",
+    ownerPhoneNormalized: "+5562992728679",
   },
 };
 
 describe("GroupsController", () => {
-  it("separates leaving a group from editing it", () => {
+  it("keeps permissions as the action boundary for reading, creating, editing and leaving", () => {
+    const list = Object.getOwnPropertyDescriptor(GroupsController.prototype, "list")?.value;
+    const create = Object.getOwnPropertyDescriptor(GroupsController.prototype, "create")?.value;
     const leave = Object.getOwnPropertyDescriptor(GroupsController.prototype, "leave")?.value;
     const updateName = Object.getOwnPropertyDescriptor(
       GroupsController.prototype,
       "updateName",
     )?.value;
 
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, list)).toEqual(["groups.read"]);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, create)).toEqual(["groups.create"]);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, leave)).toEqual(["groups.leave"]);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, updateName)).toEqual(["groups.update"]);
   });
@@ -93,7 +99,7 @@ describe("GroupsController", () => {
     expect(result).toMatchObject({ synced: 3, participants: 42 });
   });
 
-  it("passes the profile department scope to a non-administrator group sync", async () => {
+  it("limits group synchronization to the instances allowed by the profile", async () => {
     const groupsSync = {
       sync: vi.fn().mockResolvedValue({ synced: 0, participants: 0 }),
     };
@@ -109,11 +115,25 @@ describe("GroupsController", () => {
     expect(groupsSync.sync).toHaveBeenCalledWith({
       tenantId: "tenant-a",
       connectionId: "connection-a",
-      departmentIds: ["department-a"],
+      connectionIds: ["connection-a"],
     });
   });
 
-  it("uses the preferred group department when it is allowed by the Chat scope", async () => {
+  it("rejects synchronization for an instance outside the profile", async () => {
+    const groupsSync = { sync: vi.fn() };
+    const controller = new GroupsController({} as never, {} as never, groupsSync as never);
+
+    await expect(
+      controller.sync({ connectionId: "connection-b" }, {
+        ...current,
+        roleKey: "agent",
+        connectionIds: ["connection-a"],
+      } as never),
+    ).rejects.toThrow("Instância não permitida");
+    expect(groupsSync.sync).not.toHaveBeenCalled();
+  });
+
+  it("resolves the group department from the profile scope and connection", async () => {
     const prisma = {
       department: {
         findFirst: vi.fn().mockResolvedValue({ id: "department-preferred" }),
@@ -124,7 +144,6 @@ describe("GroupsController", () => {
     const departmentId = await controller["resolveGroupDepartmentId"]("connection-a", {
       ...current,
       roleKey: "agent",
-      chatDepartmentIds: ["department-preferred"],
       chatScopes: [
         {
           connectionId: "connection-a",
@@ -138,16 +157,17 @@ describe("GroupsController", () => {
     expect(prisma.department.findFirst).toHaveBeenCalledOnce();
     expect(prisma.department.findFirst).toHaveBeenCalledWith({
       where: {
-        AND: [{ id: "department-preferred" }, { id: { in: ["department-preferred"] } }],
         tenantId: "tenant-a",
         active: true,
+        id: { in: ["department-preferred"] },
         connections: { some: { connectionId: "connection-a" } },
       },
+      orderBy: { createdAt: "asc" },
       select: { id: true },
     });
   });
 
-  it("rejects an explicit preferred group department outside the Chat scope", async () => {
+  it("rejects group creation when the tenant connection has no active department", async () => {
     const prisma = {
       department: {
         findFirst: vi.fn().mockResolvedValue(null),
@@ -159,50 +179,17 @@ describe("GroupsController", () => {
       controller["resolveGroupDepartmentId"]("connection-a", {
         ...current,
         roleKey: "agent",
-        chatDepartmentIds: ["department-allowed"],
-        chatScopes: [
-          {
-            connectionId: "connection-a",
-            departmentIds: ["department-allowed"],
-            favoriteDepartmentId: "department-preferred",
-          },
-        ],
+        chatScopes: [],
+        chatDepartmentIds: [],
       } as never),
-    ).rejects.toThrow("O departamento principal não está disponível para este perfil no Chat.");
+    ).rejects.toThrow("Selecione um departamento permitido no Chat.");
 
-    expect(prisma.department.findFirst).toHaveBeenCalledOnce();
-    expect(prisma.department.findFirst).toHaveBeenCalledWith({
-      where: {
-        AND: [{ id: "department-preferred" }, { id: { in: ["department-allowed"] } }],
-        tenantId: "tenant-a",
-        active: true,
-        connections: { some: { connectionId: "connection-a" } },
-      },
-      select: { id: true },
-    });
-  });
-
-  it("falls back to the first allowed department only when none was preferred", async () => {
-    const prisma = {
-      department: {
-        findFirst: vi.fn().mockResolvedValue({ id: "department-fallback" }),
-      },
-    };
-    const controller = new GroupsController(prisma as never, {} as never, {} as never);
-
-    const departmentId = await controller["resolveGroupDepartmentId"]("connection-a", {
-      ...current,
-      roleKey: "agent",
-      chatDepartmentIds: ["department-fallback"],
-    } as never);
-
-    expect(departmentId).toBe("department-fallback");
     expect(prisma.department.findFirst).toHaveBeenCalledOnce();
     expect(prisma.department.findFirst).toHaveBeenCalledWith({
       where: {
         tenantId: "tenant-a",
         active: true,
-        id: { in: ["department-fallback"] },
+        id: { in: [] },
         connections: { some: { connectionId: "connection-a" } },
       },
       orderBy: { createdAt: "asc" },
@@ -225,10 +212,22 @@ describe("GroupsController", () => {
     };
     const controller = new GroupsController(prisma as never, {} as never, {} as never);
 
-    const result = await controller.instanceOptions(current as never);
+    const result = await controller.instanceOptions({
+      ...current,
+      roleKey: "agent",
+      connectionIds: [],
+    } as never);
 
     expect(prisma.messagingConnection.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: {
+          tenantId: "tenant-a",
+          archivedAt: null,
+          id: { in: [] },
+          status: {
+            in: [MessagingConnectionStatus.CONNECTED, MessagingConnectionStatus.DISCONNECTED],
+          },
+        },
         select: {
           id: true,
           name: true,
@@ -285,7 +284,7 @@ describe("GroupsController", () => {
     expect(result.items[0]).not.toHaveProperty("participants");
   });
 
-  it("applies both instance and department Chat scopes to group lists", async () => {
+  it("limits the group list to paired instance and department scopes", async () => {
     const prisma = {
       conversation: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -300,17 +299,102 @@ describe("GroupsController", () => {
       roleKey: "agent",
       connectionIds: ["connection-a"],
       chatDepartmentIds: ["department-a"],
+      chatScopes: [
+        {
+          connectionId: "connection-a",
+          departmentIds: ["department-a"],
+          favoriteDepartmentId: null,
+        },
+      ],
     } as never);
 
     expect(prisma.conversation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({
-          AND: expect.arrayContaining([
+        where: {
+          tenantId: "tenant-a",
+          archivedAt: null,
+          conversationType: ConversationType.GROUP,
+          AND: [
+            { OR: [{ connectionId: null }, { connection: { is: { archivedAt: null } } }] },
             {
-              connectionId: { in: ["connection-a"] },
-              departmentId: { in: ["department-a"] },
+              OR: [
+                {
+                  connectionId: { in: ["connection-a"] },
+                  OR: [{ departmentId: { in: ["department-a"] } }, { departmentId: null }],
+                },
+              ],
             },
-          ]),
+          ],
+        },
+      }),
+    );
+  });
+
+  it("applies the profile scope to group management actions", async () => {
+    const prisma = {
+      conversation: {
+        findFirst: vi.fn().mockResolvedValue(baseGroup),
+      },
+    };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    await controller["resolveManagedGroup"]("group-a", {
+      ...current,
+      roleKey: "agent",
+      connectionIds: ["connection-a"],
+      chatDepartmentIds: ["department-a"],
+      chatScopes: [
+        {
+          connectionId: "connection-a",
+          departmentIds: ["department-a"],
+          favoriteDepartmentId: null,
+        },
+      ],
+    } as never);
+
+    expect(prisma.conversation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { OR: [{ connectionId: null }, { connection: { is: { archivedAt: null } } }] },
+            {
+              OR: [
+                {
+                  connectionId: { in: ["connection-a"] },
+                  OR: [{ departmentId: { in: ["department-a"] } }, { departmentId: null }],
+                },
+              ],
+            },
+          ],
+          id: "group-a",
+          tenantId: "tenant-a",
+          archivedAt: null,
+          conversationType: ConversationType.GROUP,
+        },
+      }),
+    );
+  });
+
+  it("does not resolve a group outside the profile scope", async () => {
+    const prisma = { conversation: { findFirst: vi.fn().mockResolvedValue(null) } };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    await expect(
+      controller.detail("group-b", {
+        ...current,
+        roleKey: "agent",
+        connectionIds: [],
+        chatDepartmentIds: [],
+        chatScopes: [],
+      } as never),
+    ).rejects.toThrow("Grupo não encontrado");
+    expect(prisma.conversation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: [
+            { OR: [{ connectionId: null }, { connection: { is: { archivedAt: null } } }] },
+            { OR: [] },
+          ],
         }),
       }),
     );
@@ -392,5 +476,65 @@ describe("GroupsController", () => {
     expect(result.participants).toEqual([
       expect.objectContaining({ id: "participant-active", name: "Maria", active: true }),
     ]);
+  });
+
+  it("exposes the current instance and its participant-management capability", async () => {
+    const group = {
+      ...baseGroup,
+      participants: [
+        {
+          id: "participant-owner",
+          displayName: "Instância A",
+          phone: "5562992728679",
+          lid: null,
+          externalParticipantId: "5562992728679@s.whatsapp.net",
+          isAdmin: true,
+          isSuperAdmin: false,
+          active: true,
+          lastSeenAt: new Date("2026-09-02T09:00:00.000Z"),
+        },
+      ],
+    };
+    const prisma = { conversation: { findFirst: vi.fn().mockResolvedValue(group) } };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    const result = await controller.detail("group-a", current as never);
+
+    expect(result.canManageParticipants).toBe(true);
+    expect(result.participants[0]).toMatchObject({
+      isCurrentInstance: true,
+      name: "Instância A",
+    });
+  });
+
+  it("blocks participant administration when the connected instance is not an admin", async () => {
+    const group = {
+      ...baseGroup,
+      participants: [
+        {
+          id: "participant-owner",
+          displayName: "Instância A",
+          phone: "5562992728679",
+          lid: null,
+          externalParticipantId: "5562992728679@s.whatsapp.net",
+          isAdmin: false,
+          isSuperAdmin: false,
+          active: true,
+          lastSeenAt: new Date("2026-09-02T09:00:00.000Z"),
+        },
+      ],
+    };
+    const prisma = { conversation: { findFirst: vi.fn().mockResolvedValue(group) } };
+    const evolution = { updateGroupParticipants: vi.fn() };
+    const controller = new GroupsController(prisma as never, evolution as never, {} as never);
+
+    await expect(
+      controller.updateAdmins(
+        "group-a",
+        { action: "promote", participantIds: ["5511999999999@s.whatsapp.net"] },
+        current as never,
+      ),
+    ).rejects.toThrow("não possui privilégio para gerenciar participantes");
+    expect(evolution.updateGroupParticipants).not.toHaveBeenCalled();
   });
 });

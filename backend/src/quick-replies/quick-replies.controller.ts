@@ -20,6 +20,11 @@ import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  ConfirmDeletionDto,
+  type DeletionImpactPreview,
+  deletionSnapshot,
+} from "../common/deletion-impact";
 import { CreateQuickReplyDto } from "./dto/create-quick-reply.dto";
 import { ListQuickRepliesQueryDto } from "./dto/list-quick-replies-query.dto";
 import { UpdateQuickReplyDto } from "./dto/update-quick-reply.dto";
@@ -53,26 +58,44 @@ export class QuickRepliesController {
     const departmentId = await this.resolveDepartmentId(dto.departmentId ?? null, current);
     const normalizedShortcut = normalizeShortcut(dto.shortcut);
     await this.ensureShortcutAvailable(current.tenantId, departmentId, normalizedShortcut);
+    const archived = await this.prisma.quickReply.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        departmentId,
+        normalizedShortcut,
+        archivedAt: { not: null },
+      },
+      select: { id: true },
+    });
+    const data = {
+      title: clean(dto.title),
+      shortcut: normalizeShortcutDisplay(dto.shortcut),
+      normalizedShortcut,
+      content: dto.content.trim(),
+      attachmentFileName: dto.attachmentFileName ?? null,
+      attachmentMimeType: dto.attachmentMimeType ?? null,
+      attachmentSize: dto.attachmentSize ?? null,
+      attachmentDataUrl: dto.attachmentDataUrl ?? null,
+      closeOnSend: dto.closeOnSend ?? false,
+      active: dto.active ?? true,
+      departmentId,
+    };
     try {
-      const reply = await this.prisma.quickReply.create({
-        data: {
-          tenantId: current.tenantId,
-          title: clean(dto.title),
-          shortcut: normalizeShortcutDisplay(dto.shortcut),
-          normalizedShortcut,
-          content: dto.content.trim(),
-          messages,
-          intervalSeconds: dto.intervalSeconds ?? 0,
-          attachmentFileName: dto.attachmentFileName ?? null,
-          attachmentMimeType: dto.attachmentMimeType ?? null,
-          attachmentSize: dto.attachmentSize ?? null,
-          attachmentDataUrl: dto.attachmentDataUrl ?? null,
-          closeOnSend: dto.closeOnSend ?? false,
-          departmentId,
-          createdByMembershipId: current.membershipId,
-        },
-        include: quickReplyInclude,
-      });
+      const reply = archived
+        ? await this.prisma.quickReply.update({
+            where: { tenantId_id: { tenantId: current.tenantId, id: archived.id } },
+            data: { ...data, messages: messages ?? Prisma.JsonNull, archivedAt: null },
+            include: quickReplyInclude,
+          })
+        : await this.prisma.quickReply.create({
+            data: {
+              tenantId: current.tenantId,
+              ...data,
+              messages,
+              createdByMembershipId: current.membershipId,
+            },
+            include: quickReplyInclude,
+          });
       return serializeQuickReply(reply);
     } catch (error) {
       handleUniqueShortcut(error);
@@ -111,12 +134,12 @@ export class QuickRepliesController {
           normalizedShortcut: dto.shortcut ? normalizedShortcut : undefined,
           content: dto.content?.trim(),
           messages,
-          intervalSeconds: dto.intervalSeconds,
           attachmentFileName: dto.attachmentFileName,
           attachmentMimeType: dto.attachmentMimeType,
           attachmentSize: dto.attachmentSize,
           attachmentDataUrl: dto.attachmentDataUrl,
           closeOnSend: dto.closeOnSend,
+          active: dto.active,
           departmentId,
         },
         include: quickReplyInclude,
@@ -129,14 +152,75 @@ export class QuickRepliesController {
 
   @Delete(":id")
   @RequirePermissions("chat.quick_replies.delete")
-  async archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    const existing = await this.findOrThrow(id, current.tenantId);
-    const reply = await this.prisma.quickReply.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
-      data: { archivedAt: new Date() },
-      include: quickReplyInclude,
+  async archive(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "quick_replies" WHERE id = ${id} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
+      );
+      const impact = await this.buildDeletionPreview(id, current.tenantId, tx);
+      if (impact.snapshotToken !== dto.snapshotToken) {
+        return {
+          status: "changed" as const,
+          impact,
+          message: "A mensagem rápida mudou. Revise os dados antes de excluir.",
+        };
+      }
+      await tx.quickReply.delete({
+        where: { tenantId_id: { tenantId: current.tenantId, id } },
+      });
+      return { status: "deleted" as const };
     });
-    return serializeQuickReply(reply);
+  }
+
+  @Get(":id/deletion-preview")
+  @RequirePermissions("chat.quick_replies.delete")
+  deletionPreview(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.buildDeletionPreview(id, current.tenantId);
+  }
+
+  private async buildDeletionPreview(
+    id: string,
+    tenantId: string,
+    db: Pick<Prisma.TransactionClient, "quickReply"> = this.prisma,
+  ): Promise<DeletionImpactPreview> {
+    const reply = await db.quickReply.findFirst({
+      where: { id, tenantId, archivedAt: null },
+      select: {
+        id: true,
+        title: true,
+        shortcut: true,
+        updatedAt: true,
+        attachmentFileName: true,
+      },
+    });
+    if (!reply) throw new NotFoundException("Mensagem rápida não encontrada.");
+    return {
+      snapshotToken: deletionSnapshot(reply),
+      title: "Excluir Mensagem Rápida?",
+      prompt: "Esta mensagem rápida não possui vínculos estruturais com outros registros.",
+      record: {
+        name: reply.title,
+        identifiers: [
+          { label: "Atalho", value: `/${reply.shortcut.replace(/^\//, "")}` },
+          ...(reply.attachmentFileName
+            ? [{ label: "Anexo", value: reply.attachmentFileName }]
+            : []),
+        ],
+      },
+      dependencies: [],
+      consequences: [
+        {
+          id: "shortcut",
+          text: "O conteúdo e o anexo serão excluídos; o atalho ficará disponível para reutilização.",
+          irreversible: true,
+        },
+      ],
+      confirmation: { level: "standard", confirmLabel: "Confirmar" },
+    };
   }
 
   private async visibleWhere(
@@ -147,7 +231,12 @@ export class QuickRepliesController {
     const q = query.q?.trim();
     const where: Prisma.QuickReplyWhereInput = {
       tenantId: current.tenantId,
-      ...(status === "active" ? { archivedAt: null } : {}),
+      ...(status === "active"
+        ? {
+            archivedAt: null,
+            ...(query.scope === "catalog" ? {} : { active: true }),
+          }
+        : {}),
       ...(status === "archived" ? { archivedAt: { not: null } } : {}),
       ...(q
         ? {
@@ -219,7 +308,6 @@ function serializeQuickReply(reply: QuickReplyWithRelations) {
     texto: reply.content,
     content: reply.content,
     messages: reply.messages,
-    intervalSeconds: reply.intervalSeconds,
     attachmentFileName: reply.attachmentFileName,
     attachmentMimeType: reply.attachmentMimeType,
     attachmentSize: reply.attachmentSize,
@@ -233,6 +321,7 @@ function serializeQuickReply(reply: QuickReplyWithRelations) {
     updatedAt: reply.updatedAt,
     close_on_send: reply.closeOnSend,
     closeOnSend: reply.closeOnSend,
+    active: reply.active,
   };
 }
 
@@ -279,8 +368,8 @@ export function normalizeMessages(messages?: QuickReplyMessageDto[]) {
 
 function normalizeShortcut(value: string) {
   const shortcut = clean(value).toLocaleLowerCase("pt-BR");
-  if (!/^[\p{L}-]+$/u.test(shortcut)) {
-    throw new BadRequestException("O atalho deve conter somente letras e hífen.");
+  if (!/^[\p{L}\p{N}-]+$/u.test(shortcut)) {
+    throw new BadRequestException("O atalho deve conter somente letras, números e hífen.");
   }
   return shortcut;
 }

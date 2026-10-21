@@ -1,0 +1,595 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from "vitest";
+import {
+  allowPendingReconciliationDuringInspection,
+  anonymizeCollisionRows,
+  canonicalNormalizedName,
+  canonicalVariableKey,
+  classifyMigrationHistory,
+  hasUnknownMigrationHistory,
+  inspectContactCustomFieldIdentity,
+  migrationChecksum,
+  nativeKeys,
+  nativeNames,
+  parseMode,
+  validateFullMigrationHistory,
+  validateReconciliationManifest,
+  semanticDrift,
+  structuralDrift,
+} from "./migrate-deploy-safe.mjs";
+import {
+  canonicalContactFieldVariableKey,
+  NATIVE_CONTACT_FIELD_NAMES,
+  NATIVE_RESERVED_VARIABLE_KEYS,
+  normalizeCanonicalContactFieldName,
+} from "../src/crm/contact-custom-field-catalog.ts";
+
+const migrationPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "prisma",
+  "migrations",
+  "20261005210000_contact_custom_field_identity",
+  "migration.sql",
+);
+const reconciliationManifestPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "prisma",
+  "migration-reconciliations.json",
+);
+const checksum = await migrationChecksum();
+const completed = (value = checksum) => ({
+  checksum: value,
+  finished_at: new Date("2026-10-06T00:00:00Z"),
+  rolled_back_at: null,
+});
+const incomplete = (value = checksum) => ({
+  checksum: value,
+  finished_at: null,
+  rolled_back_at: null,
+});
+const rolledBack = (value = checksum) => ({
+  checksum: value,
+  finished_at: null,
+  rolled_back_at: new Date("2026-10-06T00:00:00Z"),
+});
+const validCatalog = {
+  column_exists: true,
+  column_is_text: true,
+  column_not_null: true,
+  index_exists: true,
+  index_name_exists: true,
+  index_on_target: true,
+  index_unique: true,
+  index_valid: true,
+  index_ready: true,
+  index_partial: false,
+  index_expression: false,
+  index_key_count: 2,
+  index_attribute_count: 2,
+  index_columns: ["tenantId", "variableKey"],
+};
+const validMetrics = {
+  null_keys: 0,
+  empty_keys: 0,
+  invalid_format_keys: 0,
+  reserved_keys: 0,
+  unexpected_normalized_names: 0,
+  duplicate_keys: 0,
+};
+
+describe("safe contact custom field migration preflight", () => {
+  it("computes the checksum from the exact migration bytes", async () => {
+    const packagedBytes = await readFile(migrationPath);
+    const independentlyCalculated = createHash("sha256").update(packagedBytes).digest("hex");
+    await expect(migrationChecksum()).resolves.toBe(independentlyCalculated);
+  });
+
+  it("records the exact Git blob bytes and SHA-256 shipped by b4d85f7", async () => {
+    const manifest = JSON.parse(await readFile(reconciliationManifestPath, "utf8"));
+    const [entry] = validateReconciliationManifest(manifest);
+    expect(entry).toMatchObject({
+      legacyCommit: "b4d85f7d26f90bbcb071544dbb5115de1ee98a48",
+      legacyGitBlob: "0e1ffd3de8735c1afc12f74bc0751f085af40af0",
+      legacyByteLength: 3654,
+      legacyChecksum: "9ff6347fc38618491c8465bc91440381de81e8d2f06bc15d1f32cfd5c8850fef",
+    });
+  });
+
+  it("rejects checksum drift, incomplete history, rollback and gaps in any prior migration", () => {
+    const migrations = [
+      { name: "20260101000000_first", checksum: "1".repeat(64) },
+      { name: "20260102000000_second", checksum: "2".repeat(64) },
+      { name: "20260103000000_third", checksum: "3".repeat(64) },
+    ];
+    const row = (name, value, overrides = {}) => ({
+      migration_name: name,
+      checksum: value,
+      finished_at: new Date("2026-01-01T00:00:00Z"),
+      rolled_back_at: null,
+      ...overrides,
+    });
+    expect(() =>
+      validateFullMigrationHistory([row(migrations[0].name, "0".repeat(64))], migrations),
+    ).toThrow("MIGRATION_HISTORY_CHECKSUM_MISMATCH");
+    expect(() =>
+      validateFullMigrationHistory(
+        [row(migrations[0].name, migrations[0].checksum, { finished_at: null })],
+        migrations,
+      ),
+    ).toThrow("MIGRATION_HISTORY_INCOMPLETE");
+    expect(() =>
+      validateFullMigrationHistory(
+        [
+          row(migrations[0].name, migrations[0].checksum, {
+            finished_at: null,
+            rolled_back_at: new Date("2026-01-02T00:00:00Z"),
+          }),
+        ],
+        migrations,
+      ),
+    ).toThrow("MIGRATION_HISTORY_ROLLED_BACK");
+    expect(() =>
+      validateFullMigrationHistory([row(migrations[1].name, migrations[1].checksum)], migrations),
+    ).toThrow("MIGRATION_HISTORY_GAP");
+  });
+
+  it("rejects unknown migration history in every state", () => {
+    const folders = new Set(["20261005210000_contact_custom_field_identity"]);
+    for (const row of [completed(), incomplete(), rolledBack()]) {
+      expect(
+        hasUnknownMigrationHistory([{ migration_name: "20990101000000_unknown", ...row }], folders),
+      ).toBe(true);
+    }
+  });
+
+  it("accepts only a strict, unique reconciliation manifest", () => {
+    const valid = {
+      legacyCommit: "a".repeat(40),
+      legacyGitBlob: "b".repeat(40),
+      legacyByteLength: 3654,
+      legacyChecksum: "1".repeat(64),
+      currentChecksum: "2".repeat(64),
+      forwardMigration: "20261006030000_reconcile_contact_custom_field_identity",
+      forwardChecksum: "3".repeat(64),
+    };
+    expect(validateReconciliationManifest({ contactCustomFieldIdentity: [valid] })).toEqual([
+      valid,
+    ]);
+    for (const invalid of [
+      { ...valid, forwardChecksum: "not-a-hash" },
+      { ...valid, forwardMigration: "../escape" },
+      { ...valid, extra: true },
+    ]) {
+      expect(() =>
+        validateReconciliationManifest({ contactCustomFieldIdentity: [invalid] }),
+      ).toThrow(/RECONCILIATION_MANIFEST_INVALID/);
+    }
+    expect(() =>
+      validateReconciliationManifest({ contactCustomFieldIdentity: [valid, { ...valid }] }),
+    ).toThrow(/RECONCILIATION_MANIFEST_INVALID/);
+  });
+
+  it("matches the canonical application semantics and reserved catalog", () => {
+    const corpus = [
+      "  Plano   do Cliente ",
+      "Šifra",
+      "E-mail",
+      "AÇÃO de cobrança",
+      "  ",
+      "Departamento do contato",
+    ];
+    for (const value of corpus) {
+      expect(canonicalNormalizedName(value)).toBe(normalizeCanonicalContactFieldName(value));
+      expect(canonicalVariableKey(value)).toBe(canonicalContactFieldVariableKey(value));
+    }
+    expect(new Set(nativeKeys)).toEqual(new Set(NATIVE_RESERVED_VARIABLE_KEYS));
+    expect(new Set(nativeNames)).toEqual(
+      new Set(NATIVE_CONTACT_FIELD_NAMES.map(normalizeCanonicalContactFieldName)),
+    );
+  });
+
+  it.each([
+    [[], "NOT_APPLIED"],
+    [[incomplete()], "INCOMPLETE"],
+    [[completed()], "COMPLETED_VALID"],
+    [[rolledBack()], "ROLLED_BACK"],
+    [[completed("0".repeat(64))], "COMPLETED_CHECKSUM_MISMATCH"],
+    [[incomplete("0".repeat(64))], "INCOMPLETE_CHECKSUM_MISMATCH"],
+    [[rolledBack("0".repeat(64))], "ROLLED_BACK_CHECKSUM_MISMATCH"],
+    [[completed(), incomplete()], "AMBIGUOUS_HISTORY"],
+    [[completed(), completed()], "AMBIGUOUS_HISTORY"],
+    [[{ ...completed(), rolled_back_at: new Date("2026-10-06T01:00:00Z") }], "AMBIGUOUS_HISTORY"],
+  ])("classifies migration history without rewriting it: %s", (rows, expected) => {
+    expect(classifyMigrationHistory(rows, checksum)).toBe(expected);
+  });
+
+  it.each([
+    [{ column_not_null: false }, "COLUMN_NULLABLE"],
+    [{ column_is_text: false }, "COLUMN_TYPE_NOT_TEXT"],
+    [{ index_unique: false }, "INDEX_NOT_UNIQUE"],
+    [{ index_on_target: false }, "INDEX_WRONG_TABLE"],
+    [{ index_columns: ["variableKey", "tenantId"] }, "INDEX_COLUMNS"],
+    [{ index_columns: ["tenantId", "id"] }, "INDEX_COLUMNS"],
+    [{ index_valid: false }, "INDEX_INVALID"],
+    [{ index_ready: false }, "INDEX_NOT_READY"],
+    [{ index_partial: true }, "INDEX_PARTIAL"],
+    [{ index_expression: true }, "INDEX_EXPRESSION"],
+    [{ index_key_count: 3 }, "INDEX_KEY_COUNT"],
+  ])("detects catalog drift: %s", (change, expected) => {
+    expect(structuralDrift({ ...validCatalog, ...change })).toContain(expected);
+  });
+
+  it.each([
+    ["null_keys", "NULL_KEYS"],
+    ["empty_keys", "EMPTY_KEYS"],
+    ["invalid_format_keys", "INVALID_KEY_FORMAT"],
+    ["reserved_keys", "RESERVED_KEYS"],
+    ["unexpected_normalized_names", "UNEXPECTED_NORMALIZED_NAMES"],
+    ["duplicate_keys", "DUPLICATE_KEYS"],
+  ])("detects semantic drift in active or archived rows: %s", (field, expected) => {
+    expect(semanticDrift({ ...validMetrics, [field]: 1 })).toContain(expected);
+  });
+
+  it("does not expose tenant or technical key values in its collision report", () => {
+    const [collision] = anonymizeCollisionRows(
+      [
+        {
+          tenant_id: "tenant-secret",
+          conflicting_key: "codigo_cliente",
+          collision_type: "variable_key",
+          definition_count: 2,
+          active_count: 1,
+          archived_count: 1,
+          value_count: 8,
+        },
+      ],
+      "fixed-test-salt",
+    );
+    expect(collision).toMatchObject({
+      collisionType: "variable_key",
+      definitions: 2,
+      activeDefinitions: 1,
+      archivedDefinitions: 1,
+      affectedValues: 8,
+    });
+    expect(JSON.stringify(collision)).not.toContain("tenant-secret");
+    expect(JSON.stringify(collision)).not.toContain("codigo_cliente");
+  });
+
+  it("uses the same Unicode semantics as the application", () => {
+    expect(canonicalVariableKey("Šifra do Cliente")).toBe("sifra_cliente");
+    expect(canonicalVariableKey("Si\u0301fra do Cliente")).toBe("sifra_cliente");
+    expect(canonicalNormalizedName("  SI\u0301FRA   do Cliente ")).toBe("sífra do cliente");
+  });
+
+  it("rejects a completed migration whose checksum differs before catalog validation", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed("0".repeat(64))]),
+    };
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_COMPLETED_CHECKSUM_MISMATCH",
+    );
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects homonymous but structurally divergent objects", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ ...validCatalog, index_unique: false }]),
+    };
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_STRUCTURAL_DRIFT",
+    );
+  });
+
+  it("rejects the expected index name when it belongs to another table", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([
+          { table_exists: true, history_exists: true, index_name_exists: true },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            ...validCatalog,
+            column_exists: false,
+            index_exists: false,
+            index_name_exists: true,
+            index_on_target: false,
+          },
+        ]),
+    };
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_PARTIAL_STATE",
+    );
+  });
+
+  it("rejects semantic drift after a completed migration", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([{ ...validMetrics, invalid_format_keys: 1 }]),
+    };
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
+    );
+  });
+
+  it("accepts a stable technical key after a legitimate field rename", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-renamed",
+            tenantId: "tenant-a",
+            label: "Nome atualizado",
+            normalizedName: "nome atualizado",
+            variableKey: "nome_original",
+          },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).resolves.toMatchObject({
+      migrationState: "COMPLETED_VALID",
+      semanticDrift: [],
+    });
+  });
+
+  it("accepts distinct stable keys when current labels derive the same candidate key", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-a",
+            tenantId: "tenant-a",
+            label: "Código do cliente",
+            normalizedName: "código do cliente",
+            variableKey: "codigo_original_a",
+          },
+          {
+            id: "field-b",
+            tenantId: "tenant-a",
+            label: "Código cliente",
+            normalizedName: "código cliente",
+            variableKey: "codigo_original_b",
+          },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).resolves.toMatchObject({
+      migrationState: "COMPLETED_VALID",
+      semanticDrift: [],
+    });
+  });
+
+  it.each([
+    ["an empty label-derived key", "   ", "", "campo_legado"],
+    ["a reserved label-derived key", "Cumprimento", "cumprimento", "campo_legado"],
+  ])("rejects %s after the migration", async (_case, label, normalizedName, variableKey) => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          { id: "field-invalid-label", tenantId: "tenant-a", label, normalizedName, variableKey },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
+    );
+  });
+
+  it.each([
+    ["a null stored key", null],
+    ["an empty stored key", ""],
+    ["an invalid stored key", "Campo Ruim"],
+    ["a reserved stored key", "cumprimento"],
+  ])("rejects %s after the migration", async (_case, variableKey) => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-invalid-key",
+            tenantId: "tenant-a",
+            label: "Campo legado",
+            normalizedName: "campo legado",
+            variableKey,
+          },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
+    );
+  });
+
+  it("rejects a stored normalized name that no longer matches the current label", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-renamed",
+            tenantId: "tenant-a",
+            label: "Nome atualizado",
+            normalizedName: "nome anterior",
+            variableKey: "nome_original",
+          },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
+    );
+  });
+
+  it("rejects duplicate stable technical keys after the migration", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([
+          {
+            id: "field-a",
+            tenantId: "tenant-a",
+            label: "Campo um",
+            normalizedName: "campo um",
+            variableKey: "campo_estavel",
+          },
+          {
+            id: "field-b",
+            tenantId: "tenant-a",
+            label: "Campo dois",
+            normalizedName: "campo dois",
+            variableKey: "campo_estavel",
+          },
+        ]),
+    };
+
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_SEMANTIC_DRIFT",
+    );
+  });
+
+  it("accepts only a checksum, catalog and data set that all agree", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed()])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([]),
+    };
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).resolves.toMatchObject({
+      migrationState: "COMPLETED_VALID",
+      collisions: [],
+    });
+  });
+
+  it("accepts only the exact reviewed forward reconciliation", async () => {
+    const legacyChecksum = "9ff6347fc38618491c8465bc91440381de81e8d2f06bc15d1f32cfd5c8850fef";
+    const forwardChecksum = "bde512d7624acd765e0ac723b94d8bcce22995e37bd64e0d8e107a679136c4c7";
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([completed(legacyChecksum)])
+        .mockResolvedValueOnce([completed(forwardChecksum)])
+        .mockResolvedValueOnce([validCatalog])
+        .mockResolvedValueOnce([validMetrics])
+        .mockResolvedValueOnce([]),
+    };
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).resolves.toMatchObject({
+      migrationState: "COMPLETED_RECONCILED",
+      forwardState: "COMPLETED_VALID",
+    });
+  });
+
+  it("blocks incomplete history even when the transaction left no target objects", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([incomplete()]),
+    };
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).rejects.toThrow(
+      "CONTACT_CUSTOM_FIELD_IDENTITY_INCOMPLETE",
+    );
+  });
+
+  it("allows a reviewed rolled-back retry only when target objects are absent", async () => {
+    const prisma = {
+      $queryRawUnsafe: vi
+        .fn()
+        .mockResolvedValueOnce([{ table_exists: true, history_exists: true }])
+        .mockResolvedValueOnce([rolledBack()])
+        .mockResolvedValueOnce([
+          {
+            ...validCatalog,
+            column_exists: false,
+            column_is_text: false,
+            column_not_null: false,
+            index_exists: false,
+            index_name_exists: false,
+            index_on_target: false,
+            index_unique: false,
+            index_valid: false,
+            index_ready: false,
+            index_key_count: 0,
+            index_attribute_count: 0,
+            index_columns: [],
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]),
+    };
+    await expect(inspectContactCustomFieldIdentity(prisma, checksum)).resolves.toMatchObject({
+      migrationState: "ROLLED_BACK",
+      collisions: [],
+    });
+  });
+
+  it("selects help and version before any database access", () => {
+    expect(parseMode(["--help"])).toBe("help");
+    expect(parseMode(["-h"])).toBe("help");
+    expect(parseMode(["--version"])).toBe("version");
+    expect(parseMode(["--apply-reviewed-reconciliation"])).toBe("reconcile");
+  });
+
+  it("inspects a reviewed legacy state before deploy refuses manual reconciliation", () => {
+    expect(allowPendingReconciliationDuringInspection("deploy")).toBe(true);
+    expect(allowPendingReconciliationDuringInspection("preflight")).toBe(true);
+    expect(allowPendingReconciliationDuringInspection("reconcile")).toBe(true);
+  });
+});

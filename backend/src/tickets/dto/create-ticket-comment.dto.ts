@@ -1,6 +1,6 @@
-import { IsBoolean, IsOptional, IsString, MinLength } from "class-validator";
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class CreateTicketCommentDto {
-  @IsString() @MinLength(1) bodyHtml!: string;
+  @IsString() @MinLength(1) @MaxLength(15_000_000) bodyHtml!: string;
   @IsOptional() @IsBoolean() internal?: boolean;
 }

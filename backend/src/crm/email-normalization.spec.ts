@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { normalizeNullableEmail } from "./crm.controller";
+import { normalizeContactCustomFieldValue, normalizeNullableEmail } from "./crm.controller";
+import { ContactCustomFieldType } from "../generated/prisma";
 
 describe("CRM email normalization", () => {
   it("trims and lowercases contact and customer emails", () => {
@@ -10,5 +11,17 @@ describe("CRM email normalization", () => {
     expect(normalizeNullableEmail(undefined)).toBeNull();
     expect(normalizeNullableEmail(null)).toBeNull();
     expect(normalizeNullableEmail("   ")).toBeNull();
+  });
+
+  it("lowercases a custom field configured with the e-mail format", () => {
+    expect(
+      normalizeContactCustomFieldValue(
+        {
+          type: ContactCustomFieldType.TEXT,
+          mask: JSON.stringify({ custom: { format: "email" } }),
+        },
+        "  Financeiro@Example.COM  ",
+      ),
+    ).toBe("financeiro@example.com");
   });
 });

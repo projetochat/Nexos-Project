@@ -1,28 +1,30 @@
-import { customFieldVariableKey } from "./message-variables";
-
 export const CONNECTION_MESSAGE_VARIABLES = [
-  "{{cumprimento}}",
+  "{{contato}}",
+  "{{saudacao}}",
   "{{nome}}",
   "{{telefone}}",
   "{{email}}",
   "{{departamento}}",
   "{{cliente}}",
+  "{{empresa}}",
   "{{instancia}}",
 ];
 
 const CONNECTION_MESSAGE_VARIABLE_DESCRIPTIONS: Record<string, string> = {
-  "{{cumprimento}}": "Bom dia, Boa tarde e Boa noite. Será apresentado conforme a hora do dia.",
+  "{{saudacao}}": "Bom dia, Boa tarde e Boa noite conforme o fuso horário da instância.",
+  "{{contato}}": "Nome do contato (equivalente a {{nome}}).",
   "{{nome}}": "Nome do contato.",
   "{{telefone}}": "Telefone do contato.",
   "{{email}}": "E-mail do contato.",
   "{{instancia}}": "Instância da conversa.",
   "{{cliente}}": "Cliente do contato.",
+  "{{empresa}}": "Empresa do contato (equivalente a {{cliente}}).",
   "{{departamento}}": "Departamento do contato.",
 };
 
 export function mergeMessageVariables(
   baseTokens: string[],
-  customFields: Array<{ label: string }>,
+  customFields: Array<{ label: string; variableKey: string }>,
 ) {
   const variables = baseTokens.map((token) => ({
     token,
@@ -31,8 +33,7 @@ export function mergeMessageVariables(
   const knownTokens = new Set(baseTokens);
 
   customFields.forEach((field) => {
-    const key = customFieldVariableKey(field.label);
-    const token = key ? `{{${key}}}` : null;
+    const token = field.variableKey ? `{{${field.variableKey}}}` : null;
     if (!token || knownTokens.has(token)) return;
     knownTokens.add(token);
     variables.push({ token, description: `Campo adicional: ${field.label}.` });

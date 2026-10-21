@@ -1,0 +1,545 @@
+import * as React from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { MessageCircle } from "lucide-react";
+import { toast } from "sonner";
+import { DepartmentIcon } from "@/components/department-icon";
+import { Modal } from "@/components/modal";
+import { Button } from "@/components/ui-kit";
+import { connectionInstanceValue } from "@/lib/connection-options";
+import { canStartActiveConversation } from "@/lib/active-conversation-permissions";
+import {
+  contactInstanceReferences,
+  resolveConnectedContactInstances,
+} from "@/lib/contact-instance-selection";
+import {
+  departmentsForConnection,
+  favoriteDepartmentForConnection,
+} from "@/lib/favorite-department";
+import { setInboxTab } from "@/lib/inbox-tab-state";
+import { useSession } from "@/lib/session";
+import {
+  conversationApi,
+  crmApi,
+  onboardingApi,
+  organizationApi,
+  type ApiConversation,
+  type ApiContactInstanceOption,
+  type ApiMessageContactPickerItem,
+} from "@/lib/trixus-api";
+import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
+
+export type ActiveConversationRequest = {
+  key: number;
+  contact: ApiMessageContactPickerItem;
+  firstMessagePreview?: string | null;
+};
+
+type Props = {
+  request: ActiveConversationRequest | null;
+  onCancel: () => void;
+  onOpened?: () => void;
+};
+
+const ACTIVE_CONVERSATION_STATUSES = new Set(["aberta", "em_andamento", "aguardando"]);
+
+function isReusableActiveConversation(conversation: Pick<ApiConversation, "status" | "is_group">) {
+  return !conversation.is_group && ACTIVE_CONVERSATION_STATUSES.has(conversation.status);
+}
+
+export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: Props) {
+  const user = useSession((state) => state.user);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const isTenantAdmin = user?.role === "admin";
+  const canStart = canStartActiveConversation(user?.permissions);
+  const {
+    allConnections,
+    isLoading: connectionsLoading,
+    error: connectionsError,
+  } = useConnectedMessagingConnections({ enabled: !!request && canStart });
+  const departmentsQuery = useQuery({
+    queryKey: ["trixus", "chat-departments"],
+    queryFn: organizationApi.listChatDepartments,
+    enabled: !!request && canStart,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const refetchDepartments = departmentsQuery.refetch;
+  const instanceCatalogQuery = useQuery({
+    queryKey: ["trixus", "contact-options"],
+    queryFn: crmApi.contactOptions,
+    enabled: !!request && canStart && (user?.permissions?.includes("contacts.read") ?? false),
+    staleTime: 30_000,
+  });
+  const existingConversationsQuery = useQuery({
+    queryKey: ["trixus", "conversations", "open-for-contact", request?.contact.id],
+    queryFn: async () => {
+      const pages = await Promise.all(
+        (["aberta", "em_andamento", "aguardando"] as const).map((status) =>
+          conversationApi.list({
+            contactId: request!.contact.id,
+            status,
+            pageSize: 20,
+            sort: "lastMessageAt",
+            direction: "desc",
+          }),
+        ),
+      );
+      return Array.from(
+        new Map(
+          pages
+            .flatMap((page) => page.items)
+            .map((conversation) => [conversation.id, conversation]),
+        ).values(),
+      );
+    },
+    enabled: !!request && canStart,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const instances = React.useMemo<ApiContactInstanceOption[]>(
+    () =>
+      allConnections.map((connection) => ({
+        id: connection.id,
+        value: connectionInstanceValue(connection),
+        name: connection.name,
+        color: connection.color ?? null,
+        logoUrl: connection.logoUrl ?? null,
+        externalReference: connection.externalReference,
+        ownerPhone: connection.ownerPhone ?? null,
+        instanceName: connection.name,
+        status: connection.status.toUpperCase(),
+      })),
+    [allConnections],
+  );
+  const [candidates, setCandidates] = React.useState<ApiContactInstanceOption[]>([]);
+  const [connectionId, setConnectionId] = React.useState("");
+  const [departmentId, setDepartmentId] = React.useState("");
+  const [blockedInstanceLabel, setBlockedInstanceLabel] = React.useState("");
+  const [step, setStep] = React.useState<
+    "forbidden" | "no-access" | "instance" | "department" | null
+  >(null);
+  const [busy, setBusy] = React.useState(false);
+  const handledRequest = React.useRef<number | null>(null);
+  const submitting = React.useRef(false);
+
+  const existingOpenConversations = React.useMemo(
+    () => (existingConversationsQuery.data ?? []).filter(isReusableActiveConversation),
+    [existingConversationsQuery.data],
+  );
+
+  const close = React.useCallback(() => {
+    setStep(null);
+    setCandidates([]);
+    setConnectionId("");
+    setDepartmentId("");
+    setBlockedInstanceLabel("");
+    onCancel();
+  }, [onCancel]);
+
+  React.useEffect(() => {
+    if (request?.contact.active !== false) return;
+    toast.error("Contato inativo", {
+      description: "Reative o contato antes de iniciar uma conversa.",
+    });
+    close();
+  }, [close, request]);
+
+  const createConversation = React.useCallback(
+    async (selectedConnectionId: string, selectedDepartmentId: string) => {
+      if (!request || submitting.current) return;
+      if (request.contact.active === false) {
+        toast.error("Contato inativo", {
+          description: "Reative o contato antes de iniciar uma conversa.",
+        });
+        close();
+        return;
+      }
+      if (!canStart) {
+        toast.error("Você não possui permissão para iniciar conversas.");
+        close();
+        return;
+      }
+      submitting.current = true;
+      setBusy(true);
+      try {
+        const payload = {
+          contactId: request.contact.id,
+          connectionId: selectedConnectionId,
+          departmentId: selectedDepartmentId,
+          assignToSelf: true,
+          reuseExistingOpen: true,
+          ...(request.firstMessagePreview
+            ? { firstMessagePreview: request.firstMessagePreview }
+            : {}),
+        };
+        let conversation = await conversationApi.create(payload);
+        if (!isReusableActiveConversation(conversation)) {
+          // A conversa pode ter sido encerrada entre a consulta preliminar e a
+          // resposta da criação. Repita uma vez para o backend criar/retornar o
+          // ciclo ativo atual, mas nunca navegue para o ID encerrado.
+          await queryClient.invalidateQueries({
+            queryKey: ["trixus", "conversations", "open-for-contact", request.contact.id],
+          });
+          conversation = await conversationApi.create(payload);
+        }
+        if (!isReusableActiveConversation(conversation)) {
+          throw new Error("O servidor não retornou uma conversa ativa.");
+        }
+        setInboxTab("ativas");
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] }),
+          queryClient.invalidateQueries({ queryKey: ["trixus", "contacts"] }),
+          queryClient.invalidateQueries({ queryKey: ["operations", "history"] }),
+        ]);
+        setStep(null);
+        onOpened?.();
+        onCancel();
+        toast.success("Conversa iniciada");
+        await navigate({
+          to: "/inbox/$conversationId",
+          params: { conversationId: conversation.id },
+        });
+      } catch (error) {
+        toast.error("Falha ao abrir conversa", { description: (error as Error).message });
+      } finally {
+        submitting.current = false;
+        setBusy(false);
+      }
+    },
+    [canStart, close, navigate, onCancel, onOpened, queryClient, request],
+  );
+
+  const openExistingConversation = React.useCallback(
+    async (conversation: ApiConversation) => {
+      setStep(null);
+      if (conversation.status === "aguardando") setInboxTab("standby");
+      else if (conversation.status === "aberta") {
+        setInboxTab(conversation.is_lead ? "leads" : "fila");
+      } else {
+        setInboxTab("ativas");
+      }
+      onOpened?.();
+      onCancel();
+      await navigate({
+        to: "/inbox/$conversationId",
+        params: { conversationId: conversation.id },
+      });
+    },
+    [navigate, onCancel, onOpened],
+  );
+
+  const existingForConnection = React.useCallback(
+    (selectedConnectionId: string) =>
+      existingOpenConversations.find(
+        (conversation) =>
+          (conversation.connection?.id ?? conversation.connection_id) === selectedConnectionId,
+      ),
+    [existingOpenConversations],
+  );
+
+  const continueWithConnection = React.useCallback(
+    async (selectedConnectionId: string) => {
+      if (!request) return;
+      setConnectionId(selectedConnectionId);
+      setDepartmentId("");
+      const existing = existingForConnection(selectedConnectionId);
+      if (existing) {
+        void openExistingConversation(existing);
+        return;
+      }
+      let departments = departmentsForConnection(departmentsQuery.data ?? [], selectedConnectionId);
+      if (departments.length === 0) {
+        if (!isTenantAdmin) {
+          toast.error("Nenhum departamento permitido para esta instância.");
+          close();
+          return;
+        }
+        setBusy(true);
+        try {
+          await onboardingApi.ensureDepartmentConnection(selectedConnectionId);
+          const refreshed = await refetchDepartments();
+          departments = departmentsForConnection(refreshed.data ?? [], selectedConnectionId);
+        } catch (error) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível vincular o departamento à instância.",
+          );
+          close();
+          return;
+        } finally {
+          setBusy(false);
+        }
+        if (departments.length === 0) {
+          toast.error("Nenhum departamento permitido para esta instância.");
+          close();
+          return;
+        }
+      }
+      const favorite = isTenantAdmin
+        ? null
+        : favoriteDepartmentForConnection(departments, selectedConnectionId);
+      if (favorite) {
+        void createConversation(selectedConnectionId, favorite.id);
+        return;
+      }
+      setStep("department");
+    },
+    [
+      close,
+      createConversation,
+      departmentsQuery.data,
+      existingForConnection,
+      isTenantAdmin,
+      openExistingConversation,
+      refetchDepartments,
+      request,
+    ],
+  );
+
+  React.useEffect(() => {
+    if (
+      !request ||
+      connectionsLoading ||
+      departmentsQuery.isLoading ||
+      existingConversationsQuery.isLoading
+    )
+      return;
+    if (handledRequest.current === request.key) return;
+    handledRequest.current = request.key;
+    if (!canStart) {
+      toast.error("Você não possui permissão para iniciar conversas.");
+      close();
+      return;
+    }
+    if (connectionsError || departmentsQuery.error || existingConversationsQuery.error) {
+      toast.error("Não foi possível carregar as opções para iniciar a conversa.");
+      close();
+      return;
+    }
+    const permitted = instances.filter(
+      (instance) => instance.status?.toUpperCase() === "CONNECTED",
+    );
+    const linkedReferences = contactInstanceReferences(request.contact);
+    const resolved = resolveConnectedContactInstances(request.contact, permitted);
+    setCandidates(isTenantAdmin || linkedReferences.length === 0 ? permitted : resolved);
+    setConnectionId("");
+    setDepartmentId("");
+    setBlockedInstanceLabel("");
+    if (permitted.length === 0) {
+      if (instances.length === 0) {
+        setStep("no-access");
+      } else {
+        toast.error("Nenhuma instância conectada e permitida para este atendente.");
+        close();
+      }
+      return;
+    }
+    if (isTenantAdmin) {
+      if (permitted.length === 1) {
+        void continueWithConnection(permitted[0].id);
+      } else {
+        setStep("instance");
+      }
+      return;
+    }
+    if (linkedReferences.length === 0) {
+      setStep("instance");
+      return;
+    }
+    if (resolved.length === 0) {
+      setCandidates(permitted);
+      const blockedReference = request.contact.instancia ?? linkedReferences[0];
+      const blockedInstance = instanceCatalogQuery.data?.instances.find((instance) =>
+        [
+          instance.id,
+          instance.value,
+          instance.externalReference,
+          instance.instanceName,
+          instance.ownerPhone,
+        ].some((reference) => reference === blockedReference),
+      );
+      setBlockedInstanceLabel(blockedInstance?.name ?? blockedReference);
+      setStep("forbidden");
+      return;
+    }
+    if (linkedReferences.length === 1) {
+      void continueWithConnection(resolved[0].id);
+      return;
+    }
+    setStep("instance");
+  }, [
+    canStart,
+    close,
+    connectionsError,
+    connectionsLoading,
+    continueWithConnection,
+    departmentsQuery.error,
+    departmentsQuery.isLoading,
+    existingConversationsQuery.error,
+    existingConversationsQuery.isLoading,
+    instances,
+    isTenantAdmin,
+    instanceCatalogQuery.data?.instances,
+    request,
+  ]);
+
+  const departments = departmentsForConnection(departmentsQuery.data ?? [], connectionId);
+  const selectedInstance = candidates.find((instance) => instance.id === connectionId);
+
+  return (
+    <>
+      <Modal
+        open={step === "no-access"}
+        onClose={() => !busy && close()}
+        title="Nenhuma instância disponível"
+        size="sm"
+        footer={
+          <div className="flex w-full justify-end">
+            <Button variant="primary" size="sm" onClick={close}>
+              Ok
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          Seu perfil de acesso não possui nenhuma instância liberada para atendimento. Solicite a
+          liberação ao administrador.
+        </p>
+      </Modal>
+      <Modal
+        open={step === "forbidden"}
+        onClose={() => !busy && close()}
+        title="Atendimento não permitido"
+        size="sm"
+        footer={
+          <div className="flex w-full justify-end">
+            <Button variant="primary" size="sm" onClick={close}>
+              Ok
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p>
+            Você não está habilitado para atender pela instância{" "}
+            <strong className="text-foreground">{blockedInstanceLabel}</strong>.
+          </p>
+          <p>
+            Seu perfil possui permissão para atendimento somente pela(s) instância(s){" "}
+            <strong className="text-foreground">
+              {candidates.map((instance) => instance.name).join(", ")}
+            </strong>
+            .
+          </p>
+        </div>
+      </Modal>
+      <Modal
+        open={step === "instance" || step === "department"}
+        onClose={() => !busy && close()}
+        title="Escolher Instância e Departamento"
+        description="Selecione a instância e o departamento para iniciar o atendimento."
+        size="md"
+        className="sm:max-w-[570px]"
+        footer={
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={close} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy || !departmentId}
+              onClick={() => void createConversation(connectionId, departmentId)}
+            >
+              {busy ? "Iniciando…" : "Iniciar Atendimento"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-medium text-muted-foreground">
+              INSTÂNCIAS <span className="text-destructive">*</span>
+            </legend>
+            {candidates.map((instance) => (
+              <button
+                key={instance.id}
+                type="button"
+                disabled={busy}
+                aria-pressed={connectionId === instance.id}
+                onClick={() => void continueWithConnection(instance.id)}
+                className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-4 text-left hover:bg-surface-1 ${connectionId === instance.id ? "border-primary bg-primary/5" : "border-border"}`}
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-1 text-muted-foreground">
+                  {instance.logoUrl ? (
+                    <img
+                      src={instance.logoUrl}
+                      alt={`Foto de perfil do WhatsApp de ${instance.name}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <MessageCircle className="h-5 w-5" aria-label="WhatsApp" />
+                  )}
+                </span>
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: instance.color ?? "#22c55e" }}
+                />
+                <span className="flex-1 font-medium">{instance.name}</span>
+                <span
+                  className={`h-4 w-4 rounded-full border-4 ${connectionId === instance.id ? "border-primary" : "border-muted-foreground/40"}`}
+                />
+              </button>
+            ))}
+          </fieldset>
+
+          <fieldset className="space-y-2" disabled={!connectionId || busy}>
+            <legend className="text-xs font-medium text-muted-foreground">
+              DEPARTAMENTOS
+              {selectedInstance
+                ? ` (${selectedInstance.name.toLocaleUpperCase("pt-BR")})`
+                : ""}{" "}
+              <span className="text-destructive">*</span>
+            </legend>
+            {!connectionId ? (
+              <p className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-foreground">
+                Selecione uma instância para listar os departamentos disponíveis.
+              </p>
+            ) : (
+              departments.map((department) => (
+                <button
+                  key={department.id}
+                  type="button"
+                  aria-pressed={departmentId === department.id}
+                  onClick={() => setDepartmentId(department.id)}
+                  className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-4 text-left ${departmentId === department.id ? "border-primary bg-primary/5" : "border-border"}`}
+                >
+                  <span
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
+                    style={{ backgroundColor: department.color }}
+                  >
+                    <DepartmentIcon icon={department.icon} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{department.name}</span>
+                    {department.description && (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {department.description}
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={`h-4 w-4 rounded-full border-4 ${departmentId === department.id ? "border-primary" : "border-muted-foreground/40"}`}
+                  />
+                </button>
+              ))
+            )}
+          </fieldset>
+        </div>
+      </Modal>
+    </>
+  );
+}

@@ -1,0 +1,173 @@
+name: Build and release Trixus homologation images
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_mode:
+        description: "build = somente imagens; plan = simular; deploy = publicar na HML"
+        type: choice
+        default: build
+        options: [build, plan, deploy]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trixus-homologation-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: trixus
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: trixus_homologation_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U trixus -d trixus_homologation_ci"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_homologation_ci?schema=public
+      TRIXUS_TEST_DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_homologation_ci?schema=public
+      TRIXUS_VERIFY_DISPOSABLE_DATABASE: trixus_homologation_ci
+      REDIS_URL: redis://127.0.0.1:6379
+      TRIXUS_VERIFY_DISPOSABLE_REDIS: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.3.14"
+      - name: Test the isolated homologation release runner
+        run: python3 -m unittest discover -s scripts/homologation -p 'test_*.py' -v
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd backend prisma:generate
+      - name: Prepare disposable validation data only
+        env:
+          TRIXUS_ENVIRONMENT: staging
+          TRIXUS_TEST_FIXTURE_MODE: demo
+          TRIXUS_PLATFORM_ADMIN_EMAIL: platform@trixus.app
+          TRIXUS_PLATFORM_ADMIN_PASSWORD: ci-only-password
+        run: |
+          bun run --cwd backend prisma:migrate:deploy
+          bun run --cwd backend prisma:seed:test-fixtures
+      - name: Run project verification against disposable services
+        run: bun run verify
+
+  build:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: homologation
+    env:
+      VITE_TRIXUS_API_URL: https://api-hom.trixus.com.br/api
+      VITE_TRIXUS_PLATFORM_APP_URL: https://hom.trixus.com.br
+      VITE_TRIXUS_TENANT_APP_URL: https://hom.trixus.com.br
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build immutable HML images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$VITE_TRIXUS_API_URL" = "https://api-hom.trixus.com.br/api"
+          test "$VITE_TRIXUS_PLATFORM_APP_URL" = "https://hom.trixus.com.br"
+          test "$VITE_TRIXUS_TENANT_APP_URL" = "https://hom.trixus.com.br"
+          docker build --platform linux/amd64 -f backend/Dockerfile \
+            --target runtime -t "trixus-hml-release/backend:$GITHUB_SHA" .
+          docker build --platform linux/amd64 -f backend/Dockerfile \
+            --target migrate -t "trixus-hml-release/migrate:$GITHUB_SHA" .
+          docker build --platform linux/amd64 -f Dockerfile.frontend \
+            --build-arg VITE_TRIXUS_API_URL \
+            --build-arg VITE_TRIXUS_PLATFORM_APP_URL \
+            --build-arg VITE_TRIXUS_TENANT_APP_URL \
+            --build-arg VITE_APP_MODE=homologation \
+            --build-arg VITE_SUPABASE_URL \
+            --build-arg VITE_SUPABASE_PUBLISHABLE_KEY \
+            --build-arg VITE_SUPABASE_PROJECT_ID \
+            -t "trixus-hml-release/frontend:$GITHUB_SHA" .
+      - name: Check image entrypoints and artifacts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(docker image inspect "trixus-hml-release/backend:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
+          test "$(docker image inspect "trixus-hml-release/migrate:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
+          docker run --rm --entrypoint sh "trixus-hml-release/backend:$GITHUB_SHA" \
+            -c 'command -v node && test -s /app/backend/dist/src/main.js'
+          docker run --rm "trixus-hml-release/migrate:$GITHUB_SHA"
+          docker run --rm --entrypoint bun "trixus-hml-release/migrate:$GITHUB_SHA" \
+            run locations:catalog:verify
+          docker run --rm --entrypoint sh "trixus-hml-release/frontend:$GITHUB_SHA" \
+            -c 'command -v bun && test -s /app/.output/server/index.mjs'
+      - name: Package exactly three HML images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir release
+          docker image inspect \
+            "trixus-hml-release/backend:$GITHUB_SHA" \
+            "trixus-hml-release/migrate:$GITHUB_SHA" \
+            "trixus-hml-release/frontend:$GITHUB_SHA" \
+            --format '{{.Id}} {{json .RepoTags}}' > release/images.txt
+          docker save \
+            "trixus-hml-release/backend:$GITHUB_SHA" \
+            "trixus-hml-release/migrate:$GITHUB_SHA" \
+            "trixus-hml-release/frontend:$GITHUB_SHA" | gzip -1 > release/images.tar.gz
+          printf '%s\n' "$GITHUB_SHA" > release/commit.txt
+          cd release
+          sha256sum images.tar.gz images.txt commit.txt > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trixus-hml-linux-amd64-${{ github.sha }}
+          path: release/
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: inputs.release_mode != 'build'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: homologation
+    env:
+      RELEASE_MODE: ${{ inputs.release_mode }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: trixus-hml-linux-amd64-${{ github.sha }}
+          path: release
+      - name: Verify package checksums
+        working-directory: release
+        run: sha256sum --check SHA256SUMS
+      - name: Transfer to the restricted HML runner
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: bash scripts/homologation/transfer.sh

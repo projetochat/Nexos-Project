@@ -18,8 +18,9 @@ export function GreetingMessageEditor({
   showAttachment = true,
   showEmoji = false,
   attachmentLayout = "menu",
+  maxLength = 1000,
+  rows = 6,
   onChange,
-  onSubmit,
 }: {
   value: string;
   attachment: QuickReplyAttachment | null;
@@ -30,6 +31,8 @@ export function GreetingMessageEditor({
   showAttachment?: boolean;
   showEmoji?: boolean;
   attachmentLayout?: "menu" | "segmented";
+  maxLength?: number;
+  rows?: number;
   onChange: (value: string, attachment: QuickReplyAttachment | null) => void;
   onSubmit?: () => void;
 }) {
@@ -39,8 +42,8 @@ export function GreetingMessageEditor({
     const input = textareaRef.current;
     const start = input?.selectionStart ?? value.length;
     const end = input?.selectionEnd ?? start;
-    if (value.length - (end - start) + text.length > 1000) {
-      toast.error("A mensagem deve ter no máximo 1000 caracteres.");
+    if (value.length - (end - start) + text.length > maxLength) {
+      toast.error(`A mensagem deve ter no máximo ${maxLength.toLocaleString("pt-BR")} caracteres.`);
       return;
     }
     const next = value.slice(0, start) + text + value.slice(end);
@@ -55,25 +58,10 @@ export function GreetingMessageEditor({
     <div className="overflow-visible rounded-lg border border-border bg-card focus-within:border-primary">
       <textarea
         ref={textareaRef}
-        rows={6}
-        maxLength={1000}
+        rows={rows}
+        maxLength={maxLength}
         value={value}
         onChange={(event) => onChange(event.target.value, attachment)}
-        onKeyDown={(event) => {
-          if (
-            !onSubmit ||
-            event.key !== "Enter" ||
-            event.shiftKey ||
-            event.altKey ||
-            event.ctrlKey ||
-            event.metaKey ||
-            event.nativeEvent.isComposing
-          ) {
-            return;
-          }
-          event.preventDefault();
-          onSubmit();
-        }}
         disabled={disabled}
         aria-invalid={invalid}
         placeholder={placeholder}

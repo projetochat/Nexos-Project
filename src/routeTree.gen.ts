@@ -46,11 +46,13 @@ import { Route as ImpersonationCallbackRouteImport } from './routes/impersonatio
 import { Route as ConfiguracoesVariaveisRouteImport } from './routes/configuracoes.variaveis'
 import { Route as ConfiguracoesSegurancaRouteImport } from './routes/configuracoes.seguranca'
 import { Route as ConfiguracoesPermissoesRouteImport } from './routes/configuracoes.permissoes'
+import { Route as ConfiguracoesPadraoCadastrosRouteImport } from './routes/configuracoes.padrao-cadastros'
 import { Route as ConfiguracoesMensagensRouteImport } from './routes/configuracoes.mensagens'
 import { Route as ConfiguracoesIntegracoesRouteImport } from './routes/configuracoes.integracoes'
 import { Route as ConfiguracoesGeralRouteImport } from './routes/configuracoes.geral'
 import { Route as ConfiguracoesFinanceiroRouteImport } from './routes/configuracoes.financeiro'
 import { Route as ConfiguracoesEmpresaRouteImport } from './routes/configuracoes.empresa'
+import { Route as ConfiguracoesControleNumeracaoRouteImport } from './routes/configuracoes.controle-numeracao'
 import { Route as ConfiguracoesCamposContatoRouteImport } from './routes/configuracoes.campos-contato'
 import { Route as AtendimentoPerfilRouteImport } from './routes/atendimento.perfil'
 import { Route as AtendimentoInboxRouteImport } from './routes/atendimento.inbox'
@@ -255,6 +257,12 @@ const ConfiguracoesPermissoesRoute = ConfiguracoesPermissoesRouteImport.update({
   path: '/permissoes',
   getParentRoute: () => ConfiguracoesRoute,
 } as any)
+const ConfiguracoesPadraoCadastrosRoute =
+  ConfiguracoesPadraoCadastrosRouteImport.update({
+    id: '/padrao-cadastros',
+    path: '/padrao-cadastros',
+    getParentRoute: () => ConfiguracoesRoute,
+  } as any)
 const ConfiguracoesMensagensRoute = ConfiguracoesMensagensRouteImport.update({
   id: '/mensagens',
   path: '/mensagens',
@@ -281,6 +289,12 @@ const ConfiguracoesEmpresaRoute = ConfiguracoesEmpresaRouteImport.update({
   path: '/empresa',
   getParentRoute: () => ConfiguracoesRoute,
 } as any)
+const ConfiguracoesControleNumeracaoRoute =
+  ConfiguracoesControleNumeracaoRouteImport.update({
+    id: '/controle-numeracao',
+    path: '/controle-numeracao',
+    getParentRoute: () => ConfiguracoesRoute,
+  } as any)
 const ConfiguracoesCamposContatoRoute =
   ConfiguracoesCamposContatoRouteImport.update({
     id: '/campos-contato',
@@ -419,11 +433,13 @@ export interface FileRoutesByFullPath {
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
   '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
+  '/configuracoes/controle-numeracao': typeof ConfiguracoesControleNumeracaoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
   '/configuracoes/mensagens': typeof ConfiguracoesMensagensRoute
+  '/configuracoes/padrao-cadastros': typeof ConfiguracoesPadraoCadastrosRoute
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
@@ -477,11 +493,13 @@ export interface FileRoutesByTo {
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
   '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
+  '/configuracoes/controle-numeracao': typeof ConfiguracoesControleNumeracaoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
   '/configuracoes/mensagens': typeof ConfiguracoesMensagensRoute
+  '/configuracoes/padrao-cadastros': typeof ConfiguracoesPadraoCadastrosRoute
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
@@ -540,11 +558,13 @@ export interface FileRoutesById {
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
   '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
+  '/configuracoes/controle-numeracao': typeof ConfiguracoesControleNumeracaoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
   '/configuracoes/mensagens': typeof ConfiguracoesMensagensRoute
+  '/configuracoes/padrao-cadastros': typeof ConfiguracoesPadraoCadastrosRoute
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
@@ -604,11 +624,13 @@ export interface FileRouteTypes {
     | '/atendimento/inbox'
     | '/atendimento/perfil'
     | '/configuracoes/campos-contato'
+    | '/configuracoes/controle-numeracao'
     | '/configuracoes/empresa'
     | '/configuracoes/financeiro'
     | '/configuracoes/geral'
     | '/configuracoes/integracoes'
     | '/configuracoes/mensagens'
+    | '/configuracoes/padrao-cadastros'
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
@@ -662,11 +684,13 @@ export interface FileRouteTypes {
     | '/atendimento/inbox'
     | '/atendimento/perfil'
     | '/configuracoes/campos-contato'
+    | '/configuracoes/controle-numeracao'
     | '/configuracoes/empresa'
     | '/configuracoes/financeiro'
     | '/configuracoes/geral'
     | '/configuracoes/integracoes'
     | '/configuracoes/mensagens'
+    | '/configuracoes/padrao-cadastros'
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
@@ -724,11 +748,13 @@ export interface FileRouteTypes {
     | '/atendimento/inbox'
     | '/atendimento/perfil'
     | '/configuracoes/campos-contato'
+    | '/configuracoes/controle-numeracao'
     | '/configuracoes/empresa'
     | '/configuracoes/financeiro'
     | '/configuracoes/geral'
     | '/configuracoes/integracoes'
     | '/configuracoes/mensagens'
+    | '/configuracoes/padrao-cadastros'
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
@@ -1034,6 +1060,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracoesPermissoesRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
+    '/configuracoes/padrao-cadastros': {
+      id: '/configuracoes/padrao-cadastros'
+      path: '/padrao-cadastros'
+      fullPath: '/configuracoes/padrao-cadastros'
+      preLoaderRoute: typeof ConfiguracoesPadraoCadastrosRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
     '/configuracoes/mensagens': {
       id: '/configuracoes/mensagens'
       path: '/mensagens'
@@ -1067,6 +1100,13 @@ declare module '@tanstack/react-router' {
       path: '/empresa'
       fullPath: '/configuracoes/empresa'
       preLoaderRoute: typeof ConfiguracoesEmpresaRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
+    '/configuracoes/controle-numeracao': {
+      id: '/configuracoes/controle-numeracao'
+      path: '/controle-numeracao'
+      fullPath: '/configuracoes/controle-numeracao'
+      preLoaderRoute: typeof ConfiguracoesControleNumeracaoRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
     '/configuracoes/campos-contato': {
@@ -1266,11 +1306,13 @@ const AtendimentoRouteWithChildren = AtendimentoRoute._addFileChildren(
 
 interface ConfiguracoesRouteChildren {
   ConfiguracoesCamposContatoRoute: typeof ConfiguracoesCamposContatoRoute
+  ConfiguracoesControleNumeracaoRoute: typeof ConfiguracoesControleNumeracaoRoute
   ConfiguracoesEmpresaRoute: typeof ConfiguracoesEmpresaRoute
   ConfiguracoesFinanceiroRoute: typeof ConfiguracoesFinanceiroRoute
   ConfiguracoesGeralRoute: typeof ConfiguracoesGeralRoute
   ConfiguracoesIntegracoesRoute: typeof ConfiguracoesIntegracoesRoute
   ConfiguracoesMensagensRoute: typeof ConfiguracoesMensagensRoute
+  ConfiguracoesPadraoCadastrosRoute: typeof ConfiguracoesPadraoCadastrosRoute
   ConfiguracoesPermissoesRoute: typeof ConfiguracoesPermissoesRoute
   ConfiguracoesSegurancaRoute: typeof ConfiguracoesSegurancaRoute
   ConfiguracoesVariaveisRoute: typeof ConfiguracoesVariaveisRoute
@@ -1279,11 +1321,13 @@ interface ConfiguracoesRouteChildren {
 
 const ConfiguracoesRouteChildren: ConfiguracoesRouteChildren = {
   ConfiguracoesCamposContatoRoute: ConfiguracoesCamposContatoRoute,
+  ConfiguracoesControleNumeracaoRoute: ConfiguracoesControleNumeracaoRoute,
   ConfiguracoesEmpresaRoute: ConfiguracoesEmpresaRoute,
   ConfiguracoesFinanceiroRoute: ConfiguracoesFinanceiroRoute,
   ConfiguracoesGeralRoute: ConfiguracoesGeralRoute,
   ConfiguracoesIntegracoesRoute: ConfiguracoesIntegracoesRoute,
   ConfiguracoesMensagensRoute: ConfiguracoesMensagensRoute,
+  ConfiguracoesPadraoCadastrosRoute: ConfiguracoesPadraoCadastrosRoute,
   ConfiguracoesPermissoesRoute: ConfiguracoesPermissoesRoute,
   ConfiguracoesSegurancaRoute: ConfiguracoesSegurancaRoute,
   ConfiguracoesVariaveisRoute: ConfiguracoesVariaveisRoute,

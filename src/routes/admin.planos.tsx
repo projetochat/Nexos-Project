@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   ArchiveRestore,
   Copy,
+  Eye,
   Layers3,
   Megaphone,
   MessageCircle,
@@ -27,9 +28,11 @@ import {
   Select,
 } from "@/components/ui-kit";
 import { Switch } from "@/components/ui/switch";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import { platformApi, type PlatformPlan } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/admin/planos")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
@@ -68,6 +71,7 @@ function PlanosAdmin() {
   const [plans, setPlans] = React.useState<PlatformPlan[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState<PlatformPlan | null>(null);
+  const [viewing, setViewing] = React.useState<PlatformPlan | null>(null);
   const [duplicating, setDuplicating] = React.useState<PlatformPlan | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [planAction, setPlanAction] = React.useState<{
@@ -100,6 +104,12 @@ function PlanosAdmin() {
       (plan) => plan.name,
     );
   }, [plans, query, statusFilter]);
+  const hasActiveFilters = Boolean(query || statusFilter);
+
+  function clearFilters() {
+    setQuery("");
+    setStatusFilter("");
+  }
 
   return (
     <AdminContainer>
@@ -114,24 +124,43 @@ function PlanosAdmin() {
       />
 
       <Card className="mb-4" padding={false}>
-        <div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_220px] sm:p-5">
-          <Field label="Busca">
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Buscar por nome ou código..."
-            />
-          </Field>
-          <Field label="Status">
-            <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-              <option value="">Todos</option>
-              {PLAN_STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {STATUS_LABELS[status] ?? status}
-                </option>
-              ))}
-            </Select>
-          </Field>
+        <div
+          className={`grid grid-cols-[minmax(0,1fr)_minmax(7rem,0.65fr)] gap-3 p-4 sm:gap-4 sm:p-5 ${
+            hasActiveFilters
+              ? "sm:grid-cols-[minmax(0,1fr)_220px_auto]"
+              : "sm:grid-cols-[minmax(0,1fr)_220px]"
+          }`}
+          data-platform-filter-grid
+        >
+          <div className="min-w-0">
+            <Field label="Busca">
+              <SearchInput
+                value={query}
+                onChange={setQuery}
+                placeholder="Buscar por nome ou código..."
+              />
+            </Field>
+          </div>
+          <div className="min-w-0">
+            <Field label="Status">
+              <Select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                <option value="">Todos</option>
+                {PLAN_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {STATUS_LABELS[status] ?? status}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          {hasActiveFilters && (
+            <div className="col-span-2 flex justify-end sm:col-span-1 sm:items-end">
+              <ClearFiltersButton onClick={clearFilters} />
+            </div>
+          )}
         </div>
       </Card>
 
@@ -141,7 +170,7 @@ function PlanosAdmin() {
         {filteredPlans.map((plan) => {
           const enabledFeatures = FEATURE_OPTIONS.filter(({ key }) => plan.features[key]);
           return (
-            <Card key={plan.id} className="flex min-h-full flex-col">
+            <Card key={plan.id} className="flex min-h-full min-w-0 flex-col overflow-hidden">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h3 className="truncate text-lg font-semibold">{plan.name}</h3>
@@ -184,41 +213,62 @@ function PlanosAdmin() {
                   : "assinaturas vinculadas."}
               </p>
 
-              <div className="mt-auto flex justify-end gap-2 border-t border-border pt-4">
+              <div
+                className="mt-auto flex justify-end gap-1.5 border-t border-border pt-4"
+                aria-label={`Ações do plano ${plan.name}`}
+              >
                 <Button
                   variant="secondary"
-                  size="sm"
-                  className="action-hover-success"
-                  onClick={() => setDuplicating(plan)}
+                  size="icon"
+                  className="action-hover-primary"
+                  title={`Visualizar plano ${plan.name}`}
+                  aria-label={`Visualizar plano ${plan.name}`}
+                  onClick={() => setViewing(plan)}
                 >
-                  <Copy className="h-3.5 w-3.5" /> Duplicar
+                  <Eye className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="secondary"
-                  size="sm"
+                  size="icon"
+                  className="action-hover-success"
+                  title={`Duplicar plano ${plan.name}`}
+                  aria-label={`Duplicar plano ${plan.name}`}
+                  onClick={() => setDuplicating(plan)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="icon"
                   className="action-hover-warning"
+                  title={`Editar plano ${plan.name}`}
+                  aria-label={`Editar plano ${plan.name}`}
                   onClick={() => setEditing(plan)}
                 >
-                  <Pencil className="h-3.5 w-3.5" /> Editar
+                  <Pencil className="h-4 w-4" />
                 </Button>
                 {plan.status === "ARCHIVED" && (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon"
                     className="action-hover-primary"
+                    title={`Desarquivar plano ${plan.name}`}
+                    aria-label={`Desarquivar plano ${plan.name}`}
                     onClick={() => setPlanAction({ plan, kind: "unarchive" })}
                   >
-                    <ArchiveRestore className="h-3.5 w-3.5" /> Desarquivar
+                    <ArchiveRestore className="h-4 w-4" />
                   </Button>
                 )}
                 {plan.status === "INACTIVE" && (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon"
                     className="action-hover-primary"
+                    title={`Ativar plano ${plan.name}`}
+                    aria-label={`Ativar plano ${plan.name}`}
                     onClick={() => setPlanAction({ plan, kind: "activate" })}
                   >
-                    <Power className="h-3.5 w-3.5" /> Ativar
+                    <Power className="h-4 w-4" />
                   </Button>
                 )}
                 {(plan._count?.subscriptions ?? 0) > 0 &&
@@ -226,21 +276,25 @@ function PlanosAdmin() {
                   plan.status !== "INACTIVE" && (
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       className="action-hover-destructive"
+                      title={`Desabilitar plano ${plan.name}`}
+                      aria-label={`Desabilitar plano ${plan.name}`}
                       onClick={() => setPlanAction({ plan, kind: "deactivate" })}
                     >
-                      <PowerOff className="h-3.5 w-3.5" /> Desabilitar
+                      <PowerOff className="h-4 w-4" />
                     </Button>
                   )}
                 {(plan._count?.subscriptions ?? 0) === 0 && (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon"
                     className="trash-action"
+                    title={`Excluir plano ${plan.name}`}
+                    aria-label={`Excluir plano ${plan.name}`}
                     onClick={() => setPlanAction({ plan, kind: "delete" })}
                   >
-                    <Trash2 className="h-3.5 w-3.5" /> Excluir
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 )}
               </div>
@@ -271,6 +325,8 @@ function PlanosAdmin() {
           load();
         }}
       />
+
+      <PlanView plan={viewing} onClose={() => setViewing(null)} />
 
       <ConfirmDialog
         open={Boolean(planAction)}
@@ -334,6 +390,84 @@ function PlanosAdmin() {
   );
 }
 
+function PlanView({ plan, onClose }: { plan: PlatformPlan | null; onClose: () => void }) {
+  const enabledFeatures = plan ? FEATURE_OPTIONS.filter(({ key }) => plan.features[key]) : [];
+
+  return (
+    <Modal
+      open={Boolean(plan)}
+      onClose={onClose}
+      title="Visualizar Plano"
+      size="lg"
+      footer={
+        <Button variant="secondary" onClick={onClose}>
+          Fechar
+        </Button>
+      }
+    >
+      {plan && (
+        <div className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <PlanReadOnlyDetail label="Nome do plano" value={plan.name} />
+            <PlanReadOnlyDetail label="Código" value={plan.code} />
+            <PlanReadOnlyDetail label="Status" value={STATUS_LABELS[plan.status] ?? plan.status} />
+            <PlanReadOnlyDetail label="Dias de trial" value={plan.trialDays ?? 0} />
+          </div>
+
+          <div className="border-t border-border pt-5">
+            <h3 className="text-base font-semibold">Limites do plano</h3>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <PlanReadOnlyDetail
+                label="Instâncias"
+                value={(plan.limits.maxConnections ?? 0).toLocaleString("pt-BR")}
+              />
+              <PlanReadOnlyDetail
+                label="Usuários"
+                value={(plan.limits.maxUsers ?? 0).toLocaleString("pt-BR")}
+              />
+              <PlanReadOnlyDetail
+                label="Campanhas"
+                value={(plan.limits.maxCampaigns ?? 0).toLocaleString("pt-BR")}
+              />
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-5">
+            <h3 className="text-base font-semibold">Módulos e funcionalidades</h3>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {enabledFeatures.length ? (
+                enabledFeatures.map(({ key, label }) => (
+                  <Badge key={key} tone="success">
+                    {label}
+                  </Badge>
+                ))
+              ) : (
+                <span className="text-sm text-muted-foreground">Nenhum módulo habilitado.</span>
+              )}
+            </div>
+          </div>
+
+          <p className="border-t border-border pt-4 text-sm text-muted-foreground">
+            {(plan._count?.subscriptions ?? 0).toLocaleString("pt-BR")}{" "}
+            {(plan._count?.subscriptions ?? 0) === 1
+              ? "assinatura vinculada."
+              : "assinaturas vinculadas."}
+          </p>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function PlanReadOnlyDetail({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium">{value}</p>
+    </div>
+  );
+}
+
 const DEFAULT_FEATURES: Record<string, boolean> = {
   chat: true,
   campaigns: true,
@@ -365,9 +499,11 @@ function PlanForm({
   const [trialDays, setTrialDays] = React.useState(0);
   const [features, setFeatures] = React.useState<Record<string, boolean>>(DEFAULT_FEATURES);
   const [limits, setLimits] = React.useState<Record<string, number>>(DEFAULT_LIMITS);
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
+    setErrors({});
     setName(forceCreate && initial ? `${initial.name} - Cópia` : (initial?.name ?? ""));
     setCode(forceCreate ? "" : (initial?.code ?? ""));
     setStatus(normalizeEditablePlanStatus(initial?.status));
@@ -375,6 +511,11 @@ function PlanForm({
     setFeatures({ ...DEFAULT_FEATURES, ...(initial?.features ?? {}) });
     setLimits({ ...DEFAULT_LIMITS, ...(initial?.limits ?? {}) });
   }, [forceCreate, initial, open]);
+
+  React.useEffect(() => {
+    if (!name.trim()) return;
+    setErrors((current) => (current.name ? {} : current));
+  }, [name]);
 
   function setLimit(key: string, value: string) {
     const parsed = Number(value);
@@ -388,7 +529,11 @@ function PlanForm({
   async function save() {
     try {
       const visibleLimits = [limits.maxUsers, limits.maxConnections, limits.maxCampaigns];
-      if (!name.trim()) throw new Error("Informe o nome do plano.");
+      if (!name.trim()) {
+        setErrors({ name: true });
+        showRequiredFieldsToast(["Nome do plano"]);
+        return;
+      }
       if (!Number.isInteger(trialDays) || trialDays < 0 || trialDays > 90) {
         throw new Error("Informe uma quantidade válida de dias de trial.");
       }
@@ -432,10 +577,10 @@ function PlanForm({
       size="xl"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="primary" disabled={saving} onClick={save}>
+          <Button variant="primary" className="save-action-button" disabled={saving} onClick={save}>
             {saving ? "Salvando..." : "Salvar"}
           </Button>
         </>
@@ -450,6 +595,8 @@ function PlanForm({
             value={name}
             placeholder="Ex.: Basic, Profissional..."
             onChange={(event) => setName(event.target.value)}
+            className={requiredFieldClassName(Boolean(errors.name))}
+            aria-invalid={Boolean(errors.name)}
           />
         </Field>
         <Field label="Código">

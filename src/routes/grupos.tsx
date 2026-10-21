@@ -5,11 +5,12 @@ import {
   CalendarDays,
   Check,
   Crown,
+  Eye,
   Pencil,
   LogOut,
   ChevronLeft,
   ChevronRight,
-  MessageSquareMore,
+  MessageSquarePlus,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -21,7 +22,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   Avatar,
@@ -34,7 +38,6 @@ import {
   SearchInput,
   SectionHeader,
   Select,
-  Textarea,
 } from "@/components/ui-kit";
 import {
   conversationApi,
@@ -54,6 +57,7 @@ import {
 } from "@/lib/group-contact-presentation";
 import { onlyDigits } from "@/lib/input-masks";
 import { useSession } from "@/lib/session";
+import { showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/grupos")({ component: GroupsPage });
 
@@ -148,6 +152,7 @@ function GroupsPage() {
   const navigate = useNavigate();
   const permissions = useSession((state) => state.user?.permissions ?? []);
   const canViewChat = permissions.includes("conversations.read");
+  const canView = permissions.includes("groups.read");
   const canCreate = permissions.includes("groups.create");
   const canUpdate = permissions.includes("groups.update");
   const canLeave = permissions.includes("groups.leave");
@@ -163,6 +168,7 @@ function GroupsPage() {
   const [loading, setLoading] = React.useState(true);
   const [syncing, setSyncing] = React.useState(false);
   const [selectedGroup, setSelectedGroup] = React.useState<ApiWhatsappGroup | null>(null);
+  const [groupDetailMode, setGroupDetailMode] = React.useState<"view" | "edit">("view");
   const [leavingGroup, setLeavingGroup] = React.useState<ApiWhatsappGroupSummary | null>(null);
   const initialReloadScheduledRef = React.useRef(false);
   const latestListRequestRef = React.useRef(0);
@@ -229,6 +235,7 @@ function GroupsPage() {
   const invalidateGroupDetail = React.useCallback(() => {
     latestDetailRequestRef.current += 1;
     setSelectedGroup(null);
+    setGroupDetailMode("view");
   }, []);
   const changeQuery = React.useCallback(
     (value: string) => {
@@ -261,16 +268,27 @@ function GroupsPage() {
     },
     [invalidateGroupDetail],
   );
-  const openGroupDetail = React.useCallback(async (group: ApiWhatsappGroupSummary) => {
-    const requestId = ++latestDetailRequestRef.current;
-    try {
-      const detail = await groupsApi.detail(group.id);
-      if (requestId === latestDetailRequestRef.current) setSelectedGroup(detail);
-    } catch (error) {
-      if (requestId !== latestDetailRequestRef.current) return;
-      toast.error("Falha ao carregar grupo", { description: (error as Error).message });
-    }
-  }, []);
+  const hasFilters = Boolean(query.trim() || instanceFilter);
+  const clearFilters = React.useCallback(() => {
+    invalidateGroupDetail();
+    setQuery("");
+    setInstanceFilter("");
+    setPage(1);
+  }, [invalidateGroupDetail]);
+  const openGroupDetail = React.useCallback(
+    async (group: ApiWhatsappGroupSummary, mode: "view" | "edit") => {
+      const requestId = ++latestDetailRequestRef.current;
+      setGroupDetailMode(mode);
+      try {
+        const detail = await groupsApi.detail(group.id);
+        if (requestId === latestDetailRequestRef.current) setSelectedGroup(detail);
+      } catch (error) {
+        if (requestId !== latestDetailRequestRef.current) return;
+        toast.error("Falha ao carregar grupo", { description: (error as Error).message });
+      }
+    },
+    [],
+  );
   const syncGroups = async () => {
     setSyncing(true);
     try {
@@ -328,8 +346,8 @@ function GroupsPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)]">
-            <div className="col-span-2 md:col-span-1">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)] gap-2 sm:gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)_auto]">
+            <div className="min-w-0">
               <Field label="Busca">
                 <SearchInput
                   value={query}
@@ -346,6 +364,11 @@ function GroupsPage() {
                 emptyLabel="Todas"
               />
             </Field>
+            {hasFilters && (
+              <div className="flex items-end">
+                <ClearFiltersButton onClick={clearFilters} />
+              </div>
+            )}
           </div>
         </Card>
 
@@ -364,7 +387,8 @@ function GroupsPage() {
                   key={group.id}
                   group={group}
                   onOpenChat={canViewChat ? () => void openGroupChat(group) : undefined}
-                  onDetail={() => void openGroupDetail(group)}
+                  onView={canView ? () => void openGroupDetail(group, "view") : undefined}
+                  onEdit={canUpdate ? () => void openGroupDetail(group, "edit") : undefined}
                   canEdit={canUpdate}
                   onLeave={canLeave ? () => setLeavingGroup(group) : undefined}
                 />
@@ -446,40 +470,25 @@ function GroupsPage() {
             );
           }}
           onOpenChat={canViewChat ? (group) => void openGroupChat(group) : undefined}
-          canManage={canUpdate}
+          canManage={canUpdate && groupDetailMode === "edit"}
         />
         {canLeave && (
-          <ConfirmDialog
+          <DeletionConfirmDialog
             open={!!leavingGroup}
-            title="Sair do Grupo?"
-            destructive
-            confirmLabel="Sair do Grupo"
-            description={
-              <p>
-                Deseja realmente sair do grupo{" "}
-                <strong className="font-semibold text-foreground">
-                  "{leavingGroup?.name ?? ""}"
-                </strong>
-                ?
-              </p>
+            resourceKey={`group:${leavingGroup?.id ?? "none"}`}
+            onOpenChange={(open) => !open && setLeavingGroup(null)}
+            loadImpact={(signal) => groupsApi.deletionImpact(leavingGroup!.id, signal)}
+            onConfirm={({ snapshotToken, signal }) =>
+              groupsApi.leave(leavingGroup!.id, snapshotToken, signal)
             }
-            onClose={() => setLeavingGroup(null)}
-            onConfirm={() => {
+            onDeleted={() => {
               const group = leavingGroup;
-              if (!group) return;
-              void groupsApi
-                .leave(group.id)
-                .then(async () => {
-                  toast.success("Você saiu do grupo");
-                  if (selectedGroup?.id === group.id) setSelectedGroup(null);
-                  await load();
-                })
-                .catch((error) =>
-                  toast.error("Não foi possível sair do grupo", {
-                    description: (error as Error).message,
-                  }),
-                );
+              toast.success("Você saiu do grupo e o histórico local foi removido");
+              if (selectedGroup?.id === group?.id) setSelectedGroup(null);
+              setLeavingGroup(null);
+              void load();
             }}
+            formatError={(error) => (error as Error).message}
           />
         )}
       </PageContainer>
@@ -490,13 +499,15 @@ function GroupsPage() {
 function GroupCard({
   group,
   onOpenChat,
-  onDetail,
+  onView,
+  onEdit,
   canEdit,
   onLeave,
 }: {
   group: ApiWhatsappGroupSummary;
   onOpenChat?: () => void;
-  onDetail: () => void;
+  onView?: () => void;
+  onEdit?: () => void;
   canEdit: boolean;
   onLeave?: () => void;
 }) {
@@ -504,11 +515,11 @@ function GroupCard({
     <div
       role="button"
       tabIndex={0}
-      onDoubleClick={onDetail}
+      onDoubleClick={onView}
       onKeyDown={(event) => {
         if (event.key !== "Enter") return;
         event.preventDefault();
-        onDetail();
+        onView?.();
       }}
       title="Clique duas vezes para visualizar o grupo"
       className="flex min-h-40 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-border bg-card p-3 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md sm:p-4"
@@ -533,10 +544,26 @@ function GroupCard({
         )}
       </div>
       <div className="mt-4 flex min-w-0 justify-end gap-1 border-t border-border pt-3">
+        {onView && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Visualizar grupo"
+            aria-label="Visualizar grupo"
+            onClick={(event) => {
+              event.stopPropagation();
+              onView();
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+        )}
         {onOpenChat && (
           <Button
             variant="ghost"
             size="sm"
+            className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
             title="Abrir conversa"
             aria-label="Abrir conversa"
             onClick={(event) => {
@@ -545,7 +572,7 @@ function GroupCard({
             }}
             onDoubleClick={(event) => event.stopPropagation()}
           >
-            <MessageSquareMore className="h-4 w-4" />
+            <MessageSquarePlus className="h-4 w-4" />
           </Button>
         )}
         {canEdit && (
@@ -556,7 +583,7 @@ function GroupCard({
             aria-label="Editar grupo"
             onClick={(event) => {
               event.stopPropagation();
-              onDetail();
+              onEdit?.();
             }}
             onDoubleClick={(event) => event.stopPropagation()}
           >
@@ -569,7 +596,7 @@ function GroupCard({
             size="sm"
             title="Sair do grupo"
             aria-label="Sair do grupo"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="action-hover-destructive"
             onClick={(event) => {
               event.stopPropagation();
               onLeave();
@@ -590,12 +617,14 @@ function InstanceSelect({
   instances,
   emptyLabel,
   extraOptions = [],
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   instances: ApiContactInstanceOption[];
   emptyLabel: string;
   extraOptions?: Array<{ value: string; label: string }>;
+  invalid?: boolean;
 }) {
   return (
     <InstanceFilterSelect
@@ -608,11 +637,12 @@ function InstanceSelect({
       }))}
       extraOptions={extraOptions}
       allLabel={emptyLabel}
+      invalid={invalid}
     />
   );
 }
 
-function CreateGroupModal({
+export function CreateGroupModal({
   open,
   onClose,
   instances,
@@ -639,7 +669,9 @@ function CreateGroupModal({
   const [imageDataUrl, setImageDataUrl] = React.useState<string | null>(null);
   const photoCrop = usePhotoCropper(setImageDataUrl, open);
   const imageInputRef = React.useRef<HTMLInputElement | null>(null);
+  const descriptionRef = React.useRef<HTMLTextAreaElement | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [requiredErrors, setRequiredErrors] = React.useState<Record<string, boolean>>({});
   const picker = useGroupContactPicker(open, availableQuery);
 
   React.useEffect(() => {
@@ -653,7 +685,18 @@ function CreateGroupModal({
     setDescription("");
     setImageDataUrl(null);
     setBusy(false);
+    setRequiredErrors({});
   }, [instances, open]);
+
+  React.useEffect(() => {
+    setRequiredErrors((current) => {
+      const next = { ...current };
+      if (name.trim().length >= 2) delete next.name;
+      if (connectionId) delete next.connectionId;
+      if (selectedContacts.length) delete next.participants;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [connectionId, name, selectedContacts.length]);
 
   const filteredContacts = React.useMemo(() => {
     const selected = new Set(selectedContacts.map((contact) => contact.id));
@@ -686,9 +729,25 @@ function CreateGroupModal({
   };
 
   const goToDetails = () => {
-    if (name.trim().length < 2) return toast.error("Informe o nome do grupo.");
-    if (!connectionId) return toast.error("Selecione uma instância.");
-    if (!selectedContacts.length) return toast.error("Selecione ao menos um participante.");
+    const nextErrors: Record<string, boolean> = {};
+    const pendingFields: string[] = [];
+    if (name.trim().length < 2) {
+      nextErrors.name = true;
+      pendingFields.push("Nome do grupo");
+    }
+    if (!connectionId) {
+      nextErrors.connectionId = true;
+      pendingFields.push("Instância");
+    }
+    if (!selectedContacts.length) {
+      nextErrors.participants = true;
+      pendingFields.push("Participantes");
+    }
+    if (pendingFields.length) {
+      setRequiredErrors(nextErrors);
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
     setStep("details");
   };
 
@@ -707,6 +766,10 @@ function CreateGroupModal({
     } finally {
       setBusy(false);
     }
+  };
+
+  const insertDescriptionEmoji = (emoji: string) => {
+    insertTextAtCursor(descriptionRef.current, description, emoji, 2000, setDescription);
   };
 
   return (
@@ -734,6 +797,7 @@ function CreateGroupModal({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Digite o nome do grupo"
+                aria-invalid={Boolean(requiredErrors.name)}
               />
             </Field>
             <Field label="Instância *">
@@ -742,6 +806,7 @@ function CreateGroupModal({
                 onChange={setConnectionId}
                 instances={instances}
                 emptyLabel="Selecione uma instância"
+                invalid={Boolean(requiredErrors.connectionId)}
               />
             </Field>
           </div>
@@ -791,8 +856,11 @@ function CreateGroupModal({
               />
             </section>
 
-            {selectedContacts.length > 0 && (
-              <section className="order-1 min-w-0 rounded-xl border border-border p-3 sm:p-4 lg:order-2">
+            {(selectedContacts.length > 0 || requiredErrors.participants) && (
+              <section
+                aria-invalid={Boolean(requiredErrors.participants)}
+                className={`order-1 min-w-0 rounded-xl border p-3 sm:p-4 lg:order-2 ${requiredErrors.participants ? "border-destructive" : "border-border"}`}
+              >
                 <div className="mb-3 flex items-center gap-2">
                   <div className="flex items-center gap-2">
                     <h3 className="text-lg font-semibold">Contatos selecionados</h3>
@@ -879,16 +947,19 @@ function CreateGroupModal({
             />
           </div>
           <Field label="Descrição">
-            <Textarea
+            <textarea
+              ref={descriptionRef}
               rows={6}
               maxLength={2000}
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Escreva uma descrição para o grupo"
+              className="min-h-24 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary"
             />
-            <p className="mt-1 text-right text-xs text-muted-foreground">
-              {description.length}/2000
-            </p>
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <MessageEmojiPicker disabled={busy} onSelect={insertDescriptionEmoji} />
+              <p className="text-right text-xs text-muted-foreground">{description.length}/2000</p>
+            </div>
           </Field>
         </div>
       </Modal>
@@ -921,9 +992,12 @@ function GroupDetailModal({
   const [busy, setBusy] = React.useState<string | null>(null);
   const viewMode = React.useMemo(() => Boolean(group?.id), [group?.id]);
   const [editingName, setEditingName] = React.useState(false);
+  const [editNameRequired, setEditNameRequired] = React.useState(false);
   const [editingDescription, setEditingDescription] = React.useState(false);
   const initializedGroupIdRef = React.useRef<string | null>(null);
-  const picker = useGroupContactPicker(!!group, availableQuery);
+  const descriptionRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const canManageGroupParticipants = canManage && Boolean(group?.canManageParticipants);
+  const picker = useGroupContactPicker(!!group && canManageGroupParticipants, availableQuery);
 
   React.useEffect(() => {
     if (!group) {
@@ -938,6 +1012,7 @@ function GroupDetailModal({
     setSelectedQuery("");
     setBusy(null);
     setEditingName(false);
+    setEditNameRequired(false);
     setEditingDescription(false);
   }, [group]);
 
@@ -997,7 +1072,11 @@ function GroupDetailModal({
 
   const saveName = () => {
     if (!group) return;
-    if (name.trim().length < 2) return toast.error("Informe o nome do grupo.");
+    if (name.trim().length < 2) {
+      setEditNameRequired(true);
+      showRequiredFieldsToast(["Nome do grupo"]);
+      return;
+    }
     void run("name", async () => {
       const updated = await groupsApi.updateName(group.id, { name: name.trim() });
       onGroupChange(updated);
@@ -1021,11 +1100,16 @@ function GroupDetailModal({
   const cancelNameEdit = () => {
     setName(group?.name ?? "");
     setEditingName(false);
+    setEditNameRequired(false);
   };
 
   const cancelDescriptionEdit = () => {
     setDescription(group?.description ?? "");
     setEditingDescription(false);
+  };
+
+  const insertDescriptionEmoji = (emoji: string) => {
+    insertTextAtCursor(descriptionRef.current, description, emoji, 2000, setDescription);
   };
 
   const addParticipant = (contactId: string) => {
@@ -1088,11 +1172,16 @@ function GroupDetailModal({
             <EntityFormLog createdAt={group.createdAt} updatedAt={group.updatedAt} />
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <Button variant="ghost" size="sm" onClick={onClose} disabled={!!busy}>
-                Cancelar
+                {canManage ? "Cancelar" : "Fechar"}
               </Button>
               {onOpenChat && (
-                <Button variant="primary" size="sm" onClick={() => onOpenChat(group)}>
-                  <MessageSquareMore className="h-3.5 w-3.5" /> Abrir conversa
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
+                  onClick={() => onOpenChat(group)}
+                >
+                  <MessageSquarePlus className="h-3.5 w-3.5" /> Abrir conversa
                 </Button>
               )}
             </div>
@@ -1129,10 +1218,14 @@ function GroupDetailModal({
                           <Input
                             autoFocus
                             value={name}
-                            onChange={(event) => setName(event.target.value)}
+                            onChange={(event) => {
+                              setName(event.target.value);
+                              if (event.target.value.trim().length >= 2) setEditNameRequired(false);
+                            }}
                             disabled={busy === "name"}
                             className="min-h-9 pr-9"
                             placeholder="Nome do grupo"
+                            aria-invalid={editNameRequired}
                           />
                           <button
                             type="button"
@@ -1153,12 +1246,11 @@ function GroupDetailModal({
                     {canManage && (
                       <Button
                         variant="ghost"
-                        size="icon"
+                        size="sm"
                         title={editingName ? "Salvar nome" : "Editar nome"}
                         aria-label={editingName ? "Salvar nome" : "Editar nome"}
                         onClick={editingName ? saveName : () => setEditingName(true)}
                         disabled={busy === "name"}
-                        className="h-9 w-9"
                       >
                         {editingName ? (
                           <Check className="h-4 w-4" />
@@ -1188,14 +1280,15 @@ function GroupDetailModal({
                     <div className="relative min-w-0">
                       {editingDescription ? (
                         <>
-                          <Textarea
+                          <textarea
+                            ref={descriptionRef}
                             autoFocus
                             rows={3}
                             maxLength={2000}
                             value={description}
                             onChange={(event) => setDescription(event.target.value)}
                             disabled={busy === "description"}
-                            className="min-h-16 pr-9 sm:min-h-20"
+                            className="min-h-16 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary disabled:opacity-60 sm:min-h-20"
                           />
                           <button
                             type="button"
@@ -1206,6 +1299,12 @@ function GroupDetailModal({
                           >
                             <X className="h-3 w-3" />
                           </button>
+                          <div className="absolute bottom-2 left-2">
+                            <MessageEmojiPicker
+                              disabled={busy === "description"}
+                              onSelect={insertDescriptionEmoji}
+                            />
+                          </div>
                         </>
                       ) : (
                         <p className="min-h-14 break-words whitespace-pre-wrap py-1.5 text-sm text-foreground sm:min-h-20 sm:py-2">
@@ -1216,14 +1315,14 @@ function GroupDetailModal({
                     {canManage && (
                       <Button
                         variant="ghost"
-                        size="icon"
+                        size="sm"
                         title={editingDescription ? "Salvar descrição" : "Editar descrição"}
                         aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
                         onClick={
                           editingDescription ? saveDescription : () => setEditingDescription(true)
                         }
                         disabled={busy === "description"}
-                        className="h-9 w-9 self-center sm:h-10 sm:w-10"
+                        className="self-center"
                       >
                         {editingDescription ? (
                           <Check className="h-4 w-4" />
@@ -1250,7 +1349,12 @@ function GroupDetailModal({
                           }
                           setAddingParticipants((current) => !current);
                         }}
-                        disabled={busy === "participants"}
+                        disabled={busy === "participants" || !canManageGroupParticipants}
+                        title={
+                          canManageGroupParticipants
+                            ? undefined
+                            : "A instância não administra este grupo"
+                        }
                       >
                         <UserPlus className="h-3.5 w-3.5" />
                         {addingParticipants && selectedContactIds.length > 0
@@ -1336,6 +1440,7 @@ function GroupDetailModal({
                             {participant.isSuperAdmin ? "Criador" : "Admin"}
                           </Badge>
                         )}
+                        {participant.isCurrentInstance && <Badge tone="default">Meu número</Badge>}
                         {!viewMode && (
                           <div className="flex shrink-0 gap-1">
                             <Button
@@ -1349,7 +1454,12 @@ function GroupDetailModal({
                                   participant.isAdmin ? "demote" : "promote",
                                 )
                               }
-                              disabled={!!busy || participant.isSuperAdmin}
+                              disabled={
+                                !!busy ||
+                                participant.isSuperAdmin ||
+                                participant.isCurrentInstance ||
+                                !canManageGroupParticipants
+                              }
                               className={`h-8 w-8 ${
                                 participant.isAdmin
                                   ? "hover:text-destructive"
@@ -1364,7 +1474,12 @@ function GroupDetailModal({
                               title="Remover participante"
                               aria-label="Remover participante"
                               onClick={() => updateParticipant(participant, "remove")}
-                              disabled={!!busy || participant.isSuperAdmin}
+                              disabled={
+                                !!busy ||
+                                participant.isSuperAdmin ||
+                                participant.isCurrentInstance ||
+                                !canManageGroupParticipants
+                              }
                               className="h-8 w-8"
                             >
                               <UserMinus className="h-3.5 w-3.5" />
@@ -1415,7 +1530,7 @@ function GroupDetailModal({
                             variant="ghost"
                             size="icon"
                             onClick={() => addParticipant(contact.id)}
-                            disabled={!!busy}
+                            disabled={!!busy || !canManageGroupParticipants}
                             title={`Adicionar ${contact.nome}`}
                             aria-label={`Adicionar ${contact.nome}`}
                           >
@@ -1449,7 +1564,8 @@ function GroupDetailModal({
                         className="trash-action h-7 min-h-7 px-2 text-[11px] sm:h-auto sm:min-h-8 sm:px-2.5 sm:text-xs"
                         disabled={
                           !group.participants.some((participant) => !participant.isSuperAdmin) ||
-                          !!busy
+                          !!busy ||
+                          !canManageGroupParticipants
                         }
                         onClick={removeAllParticipants}
                       >
@@ -1487,6 +1603,7 @@ function GroupDetailModal({
                             {participant.isSuperAdmin ? "Criador" : "Admin"}
                           </Badge>
                         )}
+                        {participant.isCurrentInstance && <Badge tone="default">Meu número</Badge>}
                         {canManage && (
                           <Button
                             variant="ghost"
@@ -1501,7 +1618,12 @@ function GroupDetailModal({
                                 participant.isAdmin ? "demote" : "promote",
                               )
                             }
-                            disabled={!!busy || participant.isSuperAdmin}
+                            disabled={
+                              !!busy ||
+                              participant.isSuperAdmin ||
+                              participant.isCurrentInstance ||
+                              !canManageGroupParticipants
+                            }
                             className={`h-8 w-8 sm:h-9 sm:w-9 ${
                               participant.isAdmin ? "hover:text-destructive" : "hover:text-success"
                             }`}
@@ -1517,7 +1639,12 @@ function GroupDetailModal({
                             aria-label="Remover participante"
                             className="trash-action h-8 w-8 sm:h-9 sm:w-9"
                             onClick={() => updateParticipant(participant, "remove")}
-                            disabled={!!busy || participant.isSuperAdmin}
+                            disabled={
+                              !!busy ||
+                              participant.isSuperAdmin ||
+                              participant.isCurrentInstance ||
+                              !canManageGroupParticipants
+                            }
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -1598,4 +1725,25 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }).replace(",", "");
+}
+
+function insertTextAtCursor(
+  textarea: HTMLTextAreaElement | null,
+  currentValue: string,
+  text: string,
+  maxLength: number,
+  onChange: (value: string) => void,
+) {
+  const start = textarea?.selectionStart ?? currentValue.length;
+  const end = textarea?.selectionEnd ?? start;
+  const available = maxLength - (currentValue.length - (end - start));
+  if (available <= 0) return;
+  const inserted = text.slice(0, available);
+  const nextValue = `${currentValue.slice(0, start)}${inserted}${currentValue.slice(end)}`;
+  const cursor = start + inserted.length;
+  onChange(nextValue);
+  requestAnimationFrame(() => {
+    textarea?.focus();
+    textarea?.setSelectionRange(cursor, cursor);
+  });
 }

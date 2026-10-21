@@ -18,6 +18,15 @@ const instanceName =
 const ensure = args.has("--ensure");
 const checkContainerHealth = args.has("--container-health");
 const containerName = process.env.EVOLUTION_CONTAINER_NAME ?? "trixus-evolution-api";
+const expectedEvents = [
+  "MESSAGES_UPSERT",
+  "MESSAGES_EDITED",
+  "MESSAGES_UPDATE",
+  "MESSAGES_DELETE",
+  "SEND_MESSAGE_UPDATE",
+  "QRCODE_UPDATED",
+  "CONNECTION_UPDATE",
+];
 
 const baseUrl = trimTrailingSlash(
   process.env.EVOLUTION_BASE_URL ?? process.env.EVOLUTION_API_URL ?? "",
@@ -58,20 +67,42 @@ if (ensure) {
 const webhook = await fetchWebhook(instanceName);
 const headers = webhook.headers ?? {};
 const evolutionSecret = normalizeSecret(headers.jwt_key);
+const events = Array.isArray(webhook.events) ? [...webhook.events].sort() : [];
+const expectedEventsSorted = [...expectedEvents].sort();
+const byEvents = webhook.byEvents ?? webhook.webhookByEvents;
+const base64 = webhook.base64 ?? webhook.webhookBase64;
+const audit = {
+  enabled: webhook.enabled === true,
+  urlCorrect: webhook.url === webhookUrl,
+  eventsCorrect: JSON.stringify(events) === JSON.stringify(expectedEventsSorted),
+  eventCount: events.length,
+  events,
+  byEventsDisabled: byEvents === false,
+  base64Disabled: base64 === false,
+  secretBackendConfigured: !!webhookSecret,
+  secretEvolutionConfigured: !!evolutionSecret,
+  secretMatch: !!webhookSecret && !!evolutionSecret && webhookSecret === evolutionSecret,
+  headerJwtKeyPresent: !!evolutionSecret,
+};
+audit.ok =
+  audit.enabled &&
+  audit.urlCorrect &&
+  audit.eventsCorrect &&
+  audit.eventCount === expectedEventsSorted.length &&
+  audit.byEventsDisabled &&
+  audit.base64Disabled &&
+  audit.secretBackendConfigured &&
+  audit.secretEvolutionConfigured &&
+  audit.secretMatch &&
+  audit.headerJwtKeyPresent;
 
 console.log(
   JSON.stringify(
     {
       event: "evolution.webhook.audit",
       instanceName,
-      urlCorrect: webhook.url === webhookUrl,
-      messagesUpsertPresent: Array.isArray(webhook.events)
-        ? webhook.events.includes("MESSAGES_UPSERT")
-        : false,
-      secretBackendConfigured: !!webhookSecret,
-      secretEvolutionConfigured: !!evolutionSecret,
-      secretMatch: !!webhookSecret && !!evolutionSecret && webhookSecret === evolutionSecret,
-      headerJwtKeyPresent: !!evolutionSecret,
+      messagesUpsertPresent: events.includes("MESSAGES_UPSERT"),
+      ...audit,
     },
     null,
     2,
@@ -96,13 +127,7 @@ async function setWebhook(name) {
         byEvents: false,
         base64: false,
         headers: { jwt_key: webhookSecret },
-        events: [
-          "MESSAGES_UPSERT",
-          "MESSAGES_UPDATE",
-          "SEND_MESSAGE_UPDATE",
-          "QRCODE_UPDATED",
-          "CONNECTION_UPDATE",
-        ],
+        events: expectedEvents,
       },
     },
   });

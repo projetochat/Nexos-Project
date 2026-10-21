@@ -7,11 +7,17 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 describe("operational connection sources", () => {
   it("keeps Contact and Inbox selectors on the shared real Connections hook", () => {
-    const contatos = source("src/routes/contatos.tsx");
-    const inbox = source("src/routes/inbox.index.tsx");
+    const orchestrator = source("src/components/active-conversation-orchestrator.tsx");
 
-    expect(contatos).toContain("useConnectedMessagingConnections");
-    expect(inbox).toContain("useConnectedMessagingConnections");
+    expect(orchestrator).toContain("useConnectedMessagingConnections");
+    expect(orchestrator).toContain("resolveConnectedContactInstances");
+    for (const entry of [
+      "src/routes/contatos.tsx",
+      "src/routes/inbox.index.tsx",
+      "src/routes/-historico-page.tsx",
+    ]) {
+      expect(source(entry)).toContain("<ActiveConversationOrchestrator");
+    }
   });
 
   it("does not ship legacy instance names in operational runtime files", () => {

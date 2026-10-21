@@ -44,17 +44,20 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 20
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_1200?schema=public
       TRIXUS_TEST_DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_1200?schema=public
+      TRIXUS_VERIFY_DISPOSABLE_DATABASE: trixus_1200
       REDIS_URL: redis://127.0.0.1:6379
+      TRIXUS_VERIFY_DISPOSABLE_REDIS: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: "1.3.14"
       - name: Test production release protections
@@ -63,17 +66,14 @@ jobs:
       - run: bun run --cwd backend prisma:generate
       - name: Prepare fixtures in the disposable test database
         env:
-          SEED_MODE: demo
+          TRIXUS_ENVIRONMENT: staging
+          TRIXUS_TEST_FIXTURE_MODE: demo
           NODE_ENV: test
           TRIXUS_PLATFORM_ADMIN_EMAIL: platform@trixus.app
           TRIXUS_PLATFORM_ADMIN_PASSWORD: demo1234
-          TRIXUS_PLATFORM_SUPPORT_EMAIL: platform-support@trixus.app
-          TRIXUS_PLATFORM_SUPPORT_PASSWORD: demo1234
-          TRIXUS_PLATFORM_READONLY_EMAIL: platform-readonly@trixus.app
-          TRIXUS_PLATFORM_READONLY_PASSWORD: demo1234
         run: |
           bun run --cwd backend prisma:migrate:deploy
-          bun run --cwd backend prisma:seed
+          bun run --cwd backend prisma:seed:test-fixtures
       - name: Validate Compose without production credentials
         env:
           TRIXUS_ENV_FILE: .env.vps.example
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Build every production image target without publishing
@@ -110,10 +110,12 @@ jobs:
           set -Eeuo pipefail
           test "$(docker image inspect "trixus-pr/backend:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
           test "$(docker image inspect "trixus-pr/migrate:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
+          test "$(docker image inspect "trixus-pr/migrate:$GITHUB_SHA" --format '{{json .Config.Cmd}}')" = '["bun","run","prisma:migrate:deploy","--help"]'
           docker run --rm --entrypoint sh "trixus-pr/backend:$GITHUB_SHA" \
             -c 'command -v node && test -s /app/backend/dist/src/main.js'
+          docker run --rm "trixus-pr/migrate:$GITHUB_SHA"
           docker run --rm --entrypoint bun "trixus-pr/migrate:$GITHUB_SHA" \
-            run prisma:migrate:deploy --help
+            run locations:catalog:verify
           docker run --rm --entrypoint sh "trixus-pr/frontend:$GITHUB_SHA" \
             -c 'command -v bun && test -s /app/.output/server/index.mjs'
 
@@ -131,7 +133,7 @@ jobs:
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Build immutable images for the VPS architecture
@@ -163,8 +165,10 @@ jobs:
           set -Eeuo pipefail
           docker run --rm --entrypoint sh "trixus-release/backend:$GITHUB_SHA" \
             -c 'command -v node && test -s /app/backend/dist/src/main.js'
+          test "$(docker image inspect "trixus-release/migrate:$GITHUB_SHA" --format '{{json .Config.Cmd}}')" = '["bun","run","prisma:migrate:deploy","--help"]'
+          docker run --rm "trixus-release/migrate:$GITHUB_SHA"
           docker run --rm --entrypoint bun "trixus-release/migrate:$GITHUB_SHA" \
-            run prisma:migrate:deploy --help
+            run locations:catalog:verify
           docker run --rm --entrypoint sh "trixus-release/frontend:$GITHUB_SHA" \
             -c 'command -v bun && test -s /app/.output/server/index.mjs'
       - name: Package images and checksums
@@ -191,11 +195,11 @@ jobs:
             echo 'Tests and migrations ran only against disposable GitHub runner services.'
             echo 'No SSH connection, VPS changes, or production migrations were performed.'
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: trixus-linux-amd64-${{ github.sha }}
           path: release/
-          retention-days: 3
+          retention-days: 14
           compression-level: 0
           if-no-files-found: error
 
@@ -214,10 +218,10 @@ jobs:
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: trixus-linux-amd64-${{ github.sha }}
           path: release

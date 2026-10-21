@@ -65,7 +65,6 @@ export class ContactProfilePictureSyncService {
       this.realtime.publishContactUpdated({
         tenantId: input.tenantId,
         contactId: contact.id,
-        contact: { id: contact.id, avatar_url: avatarUrl },
       });
     }
 

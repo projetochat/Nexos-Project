@@ -7,6 +7,8 @@ import {
   Plug,
   Shield,
   SlidersHorizontal,
+  CaseSensitive,
+  ListOrdered,
 } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { SectionHeader } from "@/components/ui-kit";
@@ -20,8 +22,14 @@ const TABS = [
   { to: "/configuracoes/empresa", label: "Empresa", icon: Building2 },
   { to: "/configuracoes/financeiro", label: "Financeiro", icon: CreditCard },
   { to: "/configuracoes/geral", label: "Filas do Chat", icon: SlidersHorizontal },
+  {
+    to: "/configuracoes/controle-numeracao",
+    label: "Controle de Numeração",
+    icon: ListOrdered,
+  },
   { to: "/configuracoes/permissoes", label: "Permissões", icon: Shield },
   { to: "/configuracoes/integracoes", label: "Integrações", icon: Plug },
+  { to: "/configuracoes/padrao-cadastros", label: "Padrão de Cadastros", icon: CaseSensitive },
   { to: "/configuracoes/campos-contato", label: "Campos Adicionais", icon: ListPlus },
   { to: "/configuracoes/variaveis", label: "Variáveis", icon: Braces },
 ] as const;
@@ -34,7 +42,7 @@ function ConfiguracoesLayout() {
       <PageContainer className="overflow-x-hidden">
         <SectionHeader title="Configurações" />
 
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[264px_minmax(0,1fr)] lg:gap-5">
           <aside>
             <nav className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-surface-1 p-1 sm:grid-cols-3 lg:flex lg:flex-col lg:p-2">
               {TABS.map((t) => {

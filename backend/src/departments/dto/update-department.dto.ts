@@ -5,9 +5,13 @@ import {
   IsHexColor,
   IsIn,
   IsOptional,
+  IsInt,
   IsString,
   IsUUID,
   MinLength,
+  MaxLength,
+  Max,
+  Min,
 } from "class-validator";
 import { DEPARTMENT_ICONS } from "./create-department.dto";
 
@@ -19,7 +23,7 @@ export class UpdateDepartmentDto {
 
   @IsOptional()
   @IsString()
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsHexColor()
@@ -39,4 +43,19 @@ export class UpdateDepartmentDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inactivityClosureEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10_080)
+  inactivityTimeoutMinutes?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4_000)
+  inactivityClosureMessage?: string | null;
 }

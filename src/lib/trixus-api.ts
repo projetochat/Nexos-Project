@@ -28,6 +28,12 @@ type LoginResponse = {
     presentationName?: string | null;
     avatarUrl?: string | null;
     keepSidebarCollapsed?: boolean;
+    chatBubbleColor?: string | null;
+    chatBubbleTextColor?: string | null;
+    customerBubbleColor?: string | null;
+    customerBubbleTextColor?: string | null;
+    chatBackgroundColor?: string | null;
+    chatBackgroundMode?: "IMAGE" | "COLOR";
     roleId: string;
     roleKey: ApiRoleKey;
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
@@ -73,17 +79,63 @@ export type TrixusHealth = {
   timestamp: string;
 };
 
+export type ApiTenantOnboardingChecklist = {
+  instanceConnected: boolean;
+  activeDepartment: boolean;
+  administratorProfile: boolean;
+  activeAdministrator: boolean;
+  quickRepliesReviewed: boolean;
+  tagsReviewed: boolean;
+};
+
+export type ApiTenantOnboardingStatus = {
+  required: boolean;
+  status: "not_required" | "pending" | "completed";
+  progress: {
+    currentStep: number;
+    maxCompletedStep: number;
+    totalSteps: 8;
+  };
+  version: number | null;
+  canManage: boolean;
+  message: string | null;
+  checklist: ApiTenantOnboardingChecklist;
+};
+
 export class TrixusApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly code?: string,
     readonly details?: unknown,
+    readonly requestId?: string,
   ) {
     super(message);
     this.name = "TrixusApiError";
   }
 }
+
+export type ApiDeletionImpactPreview = {
+  snapshotToken: string;
+  title: string;
+  prompt: string;
+  record: {
+    name: string;
+    identifiers: Array<{ label: string; value: string }>;
+  };
+  dependencies: Array<{
+    id: string;
+    label: string;
+    count: number;
+    operation: "unlink" | "reassign" | "delete";
+    operationLabel: string;
+    items?: Array<{ id: string; label: string; description?: string }>;
+    hasMore?: boolean;
+  }>;
+  consequences: Array<{ id: string; text: string; irreversible: boolean }>;
+  confirmation: { level: "standard"; confirmLabel: string };
+  blockedReason?: string;
+};
 
 export type ApiDepartment = {
   id: string;
@@ -94,7 +146,10 @@ export type ApiDepartment = {
   icon: DepartmentIcon;
   connectionIds: string[];
   favoriteConnectionIds?: string[];
-  active: boolean;
+  active?: boolean;
+  inactivityClosureEnabled: boolean;
+  inactivityTimeoutMinutes: number | null;
+  inactivityClosureMessage: string | null;
   createdAt?: string;
   updatedAt?: string;
   memberCount?: number;
@@ -120,6 +175,7 @@ export type ApiRole = {
   description: string | null;
   metadata: unknown;
   system: boolean;
+  active: boolean;
   createdAt?: string;
   updatedAt?: string;
   permissionIds: string[];
@@ -138,6 +194,12 @@ export type ApiUserMembership = {
     presentationName?: string | null;
     avatarUrl?: string | null;
     keepSidebarCollapsed?: boolean;
+    chatBubbleColor?: string | null;
+    chatBubbleTextColor?: string | null;
+    customerBubbleColor?: string | null;
+    customerBubbleTextColor?: string | null;
+    chatBackgroundColor?: string | null;
+    chatBackgroundMode?: "IMAGE" | "COLOR";
     status: "ACTIVE" | "DISABLED";
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   };
@@ -157,6 +219,31 @@ export type PaginatedResponse<T> = {
   totalPages: number;
 };
 
+export type ApiCountry = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export type ApiAdministrativeDivision = {
+  id: string;
+  code: string;
+  name: string;
+  countryCode: string;
+};
+
+export type ApiCity = {
+  id: string;
+  name: string;
+  countryCode: string;
+  countryName: string;
+  divisionId: string | null;
+  divisionCode: string | null;
+  divisionName: string | null;
+  ibgeCode: string | null;
+  geonamesId: string | null;
+};
+
 export type ApiCustomer = {
   id: string;
   tenantId: string;
@@ -167,14 +254,61 @@ export type ApiCustomer = {
   contato_responsavel: string | null;
   cor: string;
   contactCount?: number;
+  personType: "PHYSICAL" | "LEGAL";
+  status: "ACTIVE" | "PROSPECT" | "SUSPENDED" | "CANCELLED";
+  legalName: string | null;
+  document: string | null;
+  addressFullEnabled: boolean;
+  postalCode: string | null;
+  street: string | null;
+  addressNumber: string | null;
+  addressWithoutNumber: boolean;
+  complement: string | null;
+  neighborhood: string | null;
+  cityId?: string | null;
+  city: string;
+  state: string;
+  country: string | null;
+  branchCount?: number;
+  departmentCount?: number;
+  branches?: ApiCustomerBranch[];
+  departments?: ApiCustomerDepartment[];
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type ApiCustomerBranch = {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiCustomerDepartment = {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  name: string;
+  managerContactId: string | null;
+  managerContact?: { id: string; name: string } | null;
+  manager?: { id: string; name: string } | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ApiTag = {
   id: string;
   nome: string;
+  descricao?: string | null;
   cor: string;
+  active?: boolean;
+  notifyOnNewConversation?: boolean;
   archivedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -191,12 +325,14 @@ export type ApiContactCatalog = {
   archivedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  contactCount?: number;
 };
 
 export type ApiContactCustomField = {
   id: string;
   tenantId: string;
   label: string;
+  variableKey: string;
   type: "text" | "number" | "checkbox" | "list" | "date";
   required: boolean;
   mask: string | null;
@@ -214,6 +350,7 @@ export type ApiContactInstanceOption = {
   value: string;
   name: string;
   color: string | null;
+  logoUrl?: string | null;
   externalReference?: string | null;
   ownerPhone?: string | null;
   instanceName?: string | null;
@@ -228,10 +365,18 @@ export type ApiContact = {
   normalizedPhone: string;
   avatar_url: string | null;
   customer_id: string | null;
+  customerBranchId?: string | null;
+  customerBranch?: Pick<ApiCustomerBranch, "id" | "name" | "city" | "state"> | null;
+  customerDepartmentId?: string | null;
+  customerDepartment?: Pick<ApiCustomerDepartment, "id" | "name"> | null;
+  customerAccessProfile?: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS" | null;
+  active: boolean;
   email: string | null;
+  /** Nome legado; use contactDepartment como fonte canônica do departamento cadastrado. */
   departamento: string | null;
   departmentId: string | null;
   contactDepartmentId: string | null;
+  /** Departamento cadastrado do contato, distinto do departamento operacional da conversa. */
   contactDepartment: Pick<ApiContactCatalog, "id" | "nome" | "cor"> | null;
   contactProfileId: string | null;
   contactProfile: Pick<ApiContactCatalog, "id" | "nome" | "cor"> | null;
@@ -240,17 +385,44 @@ export type ApiContact = {
   instanceIds: string[];
   customer: Pick<ApiCustomer, "id" | "nome" | "cor"> | null;
   tags: ApiTag[];
-  customFields: Record<string, string>;
-  customFieldValues?: Array<{ fieldId: string; label: string; type: string; value: string | null }>;
+  customFields?: Record<string, string>;
+  customFieldValues?: Array<{
+    fieldId: string;
+    label: string;
+    variableKey: string;
+    type: string;
+    mask: string | null;
+    value: string | null;
+  }>;
   createdAt?: string;
   updatedAt?: string;
-  lifecycle?: "created" | "restored";
+  lifecycle?: "created" | "restored" | "linked";
 };
 
 export type ApiGroupContactPickerItem = Pick<
   ApiContact,
   "id" | "nome" | "telefone" | "normalizedPhone" | "avatar_url"
 >;
+
+export type ApiMessageContactPickerItem = Pick<
+  ApiContact,
+  | "id"
+  | "nome"
+  | "telefone"
+  | "normalizedPhone"
+  | "avatar_url"
+  | "active"
+  | "instancia"
+  | "instanceIds"
+>;
+
+export type ApiMessageContactPickerPage = PaginatedResponse<ApiMessageContactPickerItem> & {
+  instance: {
+    id: string;
+    name: string;
+    ownerPhone: string | null;
+  } | null;
+};
 
 export type ApiAgendaImportContact = {
   id: string;
@@ -284,15 +456,27 @@ export type ApiConversation = {
   connection_id: string | null;
   department_id: string | null;
   assigned_membership_id: string | null;
+  assigned_membership_name_snapshot?: string | null;
   agent_id: string | null;
   status: ApiConversationStatus;
   is_group: boolean;
+  group_name?: string | null;
   created_at: string;
   updated_at: string;
+  closed_at?: string | null;
+  closed_by?: {
+    id: string | null;
+    membershipId: string | null;
+    nome: string;
+    email: string | null;
+  } | null;
   last_message_at: string;
   protocolo: string | null;
   unreadCount: number;
   lastMessagePreview: string | null;
+  lastMessageType?: ApiMessage["type"] | null;
+  lastMessageDurationMs?: number | null;
+  hasPendingScheduledMessage?: boolean;
   inbox_archived_at: string | null;
   is_lead: boolean;
   originated_as_lead?: boolean;
@@ -305,6 +489,7 @@ export type ApiConversation = {
     providerType: "development" | "evolution" | "meta_cloud";
     status: "disconnected" | "connecting" | "connected" | "error";
     externalReference: string | null;
+    timezone: string;
     color: string | null;
     logo_url: string | null;
   } | null;
@@ -317,6 +502,7 @@ export type ApiWhatsappGroupParticipant = {
   externalParticipantId: string;
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  isCurrentInstance: boolean;
   active: boolean;
   lastSeenAt: string;
 };
@@ -332,6 +518,7 @@ export type ApiWhatsappGroup = {
   createdAt: string;
   updatedAt: string;
   participantsCount: number;
+  canManageParticipants: boolean;
   connection: {
     id: string;
     name: string;
@@ -345,7 +532,10 @@ export type ApiWhatsappGroup = {
   warnings?: string[];
 };
 
-export type ApiWhatsappGroupSummary = Omit<ApiWhatsappGroup, "participants">;
+export type ApiWhatsappGroupSummary = Omit<
+  ApiWhatsappGroup,
+  "participants" | "canManageParticipants"
+>;
 
 export type QuickReplyAttachment = {
   fileName: string;
@@ -357,7 +547,6 @@ export type QuickReplyMessage = { text: string; attachment?: QuickReplyAttachmen
 
 export type ApiQuickReply = {
   messages?: QuickReplyMessage[] | null;
-  intervalSeconds?: number;
   id: string;
   tenantId: string;
   title: string;
@@ -376,6 +565,7 @@ export type ApiQuickReply = {
   updatedAt: string;
   close_on_send: boolean;
   closeOnSend?: boolean;
+  active?: boolean;
 };
 
 export type ApiMessage = {
@@ -409,6 +599,7 @@ export type ApiMessage = {
   created_at: string;
   updated_at: string;
   edited_at?: string | null;
+  original_content?: string | null;
   deleted_at?: string | null;
   deleted_for_everyone?: boolean;
   read_at: string | null;
@@ -531,6 +722,10 @@ export type ApiAutomationRule = {
   updatedAt: string;
 };
 
+export type ApiDeletionConfirmationResult =
+  | { status: "deleted"; cleanup?: "completed" | "pending" }
+  | { status: "changed"; impact: ApiDeletionImpactPreview; message?: string };
+
 export type ApiServiceHoursPeriod = { start: string; end: string };
 export type ApiServiceHoursRow = {
   day: string;
@@ -568,6 +763,7 @@ export type ApiMessagingConnection = {
   importGroupsStartDate?: string | null;
   ownerPhoneMasked?: string | null;
   ownerPhone?: string | null;
+  connectionErrorCode?: string | null;
   archivedAt?: string | null;
   provider?: {
     existsInProvider?: boolean;
@@ -631,10 +827,30 @@ export type ApiTicketStatus =
   | "AGUARDANDO"
   | "RESOLVIDO"
   | "FECHADO"
-  | "CANCELADO";
+  | "CANCELADO"
+  | "NOVO"
+  | "AGUARDANDO_APROVACAO"
+  | "NA_FILA"
+  | "EM_EXECUCAO"
+  | "CONCLUIDA"
+  | "VALIDADO"
+  | "REPROVADO";
 
-export type ApiTicketPriority = "BAIXA" | "NORMAL" | "ALTA" | "URGENTE";
+export type ApiTicketPriority = "BAIXA" | "NORMAL" | "ALTA" | "URGENTE" | "ALTISSIMA";
 export type ApiTicketCategory = "SUPORTE" | "DEV" | "FINANCEIRO" | "OPERACIONAL";
+export type ApiTicketSubstatus =
+  | "OPENED_IN_SANKHYA"
+  | "FORWARDED_TO_THIRD_PARTY"
+  | "WAITING"
+  | "WAITING_INFRASTRUCTURE";
+export type ApiTicketDialogType =
+  | "RESPONSE"
+  | "TRANSFER"
+  | "APPROVAL_REQUEST"
+  | "SOLUTION"
+  | "CANCELLATION"
+  | "APPROVAL_DECISION"
+  | "SOLUTION_VALIDATION";
 
 export type ApiTicket = {
   id: string;
@@ -645,9 +861,12 @@ export type ApiTicket = {
   status: ApiTicketStatus;
   priority: ApiTicketPriority;
   category: ApiTicketCategory;
-  department: { id: string; name: string; color: string };
+  substatus: ApiTicketSubstatus | null;
+  department: { id: string; name: string; color: string } | null;
   requesterContact: { id: string; name: string; email: string | null; phone: string } | null;
   customer: { id: string; name: string; email: string | null; phone: string | null } | null;
+  customerDepartment: { id: string; name: string; managerContactId: string | null } | null;
+  originBranch: { id: string; name: string; city: string; state: string } | null;
   conversation: { id: string; protocol: string | null; status: string } | null;
   assignedMembership: { id: string; user: { id: string; name: string; email: string } } | null;
   createdByMembership: { id: string; user: { id: string; name: string; email: string } };
@@ -656,6 +875,10 @@ export type ApiTicket = {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  startedAt: string | null;
+  approvedAt: string | null;
+  solvedAt: string | null;
+  validatedAt: string | null;
   archivedAt?: string | null;
 };
 
@@ -664,9 +887,26 @@ export type ApiTicketComment = {
   bodyText: string;
   bodyHtmlSanitized: string | null;
   internal: boolean;
+  dialogType: ApiTicketDialogType;
+  editedAt: string | null;
   createdAt: string;
   updatedAt: string;
   authorMembership: { id: string; user: { id: string; name: string; email: string } };
+};
+
+export type ApiTicketSummary = {
+  total: number;
+  counts: Record<ApiTicketStatus, number>;
+};
+
+export type ApiTicketApproval = {
+  id: string;
+  kind: "SUPPORT" | "DEVELOPMENT" | "SOLUTION_VALIDATION";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  approverMembershipId: string | null;
+  approverContactId: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
 };
 
 export type ApiTicketAttachment = {
@@ -781,6 +1021,7 @@ export type OperationalPeriod =
 
 export type OperationalFilters = {
   period: OperationalPeriod;
+  conversationType?: "all" | "contacts" | "groups";
   start?: string;
   end?: string;
   q?: string;
@@ -836,6 +1077,44 @@ export type ApiDashboardComponentData = {
   items: ApiOperationsChartItem[];
 };
 
+export type ApiDashboardConfiguration = {
+  configuration: unknown;
+  updatedAt: string | null;
+};
+
+export type ApiProtocolSettings = {
+  module: "CHAT" | "TICKET";
+  format: "YEAR_SEQUENCE" | "YEAR_MONTH_SEQUENCE" | "SEQUENCE" | "DATE_SEQUENCE" | "CUSTOM";
+  digits: number;
+  reset: "YEARLY" | "MONTHLY" | "NEVER";
+  customPattern: string | null;
+  preview: string;
+  confirmationRequired?: boolean;
+  message?: string;
+};
+
+export const REGISTRATION_CASE_KEYS = [
+  "contacts",
+  "contactCompanies",
+  "contactDepartments",
+  "contactProfiles",
+  "attendants",
+  "accessProfiles",
+  "departments",
+  "tags",
+  "botFlows",
+  "automations",
+  "aiAgents",
+  "ticketTitles",
+] as const;
+
+export type ApiRegistrationCaseKey = (typeof REGISTRATION_CASE_KEYS)[number];
+
+export type ApiRegistrationCaseSettings = {
+  values: Record<ApiRegistrationCaseKey, boolean>;
+  counts: Record<ApiRegistrationCaseKey, number>;
+};
+
 export type ApiOperationsReport = {
   range: { start: string; end: string };
   kpis: Record<string, number | null>;
@@ -876,6 +1155,11 @@ type ListParams = {
   pageSize?: number;
 };
 
+type ListCustomersParams = ListParams & {
+  personType?: ApiCustomer["personType"];
+  status?: ApiCustomer["status"];
+};
+
 type ListContactsParams = ListParams & {
   linked?: "all" | "linked" | "unlinked";
   instance?: string;
@@ -883,6 +1167,7 @@ type ListContactsParams = ListParams & {
   department?: string;
   customerId?: string;
   tagId?: string;
+  sortBy?: "name" | "customer" | "instance";
 };
 
 type CustomerPayload = {
@@ -892,13 +1177,35 @@ type CustomerPayload = {
   notes?: string | null;
   responsibleContactName?: string | null;
   color?: string;
+  personType?: ApiCustomer["personType"];
+  status?: ApiCustomer["status"];
+  legalName?: string | null;
+  document?: string | null;
+  addressFullEnabled?: boolean;
+  postalCode?: string | null;
+  street?: string | null;
+  addressNumber?: string | null;
+  addressWithoutNumber?: boolean;
+  complement?: string | null;
+  neighborhood?: string | null;
+  cityId?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
 };
 
 type ContactPayload = {
   name: string;
   phone: string;
+  linkExistingToCustomer?: boolean;
+  confirmCustomerTransfer?: boolean;
+  expectedCustomerId?: string;
+  active?: boolean;
   email?: string | null;
   customerId?: string | null;
+  customerBranchId?: string | null;
+  customerDepartmentId?: string | null;
+  customerAccessProfile?: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS" | null;
   departmentId?: string | null;
   contactDepartmentId?: string | null;
   contactProfileId?: string | null;
@@ -929,6 +1236,7 @@ type ConversationPayload = {
   departmentId?: string | null;
   connectionId?: string | null;
   assignToSelf?: boolean;
+  reuseExistingOpen?: boolean;
   isGroup?: boolean;
   firstMessagePreview?: string | null;
 };
@@ -1032,6 +1340,24 @@ export async function acceptTenantInvitationWithTrixusApi(input: {
   return loginResponseToSessionUser(data);
 }
 
+export type ApiInvitationPreview = {
+  email: string;
+  expiresAt: string;
+  tenant: { id: string; name: string; slug: string };
+  profile: string;
+  contact: {
+    id: string;
+    name: string;
+    customer: { id: string; name: string } | null;
+    department: { id: string; name: string } | null;
+    branch: { id: string; name: string } | null;
+  } | null;
+};
+
+export function invitationPreviewWithTrixusApi(token: string) {
+  return apiRequest<ApiInvitationPreview>(`/auth/invitations/preview${queryString({ token })}`);
+}
+
 export async function hydrateWithTrixusApi() {
   const data = await apiRequest<MeResponse>("/auth/me");
   const role = roleMap[data.user.roleKey] ?? "operator";
@@ -1041,10 +1367,17 @@ export async function hydrateWithTrixusApi() {
     nome: data.user.name,
     email: data.user.email,
     role,
+    roleKey: data.user.roleKey,
     empresaId: data.tenant.id,
     empresaNome: data.tenant.name,
     avatarUrl: data.user.avatarUrl ?? undefined,
     keepSidebarCollapsed: data.user.keepSidebarCollapsed ?? false,
+    chatBubbleColor: data.user.chatBubbleColor ?? undefined,
+    chatBubbleTextColor: data.user.chatBubbleTextColor ?? undefined,
+    customerBubbleColor: data.user.customerBubbleColor ?? undefined,
+    customerBubbleTextColor: data.user.customerBubbleTextColor ?? undefined,
+    chatBackgroundColor: data.user.chatBackgroundColor ?? undefined,
+    chatBackgroundMode: data.user.chatBackgroundMode ?? "IMAGE",
     permissions: effectiveSessionPermissions(role, data.permissions),
   } satisfies SessionUser;
 }
@@ -1070,8 +1403,14 @@ async function hydrateWithPlatformToken(stored: StoredImpersonation) {
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response = await fetchTrixus(path, init, true);
-  if (response.status === 401 && canRefresh(path) && (await refreshAccessToken())) {
-    response = await fetchTrixus(path, init, true);
+  if (response.status === 401 && canRefresh(path)) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      response = await fetchTrixus(path, init, true);
+      if (response.status === 401 && !sessionAlreadyCleared) {
+        clearTrixusApiSession();
+      }
+    }
   }
   if (!response.ok) {
     throw await readError(response);
@@ -1119,19 +1458,41 @@ export const organizationApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+  registrationCaseSettings: () =>
+    apiRequest<ApiRegistrationCaseSettings>("/company/registration-case"),
+  updateRegistrationCase: (data: {
+    key: ApiRegistrationCaseKey;
+    enabled: boolean;
+    confirmExistingConversion?: boolean;
+  }) =>
+    apiRequest<{ key: ApiRegistrationCaseKey; enabled: boolean; converted: number }>(
+      "/company/registration-case",
+      { method: "PATCH", body: JSON.stringify(data) },
+    ),
   listFinancialPayments: () => apiRequest<ApiFinancialPayment[]>("/company/financial"),
   listDepartments: () => apiRequest<ApiDepartment[]>("/departments"),
+  listDepartmentsByConnection: (
+    params: { connectionId?: string; status?: "active" | "inactive" | "all" } = {},
+  ) => apiRequest<ApiDepartment[]>(`/departments${queryString(params)}`),
   listChatDepartments: () => apiRequest<ApiDepartment[]>("/departments/chat-scope"),
   departmentConnectionOptions: () =>
-    apiRequest<Array<Pick<ApiMessagingConnection, "id" | "name" | "status" | "color" | "logoUrl">>>(
-      "/departments/connection-options",
-    ),
+    apiRequest<
+      Array<
+        Pick<
+          ApiMessagingConnection,
+          "id" | "name" | "status" | "serviceEnabled" | "color" | "logoUrl"
+        >
+      >
+    >("/departments/connection-options"),
   createDepartment: (data: {
     name: string;
     description?: string | null;
     color?: string;
     icon?: DepartmentIcon;
     connectionIds: string[];
+    inactivityClosureEnabled?: boolean;
+    inactivityTimeoutMinutes?: number | null;
+    inactivityClosureMessage?: string | null;
   }) => apiRequest<ApiDepartment>("/departments", { method: "POST", body: JSON.stringify(data) }),
   updateDepartment: (
     id: string,
@@ -1142,14 +1503,41 @@ export const organizationApi = {
       icon?: DepartmentIcon;
       connectionIds?: string[];
       active?: boolean;
+      inactivityClosureEnabled?: boolean;
+      inactivityTimeoutMinutes?: number | null;
+      inactivityClosureMessage?: string | null;
     },
   ) =>
     apiRequest<ApiDepartment>(`/departments/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  deleteDepartment: (id: string) =>
-    apiRequest<ApiDepartment>(`/departments/${id}`, { method: "DELETE" }),
+  departmentDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/departments/${id}/deletion-preview`, { signal }),
+  deleteDepartment: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/departments/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
+  departmentDeactivationPreview: (id: string) =>
+    apiRequest<{
+      departmentId: string;
+      openConversationCount: number;
+      groups: Array<{
+        connectionId: string | null;
+        count: number;
+        destinations: Array<Pick<ApiDepartment, "id" | "name" | "color">>;
+      }>;
+    }>(`/departments/${id}/deactivation-preview`),
+  deactivateDepartment: (
+    id: string,
+    targets: Array<{ connectionId: string | null; departmentId: string }>,
+  ) =>
+    apiRequest<ApiDepartment>(`/departments/${id}/deactivate`, {
+      method: "POST",
+      body: JSON.stringify({ targets }),
+    }),
 
   listRoles: () => apiRequest<ApiRole[]>("/roles"),
   roleScopeOptions: () =>
@@ -1167,6 +1555,7 @@ export const organizationApi = {
     key?: string;
     description?: string | null;
     permissionIds: string[];
+    active?: boolean;
     metadata?: unknown;
   }) => apiRequest<ApiRole>("/roles", { method: "POST", body: JSON.stringify(data) }),
   updateRole: (
@@ -1175,10 +1564,23 @@ export const organizationApi = {
       name?: string;
       description?: string | null;
       permissionIds?: string[];
+      active?: boolean;
       metadata?: unknown;
     },
   ) => apiRequest<ApiRole>(`/roles/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  deleteRole: (id: string) => apiRequest<{ ok: true }>(`/roles/${id}`, { method: "DELETE" }),
+  setRoleFavoriteDepartment: (roleId: string, departmentId: string) =>
+    apiRequest<ApiRole>(`/roles/${roleId}/favorite-department`, {
+      method: "PATCH",
+      body: JSON.stringify({ departmentId }),
+    }),
+  roleDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/roles/${id}/deletion-preview`, { signal }),
+  deleteRole: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/roles/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
 
   listUsers: () => apiRequest<ApiUserMembership[]>("/users"),
   createUser: (data: {
@@ -1186,6 +1588,7 @@ export const organizationApi = {
     name: string;
     password: string;
     roleId?: string;
+    membershipStatus?: "ACTIVE" | "DISABLED";
     departmentIds?: string[];
     avatarUrl?: string | null;
   }) => apiRequest<ApiUserMembership>("/users", { method: "POST", body: JSON.stringify(data) }),
@@ -1209,14 +1612,38 @@ export const organizationApi = {
     }),
   deactivateUser: (id: string) =>
     apiRequest<ApiUserMembership>(`/users/${id}/deactivate`, { method: "PATCH" }),
+  userDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/users/${id}/deletion-preview`, { signal }),
+  deleteUser: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/users/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   updateMyProfile: (data: {
     name?: string;
     avatarUrl?: string | null;
     keepSidebarCollapsed?: boolean;
+    chatBubbleColor?: string | null;
+    chatBubbleTextColor?: string | null;
+    customerBubbleColor?: string | null;
+    customerBubbleTextColor?: string | null;
+    chatBackgroundColor?: string | null;
+    chatBackgroundMode?: "IMAGE" | "COLOR";
     currentPassword?: string;
     newPassword?: string;
   }) =>
     apiRequest<ApiUserMembership>("/me/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  protocolSettings: () => apiRequest<ApiProtocolSettings[]>("/company/protocols"),
+  updateProtocolSettings: (
+    data: Omit<ApiProtocolSettings, "preview" | "confirmationRequired" | "message"> & {
+      confirmChange?: boolean;
+    },
+  ) =>
+    apiRequest<ApiProtocolSettings>("/company/protocols", {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
@@ -1236,8 +1663,43 @@ export const organizationApi = {
     ),
 };
 
+export const onboardingApi = {
+  status: () => apiRequest<ApiTenantOnboardingStatus>("/onboarding/status"),
+  progress: (data: { currentStep: number; maxCompletedStep: number; version: number }) =>
+    apiRequest<ApiTenantOnboardingStatus>("/onboarding/progress", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  complete: (version: number) =>
+    apiRequest<ApiTenantOnboardingStatus>("/onboarding/complete", {
+      method: "POST",
+      body: JSON.stringify({ version }),
+    }),
+  ensureDepartmentConnection: (connectionId: string) =>
+    apiRequest<{ departmentId: string; connectionId: string; repaired: boolean }>(
+      `/onboarding/department-connection/${encodeURIComponent(connectionId)}`,
+      { method: "POST" },
+    ),
+};
+
+export const locationApi = {
+  countries: () => apiRequest<ApiCountry[]>("/locations/countries"),
+  divisions: (countryCode: string) =>
+    apiRequest<ApiAdministrativeDivision[]>(`/locations/divisions${queryString({ countryCode })}`),
+  cities: (
+    params: {
+      q?: string;
+      countryCode?: string;
+      divisionId?: string;
+      page?: number;
+      pageSize?: number;
+    } = {},
+  ) => apiRequest<PaginatedResponse<ApiCity>>(`/locations/cities${queryString(params)}`),
+  city: (id: string) => apiRequest<ApiCity>(`/locations/cities/${id}`),
+};
+
 export const crmApi = {
-  listCustomers: (params: ListParams = {}) =>
+  listCustomers: (params: ListCustomersParams = {}) =>
     apiRequest<PaginatedResponse<ApiCustomer>>(`/crm/customers${queryString(params)}`),
   getCustomer: (id: string) => apiRequest<ApiCustomer>(`/crm/customers/${id}`),
   createCustomer: (data: CustomerPayload) =>
@@ -1250,9 +1712,62 @@ export const crmApi = {
   deleteCustomer: (id: string) =>
     apiRequest<ApiCustomer>(`/crm/customers/${id}`, { method: "DELETE" }),
   listCustomerContacts: (id: string) => apiRequest<ApiContact[]>(`/crm/customers/${id}/contacts`),
+  listCustomerBranches: (id: string) =>
+    apiRequest<ApiCustomerBranch[]>(`/crm/customers/${id}/branches`),
+  createCustomerBranch: (
+    id: string,
+    data: Pick<ApiCustomerBranch, "name" | "city" | "state"> &
+      Partial<Pick<ApiCustomerBranch, "status">>,
+  ) =>
+    apiRequest<ApiCustomerBranch>(`/crm/customers/${id}/branches`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateCustomerBranch: (
+    id: string,
+    branchId: string,
+    data: Pick<ApiCustomerBranch, "name" | "city" | "state"> &
+      Partial<Pick<ApiCustomerBranch, "status">>,
+  ) =>
+    apiRequest<ApiCustomerBranch>(`/crm/customers/${id}/branches/${branchId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteCustomerBranch: (id: string, branchId: string) =>
+    apiRequest<ApiCustomerBranch>(`/crm/customers/${id}/branches/${branchId}`, {
+      method: "DELETE",
+    }),
+  listCustomerDepartments: (id: string) =>
+    apiRequest<ApiCustomerDepartment[]>(`/crm/customers/${id}/departments`),
+  createCustomerDepartment: (
+    id: string,
+    data: Pick<ApiCustomerDepartment, "name"> &
+      Partial<Pick<ApiCustomerDepartment, "managerContactId" | "active">>,
+  ) =>
+    apiRequest<ApiCustomerDepartment>(`/crm/customers/${id}/departments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateCustomerDepartment: (
+    id: string,
+    departmentId: string,
+    data: Pick<ApiCustomerDepartment, "name"> &
+      Partial<Pick<ApiCustomerDepartment, "managerContactId" | "active">>,
+  ) =>
+    apiRequest<ApiCustomerDepartment>(`/crm/customers/${id}/departments/${departmentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteCustomerDepartment: (id: string, departmentId: string) =>
+    apiRequest<ApiCustomerDepartment>(`/crm/customers/${id}/departments/${departmentId}`, {
+      method: "DELETE",
+    }),
 
   listContacts: (params: ListContactsParams = {}) =>
     apiRequest<PaginatedResponse<ApiContact>>(`/crm/contacts${queryString(params)}`),
+  listContactsForMessagePicker: (
+    params: Pick<ListContactsParams, "q" | "priorityInstance" | "page" | "pageSize"> = {},
+  ) => apiRequest<ApiMessageContactPickerPage>(`/crm/message-contact-picker${queryString(params)}`),
   listContactsForGroupPicker: async (
     params: { q?: string; page?: number; pageSize?: number } = {},
   ): Promise<PaginatedResponse<ApiGroupContactPickerItem>> => {
@@ -1280,8 +1795,14 @@ export const crmApi = {
       method: "PATCH",
       body: JSON.stringify({ customerId }),
     }),
-  deleteContact: (id: string) =>
-    apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "DELETE" }),
+  contactDeletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/crm/contacts/${id}/deletion-impact`, { signal }),
+  deleteContact: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/crm/contacts/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   previewContactsFromAgenda: (data: { connectionId?: string | null } = {}) =>
     apiRequest<ApiAgendaImportPreview>("/crm/contacts/import/agenda/preview", {
       method: "POST",
@@ -1315,11 +1836,32 @@ export const crmApi = {
       body: JSON.stringify(data),
     }),
   listTags: () => apiRequest<ApiTag[]>("/tags"),
-  createTag: (data: { name: string; color?: string }) =>
-    apiRequest<ApiTag>("/tags", { method: "POST", body: JSON.stringify(data) }),
-  updateTag: (id: string, data: { name?: string; color?: string }) =>
-    apiRequest<ApiTag>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  archiveTag: (id: string) => apiRequest<ApiTag>(`/tags/${id}`, { method: "DELETE" }),
+  listTagsCatalog: () => apiRequest<ApiTag[]>("/tags?scope=catalog"),
+  createTag: (data: {
+    name: string;
+    description?: string;
+    color?: string;
+    active?: boolean;
+    notifyOnNewConversation?: boolean;
+  }) => apiRequest<ApiTag>("/tags", { method: "POST", body: JSON.stringify(data) }),
+  updateTag: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      color?: string;
+      active?: boolean;
+      notifyOnNewConversation?: boolean;
+    },
+  ) => apiRequest<ApiTag>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  tagDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/tags/${id}/deletion-preview`, { signal }),
+  archiveTag: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/tags/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   assignContactTag: (contactId: string, tagId: string) =>
     apiRequest<ApiTag[]>(`/contacts/${contactId}/tags/${tagId}`, { method: "POST" }),
   removeContactTag: (contactId: string, tagId: string) =>
@@ -1397,8 +1939,16 @@ export const crmApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  deleteContactCustomField: (id: string) =>
-    apiRequest<ApiContactCustomField>(`/crm/contact-custom-fields/${id}`, { method: "DELETE" }),
+  contactCustomFieldDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/crm/contact-custom-fields/${id}/deletion-preview`, {
+      signal,
+    }),
+  deleteContactCustomField: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/crm/contact-custom-fields/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   reorderContactCustomFields: (fieldIds: string[]) =>
     apiRequest<ApiContactCustomField[]>("/crm/contact-custom-fields/reorder", {
       method: "PATCH",
@@ -1443,8 +1993,14 @@ export const groupsApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  leave: (id: string) =>
-    apiRequest<{ id: string; left: boolean }>(`/groups/${id}/leave`, { method: "POST" }),
+  deletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/groups/${id}/deletion-impact`, { signal }),
+  leave: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/groups/${id}/leave`, {
+      method: "POST",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   sync: (data: { connectionId?: string } = {}) =>
     apiRequest<{
       synced: number;
@@ -1477,8 +2033,8 @@ export const quickReplyApi = {
     content: string;
     departmentId?: string | null;
     closeOnSend?: boolean;
+    active?: boolean;
     messages?: QuickReplyMessage[];
-    intervalSeconds?: number;
     attachmentFileName?: string | null;
     attachmentMimeType?: string | null;
     attachmentSize?: number | null;
@@ -1492,8 +2048,8 @@ export const quickReplyApi = {
       content?: string;
       departmentId?: string | null;
       closeOnSend?: boolean;
+      active?: boolean;
       messages?: QuickReplyMessage[];
-      intervalSeconds?: number;
       attachmentFileName?: string | null;
       attachmentMimeType?: string | null;
       attachmentSize?: number | null;
@@ -1504,20 +2060,71 @@ export const quickReplyApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  archive: (id: string) => apiRequest<ApiQuickReply>(`/quick-replies/${id}`, { method: "DELETE" }),
+  deletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/quick-replies/${id}/deletion-preview`, { signal }),
+  archive: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/quick-replies/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
+};
+
+export type BulkConversationResult = {
+  succeeded: string[];
+  failed: Array<{ conversationId: string; message: string }>;
+};
+
+export type BulkConversationSelection = {
+  tab?: "ativas" | "standby" | "fila" | "leads";
+  tabs?: Array<"ativas" | "standby" | "fila" | "leads">;
+  q?: string;
+  source?: "todos" | "privado" | "grupos" | "humano" | "bots";
+  onlyUnread?: boolean;
+  customerIds?: string[];
+  instances?: string[];
 };
 
 export const conversationApi = {
-  bulkClose: (queues: Array<"ativas" | "standby" | "fila" | "leads">) =>
-    apiRequest<{ closed: number }>("/conversations/bulk-close", {
+  unreadTotal: () => apiRequest<{ unreadCount: number }>("/conversations/unread-total"),
+  bulkClose: (selection: BulkConversationSelection) =>
+    apiRequest<BulkConversationResult & { closed: number }>("/conversations/bulk-close", {
       method: "POST",
-      body: JSON.stringify({ queues }),
+      body: JSON.stringify(selection),
+    }),
+  bulkStart: (selection: BulkConversationSelection, departmentId?: string) =>
+    apiRequest<BulkConversationResult>("/conversations/bulk-start", {
+      method: "POST",
+      body: JSON.stringify({ ...selection, departmentId }),
+    }),
+  bulkOptions: (selection: BulkConversationSelection) =>
+    apiRequest<{
+      counts: ConversationCounts;
+      departments: Array<{ id: string; name: string }>;
+      agents: Array<{ id: string; name: string }>;
+    }>("/conversations/bulk-options", {
+      method: "POST",
+      body: JSON.stringify(selection),
+    }),
+  bulkTransfer: (
+    selection: BulkConversationSelection,
+    destination:
+      | { mode: "department" | "agent"; targetId: string }
+      | { mode: "status"; status: "fila" | "standby" },
+  ) =>
+    apiRequest<BulkConversationResult>("/conversations/bulk-transfer", {
+      method: "POST",
+      body: JSON.stringify({ ...selection, ...destination }),
     }),
   list: (params: ListConversationsParams = {}) =>
     apiRequest<PaginatedResponse<ApiConversation> & { counts: ConversationCounts }>(
       `/conversations${queryString(params)}`,
     ),
   get: (id: string) => apiRequest<ApiConversation>(`/conversations/${id}`),
+  transferOptions: (id: string) =>
+    apiRequest<{ membershipIds: string[]; departmentIds: string[] }>(
+      `/conversations/${id}/transfer-options`,
+    ),
   blockContact: (id: string) =>
     apiRequest<{ ok: true }>(`/conversations/${id}/contact/block`, { method: "POST" }),
   create: (data: ConversationPayload) =>
@@ -1547,6 +2154,14 @@ export const conversationApi = {
     apiRequest<ApiConversation>(`/conversations/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    }),
+  deletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/conversations/${id}/deletion-impact`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/conversations/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
     }),
 };
 
@@ -1604,7 +2219,14 @@ export const automationApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  archive: (id: string) => apiRequest<{ ok: true }>(`/automations/${id}`, { method: "DELETE" }),
+  deletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/automations/${id}/deletion-preview`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/automations/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
 };
 
 export const messageApi = {
@@ -1706,6 +2328,13 @@ export const operationsApi = {
     apiRequest<ApiDashboardComponentData>(
       `/operations/dashboard/component-data${queryString(params)}`,
     ),
+  dashboardConfiguration: () =>
+    apiRequest<ApiDashboardConfiguration>("/operations/dashboard/configuration"),
+  updateDashboardConfiguration: (configuration: unknown) =>
+    apiRequest<ApiDashboardConfiguration>("/operations/dashboard/configuration", {
+      method: "PUT",
+      body: JSON.stringify({ configuration }),
+    }),
   history: (params: Partial<OperationalFilters> & { page?: number; pageSize?: number } = {}) =>
     apiRequest<PaginatedResponse<ApiConversation>>(
       `/operations/history/conversations${queryString(params)}`,
@@ -1743,6 +2372,7 @@ export const connectionsApi = {
   listChatScope: () => apiRequest<ApiMessagingConnection[]>("/messaging/connections/chat-scope"),
   createEvolution: (data: {
     name: string;
+    idempotencyKey?: string;
     color?: string;
     instanceName?: string;
     serviceEnabled?: boolean;
@@ -1806,27 +2436,58 @@ export const connectionsApi = {
       body: JSON.stringify(kind ? { kind } : {}),
     }),
   qr: (id: string) =>
-    apiRequest<{ connectionId: string; qrCodeBase64: string | null; status: string }>(
-      `/messaging/connections/${id}/qr`,
-    ),
+    apiRequest<{
+      connectionId: string;
+      qrCodeBase64: string | null;
+      status: string;
+      errorCode?: string | null;
+      expectedOwnerPhone?: string | null;
+    }>(`/messaging/connections/${id}/qr`, { cache: "no-store" }),
+  qrStatus: (id: string) =>
+    apiRequest<{
+      connectionId: string;
+      qrCodeBase64: string | null;
+      status: string;
+      errorCode?: string | null;
+      expectedOwnerPhone?: string | null;
+    }>(`/messaging/connections/${id}/qr/current`, { cache: "no-store" }),
   logout: (id: string) =>
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/logout`, {
       method: "PATCH",
     }),
-  remove: (id: string, options: { removeConversationHistory?: boolean } = {}) =>
+  remove: (id: string) =>
     apiRequest<{
       id: string;
-      removed: boolean;
+      deleted: boolean;
       providerInstanceExisted: boolean;
-      removedConversationHistoryCount?: number;
-      closedChatConversationCount?: number;
+      mediaCleanup: "completed" | "pending";
+      deletedConversationCount: number;
+      deletedMessageCount: number;
+      deletedCampaignCount: number;
+      deletedCampaignRecipientCount: number;
+      deletedNotificationCount: number;
+      deletedScheduleCount: number;
+      unlinkedContactCount: number;
     }>(`/messaging/connections/${id}`, {
       method: "DELETE",
-      body: JSON.stringify(options),
+      body: JSON.stringify({ confirmation: "REMOVER" }),
     }),
 };
 
 export const ticketApi = {
+  inviteCustomerContact: (contactId: string) =>
+    apiRequest<{
+      id?: string;
+      contactId: string;
+      email?: string;
+      status: "pending" | "active";
+      expiresAt?: string;
+      acceptUrl?: string;
+      delivery?: { delivered: boolean; provider: string };
+    }>(`/tickets/portal/contacts/${contactId}/invitations`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
   list: (
     params: {
       search?: string;
@@ -1842,6 +2503,17 @@ export const ticketApi = {
       sort?: string;
     } = {},
   ) => apiRequest<PaginatedResponse<ApiTicket>>(`/tickets${queryString(params)}`),
+  summary: (
+    params: {
+      search?: string;
+      status?: ApiTicketStatus;
+      priority?: ApiTicketPriority;
+      category?: ApiTicketCategory;
+      departmentId?: string;
+      customerId?: string;
+      conversationId?: string;
+    } = {},
+  ) => apiRequest<ApiTicketSummary>(`/tickets/summary${queryString(params)}`),
   get: (id: string) => apiRequest<ApiTicket>(`/tickets/${id}`),
   create: (data: {
     title: string;
@@ -1852,15 +2524,15 @@ export const ticketApi = {
     assignedMembershipId?: string | null;
     requesterContactId?: string | null;
     customerId?: string | null;
+    customerDepartmentId?: string | null;
+    originBranchId?: string | null;
     conversationId?: string | null;
   }) => apiRequest<ApiTicket>("/tickets", { method: "POST", body: JSON.stringify(data) }),
   update: (
     id: string,
     data: Partial<Pick<ApiTicket, "title" | "priority" | "category">> & {
       descriptionHtml?: string;
-      requesterContactId?: string | null;
-      customerId?: string | null;
-      conversationId?: string | null;
+      substatus?: ApiTicketSubstatus | null;
     },
   ) => apiRequest<ApiTicket>(`/tickets/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   updateStatus: (id: string, status: ApiTicketStatus) =>
@@ -1878,12 +2550,70 @@ export const ticketApi = {
       method: "PATCH",
       body: JSON.stringify({ departmentId }),
     }),
-  archive: (id: string) => apiRequest<ApiTicket>(`/tickets/${id}`, { method: "DELETE" }),
+  deletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/tickets/${id}/deletion-preview`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/tickets/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   comments: (id: string) => apiRequest<ApiTicketComment[]>(`/tickets/${id}/comments`),
   createComment: (id: string, bodyHtml: string) =>
     apiRequest<ApiTicketComment>(`/tickets/${id}/comments`, {
       method: "POST",
       body: JSON.stringify({ bodyHtml, internal: true }),
+    }),
+  updateComment: (id: string, commentId: string, bodyHtml: string) =>
+    apiRequest<ApiTicketComment>(`/tickets/${id}/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ bodyHtml }),
+    }),
+  respond: (id: string, bodyHtml: string) =>
+    apiRequest<ApiTicketComment>(`/tickets/${id}/actions/respond`, {
+      method: "POST",
+      body: JSON.stringify({ bodyHtml }),
+    }),
+  transfer: (
+    id: string,
+    data: { bodyHtml: string; departmentId: string; assignedMembershipId?: string | null },
+  ) =>
+    apiRequest<unknown>(`/tickets/${id}/actions/transfer`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  requestApproval: (
+    id: string,
+    data: { bodyHtml: string; approverMembershipId?: string; approverContactId?: string },
+  ) =>
+    apiRequest<unknown>(`/tickets/${id}/actions/request-approval`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  solve: (id: string, bodyHtml: string) =>
+    apiRequest<unknown>(`/tickets/${id}/actions/solve`, {
+      method: "POST",
+      body: JSON.stringify({ bodyHtml }),
+    }),
+  cancel: (id: string, bodyHtml: string) =>
+    apiRequest<unknown>(`/tickets/${id}/actions/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ bodyHtml }),
+    }),
+  validateSolution: (id: string, data: { decision: "APPROVED" | "REJECTED"; bodyHtml?: string }) =>
+    apiRequest<ApiTicketComment>(`/tickets/${id}/actions/validate-solution`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  approvals: (id: string) => apiRequest<ApiTicketApproval[]>(`/tickets/${id}/approvals`),
+  decideApproval: (
+    id: string,
+    approvalId: string,
+    data: { decision: "APPROVED" | "REJECTED"; bodyHtml?: string },
+  ) =>
+    apiRequest<unknown>(`/tickets/${id}/approvals/${approvalId}/decision`, {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
   attachments: (id: string) => apiRequest<ApiTicketAttachment[]>(`/tickets/${id}/attachments`),
   uploadAttachment: async (id: string, file: File) => {
@@ -1974,7 +2704,14 @@ export const campaignApi = {
       timezone: string;
     }>,
   ) => apiRequest<ApiCampaign>(`/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  archive: (id: string) => apiRequest<ApiCampaign>(`/campaigns/${id}`, { method: "DELETE" }),
+  deletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/campaigns/${id}/deletion-impact`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/campaigns/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   preview: (data: { messageText: string; audience: ApiCampaignAudience }) =>
     apiRequest<ApiCampaignPreview>("/campaigns/audience-preview", {
       method: "POST",
@@ -2077,8 +2814,10 @@ export type PlatformClient = {
   document: string | null;
   responsibleName: string;
   responsibleEmail: string;
+  cityId?: string | null;
   city: string;
   state: string;
+  country: string;
   registeredAt: string;
   status: "ACTIVE" | "SUSPENDED" | "CANCELLED" | "PROSPECTING";
   notes: string | null;
@@ -2094,8 +2833,10 @@ export type PlatformClientPayload = {
   document: string;
   responsibleName: string;
   responsibleEmail: string;
+  cityId?: string | null;
   city: string;
   state: string;
+  country: string;
   registeredAt?: string;
   status?: "ACTIVE" | "SUSPENDED" | "CANCELLED" | "PROSPECTING";
   notes?: string;
@@ -2352,6 +3093,15 @@ type ExchangedImpersonationHandoff = LoginResponse & {
 };
 
 export const platformApi = {
+  changeOwnPassword: (data: {
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  }) =>
+    apiRequest<{ ok: true; sessionsRevoked: number }>("/platform/me/password", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   dashboard: () => apiRequest<PlatformDashboard>("/platform/dashboard"),
   health: () => apiRequest<PlatformHealth>("/platform/health"),
   settings: () => apiRequest<PlatformSettings>("/platform/settings"),
@@ -2816,6 +3566,7 @@ export async function logoutFromTrixusApi() {
 async function readError(response: Response) {
   try {
     const data = (await response.json()) as {
+      requestId?: string;
       code?: string;
       message?: string | string[];
       error?: string;
@@ -2826,10 +3577,29 @@ async function readError(response: Response) {
       trixusMessageFromCode(data.code) ||
       (isHelpfulApiMessage(candidate) && candidate) ||
       apiMessageFromStatus(response.status, data.code);
-    return new TrixusApiError(message, response.status, data.code, data.details);
+    return new TrixusApiError(
+      message,
+      response.status,
+      data.code,
+      data.details,
+      data.requestId ?? response.headers.get("x-request-id") ?? undefined,
+    );
   } catch {
-    return new TrixusApiError(apiMessageFromStatus(response.status), response.status);
+    return new TrixusApiError(
+      apiMessageFromStatus(response.status),
+      response.status,
+      undefined,
+      undefined,
+      response.headers.get("x-request-id") ?? undefined,
+    );
   }
+}
+
+export function apiErrorMessageWithRequestId(error: unknown) {
+  const message = error instanceof Error ? error.message : "Não foi possível concluir a ação.";
+  return error instanceof TrixusApiError && error.requestId
+    ? `${message} (requestId: ${error.requestId})`
+    : message;
 }
 
 async function authErrorFromResponse(response: Response) {
@@ -2850,6 +3620,9 @@ async function authErrorFromResponse(response: Response) {
 }
 
 function trixusMessageFromCode(code?: string) {
+  if (code === "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS") {
+    return "Já existe um campo com este nome. Informe um nome diferente.";
+  }
   if (code === "PLAN_LIMIT_USERS_REACHED") {
     return "Número máximo de atendentes atingido";
   }
@@ -2865,6 +3638,15 @@ function trixusMessageFromCode(code?: string) {
 function authMessageFromStatus(status: number, code?: string) {
   if (status === 401) return "E-mail ou senha inválidos.";
   if (status === 403) {
+    if (code === "PASSWORD_CONFIRMATION_MISMATCH") {
+      return "A confirmação da nova senha não confere.";
+    }
+    if (code === "PASSWORD_TOO_LONG") {
+      return "A nova senha deve possuir no máximo 72 bytes.";
+    }
+    if (code === "TEMPORARY_PASSWORD_REUSE" || code === "PASSWORD_REUSE") {
+      return "A nova senha deve ser diferente da senha temporária.";
+    }
     if (code === "USER_WITHOUT_ACTIVE_MEMBERSHIP") {
       return "Seu usuário não possui acesso a nenhuma organização ativa.";
     }
@@ -2959,10 +3741,17 @@ function loginResponseToSessionUser(data: LoginResponse): SessionUser {
     nome: data.user.name,
     email: data.user.email,
     role,
+    roleKey: data.user.roleKey,
     empresaId: data.tenant.id,
     empresaNome: data.tenant.name,
     avatarUrl: data.user.avatarUrl ?? undefined,
     keepSidebarCollapsed: data.user.keepSidebarCollapsed ?? false,
+    chatBubbleColor: data.user.chatBubbleColor ?? undefined,
+    chatBubbleTextColor: data.user.chatBubbleTextColor ?? undefined,
+    customerBubbleColor: data.user.customerBubbleColor ?? undefined,
+    customerBubbleTextColor: data.user.customerBubbleTextColor ?? undefined,
+    chatBackgroundColor: data.user.chatBackgroundColor ?? undefined,
+    chatBackgroundMode: data.user.chatBackgroundMode ?? "IMAGE",
     permissions: effectiveSessionPermissions(role, data.permissions),
   };
 }
@@ -2993,5 +3782,12 @@ export const schedulesApi = {
       method: "POST",
       body: JSON.stringify(scheduleWritePayload(data)),
     }),
-  remove: (id: string) => apiRequest<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),
+  deletionImpact: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/schedules/${id}/deletion-impact`, { signal }),
+  remove: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/schedules/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
 };

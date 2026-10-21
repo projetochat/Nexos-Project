@@ -11,13 +11,16 @@ import {
   Trash2,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { messageApi, type ApiMessage } from "@/lib/trixus-api";
 import { canCopyMessage, sendMessageCopy } from "@/lib/copy-message";
+import { copyMessageToClipboard } from "@/lib/message-clipboard";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Modal, ConfirmDialog } from "./modal";
 import { MessageReactionPicker } from "./message-reaction-picker";
 import { MessageForwardDialog } from "./message-forward-dialog";
+import { Button } from "./ui-kit";
 
 export function MessageActionsMenu({
   message,
@@ -26,9 +29,11 @@ export function MessageActionsMenu({
   onDownload,
   resendRequest = 0,
   openRequest = 0,
+  openPosition,
   canEdit = false,
   canDelete = false,
   canSend = false,
+  onCopyMessage = copyMessageToClipboard,
 }: {
   message: ApiMessage;
   onReply?: () => void;
@@ -36,12 +41,15 @@ export function MessageActionsMenu({
   onDownload: () => Promise<void>;
   resendRequest?: number;
   openRequest?: number;
+  openPosition?: { x: number; y: number } | null;
   canEdit?: boolean;
   canDelete?: boolean;
   canSend?: boolean;
+  onCopyMessage?: typeof copyMessageToClipboard;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [contextPosition, setContextPosition] = useState<{ x: number; y: number } | null>(null);
   const [info, setInfo] = useState(false);
   const [forward, setForward] = useState(false);
   const [resend, setResend] = useState(false);
@@ -58,8 +66,9 @@ export function MessageActionsMenu({
     if (!openRequest || openRequest === handledOpenRequest.current) return;
     handledOpenRequest.current = openRequest;
     setError("");
+    setContextPosition(openPosition ?? null);
     setOpen(true);
-  }, [openRequest]);
+  }, [openPosition, openRequest]);
   useEffect(() => {
     if (!resendRequest || resendRequest === handledResendRequest.current) return;
     handledResendRequest.current = resendRequest;
@@ -86,6 +95,8 @@ export function MessageActionsMenu({
     "flex min-h-10 w-full items-center gap-3 rounded px-3 py-2 text-left text-sm hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 disabled:cursor-not-allowed";
   const mediaReady =
     !!message.media_data && (!message.media_data.state || message.media_data.state === "ready");
+  const canCopyToClipboard =
+    !!message.content || (message.type === "image" && mediaReady && !message.deleted_for_everyone);
   return (
     <>
       <div className="absolute right-1 top-1 z-10" onClick={(event) => event.stopPropagation()}>
@@ -93,14 +104,25 @@ export function MessageActionsMenu({
           open={open}
           onOpenChange={(value) => {
             setOpen(value);
+            if (!value) setContextPosition(null);
             setError("");
           }}
         >
+          {contextPosition && (
+            <PopoverAnchor asChild>
+              <span
+                aria-hidden="true"
+                className="pointer-events-none fixed z-[259] h-px w-px"
+                style={{ left: contextPosition.x, top: contextPosition.y }}
+              />
+            </PopoverAnchor>
+          )}
           <PopoverTrigger asChild>
             <button
               type="button"
               aria-label="Ações da mensagem"
               title="Ações da mensagem"
+              onPointerDown={() => setContextPosition(null)}
               className={`inline-flex h-7 w-7 items-center justify-center rounded-full bg-card text-foreground shadow-sm transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${open ? "opacity-100" : "opacity-0 pointer-events-none group-hover/message:opacity-100 group-hover/message:pointer-events-auto group-focus-within/message:opacity-100 group-focus-within/message:pointer-events-auto"}`}
             >
               <ChevronDown className="h-4 w-4" />
@@ -109,7 +131,9 @@ export function MessageActionsMenu({
           <PopoverContent
             align="end"
             side="bottom"
-            className="z-[250] w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto p-1"
+            sideOffset={4}
+            collisionPadding={8}
+            className="z-[260] w-52 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto p-1"
             aria-label="Ações da mensagem"
           >
             <button
@@ -125,8 +149,17 @@ export function MessageActionsMenu({
             </button>
             <button
               className={itemClass}
-              disabled={busy || !message.content}
-              onClick={() => void run(() => navigator.clipboard.writeText(message.content))}
+              disabled={busy || !canCopyToClipboard}
+              onClick={() =>
+                void run(async () => {
+                  const result = await onCopyMessage(message);
+                  if (result.mode === "text-only" && message.type === "image") {
+                    toast.warning(
+                      "O navegador não permitiu copiar a imagem. Somente o texto foi copiado.",
+                    );
+                  }
+                })
+              }
             >
               <Copy className="h-4 w-4" />
               Copiar
@@ -240,8 +273,19 @@ export function MessageActionsMenu({
           </PopoverContent>
         </Popover>
       </div>
-      {forward && <MessageForwardDialog message={message} onClose={() => setForward(false)} />}
-      <Modal open={info} onClose={() => setInfo(false)} title="Informações da mensagem">
+      {forward && (
+        <MessageForwardDialog
+          message={message}
+          onClose={() => setForward(false)}
+          layerClassName="z-[270]"
+        />
+      )}
+      <Modal
+        open={info}
+        onClose={() => setInfo(false)}
+        title="Informações da mensagem"
+        layerClassName="z-[270]"
+      >
         <dl className="space-y-3 text-sm">
           {[
             ["Criada", message.created_at],
@@ -259,6 +303,7 @@ export function MessageActionsMenu({
       </Modal>
       <ConfirmDialog
         open={resend}
+        layerClassName="z-[270]"
         onClose={() => {
           if (!running.current) {
             setResend(false);
@@ -287,7 +332,12 @@ export function MessageActionsMenu({
           })
         }
       />
-      <Modal open={edit} onClose={() => !busy && setEdit(false)} title="Editar mensagem">
+      <Modal
+        open={edit}
+        onClose={() => !busy && setEdit(false)}
+        title="Editar mensagem"
+        layerClassName="z-[270]"
+      >
         <form
           className="space-y-3"
           onSubmit={(event) => {
@@ -312,16 +362,12 @@ export function MessageActionsMenu({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-border px-3 py-2 text-sm"
-              onClick={() => setEdit(false)}
-            >
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEdit(false)}>
               Cancelar
-            </button>
+            </Button>
             <button
               type="submit"
-              className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
+              className="save-action-button rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
               disabled={busy || !editText.trim()}
             >
               Salvar
@@ -331,6 +377,7 @@ export function MessageActionsMenu({
       </Modal>
       <ConfirmDialog
         open={remove}
+        layerClassName="z-[270]"
         onClose={() => !busy && setRemove(false)}
         title="Apagar Mensagem"
         description="Deseja realmente apagar a mensagem?"

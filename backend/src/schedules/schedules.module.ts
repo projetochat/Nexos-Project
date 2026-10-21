@@ -35,6 +35,13 @@ import { MessagingModule } from "../messaging/messaging.module";
 import { ScheduleExecutionStatus } from "../generated/prisma";
 import { ScheduleExecutorService } from "./schedule-executor.service";
 import { ListSchedulesQueryDto, SaveScheduleDto } from "./schedules.dto";
+import {
+  changedDeletion,
+  ConfirmDeletionDto,
+  deletionSnapshot,
+  type DeletionImpactPreview,
+  type DeletionResult,
+} from "../common/deletion-impact";
 
 @Controller("schedules")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -126,7 +133,7 @@ export class SchedulesController {
     if (
       dto.departmentId &&
       !(await this.prisma.department.findFirst({
-        where: { id: dto.departmentId, tenantId: current.tenantId },
+        where: { id: dto.departmentId, tenantId: current.tenantId, active: true },
       }))
     )
       throw new BadRequestException("Departamento inválido.");
@@ -252,7 +259,13 @@ export class SchedulesController {
   }
   @Delete(":id")
   @RequirePermissions("schedules.delete")
-  async remove(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+  async remove(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ): Promise<DeletionResult> {
+    const preview = await this.deletionImpact(id, current);
+    if (dto.snapshotToken !== preview.snapshotToken) return changedDeletion(preview);
     const existing = await this.prisma.schedule.findUnique({
       where: { tenantId_id: { tenantId: current.tenantId, id } },
     });
@@ -288,7 +301,104 @@ export class SchedulesController {
       throw new ConflictException("O agendamento iniciou a execução ou foi alterado.");
     }
     this.realtime.publish({ tenantId: current.tenantId }, "schedule.updated", { scheduleId: id });
-    return { ok: true };
+    return { status: "deleted" };
+  }
+
+  @Get(":id/deletion-impact")
+  @RequirePermissions("schedules.delete")
+  async deletionImpact(
+    @Param("id") id: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ): Promise<DeletionImpactPreview> {
+    const existing = await this.prisma.schedule.findUnique({
+      where: { tenantId_id: { tenantId: current.tenantId, id } },
+    });
+    if (!existing) throw new NotFoundException("Agendamento não encontrado.");
+    if (
+      existing.executionStatus === ScheduleExecutionStatus.CLAIMED ||
+      existing.executionStatus === ScheduleExecutionStatus.QUEUED
+    ) {
+      throw new BadRequestException(
+        "Este agendamento já está em execução e não pode ser excluído.",
+      );
+    }
+    if (
+      existing.connectionId &&
+      current.roleKey !== "tenant_admin" &&
+      !current.connectionIds?.includes(existing.connectionId)
+    ) {
+      throw new NotFoundException("Agendamento não encontrado.");
+    }
+    const payload = schedulePayload(existing.payload);
+    if (payload.type === "message" && typeof payload.conversationId === "string") {
+      await this.resolveConversation(payload.conversationId, current);
+    }
+    const recipients = Array.isArray(payload.recipients) ? payload.recipients : [];
+    const recipientIds = Array.isArray(payload.recipientIds) ? payload.recipientIds : [];
+    const recipientCount = new Set([
+      ...recipientIds.filter((value): value is string => typeof value === "string"),
+      ...recipients.flatMap((value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+        const recipientId = (value as Record<string, Prisma.JsonValue>).id;
+        return typeof recipientId === "string" ? [recipientId] : [];
+      }),
+    ]).size;
+    const hasAttachment = Boolean(payload.attachment || payload.attachmentName);
+    const title = typeof payload.title === "string" ? payload.title : "Agendamento";
+    const scheduledAt = typeof payload.scheduledAt === "string" ? payload.scheduledAt : null;
+    const status = existing.executionStatus ?? payload.status ?? "sem execução automática";
+    return {
+      snapshotToken: deletionSnapshot({
+        id: existing.id,
+        version: existing.version,
+        executionStatus: existing.executionStatus,
+        updatedAt: existing.updatedAt,
+        dueAt: existing.dueAt,
+        payload: existing.payload,
+      }),
+      title: "Excluir mensagem agendada?",
+      prompt: "Ao excluir, esta mensagem agendada não será enviada.",
+      record: {
+        name: title,
+        identifiers: [
+          { label: "Identificador", value: String(payload.identifier ?? existing.id) },
+          ...(scheduledAt ? [{ label: "Data programada", value: scheduledAt }] : []),
+          { label: "Estado", value: String(status) },
+        ],
+      },
+      dependencies: [
+        ...(recipientCount
+          ? [
+              {
+                id: "recipients",
+                label: "Destinatários registrados",
+                count: recipientCount,
+                operation: "delete" as const,
+                operationLabel: "Serão removidos com o agendamento",
+              },
+            ]
+          : []),
+        ...(hasAttachment
+          ? [
+              {
+                id: "attachment",
+                label: "Anexo incorporado",
+                count: 1,
+                operation: "delete" as const,
+                operationLabel: "Será removido com o agendamento",
+              },
+            ]
+          : []),
+      ],
+      consequences: [
+        {
+          id: "schedule",
+          text: "A mensagem não será enviada e os dados do agendamento serão excluídos.",
+          irreversible: true,
+        },
+      ],
+      confirmation: { level: "standard", confirmLabel: "Confirmar" },
+    };
   }
 
   private async resolveConversation(conversationId: string, current: AuthenticatedUser) {

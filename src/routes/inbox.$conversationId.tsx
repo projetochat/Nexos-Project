@@ -23,7 +23,6 @@ import {
   ArrowLeft,
   ContactRound,
   Phone,
-  MessageCirclePlus,
   Forward,
   Ban,
 } from "lucide-react";
@@ -36,11 +35,12 @@ const toast = {
   info: (_?: unknown) => {},
 };
 import { InboxLayout } from "./inbox.index";
-import { Avatar, Button, Field, Input, Select } from "@/components/ui-kit";
+import { Avatar, Button, CloseButton, Field, Input, Select } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MessageStatusIcon } from "@/components/message-status-icon";
 import { DepartmentIcon } from "@/components/department-icon";
 import { MessageActionsMenu } from "@/components/message-actions-menu";
+import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { InboxMobileActions } from "@/components/inbox-mobile-actions";
 import { InboxContactPicker, type SharedContactSelection } from "@/components/inbox-contact-picker";
 import { ProfileCameraModal } from "@/components/profile-photo-controls";
@@ -62,17 +62,35 @@ import {
 } from "@/lib/trixus-api";
 import {
   createSequence,
+  quickReplyAttachmentMediaType,
   quickReplyMessages,
   sendSequence,
   type SequenceDraft,
 } from "@/lib/quick-reply-sequence";
+import { handleComposerEscape, textToRestoreAfterQuickReply } from "@/lib/composer-escape";
 import { useSession } from "@/lib/session";
+import {
+  DEFAULT_CHAT_BUBBLE_COLOR,
+  DEFAULT_CHAT_BUBBLE_TEXT_COLOR,
+  DEFAULT_CUSTOMER_BUBBLE_COLOR,
+  DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR,
+  chatBackgroundStyle,
+  normalizeHexColor,
+} from "@/lib/chat-appearance";
+import { conversationAuthorizationScope } from "@/lib/conversation-query-authorization";
+import { orderConversationMessages } from "@/lib/conversation-message-order";
 import { conversationTimestamp, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
+import {
+  filesFromTransfer,
+  messageMediaType,
+  sendMediaQueue,
+  type MessageMediaType,
+} from "@/lib/message-media-queue";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import {
@@ -87,6 +105,7 @@ import {
 } from "@/lib/favorite-department";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
+import { PendingMediaPreview } from "@/components/pending-media-preview";
 import {
   CALL_UNAVAILABLE_MESSAGE,
   ConversationCallButton,
@@ -272,7 +291,9 @@ function ContactCardMessage({
   return (
     <div
       className={`w-64 overflow-hidden rounded-xl ${
-        mine ? "bg-emerald-950/35 text-white" : "bg-surface-2"
+        mine
+          ? "bg-primary text-primary-foreground"
+          : "border-2 border-primary bg-white text-slate-900"
       }`}
     >
       <div className="flex items-center gap-3 px-3 py-3">
@@ -281,7 +302,7 @@ function ContactCardMessage({
           <p className="truncate text-sm font-semibold">{name}</p>
           {phone && (
             <p
-              className={`mt-0.5 flex items-center gap-1 text-xs ${mine ? "text-white/70" : "text-muted-foreground"}`}
+              className={`mt-0.5 flex items-center gap-1 text-xs ${mine ? "text-primary-foreground/75" : "text-slate-500"}`}
             >
               <Phone className="h-3 w-3" />
               {phone}
@@ -292,7 +313,9 @@ function ContactCardMessage({
       <button
         type="button"
         className={`flex w-full items-center justify-center gap-2 border-t px-3 py-2 text-sm font-semibold transition hover:brightness-110 ${
-          mine ? "border-white/15 text-emerald-300" : "border-transparent text-primary"
+          mine
+            ? "border-primary-foreground/25 text-primary-foreground"
+            : "border-primary/30 text-primary"
         }`}
         aria-label={`Conversar com ${name}`}
         title="Contato compartilhado"
@@ -316,6 +339,7 @@ function ConversationPage() {
   const { conversationId } = Route.useParams();
   const inboxTab = React.useSyncExternalStore(subscribeInboxTab, getInboxTab, getInboxTab);
   const user = useSession((s) => s.user);
+  const conversationScope = conversationAuthorizationScope(user);
   const entitlements = useTenantEntitlements();
   const modules = tenantModules(entitlements.data?.features);
   const qc = useQueryClient();
@@ -326,7 +350,7 @@ function ConversationPage() {
     error: conversationError,
     isLoading: conversationLoading,
   } = useQuery({
-    queryKey: ["trixus", "conversations", conversationId],
+    queryKey: ["trixus", "conversations", conversationId, conversationScope],
     queryFn: () => conversationApi.get(conversationId),
     retry: (failureCount, error) =>
       !(error instanceof TrixusApiError && error.status === 404) && failureCount < 3,
@@ -338,6 +362,7 @@ function ConversationPage() {
     enabled: !!conv,
     refetchInterval: 30_000,
   });
+  const orderedMessages = React.useMemo(() => orderConversationMessages(mensagens), [mensagens]);
 
   const { data: memberships = [] } = useQuery({
     queryKey: ["trixus", "users", "conversation-transfer"],
@@ -365,13 +390,26 @@ function ConversationPage() {
     [agents],
   );
   const galleryImages = React.useMemo(
-    () => mensagens.filter((message) => message.type === "image" && !!message.media_data),
-    [mensagens],
+    () => orderedMessages.filter((message) => message.type === "image" && !!message.media_data),
+    [orderedMessages],
   );
   const { data: apiDepartments = [], isLoading: departmentsLoading } = useQuery({
     queryKey: ["trixus", "chat-departments", "conversation-transfer"],
     queryFn: organizationApi.listChatDepartments,
   });
+  const { data: transferOptions } = useQuery({
+    queryKey: ["trixus", "conversations", conversationId, "transfer-options"],
+    queryFn: () => conversationApi.transferOptions(conversationId),
+    enabled: !!conv,
+  });
+  const transferableMembershipIds = React.useMemo(
+    () => new Set(transferOptions?.membershipIds ?? []),
+    [transferOptions?.membershipIds],
+  );
+  const transferableDepartmentIds = React.useMemo(
+    () => new Set(transferOptions?.departmentIds ?? []),
+    [transferOptions?.departmentIds],
+  );
   const departments = React.useMemo(
     () =>
       apiDepartments.map((department) => ({
@@ -387,7 +425,7 @@ function ConversationPage() {
   const showAgentName = perms.mostrar_nome_atendente;
   const mentionOptions = React.useMemo(() => {
     const byPhone = new Map<string, MentionOption>();
-    for (const message of mensagens) {
+    for (const message of orderedMessages) {
       const phone = message.participant?.phone?.replace(/\D/g, "");
       if (!phone) continue;
       byPhone.set(phone, {
@@ -397,15 +435,15 @@ function ConversationPage() {
       });
     }
     return Array.from(byPhone.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [mensagens]);
+  }, [orderedMessages]);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const messageRefs = React.useRef(new Map<string, HTMLDivElement>());
   const [highlightedMessageId, setHighlightedMessageId] = React.useState<string | null>(null);
-  const latestMessageId = mensagens.at(-1)?.id;
+  const latestMessageId = orderedMessages.at(-1)?.id;
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [conversationId, latestMessageId, mensagens.length]);
+  }, [conversationId, latestMessageId, orderedMessages.length]);
 
   const scrollToMessage = React.useCallback((messageId: string | null | undefined) => {
     if (!messageId) return;
@@ -422,9 +460,6 @@ function ConversationPage() {
   const transferModal = useDisclosure();
   const startDepartmentModal = useDisclosure();
   const [startDepartmentId, setStartDepartmentId] = React.useState("");
-  const [startDepartmentAction, setStartDepartmentAction] = React.useState<
-    "assume" | "new-conversation"
-  >("assume");
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [replyTo, setReplyTo] = React.useState<Message | null>(null);
   const queuePrefs = useQueuePrefs();
@@ -460,11 +495,14 @@ function ConversationPage() {
   const canAssignConversations = user?.permissions?.includes("conversations.assign") ?? false;
   const canCreateTicket =
     modules.tickets && (user?.permissions?.includes("tickets.create") ?? false);
+  const contactActive = conv.contact?.active !== false;
   const canSend =
+    contactActive &&
     canSendMessages &&
     ((conv.is_group && !!conv.protocolo && conv.status !== "fechada" && !isStandby) ||
       (isStarted && conv.status !== "fechada" && !isStandby));
   const showStart =
+    contactActive &&
     conv.status !== "fechada" &&
     (conv.is_group ? !conv.protocolo || isStandby : !conv.agent_id || isStandby);
   const wasStarted = !!conv.protocolo;
@@ -473,11 +511,13 @@ function ConversationPage() {
   const handleAssume = async (departmentId?: string) => {
     if (!user) return;
     if (departmentsLoading) return;
-    const favorite = favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
+    const favorite =
+      user.role === "admin"
+        ? null
+        : favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
     if (!conv.protocolo && !departmentId && !favorite) {
       if (departmentsForConnection(apiDepartments, conv.connection_id).length === 0) return;
       setStartDepartmentId("");
-      setStartDepartmentAction("assume");
       startDepartmentModal.show();
       return;
     }
@@ -490,33 +530,6 @@ function ConversationPage() {
       toast.success(
         hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado",
       );
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
-
-  const handleNewConversation = async (departmentId?: string) => {
-    if (!user || !conv.contact_id) return;
-    if (departmentsLoading) return;
-    const favorite = favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
-    if (!departmentId && !favorite) {
-      if (departmentsForConnection(apiDepartments, conv.connection_id).length === 0) return;
-      setStartDepartmentId("");
-      setStartDepartmentAction("new-conversation");
-      startDepartmentModal.show();
-      return;
-    }
-    try {
-      const conversation = await conversationApi.create({
-        contactId: conv.contact_id,
-        connectionId: conv.connection_id,
-        ...(departmentId ? { departmentId } : {}),
-        assignToSelf: true,
-        firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
-      });
-      void invalidateConversationQueries(qc, conversation.id);
-      toast.success("Nova conversa iniciada — protocolo gerado");
-      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -592,6 +605,11 @@ function ConversationPage() {
                     <span>{maskBrazilPhone(conv.contact.telefone)}</span>
                   )}
                 </div>
+                {conv.protocolo && (
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    Protocolo: <span className="font-mono">#{conv.protocolo}</span>
+                  </p>
+                )}
               </div>
             </button>
             <div className="flex shrink-0 flex-wrap items-center gap-1.5">
@@ -601,17 +619,13 @@ function ConversationPage() {
                   onClick={() => systemToast.info(CALL_UNAVAILABLE_MESSAGE)}
                 />
               )}
-              {conv.status === "fechada" ? (
-                <Button variant="secondary" size="sm" onClick={() => void handleNewConversation()}>
-                  <MessageCirclePlus className="h-3.5 w-3.5" /> Nova conversa
-                </Button>
-              ) : (
+              {conv.status !== "fechada" && (
                 <>
                   {showStart && canSendMessages && (
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="group"
+                      className="group hover:!border-emerald-500 hover:!bg-emerald-50 hover:!text-emerald-700 focus-visible:!border-emerald-500 focus-visible:!bg-emerald-50 focus-visible:!text-emerald-700 dark:hover:!bg-emerald-950 dark:hover:!text-emerald-300 dark:focus-visible:!bg-emerald-950 dark:focus-visible:!text-emerald-300"
                       onClick={() => void handleAssume()}
                       aria-label={`${startLabel} Atendimento`}
                       title={`${startLabel} Atendimento`}
@@ -624,7 +638,7 @@ function ConversationPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="group"
+                      className="group hover:!border-amber-500 hover:!bg-amber-50 hover:!text-amber-700 focus-visible:!border-amber-500 focus-visible:!bg-amber-50 focus-visible:!text-amber-700 dark:hover:!bg-amber-950 dark:hover:!text-amber-300 dark:focus-visible:!bg-amber-950 dark:focus-visible:!text-amber-300"
                       onClick={transferModal.show}
                       aria-label="Transferir Atendimento"
                       title="Transferir Atendimento"
@@ -638,12 +652,12 @@ function ConversationPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="group"
+                      className="action-hover-destructive group"
                       onClick={() => setClosing(true)}
                       aria-label="Encerrar Atendimento"
                       title="Encerrar Atendimento"
                     >
-                      <CircleCheckBig className="h-3.5 w-3.5 transition-colors group-hover:text-destructive" />{" "}
+                      <CircleCheckBig className="h-3.5 w-3.5 transition-colors" />{" "}
                       <span className="hidden lg:inline">Encerrar</span>
                     </Button>
                   )}
@@ -652,136 +666,156 @@ function ConversationPage() {
             </div>
           </header>
 
-          <div
-            ref={scrollRef}
-            className="inbox-message-background min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6"
-          >
-            <div className="w-full space-y-4">
-              {(() => {
-                const hasLifecycleLog = mensagens.some(
-                  (message) =>
-                    message.type === "system" &&
-                    /nova conversa|atendimento iniciado|conversa iniciada|nov[ao] lead/i.test(
-                      message.content,
-                    ),
-                );
-                if (hasLifecycleLog) return null;
-                const firstConversationMessage = mensagens.find(
-                  (message) => message.type !== "system",
-                );
-                const startedByContact = firstConversationMessage?.sender === "contact";
-                if (!startedByContact) {
-                  return (
-                    <StartedServiceLog
-                      type="ATIVO"
-                      protocol={conv.protocolo}
-                      attendantName={conv.agent?.nome ?? "Não informado"}
-                      timestamp={new Date(conv.created_at).getTime()}
-                    />
-                  );
-                }
-                const isLead = conv.originated_as_lead ?? conv.is_lead;
-                const line = isLead ? "bg-info/40" : "bg-success/40";
-                const pill = isLead
-                  ? "border-info/40 bg-info/10 text-info"
-                  : "border-success/40 bg-success/10 text-success";
-                const openingLabel = isLead ? "NOVO LEAD" : "NOVA CONVERSA";
-                const label = `${openingLabel} — ${fmtLogStamp(new Date(conv.created_at).getTime())}`;
-                return (
-                  <div className="flex items-center gap-3">
-                    <span className={`h-0.5 flex-1 ${line}`} />
-                    <span
-                      className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${pill}`}
-                    >
-                      {label}
-                    </span>
-                    <span className={`h-0.5 flex-1 ${line}`} />
-                  </div>
-                );
-              })()}
-              {mensagens.map((m) => (
-                <MessageBubble
-                  key={m.id}
-                  m={m}
-                  agents={messageAgents}
-                  showAgentName={showAgentName}
-                  onReply={(message) => setReplyTo(message)}
-                  onQuotedClick={scrollToMessage}
-                  highlighted={highlightedMessageId === m.id}
-                  contactName={conv.contact?.nome ?? "Contato"}
-                  isGroup={conv.is_group}
-                  conversationOriginatedAsLead={conv.originated_as_lead ?? conv.is_lead}
-                  customFieldLabels={(conv.contact?.customFieldValues ?? []).map(
-                    (field) => field.label,
-                  )}
-                  contactAvatarUrl={conv.contact?.avatar_url ?? null}
-                  connectionAvatarUrl={conv.connection?.logo_url ?? null}
-                  connectionName={conv.connection?.name ?? "WhatsApp"}
-                  galleryImages={galleryImages}
-                  canEditMessage={perms.editar_mensagem}
-                  canDeleteMessage={perms.excluir_mensagem}
-                  canSendMessage={canSendMessages}
-                  setMessageRef={(node) => {
-                    if (node) messageRefs.current.set(m.id, node);
-                    else messageRefs.current.delete(m.id);
-                  }}
-                />
-              ))}
-              {mensagens.length === 0 && (
-                <p className="text-center text-xs text-muted-foreground">Nenhuma mensagem ainda.</p>
-              )}
+          {!contactActive && (
+            <div
+              role="alert"
+              className="border-b border-warning/30 bg-warning/10 px-5 py-2 text-xs font-medium text-warning-foreground"
+            >
+              Contato inativo — as mensagens recebidas continuam registradas, mas novos envios estão
+              bloqueados.
             </div>
-          </div>
+          )}
 
-          <div className="relative">
-            <Composer
-              key={conversationId}
-              conversationId={conv.id}
-              authorId={user?.id ?? null}
-              priorityInstances={[
-                conv.connection?.id,
-                conv.connection?.externalReference,
-                conv.connection?.name,
-              ].filter((value): value is string => Boolean(value))}
-              variableContext={{
-                contactName: conv.contact?.nome,
-                phone: conv.contact?.telefone,
-                email: conv.contact?.email,
-                instance: conv.connection?.name,
-                customer: conv.contact?.customer?.nome,
-                department: conv.department?.nome ?? conv.contact?.departamento,
-                customFields: Object.fromEntries(
-                  (conv.contact?.customFieldValues ?? []).map((field) => [
-                    field.label,
-                    field.value,
-                  ]),
-                ),
-              }}
-              disabled={!canSend}
-              disabledReason={
-                conv.status === "fechada"
-                  ? "closed"
-                  : isStandby
-                    ? "standby"
-                    : !conv.agent_id
-                      ? "lead"
-                      : !isMine
-                        ? "not-mine"
-                        : null
-              }
-              onStart={showStart ? handleAssume : undefined}
-              allowQuickReplies={canSendMessages && perms.acessa_mensagens_rapidas}
-              allowAudio={canSendMessages}
-              onTicket={canCreateTicket ? handleGerarChamado : undefined}
-              ticketDisabled={gerando || !conv.protocolo || !canCreateTicket}
-              mentionOptions={conv.is_group ? mentionOptions : []}
-              replyTo={replyTo}
-              onCancelReply={() => setReplyTo(null)}
-              onSent={() => {
-                setReplyTo(null);
-                void invalidateConversationQueries(qc, conv.id);
-              }}
-            />
+          <div data-chat-drop-zone className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              ref={scrollRef}
+              className="inbox-message-background min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6"
+              style={chatBackgroundStyle(user?.chatBackgroundColor, user?.chatBackgroundMode)}
+            >
+              <div className="w-full space-y-4">
+                {(() => {
+                  const hasLifecycleLog = orderedMessages.some(
+                    (message) =>
+                      message.type === "system" &&
+                      /nova conversa|atendimento iniciado|conversa iniciada|nov[ao] lead/i.test(
+                        message.content,
+                      ),
+                  );
+                  if (hasLifecycleLog) return null;
+                  const firstConversationMessage = orderedMessages.find(
+                    (message) => message.type !== "system",
+                  );
+                  const startedByContact = firstConversationMessage?.sender === "contact";
+                  if (!startedByContact) {
+                    return (
+                      <StartedServiceLog
+                        type="ATIVO"
+                        protocol={conv.protocolo}
+                        attendantName={conv.agent?.nome ?? "Não informado"}
+                        timestamp={new Date(conv.created_at).getTime()}
+                      />
+                    );
+                  }
+                  const isLead = conv.originated_as_lead ?? conv.is_lead;
+                  const line = isLead ? "bg-info/40" : "bg-success/40";
+                  const pill = isLead
+                    ? "border-info/40 bg-blue-50 text-info dark:bg-blue-950"
+                    : "border-success/40 bg-emerald-50 text-success dark:bg-emerald-950";
+                  const openingLabel = isLead ? "NOVO LEAD" : "NOVA CONVERSA";
+                  const label = `${openingLabel} — ${fmtLogStamp(new Date(conv.created_at).getTime())}`;
+                  return (
+                    <div className="flex items-center gap-3">
+                      <span className={`h-0.5 flex-1 ${line}`} />
+                      <span
+                        className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${pill}`}
+                      >
+                        {label}
+                      </span>
+                      <span className={`h-0.5 flex-1 ${line}`} />
+                    </div>
+                  );
+                })()}
+                {orderedMessages.map((m) => (
+                  <MessageBubble
+                    key={m.id}
+                    m={m}
+                    agents={messageAgents}
+                    showAgentName={showAgentName}
+                    onReply={(message) => setReplyTo(message)}
+                    onQuotedClick={scrollToMessage}
+                    highlighted={highlightedMessageId === m.id}
+                    contactName={conv.contact?.nome ?? "Contato"}
+                    isGroup={conv.is_group}
+                    conversationOriginatedAsLead={conv.originated_as_lead ?? conv.is_lead}
+                    customFieldLabels={(conv.contact?.customFieldValues ?? []).map(
+                      (field) => field.label,
+                    )}
+                    contactAvatarUrl={conv.contact?.avatar_url ?? null}
+                    connectionAvatarUrl={conv.connection?.logo_url ?? null}
+                    connectionName={conv.connection?.name ?? "WhatsApp"}
+                    galleryImages={galleryImages}
+                    canEditMessage={perms.editar_mensagem}
+                    canDeleteMessage={perms.excluir_mensagem}
+                    canSendMessage={canSendMessages}
+                    setMessageRef={(node) => {
+                      if (node) messageRefs.current.set(m.id, node);
+                      else messageRefs.current.delete(m.id);
+                    }}
+                  />
+                ))}
+                {orderedMessages.length === 0 && (
+                  <p className="text-center text-xs text-muted-foreground">
+                    Nenhuma mensagem ainda.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="relative">
+              <Composer
+                key={conversationId}
+                conversationId={conv.id}
+                authorId={user?.id ?? null}
+                priorityInstances={[
+                  conv.connection?.id,
+                  conv.connection?.externalReference,
+                  conv.connection?.name,
+                ].filter((value): value is string => Boolean(value))}
+                variableContext={{
+                  contactName: conv.contact?.nome,
+                  phone: conv.contact?.telefone,
+                  email: conv.contact?.email,
+                  instance: conv.connection?.name,
+                  timezone: conv.connection?.timezone,
+                  customer: conv.contact?.customer?.nome,
+                  department: conv.contact?.contactDepartment?.nome ?? conv.contact?.departamento,
+                  customFields: Object.fromEntries(
+                    (conv.contact?.customFieldValues ?? []).map((field) => [
+                      field.variableKey,
+                      field.value,
+                    ]),
+                  ),
+                  customFieldValues: conv.contact?.customFieldValues ?? [],
+                }}
+                disabled={!canSend}
+                disabledReason={
+                  !contactActive
+                    ? "inactive"
+                    : conv.status === "fechada"
+                      ? "closed"
+                      : isStandby
+                        ? "standby"
+                        : !conv.agent_id
+                          ? "lead"
+                          : !isMine
+                            ? "not-mine"
+                            : null
+                }
+                onStart={showStart ? handleAssume : undefined}
+                allowQuickReplies={canSendMessages && perms.acessa_mensagens_rapidas}
+                allowAudio={canSendMessages}
+                onTicket={canCreateTicket ? handleGerarChamado : undefined}
+                ticketDisabled={gerando || !conv.protocolo || !canCreateTicket}
+                mentionOptions={conv.is_group ? mentionOptions : []}
+                replyTo={replyTo}
+                onCancelReply={() => setReplyTo(null)}
+                onCloseConversation={() => void navigate({ to: "/inbox" })}
+                onSent={() => {
+                  setReplyTo(null);
+                  void invalidateConversationQueries(qc, conv.id);
+                }}
+              />
+            </div>
           </div>
           <div className="hidden border-t border-border bg-surface-1 px-3 pb-3 md:block xl:hidden">
             {canCreateTicket && (
@@ -819,9 +853,13 @@ function ConversationPage() {
           <>
             <button
               type="button"
-              className="absolute inset-0 z-10 cursor-default bg-transparent"
+              className="absolute inset-0 z-10 cursor-default bg-transparent 2xl:hidden"
               aria-label="Fechar informações do contato"
               onClick={() => setPanelOpen(false)}
+              onWheel={(event) => {
+                event.preventDefault();
+                scrollRef.current?.scrollBy({ top: event.deltaY, behavior: "auto" });
+              }}
             />
             <div className="absolute inset-y-0 right-0 z-20 flex max-w-full 2xl:relative 2xl:inset-auto 2xl:shrink-0">
               <ContactPanel
@@ -842,8 +880,13 @@ function ConversationPage() {
       <TransferModal
         open={transferModal.open}
         onClose={transferModal.hide}
-        agents={agents.filter((a) => a.userId !== conv.agent_id)}
-        departments={departments.filter((d) => d.id !== conv.department_id)}
+        agents={agents.filter(
+          (agent) => agent.userId !== conv.agent_id && transferableMembershipIds.has(agent.id),
+        )}
+        departments={departments.filter(
+          (department) =>
+            department.id !== conv.department_id && transferableDepartmentIds.has(department.id),
+        )}
         currentStatus={currentTransferQueue(conv, inboxTab)}
         onSubmitAgent={async (id) => {
           await conversationApi.assign(conv.id, { membershipId: id });
@@ -882,13 +925,9 @@ function ConversationPage() {
               variant="primary"
               size="sm"
               disabled={!startDepartmentId}
-              onClick={() =>
-                void (startDepartmentAction === "assume"
-                  ? handleAssume(startDepartmentId)
-                  : handleNewConversation(startDepartmentId))
-              }
+              onClick={() => void handleAssume(startDepartmentId)}
             >
-              {startDepartmentAction === "assume" ? "Iniciar Atendimento" : "Iniciar conversa"}
+              Iniciar Atendimento
             </Button>
           </div>
         }
@@ -961,7 +1000,7 @@ function StartedServiceLog({
       <span className="h-0.5 flex-1 bg-success/40" />
       <div
         data-service-start-log
-        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-success/40 bg-success/10 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-success"
+        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-success/40 bg-emerald-50 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-success dark:bg-emerald-950"
       >
         <p>ATENDIMENTO INICIADO — {fmtLogStamp(timestamp)}</p>
         <p>
@@ -986,7 +1025,7 @@ function ClosedServiceLog({
       <span className="h-0.5 flex-1 bg-destructive/40" />
       <div
         data-service-closed-log
-        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-destructive/40 bg-destructive/10 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-destructive"
+        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-destructive/40 bg-red-50 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-destructive dark:bg-red-950"
       >
         <p>ATENDIMENTO ENCERRADO — {fmtLogStamp(timestamp)}</p>
         <p>ATENDENTE: {attendantName}</p>
@@ -1039,11 +1078,19 @@ export function MessageBubble({
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
   const qc = useQueryClient();
+  const chatBubbleColor = useSession((state) => state.user?.chatBubbleColor);
+  const chatBubbleTextColor = useSession((state) => state.user?.chatBubbleTextColor);
+  const customerBubbleColor = useSession((state) => state.user?.customerBubbleColor);
+  const customerBubbleTextColor = useSession((state) => state.user?.customerBubbleTextColor);
   const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
   const [imagePreviewOpen, setImagePreviewOpen] = React.useState(false);
   const [mediaError, setMediaError] = React.useState(false);
   const [resendRequest, setResendRequest] = React.useState(0);
   const [actionsOpenRequest, setActionsOpenRequest] = React.useState(0);
+  const [actionsOpenPosition, setActionsOpenPosition] = React.useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const mediaState = m.media_data?.state ?? null;
   const mediaReady = !!m.media_data && (!mediaState || mediaState === "ready");
   React.useEffect(() => {
@@ -1118,13 +1165,22 @@ export function MessageBubble({
     const tone = isClosing
       ? {
           line: "bg-destructive/40",
-          pill: "border-destructive/40 bg-destructive/10 text-destructive",
+          pill: "border-destructive/40 bg-red-50 text-destructive dark:bg-red-950",
         }
       : isLead || isConversationOpening
-        ? { line: "bg-primary/40", pill: "border-primary/40 bg-primary/10 text-primary" }
+        ? {
+            line: "bg-primary/40",
+            pill: "border-primary/40 bg-blue-50 text-primary dark:bg-blue-950",
+          }
         : isStarted
-          ? { line: "bg-success/40", pill: "border-success/40 bg-success/10 text-success" }
-          : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
+          ? {
+              line: "bg-success/40",
+              pill: "border-success/40 bg-emerald-50 text-success dark:bg-emerald-950",
+            }
+          : {
+              line: "bg-warning/40",
+              pill: "border-warning/40 bg-amber-50 text-warning dark:bg-amber-950",
+            };
     const withLines = isClosing || isLead || isConversationOpening || isStarted;
     const label = (
       isLead ? displayContent.replace(/^nova lead$/i, "Novo Lead") : displayContent
@@ -1135,8 +1191,7 @@ export function MessageBubble({
         <span
           className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}
         >
-          {label}
-          <span className="ml-1 opacity-80">— {fmtLogStamp(ts)}</span>
+          {`${label} — ${fmtLogStamp(ts)}`}
         </span>
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
       </div>
@@ -1169,7 +1224,11 @@ export function MessageBubble({
   const isSticker =
     m.type === "image" && (m.sticker === true || m.content.trim().toLowerCase() === "[figurinha]");
   const contactCard = isContactCardMessage(m);
-  const isVisualOnly = contactCard || isSticker;
+  const isVisualOnly = !m.deleted_for_everyone && (contactCard || isSticker);
+  const originalContent = m.original_content?.trim();
+  const showsEditedHistory = Boolean(
+    m.edited_at && originalContent && originalContent !== m.content.trim(),
+  );
   const timestamp = conversationTimestamp(new Date(m.created_at).getTime());
   return (
     <div
@@ -1197,10 +1256,28 @@ export function MessageBubble({
         </div>
       )}
       <div
+        data-outbound-message={mine && !isVisualOnly ? "true" : undefined}
+        style={
+          !isVisualOnly
+            ? ({
+                backgroundColor: mine
+                  ? normalizeHexColor(chatBubbleColor, DEFAULT_CHAT_BUBBLE_COLOR)
+                  : normalizeHexColor(customerBubbleColor, DEFAULT_CUSTOMER_BUBBLE_COLOR),
+                color: mine
+                  ? normalizeHexColor(chatBubbleTextColor, DEFAULT_CHAT_BUBBLE_TEXT_COLOR)
+                  : normalizeHexColor(customerBubbleTextColor, DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR),
+                "--chat-outbound-text": normalizeHexColor(
+                  chatBubbleTextColor,
+                  DEFAULT_CHAT_BUBBLE_TEXT_COLOR,
+                ),
+              } as React.CSSProperties)
+            : undefined
+        }
         tabIndex={0}
         onContextMenu={(event) => {
           if (readOnly) return;
           event.preventDefault();
+          setActionsOpenPosition({ x: event.clientX, y: event.clientY });
           setActionsOpenRequest((request) => request + 1);
         }}
         onClick={(event) => {
@@ -1209,13 +1286,13 @@ export function MessageBubble({
           )
             event.currentTarget.focus({ preventScroll: true });
         }}
-        className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[75%] ${
+        className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[50%] ${
           isVisualOnly
             ? "rounded-xl bg-transparent p-0 shadow-none"
-            : `rounded-2xl px-3 py-2 shadow-card ${mine ? "rounded-br-sm bg-gradient-brand text-white" : "rounded-bl-sm border border-border bg-surface-1"}`
+            : `rounded-2xl px-3 py-2 shadow-card ${mine ? "rounded-br-sm" : "rounded-bl-sm border border-border"}`
         }`}
       >
-        {!readOnly && (
+        {!readOnly && !m.deleted_for_everyone && (
           <MessageActionsMenu
             message={m}
             onReply={onReply ? () => onReply(m) : undefined}
@@ -1223,24 +1300,25 @@ export function MessageBubble({
             onDownload={() => download()}
             resendRequest={resendRequest}
             openRequest={actionsOpenRequest}
+            openPosition={actionsOpenPosition}
             canEdit={canEditMessage}
             canDelete={canDeleteMessage}
             canSend={canSendMessage}
           />
         )}
         {m.participant?.name && !mine && (
-          <p className="mb-1 text-[11px] font-semibold text-primary">{m.participant.name}</p>
+          <p className="mb-1 text-sm font-semibold text-primary">{m.participant.name}</p>
         )}
-        {m.forwarded && (
+        {m.forwarded && !m.deleted_for_everyone && (
           <p
             aria-label="Mensagem encaminhada"
-            className={`mb-1 flex items-center gap-1 text-[11px] italic ${mine ? "text-white/75" : "text-muted-foreground"}`}
+            className={`mb-1 flex items-center gap-1 text-[11px] italic ${mine ? "text-slate-600" : "text-muted-foreground"}`}
           >
             <Forward className="h-3 w-3" aria-hidden="true" />
             Encaminhada
           </p>
         )}
-        {m.quoted && (
+        {m.quoted && !m.deleted_for_everyone && (
           <QuotedPreview
             conversationId={m.conversation_id}
             quoted={m.quoted}
@@ -1248,7 +1326,7 @@ export function MessageBubble({
             onClick={() => onQuotedClick?.(m.quoted?.message_id)}
           />
         )}
-        {m.type === "image" && mediaUrl && imagePreviewOpen && (
+        {m.type === "image" && !m.deleted_for_everyone && mediaUrl && imagePreviewOpen && (
           <InboxImageViewer
             src={mediaUrl}
             readOnly={readOnly}
@@ -1264,158 +1342,184 @@ export function MessageBubble({
                 : undefined
             }
             onDownload={(image) => download(image as Message)}
+            onOpenActions={
+              readOnly
+                ? undefined
+                : (position) => {
+                    setActionsOpenPosition(position);
+                    setActionsOpenRequest((request) => request + 1);
+                  }
+            }
           />
         )}
         <div className={m.deleted_for_everyone ? "opacity-50" : undefined}>
-          {m.type === "image" && m.media_data && (
-            <div
-              data-sticker-media={isSticker || undefined}
-              className={
-                isSticker
-                  ? "overflow-hidden"
-                  : "mb-2 overflow-hidden rounded-lg border border-border/60"
-              }
-            >
-              {mediaUrl ? (
+          {
+            <>
+              {m.type === "image" && m.media_data && (
+                <div
+                  data-sticker-media={isSticker || undefined}
+                  className={
+                    isSticker
+                      ? "overflow-hidden"
+                      : "mb-2 overflow-hidden rounded-lg border border-border/60"
+                  }
+                >
+                  {mediaUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setImagePreviewOpen(true)}
+                      aria-label="Ampliar imagem"
+                      className="block cursor-zoom-in"
+                    >
+                      <img
+                        src={mediaUrl}
+                        alt={isSticker ? "Figurinha" : (m.media_data.file_name ?? "imagem")}
+                        className={`max-h-72 max-w-full object-contain ${isSticker ? "block" : ""}`}
+                      />
+                    </button>
+                  ) : mediaError || mediaState === "failed" ? (
+                    <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
+                  ) : mediaReady ? (
+                    <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
+                  ) : (
+                    <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
+                  )}
+                </div>
+              )}
+              {m.type === "video" && m.media_data && (
+                <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+                  {mediaUrl ? (
+                    <video src={mediaUrl} controls className="max-h-72 max-w-full" />
+                  ) : mediaError || mediaState === "failed" ? (
+                    <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
+                  ) : mediaReady ? (
+                    <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
+                  ) : (
+                    <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
+                  )}
+                </div>
+              )}
+              {(m.type === "audio" || m.type === "voice") &&
+                m.media_data &&
+                (mediaUrl ? (
+                  <AudioPlayer
+                    src={mediaUrl}
+                    durationMs={m.duration_ms}
+                    mine={mine}
+                    avatarName={mine ? outboundAvatarName : avatarName}
+                    avatarUrl={mine ? outboundAvatarUrl : contactAvatarUrl}
+                  />
+                ) : (
+                  <div
+                    className={`mb-2 rounded-lg px-3 py-2 text-xs ${
+                      mine ? "bg-black/5" : "bg-surface-2"
+                    }`}
+                  >
+                    {mediaError || mediaState === "failed"
+                      ? "Audio indisponivel."
+                      : mediaReady
+                        ? "Carregando audio..."
+                        : "Audio em processamento..."}
+                  </div>
+                ))}
+              {isContactCardMessage(m) && m.media_data && (
+                <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
+              )}
+              {m.type === "document" && !isContactCardMessage(m) && m.media_data && (
                 <button
                   type="button"
-                  onClick={() => setImagePreviewOpen(true)}
-                  aria-label="Ampliar imagem"
-                  className="block cursor-zoom-in"
+                  onClick={mediaReady ? () => void download() : undefined}
+                  disabled={!mediaReady}
+                  className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
+                    mine ? "border-black/10 bg-black/5" : "border-border/60 bg-surface-2"
+                  } ${mediaReady ? "" : "opacity-70"}`}
                 >
-                  <img
-                    src={mediaUrl}
-                    alt={isSticker ? "Figurinha" : (m.media_data.file_name ?? "imagem")}
-                    className={`max-h-72 max-w-full object-contain ${isSticker ? "block" : ""}`}
-                  />
+                  <Download className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {mediaState === "failed"
+                      ? "Documento indisponivel"
+                      : mediaReady
+                        ? (m.media_data.file_name ?? "Documento")
+                        : "Documento em processamento..."}
+                  </span>
                 </button>
-              ) : mediaError || mediaState === "failed" ? (
-                <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
-              ) : mediaReady ? (
-                <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
-              ) : (
-                <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
               )}
-            </div>
-          )}
-          {m.type === "video" && m.media_data && (
-            <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
-              {mediaUrl ? (
-                <video src={mediaUrl} controls className="max-h-72 max-w-full" />
-              ) : mediaError || mediaState === "failed" ? (
-                <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
-              ) : mediaReady ? (
-                <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
-              ) : (
-                <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
+              {m.link_preview && <LinkPreviewCard preview={m.link_preview} mine={mine} />}
+              {m.content &&
+                !isVisualOnly &&
+                m.content !== "[áudio]" &&
+                m.content !== "[imagem]" && (
+                  <div className={showsEditedHistory ? "space-y-1" : undefined}>
+                    {showsEditedHistory && originalContent && (
+                      <div data-original-edited-content className="text-xs text-muted-foreground">
+                        <span className="mr-1 italic">(editada)</span>
+                        <MessageText content={originalContent} />
+                      </div>
+                    )}
+                    <div data-current-edited-content={showsEditedHistory || undefined}>
+                      <MessageText content={m.content} />
+                      {m.edited_at && !showsEditedHistory && (
+                        <span className="ml-1 text-[10px] opacity-70">(editada)</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              {m.interactive_data?.kind === "list" && (
+                <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
               )}
-            </div>
-          )}
-          {(m.type === "audio" || m.type === "voice") &&
-            m.media_data &&
-            (mediaUrl ? (
-              <AudioPlayer
-                src={mediaUrl}
-                durationMs={m.duration_ms}
-                mine={mine}
-                avatarName={mine ? outboundAvatarName : avatarName}
-                avatarUrl={mine ? outboundAvatarUrl : contactAvatarUrl}
-              />
-            ) : (
-              <div
-                className={`mb-2 rounded-lg px-3 py-2 text-xs ${
-                  mine ? "bg-white/15" : "bg-surface-2"
-                }`}
-              >
-                {mediaError || mediaState === "failed"
-                  ? "Audio indisponivel."
-                  : mediaReady
-                    ? "Carregando audio..."
-                    : "Audio em processamento..."}
-              </div>
-            ))}
-          {isContactCardMessage(m) && m.media_data && (
-            <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
-          )}
-          {m.type === "document" && !isContactCardMessage(m) && m.media_data && (
-            <button
-              type="button"
-              onClick={mediaReady ? () => void download() : undefined}
-              disabled={!mediaReady}
-              className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
-                mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
-              } ${mediaReady ? "" : "opacity-70"}`}
-            >
-              <Download className="h-4 w-4 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">
-                {mediaState === "failed"
-                  ? "Documento indisponivel"
-                  : mediaReady
-                    ? (m.media_data.file_name ?? "Documento")
-                    : "Documento em processamento..."}
-              </span>
-            </button>
-          )}
-          {m.link_preview && <LinkPreviewCard preview={m.link_preview} mine={mine} />}
-          {m.content && !isVisualOnly && m.content !== "[áudio]" && m.content !== "[imagem]" && (
-            <>
-              <MessageText content={m.content} />
-              {m.edited_at && <span className="ml-1 text-[10px] opacity-70">(editada)</span>}
+              {m.reactions && m.reactions.length > 0 && (
+                <div
+                  aria-label="Reações da mensagem"
+                  title={reactionGroups.map(([emoji, count]) => `${emoji} ${count}`).join(", ")}
+                  className={`absolute -bottom-3 ${mine ? "right-2" : "left-2"} z-10 flex max-w-32 items-center gap-0.5 overflow-hidden whitespace-nowrap rounded-full border border-border bg-card px-1 py-0.5 text-foreground shadow-sm`}
+                >
+                  {reactionGroups.slice(0, 3).map(([emoji, count]) => (
+                    <span
+                      key={emoji}
+                      aria-label={`${emoji}: ${count}`}
+                      className="shrink-0 text-sm leading-4"
+                    >
+                      {emoji}
+                    </span>
+                  ))}
+                  {m.reactions.length > 1 && (
+                    <span
+                      aria-label={`${m.reactions.length} reações no total`}
+                      className="min-w-0 truncate px-0.5 text-[10px] leading-4"
+                    >
+                      {m.reactions.length}
+                    </span>
+                  )}
+                </div>
+              )}
             </>
-          )}
-          {m.interactive_data?.kind === "list" && (
-            <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
-          )}
-          {m.reactions && m.reactions.length > 0 && (
-            <div
-              aria-label="Reações da mensagem"
-              title={reactionGroups.map(([emoji, count]) => `${emoji} ${count}`).join(", ")}
-              className={`absolute -bottom-3 ${mine ? "right-2" : "left-2"} z-10 flex max-w-32 items-center gap-0.5 overflow-hidden whitespace-nowrap rounded-full border border-border bg-card px-1 py-0.5 text-foreground shadow-sm`}
-            >
-              {reactionGroups.slice(0, 3).map(([emoji, count]) => (
-                <span
-                  key={emoji}
-                  aria-label={`${emoji}: ${count}`}
-                  className="shrink-0 text-sm leading-4"
-                >
-                  {emoji}
-                </span>
-              ))}
-              {m.reactions.length > 1 && (
-                <span
-                  aria-label={`${m.reactions.length} reações no total`}
-                  className="min-w-0 truncate px-0.5 text-[10px] leading-4"
-                >
-                  {m.reactions.length}
-                </span>
-              )}
-            </div>
-          )}
+          }
         </div>
         {m.deleted_for_everyone && (
-          <p className="mt-1 text-[10px] font-semibold italic uppercase tracking-wide text-red-500">
-            Mensagem apagada
-          </p>
+          <div
+            data-deleted-message
+            className="mt-1 flex items-center gap-1.5 text-sm font-medium text-red-500"
+          >
+            <Ban className="h-4 w-4 shrink-0 text-red-500" aria-hidden="true" />
+            <span>Mensagem apagada</span>
+          </div>
         )}
         <div className="mt-1 flex items-center justify-end">
-          <div
-            className={`shrink-0 text-right font-mono text-[10px] leading-4 ${mine ? "text-white/70" : "text-muted-foreground"}`}
+          <span
+            className={`flex shrink-0 items-center justify-end whitespace-nowrap text-right font-mono text-[10px] leading-4 ${mine ? "text-slate-600" : "text-muted-foreground"}`}
           >
-            {timestamp.day && <span className="block">{timestamp.day}</span>}
-            <span className="flex items-center justify-end whitespace-nowrap">
-              {timestamp.time}
-              {mine && (
-                <MessageStatusIcon
-                  status={m.status}
-                  onRetry={
-                    !readOnly && m.status === "failed"
-                      ? () => setResendRequest((value) => value + 1)
-                      : undefined
-                  }
-                />
-              )}
-            </span>
-          </div>
+            {timestamp.day ? `${timestamp.day} ${timestamp.time}` : timestamp.time}
+            {mine && (
+              <MessageStatusIcon
+                status={m.status}
+                onRetry={
+                  !readOnly && m.status === "failed"
+                    ? () => setResendRequest((value) => value + 1)
+                    : undefined
+                }
+              />
+            )}
+          </span>
         </div>
       </div>
       {mine && !isAudioMessage && (
@@ -1452,7 +1556,7 @@ function WhatsAppListMessage({
         type="button"
         onClick={() => setOpen(true)}
         className={`mt-3 flex w-full items-center justify-center gap-2 border-t pt-2 text-sm font-medium transition hover:brightness-110 ${
-          mine ? "border-white/25 text-white" : "border-border text-primary"
+          mine ? "border-black/10 text-blue-700" : "border-border text-primary"
         }`}
         aria-label={`${interactive.buttonText}: abrir opções`}
       >
@@ -1539,7 +1643,7 @@ function LinkPreviewCard({
       rel="noopener noreferrer"
       aria-label={`Abrir preview de ${hostname}`}
       className={`mb-2 block max-w-sm overflow-hidden rounded-lg border text-left transition hover:brightness-95 ${
-        mine ? "border-white/25 bg-black/10" : "border-border/70 bg-surface-2"
+        mine ? "border-black/10 bg-black/5" : "border-border/70 bg-surface-2"
       }`}
     >
       {thumbnail && (
@@ -1662,11 +1766,11 @@ function QuotedPreview({
       type="button"
       onClick={onClick}
       className={`mb-2 block w-full border-l-2 px-2 py-1 text-left text-xs ${
-        mine ? "border-white/60 bg-white/10 text-white/85" : "border-primary/60 bg-card"
+        mine ? "border-blue-500/60 bg-white/45 text-slate-700" : "border-primary/60 bg-card"
       } ${quoted.message_id ? "cursor-pointer transition hover:opacity-85" : "cursor-default"}`}
     >
       {quoted.author_name && (
-        <p className={`mb-1 truncate font-semibold ${mine ? "text-white" : "text-primary"}`}>
+        <p className={`mb-1 truncate font-semibold ${mine ? "text-blue-700" : "text-primary"}`}>
           {quoted.author_name}
         </p>
       )}
@@ -1788,7 +1892,7 @@ function AudioPlayer({
   const secs = durationMs ? Math.round(durationMs / 1000) : null;
   return (
     <div
-      className={`flex min-w-[220px] items-center gap-2 rounded-lg px-2 py-1.5 ${mine ? "bg-white/15" : "bg-surface-2"}`}
+      className={`flex min-w-[220px] items-center gap-2 rounded-lg px-2 py-1.5 ${mine ? "bg-black/5" : "bg-surface-2"}`}
     >
       <button
         type="button"
@@ -1827,7 +1931,7 @@ function AudioPlayer({
 }
 
 /* -------- Composer with quick replies, audio, paste-image -------- */
-type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | null;
+type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | "inactive" | null;
 function Composer({
   conversationId,
   authorId,
@@ -1839,6 +1943,7 @@ function Composer({
   onSent,
   replyTo,
   onCancelReply,
+  onCloseConversation,
   allowQuickReplies = true,
   allowAudio = true,
   onTicket,
@@ -1855,6 +1960,7 @@ function Composer({
   onSent: () => void;
   replyTo?: Message | null;
   onCancelReply?: () => void;
+  onCloseConversation: () => void;
   allowQuickReplies?: boolean;
   allowAudio?: boolean;
   onTicket?: () => void;
@@ -1863,27 +1969,40 @@ function Composer({
 }) {
   const qc = useQueryClient();
   const [text, setText] = React.useState("");
+  const [pendingVariableTemplate, setPendingVariableTemplate] = React.useState<string | null>(null);
   const isMobile = useIsMobile();
   const composerProtected =
     disabled &&
-    (disabledReason === "lead" || disabledReason === "standby" || disabledReason === "not-mine");
+    (disabledReason === "lead" ||
+      disabledReason === "standby" ||
+      disabledReason === "not-mine" ||
+      disabledReason === "inactive");
 
-  const [pendingFile, setPendingFile] = React.useState<{
+  type PendingMedia = {
+    id: string;
+    clientMessageId: string;
     file: File;
     previewUrl: string | null;
-    mediaType: "image" | "video" | "document";
+    mediaType: MessageMediaType;
+    carriesContext: boolean;
     sharedContact?: SharedContactSelection["contact"];
-  } | null>(null);
+  };
+  const [pendingFiles, setPendingFiles] = React.useState<PendingMedia[]>([]);
+  const [draggingFiles, setDraggingFiles] = React.useState(false);
+  const [dropZoneRect, setDropZoneRect] = React.useState<DOMRect | null>(null);
+  const composerRootRef = React.useRef<HTMLDivElement>(null);
+  const dragDepthRef = React.useRef(0);
+  const [mediaSending, setMediaSending] = React.useState(false);
   const [showQR, setShowQR] = React.useState(false);
   const [qrFilter, setQrFilter] = React.useState("");
   const [mentionFilter, setMentionFilter] = React.useState<string | null>(null);
   const [pendingCloseAfter, setPendingCloseAfter] = React.useState(false);
+  const quickReplyTextBeforeApplyRef = React.useRef("");
   const draftKey = `${authorId}:${conversationId}`;
   const [sequence, setSequence] = React.useState<SequenceDraft | null>(
     () => quickReplyDrafts.get(draftKey) ?? null,
   );
   const [sequenceSending, setSequenceSending] = React.useState(false);
-  const [sequenceError, setSequenceError] = React.useState("");
   const sequenceAbort = React.useRef<AbortController | null>(null);
   const sequenceMounted = React.useRef(true);
   React.useEffect(() => {
@@ -1894,12 +2013,114 @@ function Composer({
     };
   }, []);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => {
+    if (!replyTo?.id) return;
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [replyTo?.id]);
+
   const fileRef = React.useRef<HTMLInputElement>(null);
   const [showCamera, setShowCamera] = React.useState(false);
   const [showContacts, setShowContacts] = React.useState(false);
   const [showSchedule, setShowSchedule] = React.useState(false);
   const typingActiveRef = React.useRef(false);
   const typingStopTimerRef = React.useRef<number | null>(null);
+
+  const clearPendingFiles = () => {
+    setPendingFiles((current) => {
+      current.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+      return [];
+    });
+  };
+
+  const queueFiles = React.useCallback((files: readonly File[]) => {
+    const additions: PendingMedia[] = files.map((file) => {
+      const mediaType = messageMediaType(file);
+      return {
+        id: crypto.randomUUID(),
+        clientMessageId: crypto.randomUUID(),
+        file,
+        previewUrl:
+          mediaType === "image" || mediaType === "video" ? URL.createObjectURL(file) : null,
+        mediaType,
+        carriesContext: false,
+      };
+    });
+    if (!additions.length) return;
+    setPendingFiles((current) => {
+      if (!current.length) additions[0]!.carriesContext = true;
+      return [...current, ...additions];
+    });
+  }, []);
+
+  React.useEffect(() => {
+    const zone = composerRootRef.current?.closest<HTMLElement>("[data-chat-drop-zone]");
+    if (!zone) return;
+    const containsFiles = (transfer: DataTransfer | null) =>
+      !!transfer && Array.from(transfer.types).includes("Files");
+    const enter = (event: DragEvent) => {
+      if (disabled || !containsFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      dragDepthRef.current += 1;
+      setDropZoneRect(zone.getBoundingClientRect());
+      setDraggingFiles(true);
+    };
+    const over = (event: DragEvent) => {
+      if (disabled || !containsFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
+    const leave = (event: DragEvent) => {
+      if (!containsFiles(event.dataTransfer)) return;
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) {
+        setDraggingFiles(false);
+        setDropZoneRect(null);
+      }
+    };
+    const drop = (event: DragEvent) => {
+      if (disabled) return;
+      const files = event.dataTransfer ? filesFromTransfer(event.dataTransfer) : [];
+      if (!files.length) return;
+      event.preventDefault();
+      dragDepthRef.current = 0;
+      setDraggingFiles(false);
+      setDropZoneRect(null);
+      queueFiles(files);
+    };
+    zone.addEventListener("dragenter", enter);
+    zone.addEventListener("dragover", over);
+    zone.addEventListener("dragleave", leave);
+    zone.addEventListener("drop", drop);
+    return () => {
+      zone.removeEventListener("dragenter", enter);
+      zone.removeEventListener("dragover", over);
+      zone.removeEventListener("dragleave", leave);
+      zone.removeEventListener("drop", drop);
+    };
+  }, [disabled, queueFiles]);
+
+  const removePendingFile = (id: string) => {
+    setPendingFiles((current) => {
+      const removed = current.find((item) => item.id === id);
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      const remaining = current.filter((item) => item.id !== id);
+      if (removed?.carriesContext && remaining[0]) {
+        return remaining.map((item, index) =>
+          index === 0 ? { ...item, carriesContext: true } : item,
+        );
+      }
+      return remaining;
+    });
+  };
+
+  const selectPendingFile = (id: string) => {
+    setPendingFiles((current) =>
+      current.map((item) => ({ ...item, carriesContext: item.id === id })),
+    );
+  };
 
   const { data: quickReplies = [] } = useQuery({
     queryKey: ["trixus", "quick-replies", "composer"],
@@ -1951,25 +2172,27 @@ function Composer({
   }, [quickReplies, qrFilter]);
 
   const resolveVariables = React.useCallback(
-    (value: string) => resolveMessageVariables(value, variableContext),
+    (value: string) => resolveMessageVariables(value, { ...variableContext, now: new Date() }),
     [variableContext],
   );
 
   const applyQR = (qr: QuickReply) => {
     if (sequenceAbort.current) return;
     const items = quickReplyMessages(qr);
+    quickReplyTextBeforeApplyRef.current = textToRestoreAfterQuickReply(text);
     if (items.length > 1 || items[0]?.attachment) {
       const draft = createSequence(qr, resolveVariables);
       quickReplyDrafts.set(draftKey, draft);
       setSequence(draft);
-      setSequenceError("");
       setText("");
-      if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-      setPendingFile(null);
+      setPendingVariableTemplate(null);
+      clearPendingFiles();
     } else {
       quickReplyDrafts.delete(draftKey);
       setSequence(null);
-      setText(resolveVariables(items[0]?.text ?? qr.texto));
+      const template = items[0]?.text ?? qr.texto;
+      setPendingVariableTemplate(template);
+      setText(resolveVariables(template));
     }
     setPendingCloseAfter(!!qr.close_on_send);
     setShowQR(false);
@@ -1996,8 +2219,21 @@ function Composer({
       return `${prefix}@${mentionToken(mention.label, mention.phone)} `;
     });
     setText(`${replaced}${afterCursor}`);
+    setPendingVariableTemplate(null);
     setMentionFilter(null);
     setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const input = textareaRef.current;
+    const start = input?.selectionStart ?? text.length;
+    const end = input?.selectionEnd ?? start;
+    setText(text.slice(0, start) + emoji + text.slice(end));
+    setPendingVariableTemplate(null);
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + emoji.length, start + emoji.length);
+    });
   };
 
   const mentionToken = (label: string, fallbackPhone: string) => {
@@ -2016,37 +2252,29 @@ function Composer({
     quickReplyDrafts.set(draftKey, draft);
     setSequence(draft);
     setSequenceSending(true);
-    setSequenceError("");
     try {
       await sendSequence(draft, controller.signal, {
         send: async (item) => {
           if (!item.attachment)
             return messageApi.sendText(
               conversationId,
-              item.text,
+              item.templateText ?? item.text,
               item.clientMessageId,
               replyTo?.id ?? null,
             );
           const attachment = item.attachment;
           const blob = await (await fetch(attachment.dataUrl)).blob();
           if (controller.signal.aborted) throw new Error("Envio interrompido.");
-          const mediaType = attachment.mimeType.startsWith("image/")
-            ? "image"
-            : attachment.mimeType.startsWith("video/")
-              ? "video"
-              : attachment.mimeType.startsWith("audio/")
-                ? "audio"
-                : "document";
+          const mediaType = quickReplyAttachmentMediaType(attachment.mimeType);
           return messageApi.sendMedia(conversationId, blob, {
             fileName: attachment.fileName,
             mimeType: attachment.mimeType,
             mediaType,
-            caption: item.text || null,
+            caption: (item.templateText ?? item.text) || null,
             clientMessageId: item.clientMessageId,
             quotedMessageId: replyTo?.id ?? null,
           });
         },
-        get: (id) => messageApi.get(conversationId, id),
         progress: () => {
           if (!controller.signal.aborted) setSequence({ ...draft });
           void qc.invalidateQueries({ queryKey: ["trixus", "messages", conversationId] });
@@ -2057,6 +2285,7 @@ function Composer({
       quickReplyDrafts.delete(draftKey);
       setSequence(null);
       setText("");
+      setPendingVariableTemplate(null);
       setPendingCloseAfter(false);
       setShowQR(false);
       setQrFilter("");
@@ -2066,12 +2295,7 @@ function Composer({
         .catch(() => {});
       onSent();
     } catch (error) {
-      if (sequenceMounted.current)
-        setSequenceError(
-          controller.signal.aborted
-            ? "Sequência pausada. Você pode continuar de onde parou."
-            : (error as Error).message,
-        );
+      if (!controller.signal.aborted) toast.error((error as Error).message);
     } finally {
       if (sequenceMounted.current) {
         setSequence(quickReplyDrafts.has(draftKey) ? { ...draft } : null);
@@ -2082,13 +2306,13 @@ function Composer({
   };
 
   const handleSend = async () => {
-    if (disabled || !authorId || sequenceAbort.current) return;
+    if (disabled || !authorId || sequenceAbort.current || mediaSending) return;
     emitTypingStop();
     if (sequence) {
       await sendQuickReply(sequence);
       return;
     }
-    let t = text.trim();
+    let t = (pendingVariableTemplate ?? text).trim();
     let closeAfter = pendingCloseAfter;
     // Expand quick reply shortcut like "/bd" → full text
     if (allowQuickReplies && t.startsWith("/")) {
@@ -2101,34 +2325,56 @@ function Composer({
         if (items.length > 1 || items[0]?.attachment) {
           setShowQR(false);
           setText("");
+          setPendingVariableTemplate(null);
           await sendQuickReply(createSequence(match, resolveVariables));
           return;
         }
-        t = resolveVariables(items[0]?.text ?? match.texto);
+        t = items[0]?.text ?? match.texto;
         closeAfter = closeAfter || !!match.close_on_send;
       }
     }
-    t = resolveVariables(t);
-    if (pendingFile) {
+    if (pendingFiles.length) {
+      setMediaSending(true);
+      const snapshot = [...pendingFiles];
+      const sentItems: PendingMedia[] = [];
       try {
-        await messageApi.sendMedia(conversationId, pendingFile.file, {
-          fileName: pendingFile.file.name,
-          mimeType: pendingFile.file.type || "application/octet-stream",
-          mediaType: pendingFile.mediaType,
-          caption: t || null,
-          quotedMessageId: replyTo?.id ?? null,
-        });
-        if (pendingFile.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-        setPendingFile(null);
+        const result = await sendMediaQueue(
+          snapshot,
+          (pendingFile) =>
+            messageApi.sendMedia(conversationId, pendingFile.file, {
+              fileName: pendingFile.file.name,
+              mimeType: pendingFile.file.type || "application/octet-stream",
+              mediaType: pendingFile.mediaType,
+              caption: pendingFile.carriesContext ? t || null : null,
+              quotedMessageId: pendingFile.carriesContext ? (replyTo?.id ?? null) : null,
+              clientMessageId: pendingFile.clientMessageId,
+            }),
+          (sent) => {
+            sentItems.push(sent);
+            if (sent.previewUrl) URL.revokeObjectURL(sent.previewUrl);
+            setPendingFiles((current) => current.filter((item) => item.id !== sent.id));
+          },
+        );
+        if (sentItems.length) {
+          if (sentItems.some((item) => item.carriesContext)) setText("");
+          if (sentItems.some((item) => item.carriesContext)) setPendingVariableTemplate(null);
+          void messageApi
+            .markRead(conversationId)
+            .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
+          onSent();
+        }
+        if (result.error) {
+          toast.error((result.error as Error).message);
+          return;
+        }
         setText("");
-        void messageApi
-          .markRead(conversationId)
-          .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
-        onSent();
+        setPendingVariableTemplate(null);
         return;
       } catch (e) {
         toast.error((e as Error).message);
         return;
+      } finally {
+        setMediaSending(false);
       }
     }
     if (!t) {
@@ -2138,6 +2384,7 @@ function Composer({
     try {
       await messageApi.sendText(conversationId, t, crypto.randomUUID(), replyTo?.id ?? null);
       setText("");
+      setPendingVariableTemplate(null);
       setShowQR(false);
       setQrFilter("");
       setPendingCloseAfter(false);
@@ -2177,30 +2424,17 @@ function Composer({
   React.useEffect(() => emitTypingStop, [emitTypingStop]);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = Array.from(e.clipboardData?.items ?? []);
-    const imageItem = items.find((it) => it.type.startsWith("image/"));
-    if (imageItem) {
+    const files = filesFromTransfer(e.clipboardData);
+    if (files.length) {
       e.preventDefault();
-      const file = imageItem.getAsFile();
-      if (file) {
-        setPendingFile({ file, previewUrl: URL.createObjectURL(file), mediaType: "image" });
-      }
+      queueFiles(files);
     }
   };
 
   const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const mediaType = file.type.startsWith("image/")
-      ? "image"
-      : file.type.startsWith("video/")
-        ? "video"
-        : "document";
-    setPendingFile({
-      file,
-      previewUrl: mediaType === "image" || mediaType === "video" ? URL.createObjectURL(file) : null,
-      mediaType,
-    });
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    queueFiles(files);
     e.target.value = "";
   };
 
@@ -2210,7 +2444,19 @@ function Composer({
     const mimeType = header.match(/^data:([^;]+)/i)?.[1] ?? "image/jpeg";
     const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
     const file = new File([bytes], `camera-${Date.now()}.jpg`, { type: mimeType });
-    setPendingFile({ file, previewUrl: dataUrl, mediaType: "image" });
+    setPendingFiles((current) => {
+      return [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          clientMessageId: crypto.randomUUID(),
+          file,
+          previewUrl: dataUrl,
+          mediaType: "image",
+          carriesContext: current.length === 0,
+        },
+      ];
+    });
     setShowCamera(false);
   };
 
@@ -2360,6 +2606,36 @@ function Composer({
     stopRecording();
   };
 
+  const discardPendingAudio = () => {
+    setPendingAudio((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  };
+
+  const cancelPreparedQuickReply = () => {
+    setText(quickReplyTextBeforeApplyRef.current);
+    quickReplyTextBeforeApplyRef.current = "";
+    setPendingVariableTemplate(null);
+    setPendingCloseAfter(false);
+    setShowQR(false);
+    setQrFilter("");
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const cancelPreparedSequence = () => {
+    if (sequenceSending) {
+      sequenceAbort.current?.abort();
+      return;
+    }
+    quickReplyDrafts.delete(draftKey);
+    setSequence(null);
+    setPendingCloseAfter(false);
+    setText(quickReplyTextBeforeApplyRef.current);
+    quickReplyTextBeforeApplyRef.current = "";
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
   const sendAudio = async () => {
     if (!pendingAudio || !authorId) return;
     setAudioSending(true);
@@ -2385,109 +2661,145 @@ function Composer({
     }
   };
 
+  React.useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      const managedOverlayOpen =
+        showCamera ||
+        showContacts ||
+        showSchedule ||
+        Boolean(
+          document.querySelector(
+            '[role="dialog"][aria-modal="true"], [role="dialog"][data-state="open"], [role="menu"][data-state="open"], [role="listbox"][data-state="open"]',
+          ),
+        );
+
+      handleComposerEscape(
+        event,
+        {
+          managedOverlayOpen,
+          sendInProgress: mediaSending || audioSending,
+          customOverlayOpen: showQR || filteredMentions.length > 0,
+          sequencePending: Boolean(sequence),
+          recording,
+          audioPending: Boolean(pendingAudio),
+          filesPending: pendingFiles.length > 0,
+          quickReplyPending: pendingVariableTemplate !== null,
+        },
+        {
+          dismissCustomOverlay: () => {
+            setShowQR(false);
+            setMentionFilter(null);
+          },
+          cancelSequence: cancelPreparedSequence,
+          discardRecording,
+          discardAudio: discardPendingAudio,
+          clearFiles: clearPendingFiles,
+          cancelQuickReply: cancelPreparedQuickReply,
+          closeConversation: onCloseConversation,
+        },
+      );
+    };
+
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  });
+
   return (
-    <div className="border-t border-border bg-surface-1 p-3">
+    <div
+      ref={composerRootRef}
+      className={`relative border-t bg-surface-1 p-3 transition-colors ${
+        draggingFiles ? "border-primary bg-primary/5" : "border-border"
+      }`}
+    >
+      {draggingFiles && dropZoneRect && (
+        <div
+          className="pointer-events-none fixed z-[240] flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10 text-xl font-medium text-primary backdrop-blur-[1px]"
+          style={{
+            left: dropZoneRect.left + 8,
+            top: dropZoneRect.top + 8,
+            width: Math.max(0, dropZoneRect.width - 16),
+            height: Math.max(0, dropZoneRect.height - 16),
+          }}
+        >
+          Arraste arquivo aqui
+        </div>
+      )}
       <div className="w-full">
-        {sequence && (
+        {pendingFiles.length > 0 && (
           <div
-            className="mb-2 space-y-2 rounded-lg border border-primary/30 bg-card p-3"
-            aria-live="polite"
+            className="mb-2 grid max-h-32 grid-cols-2 gap-1 overflow-y-auto"
+            aria-label="Anexos selecionados"
           >
-            <div className="flex items-center justify-between gap-2">
-              <strong className="text-sm">
-                {sequence.items.length > 1 ? "Mensagens múltiplas" : "Mensagem rápida com arquivo"}{" "}
-                · {sequence.next}/{sequence.items.length} enviadas
-              </strong>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  if (sequenceSending) {
-                    sequenceAbort.current?.abort();
-                    return;
-                  }
-                  quickReplyDrafts.delete(draftKey);
-                  setSequence(null);
-                  setSequenceError("");
-                  setPendingCloseAfter(false);
-                }}
+            {pendingFiles.map((pendingFile) => (
+              <div
+                key={pendingFile.id}
+                className={`flex min-w-0 items-center gap-2 rounded-lg border bg-card px-2 py-1.5 shadow-card ${
+                  pendingFile.carriesContext
+                    ? "border-primary ring-1 ring-primary/30"
+                    : "border-border"
+                }`}
               >
-                {sequenceSending ? "Pausar" : "Cancelar sequência"}
-              </Button>
-            </div>
-            <ol className="max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
-              {sequence.items.map((item, index) => (
-                <li
-                  key={item.clientMessageId}
-                  className={index < sequence.next ? "opacity-50" : ""}
+                {pendingFile.sharedContact ? (
+                  <Avatar
+                    name={pendingFile.sharedContact.nome}
+                    src={pendingFile.sharedContact.avatar_url}
+                    size={40}
+                  />
+                ) : pendingFile.previewUrl ? (
+                  pendingFile.mediaType === "video" ? (
+                    <video
+                      src={pendingFile.previewUrl}
+                      className="h-10 w-10 rounded object-cover"
+                    />
+                  ) : (
+                    <img
+                      src={pendingFile.previewUrl}
+                      alt={`Pré-visualização de ${pendingFile.file.name}`}
+                      className="h-10 w-10 rounded object-cover"
+                    />
+                  )
+                ) : (
+                  <PendingMediaPreview file={pendingFile.file} />
+                )}
+                {pendingFile.sharedContact ? (
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{pendingFile.sharedContact.nome}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatBrazilPhoneWithDdi(
+                        pendingFile.sharedContact.normalizedPhone ||
+                          pendingFile.sharedContact.telefone,
+                      )}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                    {pendingFile.file.name}
+                  </p>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  aria-label={`Usar ${pendingFile.file.name} com o texto da mensagem`}
+                  aria-pressed={pendingFile.carriesContext}
+                  title="Associar o texto a este anexo"
+                  disabled={mediaSending}
+                  onClick={() => selectPendingFile(pendingFile.id)}
                 >
-                  {index + 1}. {item.text || item.attachment?.fileName}
-                  {item.text && item.attachment ? ` · ${item.attachment.fileName}` : ""}
-                  {index < sequence.next ? " ✓" : ""}
-                </li>
-              ))}
-            </ol>
-            <p className="text-xs text-muted-foreground">
-              {sequenceSending
-                ? "Enviando na ordem cadastrada…"
-                : "Clique em Enviar para iniciar ou Continuar para retomar."}{" "}
-              Ao sair da conversa, a sequência será pausada.
-            </p>
-            {sequenceError && (
-              <p role="alert" className="text-xs text-destructive">
-                {sequenceError}
-              </p>
-            )}
-          </div>
-        )}
-        {pendingFile && (
-          <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
-            {pendingFile.sharedContact ? (
-              <Avatar
-                name={pendingFile.sharedContact.nome}
-                src={pendingFile.sharedContact.avatar_url}
-                size={48}
-              />
-            ) : pendingFile.previewUrl ? (
-              pendingFile.mediaType === "video" ? (
-                <video src={pendingFile.previewUrl} className="h-16 w-16 rounded object-cover" />
-              ) : (
-                <img
-                  src={pendingFile.previewUrl}
-                  alt="preview"
-                  className="h-16 w-16 rounded object-cover"
-                />
-              )
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded bg-surface-2">
-                <Paperclip className="h-5 w-5" />
+                  <Reply className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  aria-label={`Remover ${pendingFile.file.name}`}
+                  disabled={mediaSending}
+                  onClick={() => removePendingFile(pendingFile.id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
-            )}
-            {pendingFile.sharedContact ? (
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{pendingFile.sharedContact.nome}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {formatBrazilPhoneWithDdi(
-                    pendingFile.sharedContact.normalizedPhone || pendingFile.sharedContact.telefone,
-                  )}
-                </p>
-              </div>
-            ) : (
-              <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                {pendingFile.file.name}
-              </p>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Remover"
-              onClick={() => {
-                if (pendingFile.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-                setPendingFile(null);
-              }}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            ))}
           </div>
         )}
 
@@ -2507,7 +2819,9 @@ function Composer({
                 key={qr.id}
                 type="button"
                 onClick={() => applyQR(qr)}
-                disabled={sequenceSending || !!sequence || recording || !!pendingAudio}
+                disabled={
+                  mediaSending || sequenceSending || !!sequence || recording || !!pendingAudio
+                }
                 className="flex w-full items-start gap-3 border-b border-border/60 px-3 py-2 text-left hover:bg-surface-1"
               >
                 <span className="font-mono text-xs text-primary">
@@ -2618,10 +2932,7 @@ function Composer({
             src={pendingAudio.url}
             duration={formatRecordingDuration(Math.round(pendingAudio.duration / 1000))}
             disabled={audioSending}
-            onDiscard={() => {
-              URL.revokeObjectURL(pendingAudio.url);
-              setPendingAudio(null);
-            }}
+            onDiscard={discardPendingAudio}
             onSend={() => void sendAudio()}
             sending={audioSending}
           />
@@ -2632,7 +2943,14 @@ function Composer({
           >
             <div className="flex items-center gap-0.5">
               <InboxMobileActions
-                disabled={disabled || sequenceSending || !!sequence || recording || !!pendingAudio}
+                disabled={
+                  disabled ||
+                  sequenceSending ||
+                  mediaSending ||
+                  !!sequence ||
+                  recording ||
+                  !!pendingAudio
+                }
                 allowQuickReplies={allowQuickReplies}
                 ticketDisabled={ticketDisabled}
                 onQuickReplies={() => setShowQR((value) => !value)}
@@ -2645,6 +2963,7 @@ function Composer({
               <input
                 ref={fileRef}
                 type="file"
+                multiple
                 accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
                 className="hidden"
                 onChange={onFilePick}
@@ -2656,6 +2975,7 @@ function Composer({
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
+                setPendingVariableTemplate(null);
                 emitTypingStart();
                 if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
                 typingStopTimerRef.current = window.setTimeout(emitTypingStop, 2500);
@@ -2666,33 +2986,47 @@ function Composer({
                   e.preventDefault();
                   handleSend();
                 }
-                if (e.key === "Escape") setShowQR(false);
               }}
-              disabled={disabled || sequenceSending || !!sequence || recording || !!pendingAudio}
+              readOnly={Boolean(sequence)}
+              disabled={disabled || sequenceSending || mediaSending || recording || !!pendingAudio}
               aria-label="Mensagem"
-              placeholder={isMobile ? "" : "Digite uma mensagem"}
+              placeholder={
+                sequence
+                  ? "Pressione Enter para enviar a mensagem rápida"
+                  : isMobile
+                    ? ""
+                    : "Digite uma mensagem"
+              }
               title={
-                disabledReason === "closed"
-                  ? "Conversa encerrada."
-                  : disabledReason === "lead"
-                    ? "Clique em Iniciar acima para responder este lead."
-                    : disabledReason === "standby"
-                      ? "Clique em Retomar acima para voltar a atender."
-                      : disabledReason === "not-mine"
-                        ? "Conversa atribuída a outro atendente."
-                        : undefined
+                disabledReason === "inactive"
+                  ? "Contato inativo. Reative-o para enviar mensagens."
+                  : disabledReason === "closed"
+                    ? "Conversa encerrada."
+                    : disabledReason === "lead"
+                      ? "Clique em Iniciar acima para responder este lead."
+                      : disabledReason === "standby"
+                        ? "Clique em Retomar acima para voltar a atender."
+                        : disabledReason === "not-mine"
+                          ? "Conversa atribuída a outro atendente."
+                          : undefined
               }
               className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:opacity-50"
               style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
             />
 
+            <MessageEmojiPicker
+              disabled={disabled || sequenceSending || mediaSending || !!sequence || !!pendingAudio}
+              onSelect={insertEmoji}
+            />
             {allowAudio && !recording && (
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label="Gravar áudio"
                 onClick={() => void startRecording()}
-                disabled={disabled || sequenceSending || !!sequence || !!pendingAudio}
+                disabled={
+                  disabled || sequenceSending || mediaSending || !!sequence || !!pendingAudio
+                }
               >
                 <Mic className="h-4 w-4" />
               </Button>
@@ -2701,21 +3035,9 @@ function Composer({
               variant="primary"
               size="icon"
               onClick={handleSend}
-              disabled={disabled || sequenceSending || recording || !!pendingAudio}
-              aria-label={
-                sequenceSending
-                  ? "Enviando…"
-                  : sequence && (sequence.next > 0 || sequenceError)
-                    ? "Continuar envio"
-                    : "Enviar mensagem"
-              }
-              title={
-                sequenceSending
-                  ? "Enviando…"
-                  : sequence && (sequence.next > 0 || sequenceError)
-                    ? "Continuar envio"
-                    : "Enviar mensagem"
-              }
+              disabled={disabled || sequenceSending || mediaSending || recording || !!pendingAudio}
+              aria-label={sequenceSending || mediaSending ? "Enviando…" : "Enviar mensagem"}
+              title={sequenceSending || mediaSending ? "Enviando…" : "Enviar mensagem"}
             >
               <SendHorizontal className="h-5 w-5" />
             </Button>
@@ -2725,14 +3047,19 @@ function Composer({
           <InboxContactPicker
             priorityInstances={priorityInstances}
             onClose={() => setShowContacts(false)}
-            onSelect={(selection) => {
-              if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-              setPendingFile({
-                file: selection.file,
-                previewUrl: null,
-                mediaType: "document",
-                sharedContact: selection.contact,
-              });
+            onSelect={(selections) => {
+              setPendingFiles((current) => [
+                ...current,
+                ...selections.map((selection, index) => ({
+                  id: crypto.randomUUID(),
+                  clientMessageId: crypto.randomUUID(),
+                  file: selection.file,
+                  previewUrl: null,
+                  mediaType: "document" as const,
+                  carriesContext: current.length === 0 && index === 0,
+                  sharedContact: selection.contact,
+                })),
+              ]);
               setShowContacts(false);
             }}
           />
@@ -2741,11 +3068,16 @@ function Composer({
           open={showSchedule}
           onClose={() => setShowSchedule(false)}
           conversationId={conversationId}
-          initialContent={text}
+          initialContent={pendingVariableTemplate ?? text}
           identifier={`composer-${conversationId}-${Date.now()}`}
-          customFieldLabels={Object.keys(variableContext.customFields ?? {})}
+          customFields={(variableContext.customFieldValues ?? [])
+            .filter((field) => Boolean(field.variableKey?.trim()))
+            .map((field) => ({ label: field.label, variableKey: field.variableKey! }))}
           onSaved={(mode) => {
-            if (mode === "create") setText("");
+            if (mode === "create") {
+              setText("");
+              setPendingVariableTemplate(null);
+            }
           }}
         />
       </div>
@@ -2772,25 +3104,24 @@ export function ContactPanel({
   onClose: () => void;
 }) {
   const perms = useChatPerms();
+  const user = useSession((state) => state.user);
+  const conversationScope = conversationAuthorizationScope(user);
   const qc = useQueryClient();
   const tagsModal = useDisclosure();
 
   const editModal = useDisclosure();
-  const customerLinkModal = useDisclosure();
-  const [linkedCustomerId, setLinkedCustomerId] = React.useState("");
-  const [savingCustomerLink, setSavingCustomerLink] = React.useState(false);
   const [confirmingBlock, setConfirmingBlock] = React.useState(false);
   const [blocking, setBlocking] = React.useState(false);
   const [blocked, setBlocked] = React.useState(false);
 
   const { data: contact } = useQuery({
-    queryKey: ["trixus", "contacts", contactId],
+    queryKey: ["trixus", "contacts", contactId, conversationScope],
     queryFn: () => crmApi.getContact(contactId),
   });
   const { data: customersPage } = useQuery({
     queryKey: ["trixus", "customers", "contact-panel"],
     queryFn: () => crmApi.listCustomers({ pageSize: 100 }).then((page) => page.items),
-    enabled: editModal.open || customerLinkModal.open,
+    enabled: editModal.open,
   });
   const { data: contactOptions } = useQuery({
     queryKey: ["trixus", "contacts", "options", "contact-panel"],
@@ -2799,10 +3130,6 @@ export function ContactPanel({
   const customerId = contact?.customer_id ?? null;
   const customer = contact?.customer ?? null;
   const contactTags = contact?.tags ?? [];
-
-  React.useEffect(() => {
-    if (customerLinkModal.open) setLinkedCustomerId(contact?.customer_id ?? "");
-  }, [contact?.customer_id, customerLinkModal.open]);
 
   const { data: protocolos = [] } = useQuery({
     queryKey: ["trixus", "contact_protocols", contactId],
@@ -2853,9 +3180,7 @@ export function ContactPanel({
                   <Pencil className="h-3 w-3" /> Editar
                 </Button>
               )}
-              <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fechar painel">
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              <CloseButton onClick={onClose} aria-label="Fechar painel" />
             </div>
           </div>
 
@@ -2895,16 +3220,6 @@ export function ContactPanel({
                   />
                 )}
                 <span className="truncate">{customer?.nome ?? "—"}</span>
-                {perms.pode_editar_vinculo_cliente && (
-                  <button
-                    type="button"
-                    className="rounded p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-                    aria-label="Alterar cliente vinculado"
-                    onClick={customerLinkModal.show}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </button>
-                )}
               </dd>
             </div>
             <div className="flex items-start justify-between gap-2">
@@ -2976,13 +3291,26 @@ export function ContactPanel({
               </span>
             </div>
             {protocolos.length > 0 && (
-              <input
-                type="text"
-                value={protoFilter}
-                onChange={(e) => setProtoFilter(e.target.value)}
-                placeholder="Filtrar protocolo…"
-                className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
-              />
+              <div className="relative mb-2">
+                <input
+                  type="text"
+                  value={protoFilter}
+                  onChange={(e) => setProtoFilter(e.target.value)}
+                  placeholder="Filtrar protocolo…"
+                  className="w-full rounded-md border border-border bg-background py-1 pl-2 pr-7 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                />
+                {protoFilter && (
+                  <button
+                    type="button"
+                    aria-label="Limpar filtro de protocolos"
+                    title="Limpar filtro"
+                    onClick={() => setProtoFilter("")}
+                    className="absolute right-1 top-1/2 inline-flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+              </div>
             )}
             {protocolos.length === 0 ? (
               <p className="text-xs text-muted-foreground">Nenhum protocolo registrado.</p>
@@ -2995,7 +3323,12 @@ export function ContactPanel({
                     <Link
                       to="/inbox/$conversationId"
                       params={{ conversationId: p.id }}
-                      className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs transition hover:border-primary/50 hover:bg-primary/5"
+                      aria-current={p.id === conversationId ? "page" : undefined}
+                      className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition ${
+                        p.id === conversationId
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-card hover:border-primary/50 hover:bg-primary/5"
+                      }`}
                     >
                       <span className="font-mono text-foreground/90">#{p.protocolo}</span>
                       <span className="shrink-0 text-[10px] text-muted-foreground">
@@ -3018,7 +3351,7 @@ export function ContactPanel({
           onClose={tagsModal.hide}
           contactId={contactId}
           current={contactTags}
-          canManageCatalog={perms.pode_editar_etiquetas}
+          canCreateCatalog={perms.pode_criar_etiquetas}
           onChanged={() => qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] })}
         />
         {contact && (
@@ -3059,56 +3392,6 @@ export function ContactPanel({
             }}
           />
         )}
-        <Modal
-          open={customerLinkModal.open}
-          onClose={customerLinkModal.hide}
-          title="Alterar cliente vinculado"
-        >
-          <div className="space-y-4">
-            <Field label="Cliente">
-              <Select
-                value={linkedCustomerId}
-                onChange={(event) => setLinkedCustomerId(event.target.value)}
-              >
-                <option value="">- Sem cliente -</option>
-                {sortByOptionLabel(customersPage ?? [], (item) => item.nome).map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nome}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="ghost"
-                onClick={customerLinkModal.hide}
-                disabled={savingCustomerLink}
-              >
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                disabled={savingCustomerLink}
-                onClick={() => {
-                  setSavingCustomerLink(true);
-                  void crmApi
-                    .updateContactCustomer(contactId, linkedCustomerId || null)
-                    .then(() => {
-                      void qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
-                      void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-                      void qc.invalidateQueries({ queryKey: ["operations", "history"] });
-                      customerLinkModal.hide();
-                      toast.success("Cliente vinculado atualizado");
-                    })
-                    .catch((error) => toast.error((error as Error).message))
-                    .finally(() => setSavingCustomerLink(false));
-                }}
-              >
-                Salvar
-              </Button>
-            </div>
-          </div>
-        </Modal>
       </aside>
       <ConfirmDialog
         open={confirmingBlock}
@@ -3152,14 +3435,14 @@ function TagsModal({
   onClose,
   contactId,
   current,
-  canManageCatalog,
+  canCreateCatalog,
   onChanged,
 }: {
   open: boolean;
   onClose: () => void;
   contactId: string;
   current: Tag[];
-  canManageCatalog: boolean;
+  canCreateCatalog: boolean;
   onChanged: () => void;
 }) {
   const qc = useQueryClient();
@@ -3239,11 +3522,11 @@ function TagsModal({
         )}
       </div>
 
-      {canManageCatalog && !creating ? (
+      {canCreateCatalog && !creating ? (
         <Button variant="ghost" size="sm" className="mt-3" onClick={() => setCreating(true)}>
           <Plus className="h-3 w-3" /> Nova etiqueta
         </Button>
-      ) : canManageCatalog && creating ? (
+      ) : canCreateCatalog && creating ? (
         <div className="mt-3 space-y-2 rounded-lg border border-border p-3">
           <Field label="Nome">
             <Input value={newName} onChange={(e) => setNewName(e.target.value)} />

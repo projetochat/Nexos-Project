@@ -1,28 +1,44 @@
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  assertDisposableVerifyDatabase,
+  assertDisposableVerifyRedis,
+} from "./verify-resource-safety.mjs";
+
+const testDatabase = assertDisposableVerifyDatabase({
+  databaseUrl: process.env.TRIXUS_TEST_DATABASE_URL,
+  nodeEnv: process.env.NODE_ENV,
+  confirmation: process.env.TRIXUS_VERIFY_DISPOSABLE_DATABASE,
+});
+const testRedis = assertDisposableVerifyRedis({
+  redisUrl: process.env.REDIS_URL,
+  nodeEnv: process.env.NODE_ENV,
+  confirmation: process.env.TRIXUS_VERIFY_DISPOSABLE_REDIS,
+});
 
 const env = {
   ...process.env,
-  DATABASE_URL:
-    process.env.DATABASE_URL ??
-    "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus?schema=public",
-  TRIXUS_TEST_DATABASE_URL:
-    process.env.TRIXUS_TEST_DATABASE_URL ??
-    "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus_1200?schema=public",
+  DATABASE_URL: testDatabase.databaseUrl,
+  TRIXUS_TEST_DATABASE_URL: testDatabase.databaseUrl,
+  REDIS_URL: testRedis.redisUrl,
   JWT_SECRET: process.env.JWT_SECRET ?? "local-access-secret-minimum-32-chars",
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? "local-refresh-secret-minimum-32-chars",
-  SEED_MODE: "test",
+  TRIXUS_PLATFORM_ADMIN_EMAIL: process.env.TRIXUS_PLATFORM_ADMIN_EMAIL ?? "platform@trixus.app",
+  TRIXUS_PLATFORM_ADMIN_PASSWORD: process.env.TRIXUS_PLATFORM_ADMIN_PASSWORD ?? "demo1234",
+  TRIXUS_ENVIRONMENT: "staging",
 };
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const bunAvailable = hasCommand(bun());
 const gates = bunAvailable
   ? [
+      ["repository:hygiene", bun(), ["run", "hygiene:check:tracked"]],
       ["frontend:typecheck", bunx(), ["tsc", "--noEmit"]],
       ["frontend:lint-baseline", bun(), ["run", "lint"]],
       ["frontend:test", bun(), ["run", "test:frontend"]],
       ["frontend:build", bun(), ["run", "build"]],
+      ["locations:catalog", bun(), ["run", "backend:locations:catalog:verify"]],
       ["inbox:legacy-runtime", bun(), ["run", "test:inbox-legacy-runtime"]],
       ["ticket:legacy-runtime", bun(), ["run", "test:ticket-legacy-runtime"]],
       ["campaign:legacy-runtime", bun(), ["run", "test:campaign-legacy-runtime"]],
@@ -52,19 +68,60 @@ const gates = bunAvailable
         ["run", "--cwd", "backend", "prisma:migrate:deploy"],
         { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
       ],
-      ["backend:test", bun(), ["run", "backend:test"]],
+      [
+        "backend:test-db:seed",
+        bun(),
+        ["run", "--cwd", "backend", "prisma:seed:test-fixtures"],
+        {
+          env: {
+            ...env,
+            DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL,
+            TRIXUS_TEST_FIXTURE_MODE: "demo",
+          },
+        },
+      ],
+      [
+        "backend:test",
+        bun(),
+        ["run", "backend:test"],
+        { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
+      ],
       ["redis:queue-smoke", bun(), ["backend/scripts/verify-redis-queue.mjs"]],
       ["security:xss", bun(), ["run", "test:security"]],
     ]
   : [
+      [
+        "repository:hygiene",
+        process.execPath,
+        ["scripts/check-repository-hygiene.mjs", "--tracked"],
+      ],
       ["frontend:typecheck", bin("tsc"), ["--noEmit"]],
       ["frontend:lint-baseline", process.execPath, ["scripts/check-eslint-baseline.mjs"]],
       [
         "frontend:test",
         bin("vitest"),
-        ["run", "--exclude", ".continuity/**", "--exclude", "tmp/**", "--exclude", "backend/**"],
+        [
+          "run",
+          "--exclude",
+          ".continuity/**",
+          "--exclude",
+          ".codex-backups/**",
+          "--exclude",
+          ".task-backups/**",
+          "--exclude",
+          "tmp/**",
+          "--exclude",
+          "backups/**",
+          "--exclude",
+          "backend/**",
+        ],
       ],
       ["frontend:build", bin("vite"), ["build"]],
+      [
+        "locations:catalog",
+        process.execPath,
+        ["backend/scripts/load-location-catalog.mjs", "--verify-only"],
+      ],
       ["inbox:legacy-runtime", process.execPath, ["scripts/check-inbox-legacy-runtime.mjs"]],
       ["ticket:legacy-runtime", process.execPath, ["scripts/check-ticket-legacy-runtime.mjs"]],
       ["campaign:legacy-runtime", process.execPath, ["scripts/check-campaign-legacy-runtime.mjs"]],
@@ -103,11 +160,34 @@ const gates = bunAvailable
       ["backend:build:copy-prisma", process.execPath, ["backend/scripts/copy-prisma-client.mjs"]],
       [
         "backend:test-db:migrate",
-        backendBin("prisma"),
-        ["migrate", "deploy", "--schema", "backend/prisma/schema.prisma"],
-        { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
+        process.execPath,
+        ["scripts/migrate-deploy-safe.mjs"],
+        {
+          cwd: resolve(root, "backend"),
+          env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL },
+        },
       ],
-      ["backend:test", backendBin("vitest"), ["run"], { cwd: resolve(root, "backend") }],
+      [
+        "backend:test-db:seed",
+        process.execPath,
+        ["backend/node_modules/tsx/dist/cli.mjs", "backend/prisma/test-fixtures.ts"],
+        {
+          env: {
+            ...env,
+            DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL,
+            TRIXUS_TEST_FIXTURE_MODE: "demo",
+          },
+        },
+      ],
+      [
+        "backend:test",
+        backendBin("vitest"),
+        ["run"],
+        {
+          cwd: resolve(root, "backend"),
+          env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL },
+        },
+      ],
       ["redis:queue-smoke", process.execPath, ["backend/scripts/verify-redis-queue.mjs"]],
       [
         "security:xss",

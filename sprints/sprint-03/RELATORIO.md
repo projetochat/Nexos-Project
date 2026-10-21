@@ -1,5 +1,9 @@
 # SPRINT 03 - RELATORIO FINAL
 
+> **HISTORICO — NAO EXECUTAR:** comandos Prisma deste relatorio registram um
+> ensaio antigo. Migracoes atuais usam exclusivamente o wrapper documentado em
+> `docs/PRODUCTION-AUTOMATION.md`.
+
 ## 1. Status
 
 PASS.

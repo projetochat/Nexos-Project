@@ -8,6 +8,7 @@ import type { ApiSchedule } from "@/lib/schedule-types";
 const api = vi.hoisted(() => ({
   list: vi.fn(),
   save: vi.fn(),
+  deletionImpact: vi.fn(),
   remove: vi.fn(),
 }));
 const realtime = vi.hoisted(() => ({
@@ -82,7 +83,7 @@ it("reuses the rich editor, custom variables and a saved attachment while editin
             conversationId="conversation-1"
             initialContent="Mensagem inicial"
             identifier="composer-1"
-            customFieldLabels={["Código do cliente"]}
+            customFields={[{ label: "Código do cliente", variableKey: "codigo_cliente" }]}
           />
         </QueryClientProvider>,
       ),
@@ -96,6 +97,11 @@ it("reuses the rich editor, custom variables and a saved attachment while editin
     const variables = document.querySelector<HTMLButtonElement>('[aria-label="Inserir variável"]')!;
     await React.act(async () => variables.click());
     expect(document.body.textContent).toContain("{{codigo_cliente}}");
+    expect(
+      document.querySelector(
+        '[aria-label*="Inserir variável {{codigo_cliente}}: Campo adicional: Código do cliente."]',
+      ),
+    ).not.toBeNull();
 
     const edit = document.querySelector<HTMLButtonElement>('[aria-label="Editar agendamento"]')!;
     await React.act(async () => edit.click());
@@ -187,6 +193,110 @@ it("refetches on schedule.updated and removes a schedule completed by another pr
     });
 
     expect(document.body.textContent).toContain("Nenhuma mensagem agendada para esta conversa.");
+  } finally {
+    await React.act(async () => root.unmount());
+    queryClient.clear();
+    host.remove();
+  }
+});
+
+it("revalidates the deletion impact and submits its snapshot token", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const scheduled: ApiSchedule = {
+    id: "schedule-1",
+    identifier: "message-1",
+    type: "message",
+    title: "Mensagem agendada",
+    destination: "Conversa atual",
+    conversationId: "conversation-1",
+    scheduledAt: "2099-10-01T15:00:00.000Z",
+    recurrence: "once",
+    delivery: true,
+    status: "pending",
+    connectionId: "connection-1",
+    departmentId: "",
+    content: "Mensagem que pode ser excluída",
+    recipientIds: [],
+    recipients: [],
+    recurrenceDays: [],
+    recurrenceLimit: "",
+    recurrenceUntil: "",
+    assignedMembershipId: "",
+    attachmentName: null,
+    attachment: null,
+  };
+  const impact = {
+    snapshotToken: "schedule-revision-1",
+    title: "Excluir mensagem agendada?",
+    prompt: "Confira o impacto antes de excluir.",
+    record: {
+      name: "Mensagem que pode ser excluída",
+      identifiers: [
+        { label: "Identificador", value: "composer-1" },
+        { label: "Data programada", value: "2099-10-01T15:00:00.000Z" },
+        { label: "Estado", value: "PENDING" },
+      ],
+    },
+    dependencies: [],
+    consequences: [{ id: "delete", text: "O agendamento será excluído.", irreversible: true }],
+    confirmation: { level: "standard" as const, confirmLabel: "Excluir" },
+  };
+  api.list.mockReset().mockResolvedValue([scheduled]);
+  api.deletionImpact.mockReset().mockResolvedValue(impact);
+  api.remove.mockReset().mockResolvedValue({ status: "deleted" });
+
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    await React.act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ScheduleMessageModal
+            open
+            onClose={() => {}}
+            conversationId="conversation-1"
+            initialContent=""
+            identifier="composer-1"
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(document.querySelector('[aria-label="Excluir agendamento"]')).not.toBeNull(),
+    );
+
+    await React.act(async () => {
+      document.querySelector<HTMLButtonElement>('[aria-label="Excluir agendamento"]')!.click();
+    });
+    await vi.waitFor(() => expect(api.deletionImpact).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(
+        "Deseja realmente excluir esta mensagem agendada?",
+      ),
+    );
+    const confirmationDialog = document.querySelector('[role="alertdialog"]');
+    expect(confirmationDialog?.className).toContain("max-w-sm");
+    expect(confirmationDialog?.className).not.toContain("max-w-xl");
+    expect(document.body.textContent).not.toContain("Confira o impacto");
+    expect(confirmationDialog?.textContent).not.toContain("Nome:");
+    expect(confirmationDialog?.textContent).not.toContain("Identificador:");
+    expect(confirmationDialog?.textContent).not.toContain("Data programada:");
+    expect(confirmationDialog?.textContent).not.toContain("Estado:");
+
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Excluir",
+    )!;
+    await React.act(async () => confirm.click());
+
+    await vi.waitFor(() => expect(api.deletionImpact).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(api.remove).toHaveBeenCalledOnce());
+    expect(api.remove).toHaveBeenCalledWith(
+      scheduled.id,
+      impact.snapshotToken,
+      expect.any(AbortSignal),
+    );
   } finally {
     await React.act(async () => root.unmount());
     queryClient.clear();

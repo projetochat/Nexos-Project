@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   Clock3,
   Eye,
+  LayoutGrid,
+  List,
   Pencil,
   Plus,
   Receipt,
@@ -26,6 +28,9 @@ import {
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import { DashboardDateInput } from "@/components/dashboard-filters";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { GridPaginationFooter } from "@/components/grid-pagination-footer";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { fmtDate } from "@/lib/format";
 import { DASHBOARD_PERIOD_OPTIONS, datesForOperationalPeriod } from "@/lib/operational-filters";
 import {
@@ -34,6 +39,7 @@ import {
   maskPlatformMoney,
   parsePlatformMoneyToCents,
 } from "@/lib/platform-field-formats";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   platformApi,
   type OperationalPeriod,
@@ -63,6 +69,9 @@ type FinanceApi = typeof platformApi & {
 };
 
 function FinanceiroAdmin() {
+  const isMobile = useIsMobile();
+  const [viewMode, setViewMode] = React.useState<"cards" | "list">("list");
+  const viewModeTouched = React.useRef(false);
   const [q, setQ] = React.useState("");
   const [invoiceNumber, setInvoiceNumber] = React.useState("");
   const [status, setStatus] = React.useState("");
@@ -76,7 +85,16 @@ function FinanceiroAdmin() {
   const [viewing, setViewing] = React.useState<PlatformInvoice | null>(null);
   const [editing, setEditing] = React.useState<PlatformInvoice | null>(null);
   const [removing, setRemoving] = React.useState<PlatformInvoice | null>(null);
-  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+
+  React.useEffect(() => {
+    if (isMobile) {
+      setViewMode("cards");
+      return;
+    }
+    if (!viewModeTouched.current) setViewMode("list");
+  }, [isMobile]);
 
   const load = React.useCallback(() => {
     setError(null);
@@ -130,23 +148,44 @@ function FinanceiroAdmin() {
     overdue: filtered.filter((row) => row.status === "OVERDUE"),
     void: filtered.filter((row) => row.status === "VOID"),
   };
-  const visibleIds = filtered.map((row) => row.id);
-  const allVisibleSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pagedRows = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const hasActiveFilters = Boolean(
+    q || invoiceNumber || status || period !== "all" || startDate || endDate,
+  );
 
-  function toggleAllVisible() {
-    setSelectedIds((current) =>
-      allVisibleSelected
-        ? current.filter((id) => !visibleIds.includes(id))
-        : [...new Set([...current, ...visibleIds])],
-    );
+  function clearFilters() {
+    setQ("");
+    setInvoiceNumber("");
+    setStatus("");
+    setPeriod("all");
+    setStartDate("");
+    setEndDate("");
+    setPage(1);
   }
+
+  React.useEffect(() => setPage(1), [q, invoiceNumber, status, startDate, endDate, pageSize]);
+  React.useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages]);
+
+  const paginationFooter = (
+    <GridPaginationFooter
+      visible={pagedRows.length}
+      total={filtered.length}
+      page={page}
+      totalPages={totalPages}
+      pageSize={pageSize}
+      onPage={(nextPage) => setPage(nextPage)}
+      onPageSize={(nextPageSize) => setPageSize(nextPageSize)}
+      ariaLabelPrefix="faturas"
+    />
+  );
 
   return (
     <AdminContainer className="max-w-[112rem]">
       <SectionHeader
         title="Financeiro"
         subtitle="Gestão de faturas, pagamentos e recebimentos da plataforma."
+        subtitleClassName="hidden md:block"
         actions={
           <Button
             variant="primary"
@@ -161,7 +200,12 @@ function FinanceiroAdmin() {
       />
 
       <Card>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
+        <div
+          className={`grid gap-4 md:grid-cols-2 ${
+            hasActiveFilters ? "xl:grid-cols-[repeat(7,minmax(0,1fr))_auto]" : "xl:grid-cols-7"
+          }`}
+          data-platform-filter-grid
+        >
           <div className="xl:col-span-2">
             <Field label="Busca" asLabel={false}>
               <SearchInput
@@ -171,186 +215,265 @@ function FinanceiroAdmin() {
               />
             </Field>
           </div>
-          <Field label="Nº da Fatura">
-            <Input
-              value={invoiceNumber}
-              onChange={(event) => setInvoiceNumber(event.target.value)}
-              placeholder="Ex.: 12345"
-            />
-          </Field>
-          <Field label="Situação">
-            <Select value={status} onChange={(event) => setStatus(event.target.value)}>
-              <option value="">Todas</option>
-              <option value="OPEN">Em aberto</option>
-              <option value="PAID">Paga</option>
-              <option value="OVERDUE">Vencida</option>
-              <option value="VOID">Cancelada</option>
-              <option value="RELEASED">Liberada</option>
-            </Select>
-          </Field>
-          <Field label="Período">
-            <Select
-              value={period}
-              onChange={(event) => {
-                const nextPeriod = event.target.value as FinancePeriod;
-                setPeriod(nextPeriod);
-                if (nextPeriod === "all") {
-                  setStartDate("");
-                  setEndDate("");
-                } else if (nextPeriod !== "custom") {
-                  const dates = datesForOperationalPeriod(nextPeriod);
-                  setStartDate(dates.start);
-                  setEndDate(dates.end);
-                }
-              }}
-            >
-              <option value="all">Todos</option>
-              {DASHBOARD_PERIOD_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Dt. Inicial">
-            <DashboardDateInput
-              value={startDate}
-              readOnly={period !== "custom"}
-              onChange={setStartDate}
-            />
-          </Field>
-          <Field label="Dt. Final">
-            <DashboardDateInput
-              value={endDate}
-              readOnly={period !== "custom"}
-              onChange={setEndDate}
-            />
-          </Field>
-        </div>
-      </Card>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric label="Total de faturas" rows={metrics.total} icon={Receipt} />
-        <Metric label="Em aberto" rows={metrics.open} icon={Clock3} />
-        <Metric label="Pagas" rows={metrics.paid} icon={CheckCircle2} />
-        <Metric label="Vencidas" rows={metrics.overdue} icon={AlertTriangle} />
-        <Metric label="Canceladas" rows={metrics.void} icon={Ban} />
-      </div>
-
-      <Card className="mt-4">
-        {error && <div className="mb-4 text-sm text-destructive">{error}</div>}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1260px] table-fixed text-sm">
-            <colgroup>
-              <col className="w-[3%]" />
-              <col className="w-[11%]" />
-              <col className="w-[14%]" />
-              <col className="w-[7%]" />
-              <col className="w-[9%]" />
-              <col className="w-[9%]" />
-              <col className="w-[9%]" />
-              <col className="w-[9%]" />
-              <col className="w-[9%]" />
-              <col className="w-[9%]" />
-              <col className="w-[11%]" />
-            </colgroup>
-            <thead>
-              <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                <th className="pb-2 pr-2">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={toggleAllVisible}
-                    aria-label="Selecionar todas as faturas visíveis"
-                  />
-                </th>
-                <th className="px-2 pb-2">Número</th>
-                <th className="px-2 pb-2">Cliente</th>
-                <th className="px-2 pb-2">Plano</th>
-                <th className="px-2 pb-2">Vencimento</th>
-                <th className="px-2 pb-2 text-right">Vlr. Bruto</th>
-                <th className="px-2 pb-2 text-center leading-tight">Possui Cupom</th>
-                <th className="px-2 pb-2 text-right">Vlr. Líquido</th>
-                <th className="whitespace-nowrap px-2 pb-2 text-right">Vlr. Pago</th>
-                <th className="whitespace-nowrap px-2 pb-2">Status</th>
-                <th className="px-2 pb-2 text-center">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((row) => (
-                <tr key={row.id} className="border-b border-border/60 hover:bg-surface-1">
-                  <td className="py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(row.id)}
-                      onChange={() =>
-                        setSelectedIds((current) =>
-                          current.includes(row.id)
-                            ? current.filter((id) => id !== row.id)
-                            : [...current, row.id],
-                        )
-                      }
-                      aria-label={`Selecionar fatura ${row.number}`}
-                    />
-                  </td>
-                  <td className="truncate px-2 py-3 font-mono text-xs" title={row.number}>
-                    {row.number}
-                  </td>
-                  <td className="min-w-0 px-2 py-3">
-                    <div className="truncate font-medium" title={invoiceClientName(row)}>
-                      {invoiceClientName(row)}
-                    </div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {invoiceClientLocation(row)}
-                    </div>
-                  </td>
-                  <td className="truncate px-2 py-3 text-xs text-muted-foreground">
-                    {row.subscription?.plan?.name ?? "Não informado"}
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-3 text-xs">
-                    {fmtDate(new Date(row.dueAt).getTime())}
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-3 text-right font-medium">
-                    {formatPlatformCurrency(row.subtotalCents)}
-                  </td>
-                  <td className="px-2 py-3 text-center">{row.discountCents > 0 ? "Sim" : "Não"}</td>
-                  <td className="whitespace-nowrap px-2 py-3 text-right font-medium">
-                    {formatPlatformCurrency(row.totalCents)}
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-3 text-right font-medium">
-                    {formatPlatformCurrency((row as FinanceInvoice).paidCents ?? 0)}
-                  </td>
-                  <td className="whitespace-nowrap px-2 py-3">
-                    <InvoiceStatus status={row.status} />
-                  </td>
-                  <td className="px-2 py-3 text-center">
-                    <div className="flex justify-center gap-1.5">
-                      <InvoiceAction label="Visualizar" onClick={() => setViewing(row)}>
-                        <Eye className="h-4 w-4" />
-                      </InvoiceAction>
-                      <InvoiceAction label="Editar" onClick={() => setEditing(row)}>
-                        <Pencil className="h-4 w-4" />
-                      </InvoiceAction>
-                      <InvoiceAction
-                        label="Excluir"
-                        disabled={row.status === "VOID"}
-                        onClick={() => setRemoving(row)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </InvoiceAction>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!filtered.length && (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              Nenhuma fatura encontrada.
+          <div className="hidden md:block">
+            <Field label="Nº da Fatura">
+              <Input
+                value={invoiceNumber}
+                onChange={(event) => setInvoiceNumber(event.target.value)}
+                placeholder="Ex.: 12345"
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:contents">
+            <Field label="Situação">
+              <Select value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="">Todas</option>
+                <option value="OPEN">Em aberto</option>
+                <option value="PAID">Paga</option>
+                <option value="OVERDUE">Vencida</option>
+                <option value="VOID">Cancelada</option>
+                <option value="RELEASED">Liberada</option>
+              </Select>
+            </Field>
+            <Field label="Período">
+              <Select
+                value={period}
+                onChange={(event) => {
+                  const nextPeriod = event.target.value as FinancePeriod;
+                  setPeriod(nextPeriod);
+                  if (nextPeriod === "all") {
+                    setStartDate("");
+                    setEndDate("");
+                  } else if (nextPeriod !== "custom") {
+                    const dates = datesForOperationalPeriod(nextPeriod);
+                    setStartDate(dates.start);
+                    setEndDate(dates.end);
+                  }
+                }}
+              >
+                <option value="all">Todos</option>
+                {DASHBOARD_PERIOD_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:contents">
+            <Field label="Dt. Inicial">
+              <DashboardDateInput
+                value={startDate}
+                readOnly={period !== "custom"}
+                mobilePlaceholder={period === "all" ? "dd/mm/aaaa" : undefined}
+                onChange={setStartDate}
+              />
+            </Field>
+            <Field label="Dt. Final">
+              <DashboardDateInput
+                value={endDate}
+                readOnly={period !== "custom"}
+                mobilePlaceholder={period === "all" ? "dd/mm/aaaa" : undefined}
+                onChange={setEndDate}
+              />
+            </Field>
+          </div>
+          {hasActiveFilters && (
+            <div className="col-span-2 flex justify-end xl:col-span-1 xl:items-end">
+              <ClearFiltersButton onClick={clearFilters} />
             </div>
           )}
         </div>
       </Card>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <Metric label="Total de faturas" rows={metrics.total} icon={Receipt} tone="primary" />
+        <Metric label="Em aberto" rows={metrics.open} icon={Clock3} tone="info" />
+        <Metric label="Pagas" rows={metrics.paid} icon={CheckCircle2} tone="success" />
+        <Metric label="Vencidas" rows={metrics.overdue} icon={AlertTriangle} tone="warning" />
+        <Metric label="Canceladas" rows={metrics.void} icon={Ban} tone="destructive" />
+      </div>
+
+      <div className="mt-3 hidden justify-end gap-1 md:flex" aria-label="Visualização das faturas">
+        <Button
+          type="button"
+          variant={viewMode === "cards" ? "primary" : "secondary"}
+          size="icon"
+          aria-label="Visualizar faturas em cards"
+          aria-pressed={viewMode === "cards"}
+          onClick={() => {
+            viewModeTouched.current = true;
+            setViewMode("cards");
+          }}
+        >
+          <LayoutGrid className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant={viewMode === "list" ? "primary" : "secondary"}
+          size="icon"
+          aria-label="Visualizar faturas em lista"
+          aria-pressed={viewMode === "list"}
+          onClick={() => {
+            viewModeTouched.current = true;
+            setViewMode("list");
+          }}
+        >
+          <List className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {error && <div className="mt-4 text-sm text-destructive">{error}</div>}
+      <div
+        data-platform-card-shell
+        className={
+          viewMode === "cards"
+            ? "mt-4 md:overflow-hidden md:rounded-xl md:border md:border-border md:bg-card md:shadow-card"
+            : "hidden"
+        }
+      >
+        <div data-platform-mobile-list className="grid gap-3 sm:grid-cols-2 md:p-4 xl:grid-cols-3">
+          {pagedRows.map((row) => (
+            <article key={row.id} className="rounded-xl border border-border bg-surface-1 p-4">
+              <div className="flex items-start">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="truncate font-semibold">{invoiceClientName(row)}</h2>
+                      <p className="truncate font-mono text-xs text-muted-foreground">
+                        {row.number}
+                      </p>
+                    </div>
+                    <InvoiceStatus status={row.status} />
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-border/70 py-3 text-sm">
+                    <MobileInvoiceDetail
+                      label="Plano"
+                      value={row.subscription?.plan?.name ?? "Não informado"}
+                    />
+                    <MobileInvoiceDetail
+                      label="Vencimento"
+                      value={formatInvoiceDueDate(row.dueAt)}
+                    />
+                    <MobileInvoiceDetail
+                      label="Valor bruto"
+                      value={formatPlatformCurrency(row.subtotalCents)}
+                    />
+                    <MobileInvoiceDetail
+                      label="Desconto"
+                      value={formatPlatformCurrency(row.discountCents)}
+                    />
+                    <MobileInvoiceDetail
+                      label="Valor líquido"
+                      value={formatPlatformCurrency(row.totalCents)}
+                    />
+                    <MobileInvoiceDetail
+                      label="Valor pago"
+                      value={formatPlatformCurrency((row as FinanceInvoice).paidCents ?? 0)}
+                    />
+                  </dl>
+                  <InvoiceActions
+                    placement="card"
+                    row={row}
+                    onView={() => setViewing(row)}
+                    onEdit={() => setEditing(row)}
+                    onRemove={() => setRemoving(row)}
+                  />
+                </div>
+              </div>
+            </article>
+          ))}
+          {!filtered.length && (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              Nenhuma fatura encontrada.
+            </div>
+          )}
+        </div>
+        <div className="hidden md:block" data-platform-card-pagination>
+          {paginationFooter}
+        </div>
+      </div>
+      <div data-platform-desktop-table className={viewMode === "list" ? "mt-4" : "hidden"}>
+        <Card className="overflow-hidden p-0" padding={false}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1260px] table-fixed text-sm">
+              <colgroup>
+                <col className="w-[14%]" />
+                <col className="w-[13%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+                <col className="w-[12%]" />
+                <col className="w-[11%]" />
+              </colgroup>
+              <thead className="bg-surface-2">
+                <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="px-4 py-3">Número</th>
+                  <th className="px-2 py-3">Cliente</th>
+                  <th className="px-2 py-3">Plano</th>
+                  <th className="px-2 py-3">Vencimento</th>
+                  <th className="px-2 py-3 text-right">Vlr. Bruto</th>
+                  <th className="px-2 py-3 text-right">Vlr. Líquido</th>
+                  <th className="whitespace-nowrap px-2 py-3 text-right">Vlr. Pago</th>
+                  <th className="whitespace-nowrap px-2 py-3 text-center">Status</th>
+                  <th className="px-2 py-3 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedRows.map((row) => (
+                  <tr key={row.id} className="border-b border-border/60 hover:bg-surface-1">
+                    <td className="truncate px-4 py-3 font-mono" title={row.number}>
+                      {row.number}
+                    </td>
+                    <td className="min-w-0 px-2 py-3">
+                      <div className="truncate font-medium" title={invoiceClientName(row)}>
+                        {invoiceClientName(row)}
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {invoiceClientLocation(row)}
+                      </div>
+                    </td>
+                    <td className="truncate px-2 py-3 text-muted-foreground">
+                      {row.subscription?.plan?.name ?? "Não informado"}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-3">
+                      {formatInvoiceDueDate(row.dueAt)}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-3 text-right font-medium">
+                      {formatPlatformCurrency(row.subtotalCents)}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-3 text-right font-medium">
+                      {formatPlatformCurrency(row.totalCents)}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-3 text-right font-medium">
+                      {formatPlatformCurrency((row as FinanceInvoice).paidCents ?? 0)}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-3 text-center">
+                      <InvoiceStatus status={row.status} />
+                    </td>
+                    <td className="px-2 py-3 text-center">
+                      <InvoiceActions
+                        row={row}
+                        onView={() => setViewing(row)}
+                        onEdit={() => setEditing(row)}
+                        onRemove={() => setRemoving(row)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!filtered.length && (
+              <div className="py-12 text-center text-sm text-muted-foreground">
+                Nenhuma fatura encontrada.
+              </div>
+            )}
+          </div>
+          {paginationFooter}
+        </Card>
+      </div>
 
       <InvoiceForm
         open={creating}
@@ -431,6 +554,7 @@ function InvoiceForm({
   const [referenceDate, setReferenceDate] = React.useState("");
   const [reference, setReference] = React.useState("");
   const [notes, setNotes] = React.useState("");
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [saving, setSaving] = React.useState(false);
   const availableSubscriptions = subscriptions.filter((rawItem) => {
     const item = rawItem as unknown as FinanceSubscription;
@@ -439,6 +563,7 @@ function InvoiceForm({
 
   React.useEffect(() => {
     if (!open) return;
+    setErrors({});
     const first = initial?.subscription
       ? subscriptions.find((item) => item.id === initial.subscription?.id)
       : subscriptions[0];
@@ -469,6 +594,19 @@ function InvoiceForm({
   const paidCents = parsePlatformMoneyToCents(paid);
   const totalCents = Math.max(0, subtotalCents - discountCents);
 
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if (tenantId) delete next.tenantId;
+      if (subscriptionId) delete next.subscriptionId;
+      if (dueAt) delete next.dueAt;
+      if (referenceDate) delete next.referenceDate;
+      if (reference.trim()) delete next.reference;
+      if (subtotalCents > 0) delete next.amount;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [dueAt, reference, referenceDate, subscriptionId, subtotalCents, tenantId]);
+
   function changeTenant(nextTenantId: string) {
     const firstSubscription = subscriptions.find((rawItem) => {
       const item = rawItem as unknown as FinanceSubscription;
@@ -480,17 +618,36 @@ function InvoiceForm({
 
   async function save() {
     const subscription = subscriptions.find((item) => item.id === subscriptionId);
-    if (
-      !subscription ||
-      !dueAt ||
-      !referenceDate ||
-      !reference.trim() ||
-      subtotalCents <= 0 ||
-      discountCents < 0 ||
-      discountCents > subtotalCents ||
-      paidCents > totalCents
-    ) {
-      toast.error("Informe cliente, plano, valores e vencimento válidos.");
+    const nextErrors: Record<string, boolean> = {
+      ...(!tenantId ? { tenantId: true } : {}),
+      ...(!subscription ? { subscriptionId: true } : {}),
+      ...(!dueAt ? { dueAt: true } : {}),
+      ...(!referenceDate ? { referenceDate: true } : {}),
+      ...(!reference.trim() ? { reference: true } : {}),
+    };
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors);
+      showRequiredFieldsToast(
+        [
+          ["tenantId", "Cliente"],
+          ["subscriptionId", "Plano"],
+          ["dueAt", "Data de vencimento"],
+          ["referenceDate", "Data de referência"],
+          ["reference", "Referência"],
+        ]
+          .filter(([key]) => nextErrors[key])
+          .map(([, label]) => label),
+      );
+      return;
+    }
+    if (!subscription) return;
+    if (subtotalCents <= 0) {
+      setErrors({ amount: true });
+      toast.error("Informe um valor original válido.");
+      return;
+    }
+    if (discountCents < 0 || discountCents > subtotalCents || paidCents > totalCents) {
+      toast.error("Informe valores válidos para desconto e pagamento.");
       return;
     }
 
@@ -535,10 +692,15 @@ function InvoiceForm({
       size="xl"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="primary" disabled={saving} onClick={save}>
+          <Button
+            variant="primary"
+            className={initial ? "save-action-button" : undefined}
+            disabled={saving}
+            onClick={save}
+          >
             {saving ? "Salvando..." : initial ? "Salvar" : "Criar Fatura"}
           </Button>
         </>
@@ -550,6 +712,8 @@ function InvoiceForm({
             disabled={Boolean(initial)}
             value={tenantId}
             onChange={(event) => changeTenant(event.target.value)}
+            className={requiredFieldClassName(Boolean(errors.tenantId))}
+            aria-invalid={Boolean(errors.tenantId)}
           >
             {!clients.length && <option value="">Nenhum cliente disponível</option>}
             {clients.map((client) => (
@@ -564,6 +728,8 @@ function InvoiceForm({
             disabled={Boolean(initial)}
             value={subscriptionId}
             onChange={(event) => setSubscriptionId(event.target.value)}
+            className={requiredFieldClassName(Boolean(errors.subscriptionId))}
+            aria-invalid={Boolean(errors.subscriptionId)}
           >
             {!availableSubscriptions.length && <option value="">Nenhum plano disponível</option>}
             {availableSubscriptions.map((item) => (
@@ -574,10 +740,24 @@ function InvoiceForm({
           </Select>
         </Field>
         <Field label="Data de vencimento *">
-          <DashboardDateInput value={dueAt} readOnly={false} onChange={setDueAt} />
+          <div
+            aria-invalid={Boolean(errors.dueAt)}
+            className={`rounded-lg border ${errors.dueAt ? `${requiredFieldClassName(true)} [&_input]:!border-transparent` : "border-transparent"}`}
+          >
+            <DashboardDateInput value={dueAt} readOnly={false} onChange={setDueAt} />
+          </div>
         </Field>
         <Field label="Data de referência *">
-          <DashboardDateInput value={referenceDate} readOnly={false} onChange={setReferenceDate} />
+          <div
+            aria-invalid={Boolean(errors.referenceDate)}
+            className={`rounded-lg border ${errors.referenceDate ? `${requiredFieldClassName(true)} [&_input]:!border-transparent` : "border-transparent"}`}
+          >
+            <DashboardDateInput
+              value={referenceDate}
+              readOnly={false}
+              onChange={setReferenceDate}
+            />
+          </div>
         </Field>
         <div className="sm:col-span-2">
           <Field label="Referência *">
@@ -585,6 +765,8 @@ function InvoiceForm({
               value={reference}
               onChange={(event) => setReference(event.target.value)}
               placeholder="Ex.: 10/2026, SET/2026..."
+              className={requiredFieldClassName(Boolean(errors.reference))}
+              aria-invalid={Boolean(errors.reference)}
             />
           </Field>
         </div>
@@ -597,7 +779,7 @@ function InvoiceForm({
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <Field label="Valor original (R$) *">
-            <CurrencyInput value={amount} onChange={setAmount} />
+            <CurrencyInput value={amount} onChange={setAmount} invalid={Boolean(errors.amount)} />
           </Field>
           <Field label="Tem cupom de desconto? *">
             <Select
@@ -666,7 +848,7 @@ function InvoiceView({
           <ReadOnly label="Nº da Fatura" value={invoice.number} />
           <ReadOnly label="Cliente" value={invoiceClientName(invoice)} />
           <ReadOnly label="Plano" value={invoice.subscription?.plan?.name ?? "Não informado"} />
-          <ReadOnly label="Vencimento" value={fmtDate(new Date(invoice.dueAt).getTime())} />
+          <ReadOnly label="Vencimento" value={formatInvoiceDueDate(invoice.dueAt)} />
           <ReadOnly label="Valor bruto" value={formatPlatformCurrency(invoice.subtotalCents)} />
           <ReadOnly label="Desconto" value={formatPlatformCurrency(invoice.discountCents)} />
           <ReadOnly label="Valor líquido" value={formatPlatformCurrency(invoice.totalCents)} />
@@ -724,13 +906,18 @@ function CurrencyInput({
   value,
   onChange,
   disabled = false,
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  invalid?: boolean;
 }) {
   return (
-    <div className="flex min-h-10 overflow-hidden rounded-lg border border-border bg-surface-1 focus-within:border-primary">
+    <div
+      aria-invalid={invalid}
+      className={`flex min-h-10 overflow-hidden rounded-lg border border-border bg-surface-1 focus-within:border-primary ${requiredFieldClassName(invalid)}`}
+    >
       <span className="flex items-center border-r border-border px-3 text-sm text-muted-foreground">
         R$
       </span>
@@ -742,6 +929,49 @@ function CurrencyInput({
         onBlur={() => onChange(formatPlatformMoneyInput(parsePlatformMoneyToCents(value)))}
         className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
       />
+    </div>
+  );
+}
+
+function InvoiceActions({
+  placement = "table",
+  row,
+  onView,
+  onEdit,
+  onRemove,
+}: {
+  placement?: "card" | "table";
+  row: PlatformInvoice;
+  onView: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div
+      className={
+        placement === "card"
+          ? "mt-3 flex justify-end gap-1.5"
+          : "mt-3 flex min-w-max justify-end gap-1.5 md:mt-0 md:justify-center"
+      }
+    >
+      <InvoiceAction label="Visualizar" onClick={onView}>
+        <Eye className="h-4 w-4" />
+      </InvoiceAction>
+      <InvoiceAction label="Editar" onClick={onEdit}>
+        <Pencil className="h-4 w-4" />
+      </InvoiceAction>
+      <InvoiceAction label="Excluir" disabled={row.status === "VOID"} onClick={onRemove}>
+        <Trash2 className="h-4 w-4" />
+      </InvoiceAction>
+    </div>
+  );
+}
+
+function MobileInvoiceDetail({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate font-medium">{value}</dd>
     </div>
   );
 }
@@ -762,7 +992,7 @@ function InvoiceAction({
       type="button"
       title={label}
       aria-label={label}
-      className={`flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-1 text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-35 ${actionClass}`}
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-1 text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-35 ${actionClass}`}
       {...props}
     >
       {children}
@@ -774,20 +1004,31 @@ function Metric({
   label,
   rows,
   icon: Icon,
+  tone,
 }: {
   label: string;
   rows: PlatformInvoice[];
   icon: React.ComponentType<{ className?: string }>;
+  tone: "primary" | "info" | "success" | "warning" | "destructive";
 }) {
   const total = rows.reduce((sum, item) => sum + item.totalCents, 0);
+  const tones = {
+    primary: "bg-primary/10 text-primary",
+    info: "bg-info/15 text-info",
+    success: "bg-success/15 text-success",
+    warning: "bg-warning/15 text-warning",
+    destructive: "bg-destructive/10 text-destructive",
+  } as const;
   return (
-    <Card className="flex items-start justify-between gap-3">
-      <div>
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">{label}</div>
-        <div className="mt-2 font-mono text-2xl font-semibold">{rows.length}</div>
-        <div className="text-xs text-muted-foreground">{formatPlatformCurrency(total)}</div>
+    <Card className="flex min-h-28 flex-col">
+      <div className="w-full text-xs uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="mt-auto flex items-center justify-between gap-3 pt-2">
+        <div className="font-mono text-2xl font-semibold">{rows.length}</div>
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${tones[tone]}`}>
+          <Icon className="h-4 w-4" />
+        </span>
       </div>
-      <Icon className="h-5 w-5 text-muted-foreground" />
+      <div className="text-xs text-muted-foreground">{formatPlatformCurrency(total)}</div>
     </Card>
   );
 }
@@ -825,6 +1066,20 @@ function invoiceStatusLabel(status: string) {
       } as Record<string, string>
     )[status] ?? status
   );
+}
+
+function formatInvoiceDueDate(value: string) {
+  const isoDate = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 }
 
 function invoiceClientName(invoice: PlatformInvoice) {

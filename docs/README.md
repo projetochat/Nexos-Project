@@ -1,5 +1,7 @@
 # Trixus - Documentacao Tecnica
 
+> **AVISO DE HISTORICIDADE — auditoria de 2026-10-05:** este arquivo acumula baselines antigas e nao representa necessariamente o comportamento vigente. A fonte central indicada no `AGENTS.md` e as decisoes aprovadas D-003 a D-010 prevalecem. Nao execute comandos, use credenciais de exemplo ou conclua que uma funcionalidade esta pronta sem revalidacao. Consulte [docs/current](./current/README.md), a [matriz completa](./current/DOCUMENT_INVENTORY_2026-10-05.md) e o [mapa de movimentacao](./current/MOVEMENT_MAP_2026-10-05.md).
+
 Esta documentacao descreve a baseline da Sprint 00. O frontend atual e a fonte da verdade para telas, fluxos e comportamento. A arquitetura futura aprovada e a fonte da verdade para backend e infraestrutura.
 
 ## Estado atual do MVP
@@ -198,10 +200,13 @@ Scripts adicionais:
 | `bun run backend:test`                          | Executa testes e2e da API             |
 | `bun run backend:prisma:generate`               | Gera Prisma Client                    |
 | `bun run backend:prisma:migrate -- --name init` | Aplica migrations locais              |
-| `bun run backend:prisma:seed`                   | Popula seed minimo de homologacao     |
+| `bun run backend:prisma:seed`                   | Garante somente o Platform Admin      |
 | `bun run test:security`                         | Valida sanitizacao XSS do editor rico |
 
-Credenciais locais do seed minimo:
+Politica atual de seed: [`SEED_POLICY.md`](SEED_POLICY.md). Os registros de Sprint abaixo sao
+historicos e foram substituidos pela D-011 em 08/10/2026.
+
+Credenciais locais do antigo seed minimo:
 
 Sprint 08.01: dados demo completos sao opt-in. Use `SEED_DEMO_DATA=true` antes de `bun run backend:prisma:seed` quando precisar de CRM/conversas demo locais.
 

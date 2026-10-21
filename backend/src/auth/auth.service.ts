@@ -1,4 +1,4 @@
-import { effectivePermissions } from "./effective-permissions";
+import { moduleAwarePermissions } from "./effective-permissions";
 import {
   ForbiddenException,
   HttpException,
@@ -123,6 +123,12 @@ export class AuthService {
           name: user.name,
           avatarUrl: user.avatarUrl,
           keepSidebarCollapsed: user.keepSidebarCollapsed,
+          chatBubbleColor: user.chatBubbleColor,
+          chatBubbleTextColor: user.chatBubbleTextColor,
+          customerBubbleColor: user.customerBubbleColor,
+          customerBubbleTextColor: user.customerBubbleTextColor,
+          chatBackgroundColor: user.chatBackgroundColor,
+          chatBackgroundMode: user.chatBackgroundMode,
           roleId: "",
           roleKey: "platform_admin",
           platformRole: user.platformRole,
@@ -267,7 +273,12 @@ export class AuthService {
     user: LoginUserWithMemberships,
     membership: LoginUserWithMemberships["memberships"][number],
   ) {
-    const permissions = effectivePermissions(membership.role);
+    const permissions = await moduleAwarePermissions(
+      this.prisma,
+      membership.tenantId,
+      membership.tenant.featureOverrides,
+      membership.role,
+    );
     const pendingInitialPassword = await this.prisma.userInvitation.findFirst({
       where: {
         tenantId: membership.tenantId,
@@ -337,6 +348,12 @@ export class AuthService {
         name: membershipDisplayName(membership, user.name),
         avatarUrl: user.avatarUrl,
         keepSidebarCollapsed: user.keepSidebarCollapsed,
+        chatBubbleColor: user.chatBubbleColor,
+        chatBubbleTextColor: user.chatBubbleTextColor,
+        customerBubbleColor: user.customerBubbleColor,
+        customerBubbleTextColor: user.customerBubbleTextColor,
+        chatBackgroundColor: user.chatBackgroundColor,
+        chatBackgroundMode: user.chatBackgroundMode,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         platformRole: user.platformRole,
@@ -513,15 +530,21 @@ export class AuthService {
     const tokenHash = hashToken(dto.token);
     const invitation = await this.prisma.userInvitation.findFirst({
       where: { tokenHash, status: "PENDING", expiresAt: { gt: new Date() } },
-      include: { tenant: true, role: true },
+      include: { tenant: true, role: true, contact: true },
     });
     if (!invitation) throw new UnauthorizedException("Convite inválido ou expirado.");
+    if (
+      invitation.contactId &&
+      (!invitation.contact || invitation.contact.archivedAt || invitation.contact.active === false)
+    ) {
+      throw new UnauthorizedException("Convite de contato não está mais ativo.");
+    }
     const requestedName = dto.name?.trim();
     const tenantAdministratorName =
       invitation.role.key === "tenant_admin"
         ? invitation.tenant.responsibleName?.trim()
         : undefined;
-    const invitationName = requestedName || tenantAdministratorName;
+    const invitationName = invitation.contact?.name || requestedName || tenantAdministratorName;
 
     await this.prisma.$transaction(async (tx) => {
       let user = await tx.user.findUnique({ where: { email: invitation.email } });
@@ -539,6 +562,16 @@ export class AuthService {
             passwordHash: await hash(dto.password, 12),
           },
         });
+      }
+      if (invitation.contactId) {
+        const existingMembership = await tx.tenantMembership.findUnique({
+          where: { tenantId_userId: { tenantId: invitation.tenantId, userId: user.id } },
+        });
+        if (existingMembership && existingMembership.roleId !== invitation.roleId) {
+          throw new UnauthorizedException(
+            "Este e-mail já possui outro acesso nesta organização. Solicite o vínculo explícito ao administrador.",
+          );
+        }
       }
       const membership = await tx.tenantMembership.upsert({
         where: {
@@ -566,6 +599,20 @@ export class AuthService {
           skipDuplicates: true,
         });
       }
+      if (invitation.contactId) {
+        const linkedContact = await tx.contact.updateMany({
+          where: {
+            id: invitation.contactId,
+            tenantId: invitation.tenantId,
+            archivedAt: null,
+            active: true,
+          },
+          data: { portalMembershipId: membership.id, portalAccessActive: true },
+        });
+        if (linkedContact.count !== 1) {
+          throw new UnauthorizedException("Convite de contato não está mais ativo.");
+        }
+      }
       await tx.userInvitation.update({
         where: { id: invitation.id },
         data: { status: "ACCEPTED", acceptedAt: new Date() },
@@ -577,6 +624,49 @@ export class AuthService {
       password: dto.password,
       tenantSlug: invitation.tenant.slug,
     });
+  }
+
+  async invitationPreview(token: string) {
+    const invitation = await this.prisma.userInvitation.findFirst({
+      where: {
+        tokenHash: hashToken(token),
+        status: "PENDING",
+        expiresAt: { gt: new Date() },
+      },
+      include: {
+        tenant: { select: { id: true, name: true, slug: true } },
+        role: { select: { key: true, name: true } },
+        contact: {
+          include: {
+            customer: { select: { id: true, name: true } },
+            customerDepartment: { select: { id: true, name: true } },
+            customerBranch: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!invitation) throw new UnauthorizedException("Convite inválido ou expirado.");
+    if (
+      invitation.contactId &&
+      (!invitation.contact || invitation.contact.archivedAt || invitation.contact.active === false)
+    ) {
+      throw new UnauthorizedException("Convite de contato não está mais ativo.");
+    }
+    return {
+      email: invitation.email,
+      expiresAt: invitation.expiresAt,
+      tenant: invitation.tenant,
+      profile: invitation.contact?.customerAccessProfile ?? invitation.role.name,
+      contact: invitation.contact
+        ? {
+            id: invitation.contact.id,
+            name: invitation.contact.name,
+            customer: invitation.contact.customer,
+            department: invitation.contact.customerDepartment,
+            branch: invitation.contact.customerBranch,
+          }
+        : null,
+    };
   }
 
   async completeRequiredPasswordChange(dto: {
@@ -711,7 +801,12 @@ export class AuthService {
         role: { include: { permissions: { select: { permissionId: true } } } },
       },
     });
-    const permissions = effectivePermissions(membership.role);
+    const permissions = await moduleAwarePermissions(
+      this.prisma,
+      membership.tenantId,
+      membership.tenant.featureOverrides,
+      membership.role,
+    );
     const sid = await this.createSession({
       userId: membership.userId,
       tenantId: membership.tenantId,
@@ -745,6 +840,12 @@ export class AuthService {
         name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
         keepSidebarCollapsed: membership.user.keepSidebarCollapsed,
+        chatBubbleColor: membership.user.chatBubbleColor,
+        chatBubbleTextColor: membership.user.chatBubbleTextColor,
+        customerBubbleColor: membership.user.customerBubbleColor,
+        customerBubbleTextColor: membership.user.customerBubbleTextColor,
+        chatBackgroundColor: membership.user.chatBackgroundColor,
+        chatBackgroundMode: membership.user.chatBackgroundMode,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         platformRole: membership.user.platformRole,
@@ -779,6 +880,12 @@ export class AuthService {
           name: user.name,
           avatarUrl: user.avatarUrl,
           keepSidebarCollapsed: user.keepSidebarCollapsed,
+          chatBubbleColor: user.chatBubbleColor,
+          chatBubbleTextColor: user.chatBubbleTextColor,
+          customerBubbleColor: user.customerBubbleColor,
+          customerBubbleTextColor: user.customerBubbleTextColor,
+          chatBackgroundColor: user.chatBackgroundColor,
+          chatBackgroundMode: user.chatBackgroundMode,
           roleId: "",
           roleKey: "platform_admin",
           roleName: "Dono",
@@ -831,7 +938,12 @@ export class AuthService {
       });
       if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
     }
-    const permissions = effectivePermissions(membership.role);
+    const permissions = await moduleAwarePermissions(
+      this.prisma,
+      membership.tenantId,
+      membership.tenant.featureOverrides,
+      membership.role,
+    );
 
     return {
       user: {
@@ -840,6 +952,12 @@ export class AuthService {
         name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
         keepSidebarCollapsed: membership.user.keepSidebarCollapsed,
+        chatBubbleColor: membership.user.chatBubbleColor,
+        chatBubbleTextColor: membership.user.chatBubbleTextColor,
+        customerBubbleColor: membership.user.customerBubbleColor,
+        customerBubbleTextColor: membership.user.customerBubbleTextColor,
+        chatBackgroundColor: membership.user.chatBackgroundColor,
+        chatBackgroundMode: membership.user.chatBackgroundMode,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         roleName: membership.role.name,

@@ -40,8 +40,13 @@ function isLocalHostname(hostname: string) {
 export function appSurfaceForHostname(hostname: string): AppSurface {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (isLocalHostname(normalized)) return "unified";
-  if (normalized === hostnameFromOrigin(platformAppOrigin())) return "platform";
-  if (normalized === hostnameFromOrigin(tenantAppOrigin())) return "tenant";
+
+  const platformHostname = hostnameFromOrigin(platformAppOrigin());
+  const tenantHostname = hostnameFromOrigin(tenantAppOrigin());
+
+  if (normalized === platformHostname && normalized === tenantHostname) return "unified";
+  if (normalized === platformHostname) return "platform";
+  if (normalized === tenantHostname) return "tenant";
   return import.meta.env.VITE_APP_MODE === "production" ? "unknown" : "unified";
 }
 
@@ -50,8 +55,13 @@ export function currentAppSurface(): AppSurface {
   return appSurfaceForHostname(window.location.hostname);
 }
 
-export function appTitleForHostname(hostname: string) {
-  return appSurfaceForHostname(hostname) === "platform" ? "Trixus | App" : "Trixus | Chat";
+export function appTitleForHostname(_hostname: string) {
+  return "Trixus | App";
+}
+
+export function appTitleWithUnreadConversations(unreadConversations: number) {
+  const count = Math.max(0, Math.floor(unreadConversations));
+  return count > 0 ? `(${count}) Trixus | App` : "Trixus | App";
 }
 
 export function loginEndpointForSurface(surface = currentAppSurface()) {

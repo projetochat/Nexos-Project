@@ -2,6 +2,7 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Book, MessageCircle, Video, Mail, ChevronRight } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { SectionHeader, Card, Button, Badge, SearchInput } from "@/components/ui-kit";
 
 export const Route = createFileRoute("/ajuda")({
@@ -16,7 +17,7 @@ const CATEGORIES = [
 ];
 
 const POPULAR = [
-  "Como conectar o WhatsApp Business",
+  "Como conectar o WhatsApp",
   "Distribuição de conversas por skill",
   "Configurando horário de atendimento",
   "Etiquetas e organização da caixa",
@@ -41,12 +42,15 @@ function AjudaPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               Busque em toda a base de conhecimento.
             </p>
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Ex: como criar uma etiqueta"
-              className="mx-auto mt-6 max-w-md rounded-xl shadow-card"
-            />
+            <div className="mx-auto mt-6 flex max-w-md items-end gap-3">
+              <SearchInput
+                value={query}
+                onChange={setQuery}
+                placeholder="Ex: como criar uma etiqueta"
+                className="min-w-0 flex-1 rounded-xl shadow-card"
+              />
+              {query.trim() && <ClearFiltersButton onClick={() => setQuery("")} />}
+            </div>
           </div>
         </Card>
 

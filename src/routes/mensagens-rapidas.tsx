@@ -1,16 +1,17 @@
-import { customFieldVariableKey } from "@/lib/message-variables";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { MessageAttachmentMenu } from "@/components/message-attachment-menu";
 import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { MessageVariablesMenu } from "@/components/message-variables-menu";
 import {
   Button,
+  Badge,
   Card,
   EmptyState,
   Field,
@@ -18,7 +19,9 @@ import {
   SearchInput,
   SectionHeader,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   crmApi,
@@ -30,6 +33,11 @@ import { assertQuickReplySaved, quickReplyMessages } from "@/lib/quick-reply-seq
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
+import {
+  CONNECTION_MESSAGE_VARIABLES,
+  mergeMessageVariables,
+} from "@/lib/message-variable-options";
 
 export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
@@ -45,27 +53,20 @@ export const Route = createFileRoute("/mensagens-rapidas")({
 });
 
 const quickRepliesQueryKey = ["trixus", "quick-replies"] as const;
-const MESSAGE_VARIABLES = [
-  ["{{contato}}", "Nome do contato."],
-  ["{{cumprimento}}", "Bom dia, Boa tarde e Boa noite. Será apresentado conforme a hora do dia."],
-  ["{{nome}}", "Nome do Contato."],
-  ["{{telefone}}", "Telefone do Contato."],
-  ["{{email}}", "E-mail do Contato."],
-  ["{{instancia}}", "Instância da conversa."],
-  ["{{cliente}}", "Cliente do Contato."],
-  ["{{departamento}}", "Departamento do Contato."],
-] as const;
-
 function QuickRepliesPage() {
   const qc = useQueryClient();
   const perms = useChatPerms();
   const canCreateCatalog = perms.pode_criar_respostas_rapidas;
   const canUpdateCatalog = perms.pode_gerenciar_respostas_rapidas;
+  const canReadCatalog = useSession((state) =>
+    state.user?.permissions?.includes("chat.quick_replies.read"),
+  );
   const canDeleteCatalog = useSession((state) =>
     state.user?.permissions?.includes("chat.quick_replies.delete"),
   );
   const editor = useDisclosure();
   const [editing, setEditing] = React.useState<ApiQuickReply | null>(null);
+  const [viewing, setViewing] = React.useState<ApiQuickReply | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiQuickReply | null>(null);
   const [confirming, setConfirming] = React.useState<ApiQuickReply | null>(null);
   const [query, setQuery] = React.useState("");
@@ -92,22 +93,32 @@ function QuickRepliesPage() {
   const openNew = () => {
     setEditing(null);
     setDuplicating(null);
+    setViewing(null);
     editor.show();
   };
   const openEdit = (reply: ApiQuickReply) => {
     setEditing(reply);
     setDuplicating(null);
+    setViewing(null);
     editor.show();
   };
   const openDuplicate = (reply: ApiQuickReply) => {
     setDuplicating(reply);
     setEditing(null);
+    setViewing(null);
+    editor.show();
+  };
+  const openView = (reply: ApiQuickReply) => {
+    setViewing(reply);
+    setEditing(null);
+    setDuplicating(null);
     editor.show();
   };
   const closeEditor = () => {
     editor.hide();
     setEditing(null);
     setDuplicating(null);
+    setViewing(null);
   };
 
   return (
@@ -147,42 +158,65 @@ function QuickRepliesPage() {
         ) : (
           <>
             <Card className="mb-4 p-4">
-              <Field label="Busca">
-                <SearchInput
-                  value={query}
-                  onChange={setQuery}
-                  placeholder="Buscar atalho ou texto..."
-                />
-              </Field>
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Field label="Busca">
+                  <SearchInput
+                    value={query}
+                    onChange={setQuery}
+                    placeholder="Buscar atalho ou texto..."
+                  />
+                </Field>
+                {query.trim() && (
+                  <div className="flex items-end">
+                    <ClearFiltersButton onClick={() => setQuery("")} />
+                  </div>
+                )}
+              </div>
             </Card>
-            <div className="grid auto-rows-[9.5rem] gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {filtered.map((reply) => (
                 <Card
                   key={reply.id}
-                  className="relative h-full overflow-hidden transition hover:border-primary/35 hover:bg-surface-1"
+                  className="flex min-h-[166px] flex-col p-4 transition hover:border-primary/35 hover:bg-surface-1"
                 >
-                  <div
-                    className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${canCreateCatalog || canUpdateCatalog || canDeleteCatalog ? "pr-32" : ""}`}
-                  >
-                    <p className="font-mono text-sm text-primary">
-                      /{reply.atalho.replace(/^\//, "")}
-                    </p>
-                    <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-foreground/90">
-                      {previewQuickReplyText(reply.texto)}
-                    </p>
-                    {(reply.messages?.length ?? 0) > 1 && (
-                      <span className="text-xs text-primary">
-                        {reply.messages!.length} mensagens
-                      </span>
-                    )}
-                    {reply.close_on_send && (
-                      <p className="mt-auto truncate pt-2 text-[10px] uppercase tracking-widest text-muted-foreground">
-                        Encerra conversa
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">/{reply.atalho.replace(/^\//, "")}</p>
+                      <p className="mt-0.5 line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                        {previewQuickReplyText(reply.texto)}
                       </p>
-                    )}
+                    </div>
+                    <div className="ml-auto shrink-0 self-start">
+                      <Badge tone={reply.active !== false ? "success" : "destructive"}>
+                        {reply.active !== false ? "Ativo" : "Inativo"}
+                      </Badge>
+                    </div>
                   </div>
-                  {(canCreateCatalog || canUpdateCatalog || canDeleteCatalog) && (
-                    <div className="absolute right-4 top-4 flex gap-1 sm:right-6 sm:top-6">
+
+                  {((reply.messages?.length ?? 0) > 1 || reply.close_on_send) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      {(reply.messages?.length ?? 0) > 1 && (
+                        <span className="text-primary">{reply.messages!.length} mensagens</span>
+                      )}
+                      {reply.close_on_send && (
+                        <span className="uppercase tracking-widest">Encerra conversa</span>
+                      )}
+                    </div>
+                  )}
+
+                  {(canReadCatalog || canCreateCatalog || canUpdateCatalog || canDeleteCatalog) && (
+                    <div className="mt-auto flex min-h-11 items-end justify-end gap-1.5 border-t border-border pt-3">
+                      {canReadCatalog && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Visualizar"
+                          aria-label="Visualizar"
+                          onClick={() => openView(reply)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      )}
                       {canCreateCatalog && (
                         <Button
                           variant="ghost"
@@ -230,12 +264,13 @@ function QuickRepliesPage() {
           </>
         )}
 
-        {(editing ? canUpdateCatalog : canCreateCatalog) && (
+        {(viewing || (editing ? canUpdateCatalog : canCreateCatalog)) && (
           <QuickReplyEditor
             open={editor.open}
             onClose={closeEditor}
-            initial={editing ?? duplicating}
+            initial={viewing ?? editing ?? duplicating}
             clone={!!duplicating}
+            readOnly={!!viewing}
             existingReplies={items}
             onSaved={() => {
               refresh();
@@ -245,37 +280,27 @@ function QuickRepliesPage() {
           />
         )}
 
-        <ConfirmDialog
+        <DeletionConfirmDialog
           open={!!confirming}
-          title="Excluir Mensagem Rápida?"
-          description={
-            confirming ? (
-              <p>
-                Deseja realmente excluir o atalho{" "}
-                <strong className="font-semibold text-foreground">
-                  "/{confirming.atalho.replace(/^\//, "")}"
-                </strong>
-                ?
-              </p>
-            ) : (
-              ""
-            )
-          }
-          confirmLabel="Excluir"
-          destructive
-          onClose={() => setConfirming(null)}
-          onConfirm={async () => {
-            if (!confirming) return;
-            try {
-              await quickReplyApi.archive(confirming.id);
-              toast.success("Removido");
-              refresh();
-              qc.invalidateQueries({ queryKey: ["trixus", "quick-replies", "composer"] });
-              setConfirming(null);
-            } catch (error) {
-              toast.error((error as Error).message);
-            }
+          resourceKey={`quick-reply:${confirming?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setConfirming(null);
           }}
+          loadImpact={(signal) => {
+            if (!confirming) return Promise.reject(new Error("Mensagem não selecionada."));
+            return quickReplyApi.deletionPreview(confirming.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!confirming) return Promise.reject(new Error("Mensagem não selecionada."));
+            return quickReplyApi.archive(confirming.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
+            toast.success("Removido");
+            void refresh();
+            void qc.invalidateQueries({ queryKey: ["trixus", "quick-replies", "composer"] });
+            setConfirming(null);
+          }}
+          formatError={(error) => (error as Error).message}
         />
       </div>
     </AppShell>
@@ -287,6 +312,7 @@ export function QuickReplyEditor({
   onClose,
   initial,
   clone = false,
+  readOnly = false,
   existingReplies,
   onSaved,
 }: {
@@ -294,14 +320,20 @@ export function QuickReplyEditor({
   onClose: () => void;
   initial: ApiQuickReply | null;
   clone?: boolean;
+  readOnly?: boolean;
   existingReplies: ApiQuickReply[];
   onSaved: () => void;
 }) {
   const [atalho, setAtalho] = React.useState("");
   const [messages, setMessages] = React.useState<QuickReplyMessage[]>([{ text: "" }]);
   const [closeOnSend, setCloseOnSend] = React.useState(false);
+  const [active, setActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [shortcutError, setShortcutError] = React.useState("");
+  const [requiredErrors, setRequiredErrors] = React.useState({
+    shortcut: false,
+    messageIndexes: [] as number[],
+  });
   const [customVariables, setCustomVariables] = React.useState<
     Array<{ name: string; description: string }>
   >([]);
@@ -316,10 +348,10 @@ export function QuickReplyEditor({
       .then((fields) => {
         if (active)
           setCustomVariables(
-            fields.flatMap((field) => {
-              const name = customFieldVariableKey(field.label);
-              return name ? [{ name, description: `Campo adicional: ${field.label}.` }] : [];
-            }),
+            mergeMessageVariables([], fields).map(({ token, description }) => ({
+              name: token.slice(2, -2),
+              description,
+            })),
           );
       })
       .catch(() => {
@@ -370,10 +402,13 @@ export function QuickReplyEditor({
     setAtalho(initial ? duplicateShortcut(initial.atalho, clone) : "");
     setMessages(initial ? quickReplyMessages(initial) : [{ text: "" }]);
     setCloseOnSend(initial?.close_on_send ?? false);
+    setActive(clone ? true : initial?.active !== false);
     setShortcutError("");
+    setRequiredErrors({ shortcut: false, messageIndexes: [] });
   }, [clone, open, initial]);
 
   const save = async () => {
+    if (readOnly) return;
     if (messages.length > 10) return toast.error("Número máximo de mensagens atingido");
     const shortcut = sanitizeQuickReplyShortcut(atalho);
     const content = messages
@@ -381,9 +416,20 @@ export function QuickReplyEditor({
       .join("\n")
       .slice(0, 2000);
     const attachment = messages[0]?.attachment;
-    if (!shortcut) return toast.error("Informe o atalho.");
-    if (messages.some((message) => !message.text.trim() && !message.attachment))
-      return toast.error("Preencha o texto ou anexe um arquivo em cada mensagem.");
+    const missingMessageIndexes = messages.flatMap((message, index) =>
+      !message.text.trim() && !message.attachment ? [index] : [],
+    );
+    const requiredFields = [
+      ...(!shortcut ? ["Atalho"] : []),
+      ...missingMessageIndexes.map((index) =>
+        messages.length === 1 ? "Mensagem" : `Mensagem ${index + 1}`,
+      ),
+    ];
+    if (requiredFields.length) {
+      setRequiredErrors({ shortcut: !shortcut, messageIndexes: missingMessageIndexes });
+      showRequiredFieldsToast(requiredFields);
+      return;
+    }
     if (
       messages.reduce((total, message) => total + (message.attachment?.dataUrl.length ?? 0), 0) >
       40 * 1024 * 1024
@@ -403,9 +449,9 @@ export function QuickReplyEditor({
           shortcut,
           content,
           messages,
-          intervalSeconds: 0,
           departmentId: initial.departmentId,
           closeOnSend,
+          active,
           attachmentFileName: attachment?.fileName ?? null,
           attachmentMimeType: attachment?.mimeType ?? null,
           attachmentSize: attachment?.size ?? null,
@@ -417,16 +463,16 @@ export function QuickReplyEditor({
           shortcut,
           content,
           messages,
-          intervalSeconds: 0,
           departmentId: null,
           closeOnSend,
+          active,
           attachmentFileName: attachment?.fileName ?? null,
           attachmentMimeType: attachment?.mimeType ?? null,
           attachmentSize: attachment?.size ?? null,
           attachmentDataUrl: attachment?.dataUrl ?? null,
         });
       }
-      assertQuickReplySaved(saved, messages, 0);
+      assertQuickReplySaved(saved, messages);
       toast.success("Salvo");
       onSaved();
     } catch (error) {
@@ -441,11 +487,13 @@ export function QuickReplyEditor({
       open={open}
       onClose={onClose}
       title={
-        clone
-          ? "Duplicar Mensagem Rápida"
-          : initial
-            ? "Editar Mensagem Rápida"
-            : "Nova Mensagem Rápida"
+        readOnly
+          ? "Visualizar Mensagem Rápida"
+          : clone
+            ? "Duplicar Mensagem Rápida"
+            : initial
+              ? "Editar Mensagem Rápida"
+              : "Nova Mensagem Rápida"
       }
       description="Atalhos curtos aceleram respostas."
       size="lg"
@@ -458,18 +506,30 @@ export function QuickReplyEditor({
             />
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
+            {readOnly ? "Fechar" : "Cancelar"}
           </Button>
-          <Button variant="primary" size="sm" onClick={save} disabled={busy}>
-            {busy ? "Salvando..." : "Salvar"}
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="primary"
+              size="sm"
+              className="save-action-button"
+              onClick={save}
+              disabled={busy}
+            >
+              {busy ? "Salvando..." : "Salvar"}
+            </Button>
+          )}
         </>
       }
     >
-      <div className="space-y-3">
+      <fieldset disabled={readOnly} className="min-w-0 space-y-3 disabled:opacity-80">
+        <label className="flex min-h-7 items-center gap-2 text-sm">
+          <Switch checked={active} onCheckedChange={setActive} aria-label="Ativo" />
+          <span>Ativo</span>
+        </label>
         <Field
           label="Atalho *"
-          hint="Somente letras e hífen, sem barra. Ex.: bom-dia, bt, obg"
+          hint="Somente letras, números e hífen, sem barra. Ex.: bom-dia, bt2, obg"
           error={shortcutError || undefined}
         >
           <Input
@@ -478,6 +538,7 @@ export function QuickReplyEditor({
               const value = sanitizeQuickReplyShortcut(event.target.value);
               setAtalho(value);
               setShortcutError(duplicateShortcutError(value));
+              if (value) setRequiredErrors((current) => ({ ...current, shortcut: false }));
             }}
             onBlur={() => {
               setAtalho((value) => sanitizeQuickReplyShortcut(value));
@@ -485,7 +546,8 @@ export function QuickReplyEditor({
             }}
             placeholder="bd"
             maxLength={40}
-            aria-invalid={!!shortcutError}
+            aria-invalid={Boolean(shortcutError || requiredErrors.shortcut)}
+            className={requiredFieldClassName(Boolean(shortcutError || requiredErrors.shortcut))}
           />
         </Field>
         <div className="space-y-3">
@@ -514,7 +576,7 @@ export function QuickReplyEditor({
           {messages.map((message, index) => (
             <div
               key={index}
-              className="overflow-hidden rounded-xl border border-border bg-card focus-within:border-primary/50"
+              className={`overflow-hidden rounded-xl border border-border bg-card focus-within:border-primary/50 ${requiredFieldClassName(requiredErrors.messageIndexes.includes(index))}`}
             >
               <textarea
                 rows={3}
@@ -529,13 +591,19 @@ export function QuickReplyEditor({
                 }}
                 aria-label={`Texto da mensagem ${index + 1}`}
                 aria-required={!message.attachment}
-                onChange={(event) =>
+                aria-invalid={requiredErrors.messageIndexes.includes(index)}
+                onChange={(event) => {
                   setMessages((items) =>
                     items.map((item, position) =>
                       position === index ? { ...item, text: event.target.value } : item,
                     ),
-                  )
-                }
+                  );
+                  if (event.target.value.trim())
+                    setRequiredErrors((current) => ({
+                      ...current,
+                      messageIndexes: current.messageIndexes.filter((item) => item !== index),
+                    }));
+                }}
                 className="block min-h-24 w-full resize-y border-0 bg-transparent px-3 py-3 text-sm outline-none"
                 placeholder="Texto da mensagem ou legenda do arquivo"
               />
@@ -550,7 +618,9 @@ export function QuickReplyEditor({
                 <MessageVariablesMenu
                   disabled={busy}
                   variables={[
-                    ...MESSAGE_VARIABLES.map(([token, description]) => ({ token, description })),
+                    ...mergeMessageVariables(CONNECTION_MESSAGE_VARIABLES, []).map(
+                      ({ token, description }) => ({ token, description }),
+                    ),
                     ...customVariables.map(({ name, description }) => ({
                       token: `{{${name}}}`,
                       description,
@@ -574,13 +644,17 @@ export function QuickReplyEditor({
                       ),
                     )
                   }
-                  onAttachment={(attachment) =>
+                  onAttachment={(attachment) => {
                     setMessages((items) =>
                       items.map((item, position) =>
                         position === index ? { ...item, attachment } : item,
                       ),
-                    )
-                  }
+                    );
+                    setRequiredErrors((current) => ({
+                      ...current,
+                      messageIndexes: current.messageIndexes.filter((item) => item !== index),
+                    }));
+                  }}
                 />
                 <div className="ml-auto flex gap-1">
                   <Button
@@ -589,9 +663,10 @@ export function QuickReplyEditor({
                     className="h-7 w-7"
                     aria-label="Remover mensagem"
                     disabled={busy || messages.length === 1}
-                    onClick={() =>
-                      setMessages((items) => items.filter((_, position) => position !== index))
-                    }
+                    onClick={() => {
+                      setMessages((items) => items.filter((_, position) => position !== index));
+                      setRequiredErrors((current) => ({ ...current, messageIndexes: [] }));
+                    }}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -601,19 +676,12 @@ export function QuickReplyEditor({
           ))}
           <div className="space-y-3">
             <label className="flex cursor-pointer items-center gap-3 text-sm text-muted-foreground">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={closeOnSend}
+              <Switch
+                checked={closeOnSend}
+                onCheckedChange={setCloseOnSend}
                 aria-label="Encerrar conversa"
                 disabled={busy}
-                onClick={() => setCloseOnSend((current) => !current)}
-                className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 ${closeOnSend ? "bg-blue-600" : "bg-slate-300"}`}
-              >
-                <span
-                  className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${closeOnSend ? "translate-x-6" : "translate-x-1"}`}
-                />
-              </button>
+              />
               <span>Encerrar conversa</span>
             </label>
             <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -628,7 +696,7 @@ export function QuickReplyEditor({
             </div>
           </div>
         </div>
-      </div>
+      </fieldset>
     </Modal>
   );
 }
@@ -641,7 +709,7 @@ function duplicateShortcut(value: string, clone: boolean) {
 }
 
 function sanitizeQuickReplyShortcut(value: string) {
-  return value.replace(/[^\p{L}-]/gu, "").toLocaleLowerCase("pt-BR");
+  return value.replace(/[^\p{L}\p{N}-]/gu, "").toLocaleLowerCase("pt-BR");
 }
 
 function previewQuickReplyText(value: string) {

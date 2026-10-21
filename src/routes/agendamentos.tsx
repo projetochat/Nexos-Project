@@ -8,6 +8,9 @@ import {
   ChevronRight,
   Clock3,
   Copy,
+  Eye,
+  LayoutGrid,
+  List,
   MessageCircle,
   Paperclip,
   Pencil,
@@ -19,6 +22,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import {
   Alert,
   Badge,
@@ -32,7 +37,7 @@ import {
   Select,
   Textarea,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal } from "@/components/modal";
+import { Modal } from "@/components/modal";
 import {
   schedulesApi,
   connectionsApi,
@@ -52,6 +57,8 @@ import type { ApiSchedule as Schedule } from "@/lib/schedule-types";
 type ScheduleType = Schedule["type"];
 import { useSession } from "@/lib/session";
 import { connectRealtime, onRealtimeEvent } from "@/lib/realtime/client";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 const STORAGE_KEY = "trixus.schedules";
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
@@ -61,6 +68,7 @@ function SchedulingPage() {
   const canCreate = user?.permissions?.includes("schedules.create") ?? false;
   const canUpdate = user?.permissions?.includes("schedules.update") ?? false;
   const canDelete = user?.permissions?.includes("schedules.delete") ?? false;
+  const canRead = user?.permissions?.includes("schedules.read") ?? false;
   const qc = useQueryClient();
   const schedulesKey = ["trixus", "schedules", user?.empresaId];
   const {
@@ -89,10 +97,30 @@ function SchedulingPage() {
   const [status, setStatus] = React.useState("");
   const [connectionId, setConnectionId] = React.useState("");
   const [departmentId, setDepartmentId] = React.useState("");
+  const isMobile = useIsMobile();
+  const [viewMode, setViewMode] = React.useState<"cards" | "list">("list");
+  const viewModeTouched = React.useRef(false);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [editing, setEditing] = React.useState<Schedule | null>(null);
+  const [viewing, setViewing] = React.useState<Schedule | null>(null);
   const [removing, setRemoving] = React.useState<Schedule | null>(null);
+  const hasFilters = Boolean(query.trim() || type || status || connectionId || departmentId);
+  const clearFilters = () => {
+    setQuery("");
+    setType("");
+    setStatus("");
+    setConnectionId("");
+    setDepartmentId("");
+    setPage(1);
+  };
+  React.useEffect(() => {
+    if (isMobile) {
+      setViewMode("cards");
+      return;
+    }
+    if (!viewModeTouched.current) setViewMode("list");
+  }, [isMobile]);
   const { data: connections = [] } = useQuery({
     queryKey: ["trixus", "messaging-connections"],
     queryFn: connectionsApi.list,
@@ -186,7 +214,7 @@ function SchedulingPage() {
           </Card>
         )}
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(16rem,1fr)_10rem_10rem_12rem_12rem]">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(16rem,1fr)_10rem_10rem_12rem_12rem_auto]">
             <div className="col-span-2 xl:col-span-1">
               <Field label="Busca">
                 <SearchInput
@@ -231,49 +259,96 @@ function SchedulingPage() {
               onChange={setDepartmentId}
               options={departments.map((item) => [item.id, item.name])}
             />
+            {hasFilters && (
+              <div className="flex items-end">
+                <ClearFiltersButton onClick={clearFilters} />
+              </div>
+            )}
           </div>
         </Card>
-        <div className="space-y-3 md:hidden">
-          {paginated.map((item) => (
-            <ScheduleMobileCard
-              key={item.id}
-              item={item}
-              connections={connections}
-              departments={departments}
-              onEdit={() => setEditing(item)}
-              onDuplicate={() =>
-                setEditing({
-                  ...item,
-                  id: crypto.randomUUID(),
-                  identifier: `${item.identifier}-Cópia`,
-                  status: "pending",
-                })
-              }
-              onRemove={() => setRemoving(item)}
-              canCreate={canCreate}
-              canUpdate={canUpdate}
-              canDelete={canDelete}
-            />
-          ))}
-          {!filtered.length && (
-            <Card className="p-8 text-center text-sm text-muted-foreground">
-              Nenhum agendamento encontrado.
-            </Card>
-          )}
-          <Card padding={false} className="overflow-hidden">
-            <SchedulePagination
-              shown={paginated.length}
-              total={filtered.length}
-              page={pageSafe}
-              totalPages={totalPages}
-              pageSize={pageSize}
-              onPageSizeChange={setPageSize}
-              onPrevious={() => setPage((current) => Math.max(1, current - 1))}
-              onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
-            />
-          </Card>
+        <div
+          className="mb-3 hidden justify-end gap-1 md:flex"
+          aria-label="Visualização dos agendamentos"
+        >
+          <Button
+            type="button"
+            variant={viewMode === "cards" ? "primary" : "secondary"}
+            size="icon"
+            aria-label="Visualizar agendamentos em cards"
+            aria-pressed={viewMode === "cards"}
+            title="Cards"
+            onClick={() => {
+              viewModeTouched.current = true;
+              setViewMode("cards");
+            }}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === "list" ? "primary" : "secondary"}
+            size="icon"
+            aria-label="Visualizar agendamentos em lista"
+            aria-pressed={viewMode === "list"}
+            title="Lista"
+            onClick={() => {
+              viewModeTouched.current = true;
+              setViewMode("list");
+            }}
+          >
+            <List className="h-4 w-4" />
+          </Button>
         </div>
-        <Card padding={false} className="hidden overflow-hidden md:block">
+        {viewMode === "cards" && (
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {paginated.map((item) => (
+                <ScheduleMobileCard
+                  key={item.id}
+                  item={item}
+                  connections={connections}
+                  departments={departments}
+                  onEdit={() => setEditing(item)}
+                  onView={() => setViewing(item)}
+                  onDuplicate={() =>
+                    setEditing({
+                      ...item,
+                      id: crypto.randomUUID(),
+                      identifier: `${item.identifier}-Cópia`,
+                      status: "pending",
+                    })
+                  }
+                  onRemove={() => setRemoving(item)}
+                  canCreate={canCreate}
+                  canUpdate={canUpdate}
+                  canDelete={canDelete}
+                  canRead={canRead}
+                />
+              ))}
+              {!filtered.length && (
+                <Card className="p-8 text-center text-sm text-muted-foreground md:col-span-2 xl:col-span-3">
+                  Nenhum agendamento encontrado.
+                </Card>
+              )}
+            </div>
+            <Card padding={false} className="overflow-hidden">
+              <SchedulePagination
+                shown={paginated.length}
+                total={filtered.length}
+                page={pageSafe}
+                totalPages={totalPages}
+                pageSize={pageSize}
+                onPageSizeChange={setPageSize}
+                onPrevious={() => setPage((current) => Math.max(1, current - 1))}
+                onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
+              />
+            </Card>
+          </div>
+        )}
+        <Card
+          padding={false}
+          className={viewMode === "list" ? "hidden overflow-hidden md:block" : "hidden"}
+        >
           <div className="overflow-x-auto">
             <table className="min-w-[1050px] w-full text-sm">
               <thead className="border-b border-border bg-surface-2 text-left text-[11px] uppercase tracking-widest text-muted-foreground">
@@ -302,6 +377,7 @@ function SchedulingPage() {
                     connections={connections}
                     departments={departments}
                     onEdit={() => setEditing(item)}
+                    onView={() => setViewing(item)}
                     onDuplicate={() =>
                       setEditing({
                         ...item,
@@ -314,6 +390,7 @@ function SchedulingPage() {
                     canCreate={canCreate}
                     canUpdate={canUpdate}
                     canDelete={canDelete}
+                    canRead={canRead}
                   />
                 ))}
                 {!filtered.length && (
@@ -347,29 +424,36 @@ function SchedulingPage() {
             busy={saving}
           />
         )}
-        <ConfirmDialog
+        {canRead && viewing && (
+          <ScheduleForm
+            item={viewing}
+            connections={connections}
+            departments={departments}
+            onClose={() => setViewing(null)}
+            onSave={() => undefined}
+            busy={false}
+            readOnly
+          />
+        )}
+        <DeletionConfirmDialog
           open={!!removing}
-          title="Excluir Agendamento?"
-          destructive
-          description={
-            <p>
-              Deseja realmente excluir o agendamento{" "}
-              <strong className="font-semibold text-foreground">"{removing?.title ?? ""}"</strong>?
-            </p>
-          }
-          confirmLabel="Excluir"
-          onClose={() => setRemoving(null)}
-          onConfirm={async () => {
-            if (!removing) return;
-            try {
-              await schedulesApi.remove(removing.id);
-              await qc.invalidateQueries({ queryKey: schedulesKey });
-              setRemoving(null);
-              toast.success("Agendamento excluído.");
-            } catch (error) {
-              toast.error((error as Error).message);
-            }
+          resourceKey={`schedule:${removing?.id ?? "none"}`}
+          showRecordDetails={false}
+          onOpenChange={(open) => {
+            if (!open) setRemoving(null);
           }}
+          loadImpact={(signal) => schedulesApi.deletionImpact(removing!.id, signal)}
+          onConfirm={({ snapshotToken, signal }) =>
+            schedulesApi.remove(removing!.id, snapshotToken, signal)
+          }
+          onDeleted={() => {
+            void qc.invalidateQueries({ queryKey: schedulesKey });
+            setRemoving(null);
+            toast.success("Agendamento excluído.");
+          }}
+          formatError={(error) =>
+            error instanceof Error ? error.message : "Não foi possível excluir o agendamento."
+          }
         />
       </PageContainer>
     </AppShell>
@@ -421,8 +505,11 @@ function SchedulePagination({
   onNext: () => void;
 }) {
   return (
-    <footer className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
-      <div className="flex min-w-0 items-center gap-2">
+    <footer
+      data-schedules-grid-footer
+      className="flex items-center justify-between gap-2 border-t border-border bg-surface-2 px-3 py-1.5 text-xs text-muted-foreground sm:px-4"
+    >
+      <div className="flex min-w-0 items-center gap-1.5">
         <span className="shrink-0 leading-tight sm:leading-normal">
           <span className="block sm:inline">Mostrando</span>
           <span className="block sm:inline">
@@ -433,7 +520,7 @@ function SchedulePagination({
         <Select
           value={String(pageSize)}
           onChange={(event) => onPageSizeChange(Number(event.target.value))}
-          className="h-8 w-20 text-xs sm:w-24"
+          className="!h-6 !min-h-6 !w-16 !rounded-md !px-2 !py-0 !pr-6 text-xs"
           aria-label="Itens por página"
         >
           {PAGE_SIZE_OPTIONS.map((option) => (
@@ -447,7 +534,7 @@ function SchedulePagination({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0"
+          className="!h-7 !min-h-7 !w-7 !p-0"
           disabled={page === 1}
           onClick={onPrevious}
           aria-label="Página anterior"
@@ -460,7 +547,7 @@ function SchedulePagination({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0"
+          className="!h-7 !min-h-7 !w-7 !p-0"
           disabled={page === totalPages}
           onClick={onNext}
           aria-label="Próxima página"
@@ -477,21 +564,25 @@ function ScheduleMobileCard({
   connections,
   departments,
   onEdit,
+  onView,
   onDuplicate,
   onRemove,
   canCreate,
   canUpdate,
   canDelete,
+  canRead,
 }: {
   item: Schedule;
   connections: ApiMessagingConnection[];
   departments: ApiDepartment[];
   onEdit: () => void;
+  onView: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  canRead: boolean;
 }) {
   const connection = connections.find((entry) => entry.id === item.connectionId)?.name ?? "—";
   const department = departments.find((entry) => entry.id === item.departmentId)?.name ?? "—";
@@ -536,8 +627,19 @@ function ScheduleMobileCard({
           </div>
         </div>
       </div>
-      {(canCreate || canUpdate || canDelete) && (
+      {(canRead || canCreate || canUpdate || canDelete) && (
         <div className="mt-4 flex justify-end gap-1 border-t border-border pt-3">
+          {canRead && (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Visualizar"
+              aria-label="Visualizar"
+              onClick={onView}
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+          )}
           {canCreate && (
             <Button
               variant="ghost"
@@ -577,21 +679,25 @@ function ScheduleRow({
   connections,
   departments,
   onEdit,
+  onView,
   onDuplicate,
   onRemove,
   canCreate,
   canUpdate,
   canDelete,
+  canRead,
 }: {
   item: Schedule;
   connections: ApiMessagingConnection[];
   departments: ApiDepartment[];
   onEdit: () => void;
+  onView: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  canRead: boolean;
 }) {
   const connection = connections.find((entry) => entry.id === item.connectionId)?.name ?? "—";
   const department = departments.find((entry) => entry.id === item.departmentId)?.name ?? "—";
@@ -645,6 +751,17 @@ function ScheduleRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex gap-1">
+          {canRead && (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Visualizar"
+              aria-label="Visualizar"
+              onClick={onView}
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+          )}
           {canCreate && (
             <Button variant="ghost" size="sm" title="Duplicar" onClick={onDuplicate}>
               <Copy className="h-4 w-4" />
@@ -678,6 +795,7 @@ function ScheduleForm({
   onClose,
   onSave,
   busy,
+  readOnly = false,
 }: {
   item: Schedule | null;
   connections: ApiMessagingConnection[];
@@ -685,11 +803,16 @@ function ScheduleForm({
   onClose: () => void;
   onSave: (item: Schedule) => void | Promise<void>;
   busy: boolean;
+  readOnly?: boolean;
 }) {
   const [form, setForm] = React.useState<Schedule | null>(null);
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [contactSearch, setContactSearch] = React.useState("");
   const [multipleContacts, setMultipleContacts] = React.useState(false);
-  React.useEffect(() => setForm(item), [item]);
+  React.useEffect(() => {
+    setForm(item);
+    setErrors({});
+  }, [item]);
   React.useEffect(() => {
     setContactSearch("");
     setMultipleContacts((item?.recipientIds?.length ?? 0) > 1);
@@ -697,16 +820,27 @@ function ScheduleForm({
   const contacts = useQuery({
     queryKey: ["trixus", "schedule-contacts", contactSearch],
     queryFn: () => crmApi.listContacts({ q: contactSearch || undefined, pageSize: 8 }),
-    enabled: !!form && form.type === "message",
+    enabled: !!form && form.type === "message" && !readOnly,
   });
   const users = useQuery({
     queryKey: ["trixus", "schedule-users"],
     queryFn: organizationApi.listUsers,
-    enabled: !!form,
+    enabled: !!form && !readOnly,
   });
   if (!form) return null;
-  const update = (patch: Partial<Schedule>) =>
+  const update = (patch: Partial<Schedule>) => {
     setForm((current) => (current ? { ...current, ...patch } : current));
+    setErrors((current) => {
+      const next = { ...current };
+      if (patch.identifier?.trim()) delete next.identifier;
+      if (patch.title?.trim()) delete next.title;
+      if (patch.scheduledAt) delete next.scheduledAt;
+      if (patch.content?.trim()) delete next.content;
+      if (patch.recipientIds?.length) delete next.recipients;
+      if (patch.recurrence !== "weekly" || patch.recurrenceDays?.length) delete next.recurrenceDays;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  };
   const selectedContacts = form.recipients ?? [];
   const selectContact = (contact: ApiContact) => {
     const recipientIds = multipleContacts
@@ -745,34 +879,65 @@ function ScheduleForm({
     <Modal
       open
       onClose={onClose}
-      title="Agendamento"
-      description="Configure os detalhes do agendamento e programe o envio ou a tarefa."
+      title={readOnly ? "Visualizar Agendamento" : "Agendamento"}
+      description={
+        readOnly
+          ? "Confira os dados do agendamento em modo somente leitura."
+          : "Configure os detalhes do agendamento e programe o envio ou a tarefa."
+      }
       size="xl"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            {readOnly ? "Fechar" : "Cancelar"}
           </Button>
-          <Button
-            variant="primary"
-            disabled={busy}
-            onClick={() => {
-              if (!form.identifier.trim() || !form.title.trim() || !form.scheduledAt)
-                return toast.error("Preencha identificador, título e data de agendamento.");
-              if (!form.content.trim()) return toast.error("Informe o conteúdo do agendamento.");
-              if (form.type === "message" && !form.recipientIds.length)
-                return toast.error("Selecione ao menos um contato destinatário.");
-              if (form.recurrence === "weekly" && !form.recurrenceDays.length)
-                return toast.error("Selecione ao menos um dia da semana.");
-              onSave(form);
-            }}
-          >
-            Salvar Agendamento
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="primary"
+              className="save-action-button"
+              disabled={busy}
+              onClick={() => {
+                const nextErrors: Record<string, boolean> = {};
+                const requiredFields: string[] = [];
+                if (!form.identifier.trim()) {
+                  nextErrors.identifier = true;
+                  requiredFields.push("Identificador");
+                }
+                if (!form.title.trim()) {
+                  nextErrors.title = true;
+                  requiredFields.push("Título");
+                }
+                if (!form.scheduledAt) {
+                  nextErrors.scheduledAt = true;
+                  requiredFields.push("Data e hora");
+                }
+                if (!form.content.trim()) {
+                  nextErrors.content = true;
+                  requiredFields.push(form.type === "message" ? "Mensagem" : "Descrição");
+                }
+                if (form.type === "message" && !form.recipientIds.length) {
+                  nextErrors.recipients = true;
+                  requiredFields.push("Contato destinatário");
+                }
+                if (form.recurrence === "weekly" && !form.recurrenceDays.length) {
+                  nextErrors.recurrenceDays = true;
+                  requiredFields.push("Dias da semana");
+                }
+                if (requiredFields.length) {
+                  setErrors(nextErrors);
+                  showRequiredFieldsToast(requiredFields);
+                  return;
+                }
+                onSave(form);
+              }}
+            >
+              Salvar Agendamento
+            </Button>
+          )}
         </>
       }
     >
-      <div className="space-y-4">
+      <fieldset disabled={readOnly} className="min-w-0 space-y-4 disabled:opacity-80">
         <section className="rounded-lg border border-border p-4">
           <h3 className="mb-3 text-sm font-semibold">Informações gerais</h3>
           <div className="grid gap-3 md:grid-cols-2">
@@ -781,6 +946,8 @@ function ScheduleForm({
                 value={form.identifier}
                 onChange={(e) => update({ identifier: e.target.value })}
                 placeholder="Ex.: AGD-001"
+                aria-invalid={Boolean(errors.identifier)}
+                className={requiredFieldClassName(Boolean(errors.identifier))}
               />
             </Field>
             <Field label="Tipo de agendamento *">
@@ -807,11 +974,12 @@ function ScheduleForm({
             <h3 className="mb-3 text-sm font-semibold">Destinatário</h3>
             <div className="flex items-end gap-3">
               <div className="min-w-0 flex-1">
-                <Field label="Contato">
+                <Field label="Contato *">
                   <SearchInput
                     value={contactSearch}
                     onChange={setContactSearch}
                     placeholder="Buscar contato..."
+                    className={requiredFieldClassName(Boolean(errors.recipients))}
                   />
                 </Field>
               </div>
@@ -881,6 +1049,8 @@ function ScheduleForm({
                   ? "Digite a mensagem que será enviada..."
                   : "Descreva a tarefa..."
               }
+              aria-invalid={Boolean(errors.content)}
+              className={requiredFieldClassName(Boolean(errors.content))}
             />
           </Field>
           {form.type === "message" && (
@@ -894,6 +1064,8 @@ function ScheduleForm({
                 value={form.title}
                 onChange={(e) => update({ title: e.target.value })}
                 placeholder="Informe um título para o agendamento"
+                aria-invalid={Boolean(errors.title)}
+                className={requiredFieldClassName(Boolean(errors.title))}
               />
             </Field>
           </div>
@@ -906,6 +1078,8 @@ function ScheduleForm({
                 type="datetime-local"
                 value={form.scheduledAt}
                 onChange={(e) => update({ scheduledAt: e.target.value })}
+                aria-invalid={Boolean(errors.scheduledAt)}
+                className={requiredFieldClassName(Boolean(errors.scheduledAt))}
               />
             </Field>
             <Field label="Recorrência">
@@ -935,7 +1109,10 @@ function ScheduleForm({
                   {form.recurrence === "weekly" ? "Dias da semana" : "Dia do mês"}
                 </p>
                 {form.recurrence === "weekly" ? (
-                  <div className="grid gap-2 sm:grid-cols-4">
+                  <div
+                    className={`grid gap-2 rounded-lg border border-transparent p-2 sm:grid-cols-4 ${requiredFieldClassName(Boolean(errors.recurrenceDays))}`}
+                    aria-invalid={Boolean(errors.recurrenceDays)}
+                  >
                     {[
                       ["mon", "Segunda-feira"],
                       ["tue", "Terça-feira"],
@@ -1064,7 +1241,7 @@ function ScheduleForm({
             />
           </label>
         </section>
-      </div>
+      </fieldset>
     </Modal>
   );
 }

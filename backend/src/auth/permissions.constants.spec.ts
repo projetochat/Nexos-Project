@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isPermissionKey, PERMISSIONS } from "./permissions.constants";
+import {
+  AGENT_PERMISSIONS,
+  isPermissionKey,
+  PERMISSIONS,
+  SUPERVISOR_PERMISSIONS,
+} from "./permissions.constants";
 
 describe("granular permission catalog", () => {
   it("accepts the CRUD catalog and rejects superseded aliases", () => {
@@ -24,5 +29,14 @@ describe("granular permission catalog", () => {
     expect(isPermissionKey("users.manage")).toBe(false);
     expect(isPermissionKey("campaigns.schedule")).toBe(false);
     expect(isPermissionKey("tickets.assign")).toBe(false);
+  });
+
+  it("keeps the approved onboarding split between Atendente and Supervisor", () => {
+    expect(AGENT_PERMISSIONS).not.toContain("chat.conversations.view_all_active");
+    expect(AGENT_PERMISSIONS).toContain("contacts.create");
+    expect(AGENT_PERMISSIONS).toContain("groups.read");
+    expect(AGENT_PERMISSIONS).toContain("chat.tags.read");
+    expect(AGENT_PERMISSIONS).toContain("chat.quick_replies.read");
+    expect(SUPERVISOR_PERMISSIONS).toContain("chat.conversations.view_all_active");
   });
 });

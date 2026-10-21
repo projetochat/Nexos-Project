@@ -37,6 +37,18 @@ describe("organização do editor de Perfil de Acesso", () => {
     expect(scopes).toContain("aria-pressed={favorite}");
   });
 
+  it("exige ao menos um departamento por instância habilitada", () => {
+    const scopes = source.slice(
+      source.indexOf("function ScopeSettings"),
+      source.indexOf("function PermissionSettings"),
+    );
+
+    expect(scopes).toContain("connection.departments.length > 0");
+    expect(scopes).toContain("departmentIds: [firstDepartment.id]");
+    expect(scopes).toContain("Mantenha pelo menos um departamento habilitado");
+    expect(source).toContain("chatScopes.some((scope) => scope.departmentIds.length === 0)");
+  });
+
   it("faz o último acesso de agrupadores ímpares ocupar as duas colunas", () => {
     const permissions = source.slice(source.indexOf("function PermissionGroupBlock"));
 
@@ -53,7 +65,40 @@ describe("organização do editor de Perfil de Acesso", () => {
 
     expect(scopes).toContain("min-h-10");
     expect(scopes).toContain("min-h-11");
-    expect(scopes).toContain("space-y-1.5");
+    expect(scopes).toContain("grid gap-1.5");
+    expect(scopes).toContain("sm:grid-cols-2");
+  });
+
+  it("move o departamento favorito para o início da lista", () => {
+    const scopes = source.slice(
+      source.indexOf("function ScopeSettings"),
+      source.indexOf("function PermissionSettings"),
+    );
+
+    expect(scopes).toContain("favoriteDepartmentId");
+    expect(scopes).toContain("Number(right.id === favoriteDepartmentId)");
+  });
+
+  it("alinha os três níveis de toggle em uma coluna no mobile", () => {
+    const scopes = source.slice(
+      source.indexOf("function ScopeSettings"),
+      source.indexOf("function PermissionSettings"),
+    );
+
+    expect(scopes).toContain("grid-cols-[minmax(0,1fr)_auto_auto]");
+    expect(scopes).toContain("contents sm:flex");
+    expect(scopes).toContain("grid-cols-[minmax(0,1fr)_2.25rem_2.25rem]");
+    expect(scopes).toContain("pl-3 pr-[21px]");
+  });
+
+  it("restaura os resumos e mantém as ações abaixo da divisória dos cards", () => {
+    expect(source).toContain("function roleScopeCounts");
+    expect(source).toContain("function permissionCatalogSize");
+    expect(source).toContain('label="permissões"');
+    expect(source).toContain("icon={Wifi}");
+    expect(source).toContain("icon={Network}");
+    expect(source).toContain("border-y border-border");
+    expect(source).toContain("!isAdministrator &&");
   });
 
   it("explica como instâncias e departamentos se relacionam com o Chat", () => {
@@ -75,6 +120,19 @@ describe("organização do editor de Perfil de Acesso", () => {
     expect(tabs.indexOf('id: "geral"')).toBeLessThan(tabs.indexOf('id: "visualizacao"'));
     expect(tabs.indexOf('id: "visualizacao"')).toBeLessThan(tabs.indexOf('id: "acessos"'));
     expect(tabs.indexOf('id: "acessos"')).toBeLessThan(tabs.indexOf('id: "jornada"'));
+  });
+
+  it("mantém Salvar e Cancelar com as mesmas dimensões no editor", () => {
+    const footerStart = source.indexOf("<EntityFormLog");
+    const footer = source.slice(
+      footerStart,
+      source.indexOf('<div className="space-y-5">', footerStart),
+    );
+
+    expect(footer).toContain('className="h-8 w-20 rounded-lg"');
+    expect(footer).toContain('className="save-action-button"');
+    expect(footer).toContain('variant="ghost"');
+    expect(footer).toContain('variant="primary"');
   });
 
   it("carrega opções de escopo sem depender dos catálogos CRUD", () => {

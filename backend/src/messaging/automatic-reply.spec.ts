@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectAutomaticReply } from "./automatic-reply";
+import { isWithinServiceHours, selectAutomaticReply } from "./automatic-reply";
 
 const hours = [
   { day: "Segunda", active: false, start: "08:00", end: "18:00" },
@@ -69,5 +69,39 @@ describe("selectAutomaticReply", () => {
       kind: "welcome",
       template: "Saudação",
     });
+  });
+
+  it("keeps an overnight period active after the local day changes", () => {
+    const overnight = hours.map((row) =>
+      row.day === "Quinta"
+        ? { ...row, active: true, start: "22:00", end: "02:00" }
+        : { ...row, active: false },
+    );
+    expect(
+      isWithinServiceHours(overnight, "America/Sao_Paulo", new Date("2026-09-18T04:30:00Z")),
+    ).toBe(true);
+    expect(
+      isWithinServiceHours(overnight, "America/Sao_Paulo", new Date("2026-09-18T05:00:00Z")),
+    ).toBe(false);
+  });
+
+  it("uses IANA daylight-saving rules for overnight hours", () => {
+    const overnight = hours.map((row) =>
+      row.day === "Sábado"
+        ? { ...row, active: true, start: "22:00", end: "03:30" }
+        : { ...row, active: false },
+    );
+    // 2026-11-01 repeats 01:00 in New York; both instants remain inside Saturday's period.
+    expect(
+      isWithinServiceHours(overnight, "America/New_York", new Date("2026-11-01T05:30:00Z")),
+    ).toBe(true);
+    expect(
+      isWithinServiceHours(overnight, "America/New_York", new Date("2026-11-01T06:30:00Z")),
+    ).toBe(true);
+  });
+
+  it("suppresses automatic replies when the instance time zone is absent or invalid", () => {
+    expect(select({ timezone: null })).toBeNull();
+    expect(select({ timezone: "Invalid/Timezone" })).toBeNull();
   });
 });

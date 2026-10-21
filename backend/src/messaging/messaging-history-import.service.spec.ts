@@ -453,6 +453,21 @@ describe("history lifecycle after service pause", () => {
     const { connection, prisma, evolution, service } = lifecycleFixture();
     connection.serviceEnabled = false;
     await service.onModuleInit();
+    expect(prisma.messagingConnection.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: {
+          id: true,
+          tenantId: true,
+          externalReference: true,
+          status: true,
+          serviceEnabled: true,
+          importHistoryEnabled: true,
+          importHistoryStartDate: true,
+          importGroupsEnabled: true,
+          importGroupsStartDate: true,
+        },
+      }),
+    );
     await vi.advanceTimersByTimeAsync(250);
     expect(evolution.findChats).not.toHaveBeenCalled();
     connection.serviceEnabled = true;

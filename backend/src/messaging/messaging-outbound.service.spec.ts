@@ -8,7 +8,11 @@ import {
   MessagingProviderType,
 } from "../generated/prisma";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
-import { MessagingOutboundService, OutboundDispatchError } from "./messaging-outbound.service";
+import {
+  contactCardPreview,
+  MessagingOutboundService,
+  OutboundDispatchError,
+} from "./messaging-outbound.service";
 import { OUTBOUND_PROVIDER_OUTCOME_UNKNOWN } from "../queue/messaging-outbound.queue";
 
 const current = {
@@ -21,6 +25,88 @@ const current = {
 };
 
 describe("MessagingOutboundService", () => {
+  it("uses the last shared contact name in a vCard conversation preview", () => {
+    const body = Buffer.from(
+      "BEGIN:VCARD\r\nFN:Primeiro contato\r\nEND:VCARD\r\nBEGIN:VCARD\r\nFN:Ialle - Prima\r\nEND:VCARD",
+    );
+
+    expect(contactCardPreview("text/vcard", "contato.vcf", body)).toBe("[contato] Ialle - Prima");
+  });
+
+  it("blocks text and media before materialization when the contact is inactive", async () => {
+    const prisma = prismaMock();
+    const inactiveConversation = {
+      ...conversation(),
+      contact: { ...conversation().contact, active: false },
+    };
+    prisma.conversation.findFirst.mockResolvedValue(inactiveConversation);
+    const mediaStorage = { storeUpload: vi.fn() };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      mediaStorage as never,
+    );
+
+    await expect(
+      service.sendText("conversation-a", { content: "Olá" }, current as never),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: "CONTACT_INACTIVE" }) });
+    await expect(
+      service.sendMedia(
+        "conversation-a",
+        { headers: { "content-type": "image/png" } } as never,
+        current as never,
+      ),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: "CONTACT_INACTIVE" }) });
+    expect(mediaStorage.storeUpload).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("fails a queued outbound message if the contact became inactive", async () => {
+    const prisma = prismaMock();
+    const queued = message();
+    queued.conversation.contact.active = false;
+    prisma.message.findFirst.mockResolvedValue(queued);
+    const provider = { send: vi.fn() };
+    const registry = registryMock(provider);
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registry as never,
+      dispatcherMock() as never,
+    );
+
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).rejects.toThrow("O contato está inativo");
+    expect(registry.resolve).not.toHaveBeenCalled();
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
+  it("blocks reactions for an inactive contact before calling the provider", async () => {
+    const prisma = prismaMock();
+    const inactiveMessage = message();
+    inactiveMessage.conversation.contact.active = false;
+    prisma.message.findFirst.mockResolvedValue(inactiveMessage);
+    const evolution = { sendReaction: vi.fn() };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      undefined,
+      evolution as never,
+    );
+
+    await expect(
+      service.react("conversation-a", "message-a", "👍", current as never),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: "CONTACT_INACTIVE" }) });
+    expect(evolution.sendReaction).not.toHaveBeenCalled();
+  });
+
   it("rejects voice uploads when the current profile cannot send audio", async () => {
     const prisma = prismaMock();
     prisma.conversation.findFirst.mockResolvedValue(conversation());
@@ -200,7 +286,49 @@ describe("MessagingOutboundService", () => {
     expect(dispatcher.dispatchMessage).toHaveBeenCalledWith("message-a");
   });
 
-  it("queues absence media with its own idempotency key and outbox event", async () => {
+  it("resolves an additional field through the central resolver in a welcome text", async () => {
+    const prisma = prismaMock();
+    const dispatcher = dispatcherMock();
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue({
+      ...message(),
+      clientMessageId: "automatic:welcome",
+      providerStatus: "welcome_queued",
+    });
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcher as never,
+    );
+
+    await expect(
+      service.queueAutomatedText({
+        tenantId: "tenant-a",
+        conversationId: "conversation-a",
+        connectionId: "connection-a",
+        externalChatId: "5511999999999@s.whatsapp.net",
+        content: "Bem-vinda, {{nome}}. Plano: {{plano}}.",
+        templateContext: {
+          contactName: "Ana",
+          customFieldValues: [
+            { label: "Plano", variableKey: "plano", type: "TEXT", value: "Premium" },
+          ],
+        },
+        kind: "welcome",
+      }),
+    ).resolves.toMatchObject({ created: true });
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          clientMessageId: "automatic:welcome",
+          content: "Bem-vinda, Ana. Plano: Premium.",
+        }),
+      }),
+    );
+  });
+
+  it("queues absence media with its own idempotency key and resolves an additional field", async () => {
     const prisma = prismaMock();
     const dispatcher = dispatcherMock();
     const mediaStorage = {
@@ -233,7 +361,13 @@ describe("MessagingOutboundService", () => {
         conversationId: "conversation-a",
         connectionId: "connection-a",
         externalChatId: "5511999999999@s.whatsapp.net",
-        content: "Voltamos em breve.",
+        content: "Voltamos em breve, {{nome}} do plano {{plano}}.",
+        templateContext: {
+          contactName: "Ana",
+          customFieldValues: [
+            { label: "Plano", variableKey: "plano", type: "TEXT", value: "Premium" },
+          ],
+        },
         kind: "absence",
         attachment: {
           fileName: "absence.ogg",
@@ -254,7 +388,7 @@ describe("MessagingOutboundService", () => {
         data: expect.objectContaining({
           clientMessageId: "automatic:absence",
           providerStatus: "absence_queued",
-          content: "Voltamos em breve.",
+          content: "Voltamos em breve, Ana do plano Premium.",
         }),
       }),
     );
@@ -298,6 +432,378 @@ describe("MessagingOutboundService", () => {
       }),
     );
     expect(senderName.resolve).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["image/png", "image", MessageType.IMAGE],
+    ["video/mp4", "video", MessageType.VIDEO],
+    ["audio/mpeg", "audio", MessageType.AUDIO],
+    ["audio/webm", "voice", MessageType.VOICE],
+    ["application/pdf", "document", MessageType.DOCUMENT],
+  ])(
+    "keeps captionless %s media free of an automatic signature",
+    async (mimeType, mediaType, messageType) => {
+      const prisma = prismaMock();
+      prisma.conversation.findFirst.mockResolvedValue(conversation());
+      prisma.message.findFirst.mockResolvedValue(null);
+      prisma.message.create.mockResolvedValue(message());
+      const mediaStorage = {
+        storeUpload: vi.fn().mockResolvedValue({
+          objectKey: `tenants/tenant-a/messages/${mediaType}`,
+          body: Buffer.from("media"),
+          checksum: "checksum",
+          mimeType,
+          fileName: mediaType === "voice" ? "audio.webm" : "image.png",
+          sizeBytes: 5,
+          messageType,
+          caption: null,
+          durationMs: mediaType === "voice" ? 1_000 : null,
+        }),
+        deleteObject: vi.fn(),
+      };
+      const senderName = { resolve: vi.fn().mockResolvedValue("Natã Rabelo") };
+      const service = new MessagingOutboundService(
+        prisma as never,
+        registryMock() as never,
+        dispatcherMock() as never,
+        mediaStorage as never,
+        undefined,
+        undefined,
+        senderName as never,
+      );
+
+      await service.sendMedia(
+        "conversation-a",
+        {
+          headers: {
+            "content-type": mimeType,
+            "x-media-type": mediaType,
+          },
+        } as never,
+        {
+          ...current,
+          permissions: ["messages.send", "chat.agent_name.show"],
+        } as never,
+      );
+
+      expect(prisma.message.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            content: null,
+            mediaCaption: null,
+          }),
+        }),
+      );
+      expect(senderName.resolve).not.toHaveBeenCalled();
+    },
+  );
+
+  it("adds the attendant signature once when media has a caption", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue(message());
+    const mediaStorage = {
+      storeUpload: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/image",
+        body: Buffer.from("media"),
+        checksum: "checksum",
+        mimeType: "image/png",
+        fileName: "image.png",
+        sizeBytes: 5,
+        messageType: MessageType.IMAGE,
+        caption: "Legenda da imagem",
+        durationMs: null,
+      }),
+      deleteObject: vi.fn(),
+    };
+    const senderName = { resolve: vi.fn().mockResolvedValue("Natã Rabelo") };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      mediaStorage as never,
+      undefined,
+      undefined,
+      senderName as never,
+    );
+
+    await service.sendMedia(
+      "conversation-a",
+      { headers: { "content-type": "image/png", "x-media-type": "image" } } as never,
+      {
+        ...current,
+        permissions: ["messages.send", "chat.agent_name.show"],
+      } as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: "*Natã Rabelo:*\n\nLegenda da imagem",
+          mediaCaption: "*Natã Rabelo:*\n\nLegenda da imagem",
+        }),
+      }),
+    );
+    expect(senderName.resolve).toHaveBeenCalledOnce();
+  });
+
+  it("keeps captionless media empty when the signature permission is disabled", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue(message());
+    const mediaStorage = {
+      storeUpload: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/image",
+        body: Buffer.from("media"),
+        checksum: "checksum",
+        mimeType: "image/png",
+        fileName: "image.png",
+        sizeBytes: 5,
+        messageType: MessageType.IMAGE,
+        caption: null,
+        durationMs: null,
+      }),
+      deleteObject: vi.fn(),
+    };
+    const senderName = { resolve: vi.fn() };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      mediaStorage as never,
+      undefined,
+      undefined,
+      senderName as never,
+    );
+
+    await service.sendMedia(
+      "conversation-a",
+      { headers: { "content-type": "image/png", "x-media-type": "image" } } as never,
+      { ...current, permissions: ["messages.send"] } as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: null, mediaCaption: null }),
+      }),
+    );
+    expect(senderName.resolve).not.toHaveBeenCalled();
+  });
+
+  it("does not create a signature-only caption for a captionless document", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue(message());
+    const mediaStorage = {
+      storeUpload: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/document",
+        body: Buffer.from("document"),
+        checksum: "checksum",
+        mimeType: "application/pdf",
+        fileName: "document.pdf",
+        sizeBytes: 8,
+        messageType: MessageType.DOCUMENT,
+        caption: null,
+        durationMs: null,
+      }),
+      deleteObject: vi.fn(),
+    };
+    const senderName = { resolve: vi.fn().mockResolvedValue("Natã Rabelo") };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      mediaStorage as never,
+      undefined,
+      undefined,
+      senderName as never,
+    );
+
+    await service.sendMedia(
+      "conversation-a",
+      {
+        headers: { "content-type": "application/pdf", "x-media-type": "document" },
+      } as never,
+      {
+        ...current,
+        permissions: ["messages.send", "chat.agent_name.show"],
+      } as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: null, mediaCaption: null }),
+      }),
+    );
+    expect(senderName.resolve).not.toHaveBeenCalled();
+  });
+
+  it("resolves a quick-message template with the instance timezone at enqueue time", async () => {
+    const prisma = prismaMock();
+    const activeConversation = conversation();
+    prisma.contactCustomFieldValue.findMany.mockResolvedValue([
+      {
+        value: "Premium",
+        field: { label: "Plano", variableKey: "plano", type: "TEXT", mask: null },
+      },
+    ]);
+    prisma.conversation.findFirst.mockResolvedValue(activeConversation);
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.create.mockImplementation(async ({ data }) => message({ ...data } as never));
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { now: () => new Date("2026-09-17T15:00:00.000Z") },
+    );
+
+    await service.sendText(
+      "conversation-a",
+      { content: "{{saudacao}}, {{nome}} — {{plano}}", clientMessageId: "quick-a" },
+      current as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "Boa tarde, Cliente — Premium" }),
+      }),
+    );
+    expect(prisma.conversation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "conversation-a", tenantId: "tenant-a" }),
+      }),
+    );
+  });
+
+  it("rejects content that becomes empty or oversized after template expansion", async () => {
+    const prisma = prismaMock();
+    const activeConversation = conversation();
+    prisma.contactCustomFieldValue.findMany.mockResolvedValue([
+      {
+        value: "x".repeat(4001),
+        field: {
+          label: "Grande",
+          variableKey: "grande",
+          type: "TEXT",
+          mask: null,
+        },
+      },
+    ]);
+    prisma.conversation.findFirst.mockResolvedValue(activeConversation);
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { now: () => new Date("2026-09-17T15:00:00.000Z") },
+    );
+
+    await expect(
+      service.sendText("conversation-a", { content: "{{email}}" }, current as never),
+    ).rejects.toThrow("Mensagem vazia");
+    await expect(
+      service.sendText("conversation-a", { content: "{{grande}}" }, current as never),
+    ).rejects.toThrow("excede 4000");
+    expect(prisma.message.create).not.toHaveBeenCalled();
+  });
+
+  it("does not resolve or persist additional-field values without the read permission", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.contactCustomFieldValue.findMany.mockResolvedValue([
+      {
+        value: "Premium",
+        field: { label: "Plano", variableKey: "plano", type: "TEXT", mask: null },
+      },
+    ]);
+    prisma.message.create.mockImplementation(async ({ data }) => message({ ...data } as never));
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+    );
+
+    await service.sendText(
+      "conversation-a",
+      { content: "Plano: {{plano}}", clientMessageId: "restricted-template" },
+      { ...current, roleKey: "agent", permissions: ["messages.send"] } as never,
+    );
+
+    expect(prisma.contactCustomFieldValue.findMany).not.toHaveBeenCalled();
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "Plano: {{plano}}" }),
+      }),
+    );
+  });
+
+  it("does not mix variable values or timezone from another tenant instance", async () => {
+    const prisma = prismaMock();
+    const tenantA = conversation();
+    tenantA.contact.name = "Ana";
+    tenantA.connection = connection({ timezone: "America/Sao_Paulo" });
+    const tenantB = conversation();
+    tenantB.id = "conversation-b";
+    tenantB.tenantId = "tenant-b";
+    tenantB.contact.name = "Bruna";
+    tenantB.connection = connection({
+      id: "connection-b",
+      tenantId: "tenant-b",
+      timezone: "Asia/Tokyo",
+    });
+    prisma.conversation.findFirst.mockImplementation(async ({ where }) => {
+      const serialized = JSON.stringify(where);
+      if (serialized.includes("tenant-a") && serialized.includes("conversation-a")) return tenantA;
+      if (serialized.includes("tenant-b") && serialized.includes("conversation-b")) return tenantB;
+      return null;
+    });
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.create.mockImplementation(async ({ data }) => message({ ...data } as never));
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { now: () => new Date("2026-09-17T15:30:00.000Z") },
+    );
+
+    await service.sendText(
+      "conversation-a",
+      { content: "{{saudacao}}, {{nome}}" },
+      current as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tenantId: "tenant-a",
+          connectionId: "connection-a",
+          content: "Boa tarde, Ana",
+        }),
+      }),
+    );
+    expect(prisma.conversation.findFirst).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: "tenant-b" }) }),
+    );
   });
 
   it("marks QUEUED messages as SENT after provider acceptance", async () => {
@@ -442,7 +948,11 @@ describe("MessagingOutboundService", () => {
 
   it("persists an accepted provider response locally without sending it again", async () => {
     const provider = {
-      send: vi.fn().mockResolvedValue({ accepted: true, providerMessageId: "wa-accepted" }),
+      send: vi.fn().mockResolvedValue({
+        accepted: true,
+        providerMessageId: "wa-accepted",
+        providerChatId: "5511999990000@s.whatsapp.net",
+      }),
     };
     const prisma = prismaMock();
     prisma.message.findFirst.mockResolvedValueOnce(message({ status: MessageStatus.QUEUED }));
@@ -473,6 +983,7 @@ describe("MessagingOutboundService", () => {
         data: expect.objectContaining({
           status: MessageStatus.SENT,
           providerMessageId: "wa-accepted",
+          providerChatId: "5511999990000@s.whatsapp.net",
         }),
       }),
     );
@@ -601,6 +1112,44 @@ describe("MessagingOutboundService", () => {
     expect(provider.send).not.toHaveBeenCalled();
   });
 
+  it("does not reconcile or send through a connection quarantined by an owner mismatch", async () => {
+    const provider = { send: vi.fn() };
+    const evolution = {
+      connectionState: vi.fn().mockResolvedValue({ instance: { state: "open" } }),
+    };
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValue(
+      message({
+        status: MessageStatus.QUEUED,
+        connection: {
+          ...connection(),
+          status: MessagingConnectionStatus.ERROR,
+          connectionErrorCode: "OWNER_PHONE_MISMATCH",
+        },
+      }),
+    );
+
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock(provider) as never,
+      dispatcherMock() as never,
+      undefined,
+      evolution as never,
+    );
+
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).rejects.toMatchObject({ retryable: false });
+    expect(evolution.connectionState).not.toHaveBeenCalled();
+    expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
   it("fails removed connections without provider fallback", async () => {
     const provider = { send: vi.fn() };
     const prisma = prismaMock();
@@ -662,8 +1211,12 @@ describe("MessagingOutboundService", () => {
 function prismaMock() {
   const prisma = {
     conversation: { findFirst: vi.fn(), update: vi.fn() },
+    contactCustomFieldValue: { findMany: vi.fn().mockResolvedValue([]) },
     departmentMembership: { findMany: vi.fn() },
-    messagingConnection: { findFirst: vi.fn().mockResolvedValue(connection()) },
+    messagingConnection: {
+      findFirst: vi.fn().mockResolvedValue(connection()),
+      update: vi.fn(),
+    },
     message: {
       findFirst: vi.fn(),
       create: vi.fn(),
@@ -695,6 +1248,11 @@ function connection(overrides = {}) {
     providerType: MessagingProviderType.DEVELOPMENT,
     status: MessagingConnectionStatus.CONNECTED,
     externalReference: "dev-a",
+    name: "Atendimento",
+    timezone: "America/Sao_Paulo",
+    archivedAt: null,
+    serviceEnabled: true,
+    connectionErrorCode: null,
     ...overrides,
   };
 }
@@ -706,7 +1264,18 @@ function conversation() {
     assignedMembershipId: "membership-a",
     status: ConversationStatus.EM_ANDAMENTO,
     connectionId: "connection-a",
-    contact: { phone: "+5511999999999", normalizedPhone: "+5511999999999", name: "Cliente" },
+    contact: {
+      id: "contact-a",
+      active: true,
+      phone: "+5511999999999",
+      normalizedPhone: "+5511999999999",
+      name: "Cliente",
+      email: null,
+      departmentName: null,
+      customer: null,
+      contactDepartment: null,
+    },
+    department: null,
     connection: connection(),
   };
 }

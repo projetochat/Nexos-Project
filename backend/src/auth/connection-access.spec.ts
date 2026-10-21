@@ -6,6 +6,7 @@ import {
   departmentIdAccess,
   conversationChatScopeAccess,
   roleChatDepartmentIds,
+  roleChatPreferences,
   roleChatScopes,
   roleConnectionIds,
 } from "./connection-access";
@@ -28,9 +29,50 @@ describe("instance access", () => {
     expect(roleConnectionIds({ key: "agent", metadata: {} })).toEqual([]);
     expect(connectionAccess({ roleKey: "agent" })).toEqual({ connectionId: { in: [] } });
   });
+
+  it("treats an explicitly empty Chat scope as authoritative", () => {
+    const role = {
+      key: "agent",
+      metadata: {
+        chatScopes: [],
+        connectionIds: ["legacy-connection"],
+        departmentIds: ["legacy-department"],
+      },
+    };
+
+    expect(roleConnectionIds(role)).toEqual([]);
+    expect(roleChatDepartmentIds(role)).toEqual([]);
+  });
   it("keeps the tenant administrator unrestricted within their tenant", () => {
-    expect(roleConnectionIds({ key: "tenant_admin" })).toBeNull();
+    const role = {
+      key: "tenant_admin",
+      metadata: {
+        chatScopes: [
+          {
+            connectionId: "connection-a",
+            departmentIds: ["department-a"],
+            favoriteDepartmentId: "department-a",
+          },
+        ],
+      },
+    };
+    expect(roleConnectionIds(role)).toBeNull();
+    expect(roleChatDepartmentIds(role)).toBeNull();
+    expect(roleChatScopes(role)).toEqual([]);
+    expect(roleChatPreferences(role)).toEqual([
+      {
+        connectionId: "connection-a",
+        departmentIds: ["department-a"],
+        favoriteDepartmentId: "department-a",
+      },
+    ]);
     expect(connectionAccess({ roleKey: "tenant_admin" })).toEqual({});
+    expect(
+      conversationChatScopeAccess({
+        roleKey: "tenant_admin",
+        chatScopes: roleChatPreferences(role),
+      }),
+    ).toEqual({});
   });
 
   it("limits Chat conversations and options to the profile departments", () => {

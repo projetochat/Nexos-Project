@@ -11,17 +11,26 @@ import {
   Bell,
   LogOut,
   ShieldCheck,
-  Sparkles,
+  Package,
   Layers3,
   Moon,
   Sun,
   Menu,
   X,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
 } from "lucide-react";
-import { LogoMark, Avatar } from "./ui-kit";
+import { toast } from "sonner";
+import { LogoMark, Avatar, Button, CloseButton, Field, Input } from "./ui-kit";
+import { Modal } from "./modal";
 import { OfflineBanner, TopProgress } from "./feedback";
 import { useTheme } from "./theme-context";
+import { isCurrentAdminNavRoute } from "../lib/admin-route";
+import { clearTrixusApiSession, platformApi } from "@/lib/trixus-api";
 import { useSession, ROLE_META } from "@/lib/session";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 /* ============================================================
    Trixus · Admin Shell (Painel Super Admin — Plataforma SaaS)
@@ -37,7 +46,7 @@ type NavItem = {
 const negocioNav: NavItem[] = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { to: "/admin/empresas", label: "Clientes", icon: Building2 },
-  { to: "/admin/planos", label: "Planos", icon: Sparkles },
+  { to: "/admin/planos", label: "Planos", icon: Package },
   { to: "/admin/assinaturas", label: "Assinaturas", icon: CreditCard },
   { to: "/admin/financeiro", label: "Financeiro", icon: Receipt },
   { to: "/admin/tenants", label: "Tenant", icon: Layers3 },
@@ -98,12 +107,25 @@ function useSidebar() {
   return { collapsed, toggle };
 }
 
-function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
+function NavLink({
+  item,
+  collapsed,
+  onNavigate,
+}: {
+  item: NavItem;
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
   const Icon = item.icon;
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   return (
     <Link
       to={item.to}
       activeOptions={{ exact: item.to === "/admin" }}
+      onClick={(event) => {
+        if (isCurrentAdminNavRoute(pathname, item.to)) event.preventDefault();
+        onNavigate?.();
+      }}
       title={collapsed ? item.label : undefined}
       className={`group relative flex items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground data-[status=active]:bg-surface-2 data-[status=active]:text-foreground ${
         collapsed ? "h-9 w-9 justify-center" : "gap-3 px-3 py-2"
@@ -124,10 +146,12 @@ function NavSection({
   title,
   items,
   collapsed,
+  onNavigate,
 }: {
   title: string;
   items: NavItem[];
   collapsed: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <div className={collapsed ? "flex flex-col items-center gap-0.5" : "space-y-0.5"}>
@@ -138,7 +162,7 @@ function NavSection({
       )}
       {collapsed && <div className="my-2 h-px w-6 bg-border" />}
       {items.map((i) => (
-        <NavLink key={i.to} item={i} collapsed={collapsed} />
+        <NavLink key={i.to} item={i} collapsed={collapsed} onNavigate={onNavigate} />
       ))}
     </div>
   );
@@ -147,7 +171,7 @@ function NavSection({
 function Sidebar({ collapsed }: { collapsed: boolean }) {
   return (
     <aside
-      className={`hidden shrink-0 border-r border-border bg-surface-1 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
+      className={`hidden h-dvh shrink-0 self-start border-r border-border bg-surface-1 transition-[width] duration-200 ease-out lg:sticky lg:top-0 lg:flex lg:flex-col ${
         collapsed ? "w-14" : "w-64"
       }`}
     >
@@ -170,14 +194,13 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
         </Link>
       </div>
       <nav
-        className={`flex flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden py-3 ${collapsed ? "px-2" : "px-3"}`}
+        className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-3 ${collapsed ? "px-2" : "px-3"}`}
       >
         <NavSection title="Negócio" items={negocioNav} collapsed={collapsed} />
-        <div className="mt-auto">
-          {collapsed && <div className="my-2 h-px w-6 self-center bg-border" />}
-          <NavSection title="Sistema" items={seguranca} collapsed={collapsed} />
-        </div>
       </nav>
+      <div className={`shrink-0 border-t border-border py-3 ${collapsed ? "px-2" : "px-3"}`}>
+        <NavSection title="Sistema" items={seguranca} collapsed={collapsed} />
+      </div>
     </aside>
   );
 }
@@ -187,6 +210,7 @@ function UserMenu() {
   const logout = useSession((s) => s.logout);
   const navigate = useNavigate();
   const [open, setOpen] = React.useState(false);
+  const [passwordOpen, setPasswordOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     function on(e: MouseEvent) {
@@ -196,38 +220,229 @@ function UserMenu() {
     return () => document.removeEventListener("mousedown", on);
   }, []);
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1 pr-3 transition hover:bg-surface-2"
-      >
-        <Avatar name={user?.nome ?? "?"} size={26} />
-        <span className="hidden text-sm font-medium sm:inline">
-          {user?.nome?.split(" ")[0] ?? "Owner"}
-        </span>
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 origin-top-right animate-scale-in rounded-xl border border-border bg-popover p-1.5 shadow-elevated">
-          <div className="border-b border-border px-3 py-2.5">
-            <div className="text-sm font-medium">{user?.nome}</div>
-            <div className="truncate text-xs text-muted-foreground">{user?.email}</div>
-            <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-              <ShieldCheck className="h-3 w-3" /> {user ? ROLE_META[user.role].label : ""}
+    <>
+      <div ref={ref} className="relative">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1 pr-3 transition hover:bg-surface-2"
+        >
+          <Avatar name={user?.nome ?? "?"} size={26} />
+          <span className="hidden text-sm font-medium sm:inline">
+            {user?.nome?.split(" ")[0] ?? "Owner"}
+          </span>
+        </button>
+        {open && (
+          <div className="absolute right-0 top-full mt-2 w-64 origin-top-right animate-scale-in rounded-xl border border-border bg-popover p-1.5 shadow-elevated">
+            <div className="border-b border-border px-3 py-2.5">
+              <div className="text-sm font-medium">{user?.nome}</div>
+              <div className="truncate text-xs text-muted-foreground">{user?.email}</div>
+              <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                <ShieldCheck className="h-3 w-3" /> {user ? ROLE_META[user.role].label : ""}
+              </div>
             </div>
+            <ThemeModeMenuItem />
+            <button
+              onClick={() => {
+                setOpen(false);
+                setPasswordOpen(true);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
+            >
+              <KeyRound className="h-4 w-4" /> Alterar senha
+            </button>
+            <div className="my-1 h-px bg-border" />
+            <button
+              onClick={() => {
+                logout();
+                navigate({ to: "/login" });
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive transition hover:bg-destructive/10"
+            >
+              <LogOut className="h-4 w-4" /> Sair da plataforma
+            </button>
           </div>
-          <ThemeModeMenuItem />
-          <div className="my-1 h-px bg-border" />
-          <button
-            onClick={() => {
-              logout();
-              navigate({ to: "/login" });
+        )}
+      </div>
+      <ChangePlatformPasswordModal
+        open={passwordOpen}
+        onClose={() => setPasswordOpen(false)}
+        onSessionRevoked={() => {
+          clearTrixusApiSession();
+          logout();
+          navigate({ to: "/login" });
+        }}
+      />
+    </>
+  );
+}
+
+function ChangePlatformPasswordModal({
+  open,
+  onClose,
+  onSessionRevoked,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSessionRevoked: () => void;
+}) {
+  const [currentPassword, setCurrentPassword] = React.useState("");
+  const [newPassword, setNewPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+  const [requiredErrors, setRequiredErrors] = React.useState({
+    currentPassword: false,
+    newPassword: false,
+    confirmPassword: false,
+  });
+
+  React.useEffect(() => {
+    if (open) return;
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setRequiredErrors({ currentPassword: false, newPassword: false, confirmPassword: false });
+    setSubmitting(false);
+  }, [open]);
+
+  const close = React.useCallback(() => {
+    if (!submitting) onClose();
+  }, [onClose, submitting]);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const nextRequiredErrors = {
+      currentPassword: !currentPassword,
+      newPassword: !newPassword,
+      confirmPassword: !confirmPassword,
+    };
+    if (Object.values(nextRequiredErrors).some(Boolean)) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast([
+        ...(nextRequiredErrors.currentPassword ? ["Senha atual"] : []),
+        ...(nextRequiredErrors.newPassword ? ["Nova senha"] : []),
+        ...(nextRequiredErrors.confirmPassword ? ["Confirmar nova senha"] : []),
+      ]);
+      return;
+    }
+    if (newPassword.length < 6) {
+      return void toast.error("A nova senha deve ter ao menos 6 caracteres.");
+    }
+    if (newPassword === currentPassword) {
+      return void toast.error("A nova senha deve ser diferente da senha atual.");
+    }
+    if (newPassword !== confirmPassword) {
+      return void toast.error("A confirmação da nova senha não confere.");
+    }
+
+    setSubmitting(true);
+    try {
+      await platformApi.changeOwnPassword({ currentPassword, newPassword, confirmPassword });
+      toast.success("Senha alterada. Entre novamente para continuar.");
+      onSessionRevoked();
+    } catch (error) {
+      toast.error((error as Error).message || "Não foi possível alterar a senha.");
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={close}
+      title="Alterar senha"
+      description="A alteração encerra todas as sessões abertas."
+      size="sm"
+      dismissible={!submitting}
+      initialFocus="#platform-current-password"
+      footer={
+        <>
+          <Button type="button" variant="ghost" size="sm" onClick={close} disabled={submitting}>
+            Cancelar
+          </Button>
+          <Button type="submit" form="platform-password-form" disabled={submitting}>
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            Alterar senha
+          </Button>
+        </>
+      }
+    >
+      <form id="platform-password-form" className="space-y-4" onSubmit={submit} noValidate>
+        <Field label="Senha atual *">
+          <PlatformPasswordInput
+            id="platform-current-password"
+            value={currentPassword}
+            onChange={(value) => {
+              setCurrentPassword(value);
+              if (value) setRequiredErrors((current) => ({ ...current, currentPassword: false }));
             }}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive transition hover:bg-destructive/10"
-          >
-            <LogOut className="h-4 w-4" /> Sair da plataforma
-          </button>
-        </div>
-      )}
+            autoComplete="current-password"
+            invalid={requiredErrors.currentPassword}
+          />
+        </Field>
+        <Field label="Nova senha *" hint="Use pelo menos 6 caracteres.">
+          <PlatformPasswordInput
+            id="platform-new-password"
+            value={newPassword}
+            onChange={(value) => {
+              setNewPassword(value);
+              if (value) setRequiredErrors((current) => ({ ...current, newPassword: false }));
+            }}
+            autoComplete="new-password"
+            invalid={requiredErrors.newPassword}
+          />
+        </Field>
+        <Field label="Confirmar nova senha *">
+          <PlatformPasswordInput
+            id="platform-confirm-password"
+            value={confirmPassword}
+            onChange={(value) => {
+              setConfirmPassword(value);
+              if (value) setRequiredErrors((current) => ({ ...current, confirmPassword: false }));
+            }}
+            autoComplete="new-password"
+            invalid={requiredErrors.confirmPassword}
+          />
+        </Field>
+      </form>
+    </Modal>
+  );
+}
+
+function PlatformPasswordInput({
+  id,
+  value,
+  onChange,
+  autoComplete,
+  invalid = false,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: "current-password" | "new-password";
+  invalid?: boolean;
+}) {
+  const [visible, setVisible] = React.useState(false);
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        autoComplete={autoComplete}
+        maxLength={72}
+        aria-invalid={invalid}
+        className={`pr-11 ${requiredFieldClassName(invalid)}`}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
+        aria-pressed={visible}
+        className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+      >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
     </div>
   );
 }
@@ -317,6 +532,25 @@ function Topbar({
 }
 
 function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+
+  React.useEffect(() => {
+    if (!open) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousOverscroll = document.documentElement.style.overscrollBehavior;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.documentElement.style.overscrollBehavior = previousOverscroll;
+    };
+  }, [open]);
+
+  const closeFromNavigation = React.useCallback(() => onClose(), [onClose]);
+
   return (
     <>
       {open && (
@@ -333,23 +567,35 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
         }`}
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-          <Link to="/admin" className="flex items-center gap-2" onClick={onClose}>
+          <Link
+            to="/admin"
+            className="flex items-center gap-2"
+            onClick={(event) => {
+              if (isCurrentAdminNavRoute(pathname, "/admin")) event.preventDefault();
+              closeFromNavigation();
+            }}
+          >
             <LogoMark size={36} />
             <span className="text-sm font-semibold tracking-tight">Trixus Admin</span>
           </Link>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-            aria-label="Fechar menu"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <CloseButton onClick={onClose} aria-label="Fechar menu" />
         </div>
-        <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-3">
-          <NavSection title="Negócio" items={negocioNav} collapsed={false} />
-          <NavSection title="Sistema" items={seguranca} collapsed={false} />
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3">
+          <NavSection
+            title="Negócio"
+            items={negocioNav}
+            collapsed={false}
+            onNavigate={closeFromNavigation}
+          />
         </nav>
+        <div className="shrink-0 border-t border-border px-3 py-3">
+          <NavSection
+            title="Sistema"
+            items={seguranca}
+            collapsed={false}
+            onNavigate={closeFromNavigation}
+          />
+        </div>
       </aside>
     </>
   );
@@ -375,13 +621,16 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   if (!authorized) return null;
   return (
-    <div className="flex min-h-dvh bg-background text-foreground">
+    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
       <TopProgress active={isNavigating} />
       <Sidebar collapsed={collapsed} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <OfflineBanner />
         <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
-        <main key={pathname} className="min-w-0 flex-1 animate-fade-in-soft">
+        <main
+          key={pathname}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain animate-fade-in-soft"
+        >
           {children}
         </main>
         <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />

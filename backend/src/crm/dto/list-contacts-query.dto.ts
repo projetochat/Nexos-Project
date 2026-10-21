@@ -25,4 +25,8 @@ export class ListContactsQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
   tagId?: string;
+
+  @IsOptional()
+  @IsIn(["name", "customer", "instance"])
+  sortBy?: "name" | "customer" | "instance" = "name";
 }

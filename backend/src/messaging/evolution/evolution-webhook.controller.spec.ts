@@ -1,11 +1,15 @@
+import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JwtService } from "@nestjs/jwt";
 import { EvolutionWebhookController } from "./evolution-webhook.controller";
 import { MessageStatus } from "../../generated/prisma";
 import type { EvolutionWebhookTranslation } from "./evolution-webhook.translator";
 
+const webhookSecret = randomBytes(32).toString("hex");
+const otherWebhookSecret = randomBytes(32).toString("hex");
+
 beforeEach(() => {
-  vi.stubEnv("EVOLUTION_WEBHOOK_SECRET", "isolated-webhook-secret");
+  vi.stubEnv("EVOLUTION_WEBHOOK_SECRET", webhookSecret);
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network disabled")));
 });
 afterEach(() => {
@@ -58,18 +62,14 @@ function fixture(kind: (typeof variants)[number], enabled = true) {
   return { controller, selected, tx, prisma, deferIfPaused, connection, translated };
 }
 const request = (controller: EvolutionWebhookController) =>
-  controller.receive(
-    { instance: "test-instance", event: "test-event" },
-    undefined,
-    "isolated-webhook-secret",
-  );
+  controller.receive({ instance: "test-instance", event: "test-event" }, undefined, webhookSecret);
 
 describe("live update webhook admission while service pauses", () => {
   it("accepts a fresh signed provider JWT", async () => {
     const test = fixture("edit");
     const token = new JwtService().sign(
       { app: "evolution", action: "webhook" },
-      { secret: "isolated-webhook-secret", expiresIn: 600 },
+      { secret: webhookSecret, expiresIn: 600 },
     );
     await expect(
       test.controller.receive(
@@ -86,7 +86,7 @@ describe("live update webhook admission while service pauses", () => {
       const token = new JwtService().sign(
         { app: "evolution", action: "webhook" },
         {
-          secret: reason === "expired" ? "isolated-webhook-secret" : "other-isolated-secret",
+          secret: reason === "expired" ? webhookSecret : otherWebhookSecret,
           expiresIn: reason === "expired" ? -1 : 600,
         },
       );
@@ -126,6 +126,19 @@ describe("live update webhook admission while service pauses", () => {
     await expect(request(test.controller)).rejects.toThrow("isolated persistence failure");
     expect(test.deferIfPaused).toHaveBeenCalledOnce();
   });
+  it("ignora mensagens enquanto a instância está em quarentena por número diferente", async () => {
+    const test = fixture("edit");
+    (
+      test.connection as typeof test.connection & { connectionErrorCode?: string }
+    ).connectionErrorCode = "OWNER_PHONE_MISMATCH";
+
+    await expect(request(test.controller)).resolves.toEqual({
+      ok: true,
+      ignored: "OWNER_PHONE_MISMATCH",
+    });
+    expect(test.selected).not.toHaveBeenCalled();
+    expect(test.deferIfPaused).not.toHaveBeenCalled();
+  });
   it("does not acknowledge a racing pause if forced retention fails", async () => {
     const test = fixture("delete", false);
     test.deferIfPaused
@@ -133,5 +146,48 @@ describe("live update webhook admission while service pauses", () => {
       .mockRejectedValueOnce(new Error("retention unavailable"));
     await expect(request(test.controller)).rejects.toThrow("retention unavailable");
     expect(test.selected).not.toHaveBeenCalled();
+  });
+
+  it("captures a delayed QR before updating the connection status", async () => {
+    const connection = { id: "connection-a", tenantId: "tenant-a" };
+    const captureEvolutionQrCode = vi.fn().mockResolvedValue(true);
+    const updateConnectionStatus = vi.fn().mockResolvedValue(connection);
+    const controller = new EvolutionWebhookController(
+      new JwtService(),
+      {
+        findByEvolutionInstance: vi.fn().mockResolvedValue(connection),
+        captureEvolutionQrCode,
+        updateConnectionStatus,
+      } as never,
+      {
+        translate: vi.fn().mockReturnValue({
+          kind: "connection",
+          instanceName: "test-instance",
+          status: "CONNECTING",
+          qrCodeBase64: "data:image/png;base64,cXItY29kZQ==",
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { deferIfPaused: vi.fn().mockResolvedValue(false) } as never,
+    );
+
+    await expect(
+      controller.receive(
+        { instance: "test-instance", event: "qrcode.updated" },
+        undefined,
+        webhookSecret,
+      ),
+    ).resolves.toMatchObject({ ok: true, kind: "connection" });
+    expect(captureEvolutionQrCode).toHaveBeenCalledWith(
+      "connection-a",
+      "test-instance",
+      "data:image/png;base64,cXItY29kZQ==",
+    );
+    expect(captureEvolutionQrCode.mock.invocationCallOrder[0]).toBeLessThan(
+      updateConnectionStatus.mock.invocationCallOrder[0],
+    );
   });
 });

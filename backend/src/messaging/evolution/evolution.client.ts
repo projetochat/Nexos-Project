@@ -113,6 +113,7 @@ export class EvolutionClient {
           headers: input.webhookSecret ? { jwt_key: input.webhookSecret } : undefined,
           events: [
             "MESSAGES_UPSERT",
+            "MESSAGES_EDITED",
             "MESSAGES_UPDATE",
             "MESSAGES_DELETE",
             "SEND_MESSAGE_UPDATE",
@@ -230,17 +231,27 @@ export class EvolutionClient {
     );
   }
 
-  deleteMessage(input: { instanceName: string; remoteJid: string; messageId: string }) {
+  async deleteMessage(input: { instanceName: string; remoteJid: string; messageId: string }) {
     const key = { remoteJid: input.remoteJid, fromMe: true, id: input.messageId };
-    return this.request<unknown>(`/chat/deleteMessageForEveryone/${input.instanceName}`, {
-      method: "DELETE",
-      body: key,
-    }).catch(() =>
-      this.request<unknown>(`/message/delete/${input.instanceName}`, {
-        method: "POST",
-        body: { key },
-      }),
+    const response = await this.request<unknown>(
+      `/chat/deleteMessageForEveryone/${input.instanceName}`,
+      {
+        method: "DELETE",
+        body: key,
+      },
     );
+    if (!isConfirmedMessageDeletion(response, key)) {
+      throw new MessagingProviderError(
+        MessagingErrorCode.INVALID_PROVIDER_PAYLOAD,
+        "Evolution did not confirm deletion for the requested message.",
+        false,
+        undefined,
+        undefined,
+        `/chat/deleteMessageForEveryone/${input.instanceName}`,
+        "DELETE",
+      );
+    }
+    return response;
   }
 
   async createGroup(input: { instanceName: string; subject: string; participants: string[] }) {
@@ -488,10 +499,10 @@ export class EvolutionClient {
       });
 
       const data = await readJson(response, options.maxResponseBytes);
-      if (!response.ok) {
+      if (!response.ok || evolutionSemanticError(data)) {
         throw classifyEvolutionProviderError({
-          status: response.status,
-          statusText: response.statusText,
+          status: response.ok ? 502 : response.status,
+          statusText: response.ok ? "Evolution returned an error payload" : response.statusText,
           data,
           endpointPath: path,
           method: options.method,
@@ -517,6 +528,39 @@ export class EvolutionClient {
       clearTimeout(timeout);
     }
   }
+}
+
+function evolutionSemanticError(data: unknown) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  const payload = data as { error?: unknown; success?: unknown; status?: unknown };
+  return (
+    payload.error === true ||
+    payload.success === false ||
+    (typeof payload.status === "string" && payload.status.toLowerCase() === "error")
+  );
+}
+
+function isConfirmedMessageDeletion(
+  value: unknown,
+  expected: { id: string; remoteJid: string; fromMe: boolean },
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const response = value as Record<string, unknown>;
+  const candidate =
+    response.key && typeof response.key === "object" && !Array.isArray(response.key)
+      ? (response.key as Record<string, unknown>)
+      : response.response &&
+          typeof response.response === "object" &&
+          !Array.isArray(response.response) &&
+          (response.response as Record<string, unknown>).key &&
+          typeof (response.response as Record<string, unknown>).key === "object"
+        ? ((response.response as Record<string, unknown>).key as Record<string, unknown>)
+        : null;
+  return (
+    candidate?.id === expected.id &&
+    candidate.remoteJid === expected.remoteJid &&
+    candidate.fromMe === expected.fromMe
+  );
 }
 
 async function readJson(response: Response, maxBytes?: number) {
@@ -592,9 +636,12 @@ function extractGroupInfo(value: unknown): {
   name?: string | null;
   imageUrl?: string | null;
   createdAt?: Date | null;
+  description?: string | null;
+  descriptionPresent?: boolean;
   participants?: Array<{
     externalParticipantId: string;
     phone?: string | null;
+    lid?: string | null;
     displayName?: string | null;
     isAdmin: boolean;
     isSuperAdmin: boolean;
@@ -619,6 +666,7 @@ function extractGroupInfo(value: unknown): {
         stringField(record, "picture") ??
         stringField(record, "imageUrl"),
       createdAt: dateField(record, "creation") ?? dateField(record, "createdAt"),
+      ...groupDescriptionFields(record),
       participants: groupParticipantsFromRecord(record),
     };
   }
@@ -652,9 +700,12 @@ function extractGroups(value: unknown): Array<{
   subject: string;
   imageUrl?: string | null;
   createdAt?: Date | null;
+  description?: string | null;
+  descriptionPresent?: boolean;
   participants: Array<{
     externalParticipantId: string;
     phone?: string | null;
+    lid?: string | null;
     displayName?: string | null;
     isAdmin: boolean;
     isSuperAdmin: boolean;
@@ -789,6 +840,7 @@ function extractGroupSnapshot(value: unknown) {
       stringField(record, "picture") ??
       stringField(record, "imageUrl"),
     createdAt: dateField(record, "creation") ?? dateField(record, "createdAt"),
+    ...groupDescriptionFields(record),
     participants: groupParticipantsFromRecord(record),
   };
 }
@@ -825,9 +877,14 @@ function extractGroupParticipants(value: unknown) {
       const phone = phoneFromParticipant(
         stringField(record, "phone") ?? stringField(record, "number") ?? id,
       );
+      const lid =
+        stringField(record, "lid") ??
+        stringField(record, "participantLid") ??
+        lidFromParticipant(id);
       return {
         externalParticipantId: id,
         phone,
+        lid,
         displayName:
           stringField(record, "name") ??
           stringField(record, "pushName") ??
@@ -850,8 +907,25 @@ function dateField(record: Record<string, unknown>, key: string) {
 }
 
 function phoneFromParticipant(value: string) {
+  if (value.toLowerCase().includes("@lid")) return null;
   const phone = value.split("@")[0]?.split(":")[0]?.replace(/\D/g, "");
   return phone || null;
+}
+
+function lidFromParticipant(value: string) {
+  return value.toLowerCase().includes("@lid") ? value : null;
+}
+
+function groupDescriptionFields(record: Record<string, unknown>) {
+  for (const key of ["description", "desc"] as const) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    const value = record[key];
+    return {
+      descriptionPresent: true,
+      description: typeof value === "string" ? value : null,
+    };
+  }
+  return { descriptionPresent: false as const };
 }
 
 function extractProfilePictureUrl(value: unknown): string | null {

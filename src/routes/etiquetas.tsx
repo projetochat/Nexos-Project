@@ -1,17 +1,30 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Pencil, Plus, Tag, Trash2 } from "lucide-react";
+import { Copy, Eye, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { Button, Card, Field, Input, SectionHeader, SearchInput } from "@/components/ui-kit";
-import { ConfirmDialog, Modal } from "@/components/modal";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
+import {
+  Button,
+  Badge,
+  Card,
+  Field,
+  Input,
+  SectionHeader,
+  SearchInput,
+  Textarea,
+} from "@/components/ui-kit";
+import { Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { crmApi, type ApiTag } from "@/lib/trixus-api";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/etiquetas")({ component: Page });
 
@@ -31,17 +44,19 @@ function Page() {
   const perms = useChatPerms();
   const canCreateCatalog = perms.pode_criar_etiquetas;
   const canUpdateCatalog = perms.pode_editar_etiquetas;
+  const canReadCatalog = useSession((state) => state.user?.permissions?.includes("chat.tags.read"));
   const canDeleteCatalog = useSession((state) =>
     state.user?.permissions?.includes("chat.tags.delete"),
   );
   const nova = useDisclosure();
   const [editing, setEditing] = React.useState<ApiTag | null>(null);
+  const [viewing, setViewing] = React.useState<ApiTag | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiTag | null>(null);
   const [deleting, setDeleting] = React.useState<ApiTag | null>(null);
   const [query, setQuery] = React.useState("");
   const { data: etiquetas = [], isLoading } = useQuery({
     queryKey: tagsQueryKey,
-    queryFn: crmApi.listTags,
+    queryFn: crmApi.listTagsCatalog,
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
   });
@@ -71,64 +86,94 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <Field label="Busca">
-            <SearchInput value={query} onChange={setQuery} placeholder="Buscar etiqueta..." />
-          </Field>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <Field label="Busca">
+              <SearchInput value={query} onChange={setQuery} placeholder="Buscar etiqueta..." />
+            </Field>
+            {query.trim() && (
+              <div className="flex items-end">
+                <ClearFiltersButton onClick={() => setQuery("")} />
+              </div>
+            )}
+          </div>
         </Card>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((etiqueta) => (
             <Card
               key={etiqueta.id}
-              className="flex min-h-[86px] min-w-0 items-center gap-3 p-4 transition hover:border-primary/35 hover:bg-surface-1"
+              className="flex min-h-[148px] min-w-0 flex-col p-4 transition hover:border-primary/35 hover:bg-surface-1"
             >
-              <span
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
-                style={{ background: etiqueta.cor }}
-              >
-                <Tag className="h-4 w-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold" title={etiqueta.nome}>
-                  {etiqueta.nome}
-                </p>
+              <div className="flex min-w-0 items-start gap-3">
+                <span
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
+                  style={{ background: etiqueta.cor }}
+                >
+                  <Tag className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold" title={etiqueta.nome}>
+                    {etiqueta.nome}
+                  </p>
+                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                    {etiqueta.descricao?.trim() || "Sem descrição"}
+                  </p>
+                </div>
+                <div className="ml-auto shrink-0 self-start">
+                  <Badge tone={etiqueta.active !== false ? "success" : "destructive"}>
+                    {etiqueta.active !== false ? "Ativo" : "Inativo"}
+                  </Badge>
+                </div>
               </div>
-              {(canCreateCatalog || canUpdateCatalog || canDeleteCatalog) && (
-                <div className="flex shrink-0 items-center gap-1">
-                  {canCreateCatalog && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      title="Duplicar"
-                      aria-label={`Duplicar ${etiqueta.nome}`}
-                      onClick={() => setDuplicating(etiqueta)}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {canUpdateCatalog && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      title="Editar"
-                      aria-label={`Editar ${etiqueta.nome}`}
-                      onClick={() => setEditing(etiqueta)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {canDeleteCatalog && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="trash-action"
-                      title="Excluir"
-                      aria-label={`Excluir ${etiqueta.nome}`}
-                      onClick={() => setDeleting(etiqueta)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+              {(canReadCatalog || canCreateCatalog || canUpdateCatalog || canDeleteCatalog) && (
+                <div className="mt-auto flex min-h-11 items-end justify-end border-t border-border pt-3">
+                  <div className="flex shrink-0 gap-1.5">
+                    {canReadCatalog && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Visualizar"
+                        aria-label={`Visualizar ${etiqueta.nome}`}
+                        onClick={() => setViewing(etiqueta)}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canCreateCatalog && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Duplicar"
+                        aria-label={`Duplicar ${etiqueta.nome}`}
+                        onClick={() => setDuplicating(etiqueta)}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canUpdateCatalog && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Editar"
+                        aria-label={`Editar ${etiqueta.nome}`}
+                        onClick={() => setEditing(etiqueta)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canDeleteCatalog && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="trash-action"
+                        title="Excluir"
+                        aria-label={`Excluir ${etiqueta.nome}`}
+                        onClick={() => setDeleting(etiqueta)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </Card>
@@ -204,20 +249,35 @@ function Page() {
             }}
           />
         )}
-        <ConfirmDialog
+        {canReadCatalog && (
+          <EtiquetaForm
+            open={!!viewing}
+            tags={etiquetas}
+            initial={viewing ?? undefined}
+            readOnly
+            onClose={() => setViewing(null)}
+          />
+        )}
+        <DeletionConfirmDialog
           open={!!deleting}
-          title="Excluir Etiqueta?"
-          destructive
-          description={<DeleteLinkedContactCatalogMessage name={deleting?.nome} />}
-          confirmLabel="Excluir"
-          onClose={() => setDeleting(null)}
-          onConfirm={async () => {
-            if (!deleting) return;
-            await crmApi.archiveTag(deleting.id);
+          resourceKey={`tag:${deleting?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          loadImpact={(signal) => {
+            if (!deleting) return Promise.reject(new Error("Etiqueta não selecionada."));
+            return crmApi.tagDeletionPreview(deleting.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!deleting) return Promise.reject(new Error("Etiqueta não selecionada."));
+            return crmApi.archiveTag(deleting.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
             toast.success("Etiqueta excluída");
-            refresh();
+            void refresh();
             setDeleting(null);
           }}
+          formatError={(error) => (error as Error).message}
         />
       </PageContainer>
     </AppShell>
@@ -232,39 +292,34 @@ function normalizeSearch(value: string) {
     .toLowerCase();
 }
 
-function DeleteLinkedContactCatalogMessage({ name }: { name?: string | null }) {
-  const selectedName = name ?? "Sem etiqueta";
-
-  return (
-    <div className="space-y-2">
-      <p>
-        Deseja realmente excluir a etiqueta{" "}
-        <strong className="font-semibold text-foreground">"{selectedName}"</strong>?
-      </p>
-      <p className="text-xs italic text-muted-foreground">
-        Os Contatos vinculados serão desvinculados.
-      </p>
-    </div>
-  );
-}
-
-function EtiquetaForm({
+export function EtiquetaForm({
   open,
   onClose,
   onSubmit,
   initial,
   clone = false,
+  readOnly = false,
   tags,
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string; color?: string }) => Promise<void>;
+  onSubmit?: (data: {
+    name: string;
+    description?: string;
+    color?: string;
+    active?: boolean;
+    notifyOnNewConversation?: boolean;
+  }) => Promise<void>;
   initial?: ApiTag;
   clone?: boolean;
+  readOnly?: boolean;
   tags: ApiTag[];
 }) {
   const [name, setName] = React.useState("");
+  const [description, setDescription] = React.useState("");
   const [color, setColor] = React.useState("#3B82F6");
+  const [active, setActive] = React.useState(true);
+  const [notifyOnNewConversation, setNotifyOnNewConversation] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [nameError, setNameError] = React.useState("");
   const duplicateNameError = (value: string) => {
@@ -281,12 +336,20 @@ function EtiquetaForm({
 
   React.useEffect(() => {
     setName(initial ? (clone ? `${initial.nome} - Cópia` : initial.nome) : "");
+    setDescription(initial?.descricao ?? "");
     setColor(initial?.cor ?? "#3B82F6");
+    setActive(clone ? true : initial?.active !== false);
+    setNotifyOnNewConversation(clone ? false : initial?.notifyOnNewConversation === true);
     setNameError("");
   }, [clone, initial, open]);
 
   const submit = async () => {
-    if (name.trim().length < 2) return toast.error("Informe o nome.");
+    if (readOnly || !onSubmit) return;
+    if (name.trim().length < 2) {
+      setNameError("Informe o nome.");
+      showRequiredFieldsToast(["Nome"]);
+      return;
+    }
     const duplicateError = duplicateNameError(name);
     if (duplicateError) {
       setNameError(duplicateError);
@@ -294,7 +357,13 @@ function EtiquetaForm({
     }
     setBusy(true);
     try {
-      await onSubmit({ name: name.trim(), color: completeHexColor(color) });
+      await onSubmit({
+        name: name.trim(),
+        description: description.trim(),
+        color: completeHexColor(color),
+        active,
+        notifyOnNewConversation,
+      });
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -306,7 +375,15 @@ function EtiquetaForm({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial && !clone ? "Editar Etiqueta" : clone ? "Duplicar Etiqueta" : "Nova Etiqueta"}
+      title={
+        readOnly
+          ? "Visualizar Etiqueta"
+          : initial && !clone
+            ? "Editar Etiqueta"
+            : clone
+              ? "Duplicar Etiqueta"
+              : "Nova Etiqueta"
+      }
       size="md"
       footer={
         <div className="flex w-full items-center justify-between gap-4">
@@ -317,44 +394,85 @@ function EtiquetaForm({
           />
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>
-              Cancelar
+              {readOnly ? "Fechar" : "Cancelar"}
             </Button>
-            <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
-              {busy ? "Salvando..." : "Salvar"}
-            </Button>
+            {!readOnly && (
+              <Button
+                variant="primary"
+                size="sm"
+                className="save-action-button"
+                onClick={submit}
+                disabled={busy}
+              >
+                {busy ? "Salvando..." : "Salvar"}
+              </Button>
+            )}
           </div>
         </div>
       }
     >
-      <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
-        <Field label="Nome *" error={nameError || undefined}>
-          <Input
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              setNameError(duplicateNameError(event.target.value));
-            }}
-            aria-invalid={!!nameError}
+      <fieldset disabled={readOnly} className="min-w-0 disabled:opacity-80">
+        <label className="mb-4 flex min-h-7 items-center gap-2 text-sm">
+          <Switch checked={active} onCheckedChange={setActive} aria-label="Ativo" />
+          <span>Ativo</span>
+        </label>
+        <label className="mb-4 flex min-h-7 items-center justify-between gap-4 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+          <span>
+            <span className="block font-medium">Aviso sonoro em nova conversa</span>
+            <span className="block text-xs text-muted-foreground">
+              Toca uma única vez quando esta etiqueta estiver em uma nova conversa passiva.
+            </span>
+          </span>
+          <Switch
+            checked={notifyOnNewConversation}
+            onCheckedChange={setNotifyOnNewConversation}
+            aria-label="Aviso sonoro em nova conversa"
+          />
+        </label>
+        <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
+          <Field
+            label="Nome *"
+            error={nameError && nameError !== "Informe o nome." ? nameError : undefined}
+          >
+            <Input
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (event.target.value.trim().length >= 2)
+                  setNameError(duplicateNameError(event.target.value));
+              }}
+              aria-invalid={!!nameError}
+              className={requiredFieldClassName(Boolean(nameError))}
+            />
+          </Field>
+          <Field label="Cor">
+            <div className="flex min-h-10 items-center gap-1 rounded-lg border border-border bg-surface-1 px-1.5 transition focus-within:border-primary">
+              <input
+                type="color"
+                value={completeHexColor(color)}
+                onChange={(event) => setColor(normalizeHexColor(event.target.value))}
+                className="h-6 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+              />
+              <Input
+                value={color}
+                onChange={(event) => setColor(normalizeHexColor(event.target.value))}
+                placeholder={completeHexColor("#3B82F6")}
+                maxLength={7}
+                className="min-w-0 flex-1 border-0 bg-transparent font-mono text-sm uppercase focus:border-0 max-sm:!min-h-0 max-sm:!p-0"
+              />
+            </div>
+          </Field>
+        </div>
+        <Field label="Descrição">
+          <Textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            maxLength={240}
+            rows={3}
+            placeholder="Como esta etiqueta será utilizada"
           />
         </Field>
-        <Field label="Cor">
-          <div className="flex min-h-10 items-center gap-1 rounded-lg border border-border bg-surface-1 px-1.5 transition focus-within:border-primary">
-            <input
-              type="color"
-              value={completeHexColor(color)}
-              onChange={(event) => setColor(normalizeHexColor(event.target.value))}
-              className="h-6 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent"
-            />
-            <Input
-              value={color}
-              onChange={(event) => setColor(normalizeHexColor(event.target.value))}
-              placeholder={completeHexColor("#3B82F6")}
-              maxLength={7}
-              className="min-w-0 flex-1 border-0 bg-transparent font-mono text-sm uppercase focus:border-0 max-sm:!min-h-0 max-sm:!p-0"
-            />
-          </div>
-        </Field>
-      </div>
+      </fieldset>
     </Modal>
   );
 }

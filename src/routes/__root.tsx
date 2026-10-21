@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Outlet,
   Link,
@@ -8,14 +8,23 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 import { FAVICON_HREF } from "../lib/favicon";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ThemeProvider } from "../components/theme-provider";
-import { appTitleForHostname, surfaceRedirect } from "../lib/app-surface";
+import { appTitleWithUnreadConversations, surfaceRedirect } from "../lib/app-surface";
+import { useSession } from "@/lib/session";
+import {
+  clearAuthorizationCache,
+  clearStaleConversationAuthorizationCache,
+  conversationAuthorizationScope,
+} from "@/lib/conversation-query-authorization";
+import { disconnectRealtime } from "@/lib/realtime/client";
+import { onRealtimeEvent } from "@/lib/realtime/client";
+import { conversationApi } from "@/lib/trixus-api";
 
 function NotFoundComponent() {
   return (
@@ -82,7 +91,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Trixus" },
+      { title: "Trixus | App" },
       {
         name: "description",
         content:
@@ -163,6 +172,8 @@ function RootComponent() {
       <ThemeProvider>
         <HostSurfaceGate>
           <SessionHydrator />
+          <BrowserTitleController />
+          <SessionAuthorizationBoundary queryClient={queryClient} />
           <Outlet />
           <Toaster
             position="top-right"
@@ -180,6 +191,58 @@ function RootComponent() {
   );
 }
 
+function BrowserTitleController() {
+  const queryClient = useQueryClient();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const user = useSession((state) => state.user);
+  const canReadConversations = !!user?.permissions?.includes("conversations.read");
+  const unreadConversations = useQuery({
+    queryKey: ["trixus", "conversations", "browser-title-unread"],
+    queryFn: () => conversationApi.unreadTotal(),
+    enabled: canReadConversations,
+    refetchInterval: canReadConversations ? 30_000 : false,
+  });
+
+  useEffect(() => {
+    if (!canReadConversations) return;
+    return onRealtimeEvent((event) => {
+      if (event.event.startsWith("message.") || event.event.startsWith("conversation.")) {
+        void queryClient.invalidateQueries({
+          queryKey: ["trixus", "conversations", "browser-title-unread"],
+        });
+      }
+    });
+  }, [canReadConversations, queryClient]);
+
+  useEffect(() => {
+    document.title = appTitleWithUnreadConversations(unreadConversations.data?.unreadCount ?? 0);
+  }, [pathname, unreadConversations.data?.unreadCount]);
+
+  return null;
+}
+
+function SessionAuthorizationBoundary({ queryClient }: { queryClient: QueryClient }) {
+  const user = useSession((state) => state.user);
+  const impersonating = useSession((state) => state.impersonating);
+  const scope = conversationAuthorizationScope(user);
+  const fingerprint = `${scope}:${impersonating?.sessionId ?? "direct"}`;
+  const previousFingerprint = useRef<string | null>(null);
+
+  useEffect(() => {
+    const previous = previousFingerprint.current;
+    previousFingerprint.current = fingerprint;
+    if (previous === null || previous === fingerprint) return;
+    disconnectRealtime();
+    if (!user) {
+      void clearAuthorizationCache(queryClient);
+      return;
+    }
+    void clearStaleConversationAuthorizationCache(queryClient, scope);
+  }, [fingerprint, queryClient, scope, user]);
+
+  return null;
+}
+
 function HostSurfaceGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -194,8 +257,5 @@ function HostSurfaceGate({ children }: { children: ReactNode }) {
     }
     setReady(true);
   }, [destination]);
-  useEffect(() => {
-    document.title = appTitleForHostname(window.location.hostname);
-  }, [pathname]);
   return ready && !destination ? children : null;
 }

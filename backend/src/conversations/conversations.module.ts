@@ -8,6 +8,7 @@ import { GroupsController } from "./groups.controller";
 import { MessagesController } from "./messages.controller";
 import { MessagesService } from "./messages.service";
 import { ContactActionsController } from "./contact-actions.controller";
+import { ConversationPurgeService } from "./conversation-purge.service";
 
 @Module({
   imports: [AuthModule, PrismaModule, MessagingModule, RealtimeModule],
@@ -17,6 +18,7 @@ import { ContactActionsController } from "./contact-actions.controller";
     MessagesController,
     GroupsController,
   ],
-  providers: [MessagesService],
+  providers: [MessagesService, ConversationPurgeService],
+  exports: [MessagesService, ConversationPurgeService],
 })
 export class ConversationsModule {}

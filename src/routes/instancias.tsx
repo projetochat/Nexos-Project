@@ -36,12 +36,15 @@ import { TimezoneSelect } from "@/components/timezone-select";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { GreetingMessageEditor } from "@/components/greeting-message-editor";
+import { Switch } from "@/components/ui/switch";
+import { QrGenerationLoadingOverlay } from "@/components/qr-generation-loading-overlay";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   connectionsApi,
   crmApi,
@@ -71,22 +74,32 @@ const STATUS_TONE: Record<
   removed: "default",
 };
 
+const SHOW_INSTANCE_SERVICE_CONTROLS = false;
+
 function Page() {
   const qc = useQueryClient();
   const permissions = useSession((state) => state.user?.permissions ?? []);
   const canCreate = permissions.includes("connections.create");
   const canUpdate = permissions.includes("connections.update");
   const canDelete = permissions.includes("connections.delete");
+  const canView = permissions.includes("connections.read");
   const novo = useDisclosure();
   const [qr, setQr] = React.useState<{
     connectionId: string;
     name: string;
     value: string | null;
     status?: string;
+    errorCode?: string | null;
+    expectedOwnerPhone?: string | null;
   } | null>(null);
   const [removing, setRemoving] = React.useState<ApiMessagingConnection | null>(null);
   const [disconnecting, setDisconnecting] = React.useState<ApiMessagingConnection | null>(null);
   const [editing, setEditing] = React.useState<ApiMessagingConnection | null>(null);
+  const [viewing, setViewing] = React.useState<ApiMessagingConnection | null>(null);
+  const closeDestructiveFlow = () => {
+    setRemoving(null);
+    setDisconnecting(null);
+  };
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["trixus", "messaging-connections"],
     queryFn: connectionsApi.list,
@@ -151,16 +164,18 @@ function Page() {
       if (connection.status === "connected") {
         setQr(null);
         toast.success(`${connection.name} conectada`);
-      } else if (connection.qrCodeBase64) {
+      } else {
         setQr({
           connectionId: connection.id,
           name: connection.name,
-          value: connection.qrCodeBase64,
+          value: connection.qrCodeBase64 ?? null,
           status: connection.status,
         });
-        toast.success("Conexão criada. Leia o QR Code para concluir.");
-      } else {
-        toast.success("Conexão criada");
+        toast.success(
+          connection.qrCodeBase64
+            ? "Conexão criada. Leia o QR Code para concluir."
+            : "Conexão criada. Gerando o QR Code...",
+        );
       }
       novo.hide();
     },
@@ -184,30 +199,63 @@ function Page() {
     },
     onError: (e) => toast.error((e as Error).message),
   });
+  const qrConnectionId = qr?.connectionId;
+  const qrConnectionName = qr?.name;
 
   React.useEffect(() => {
-    if (!qr) return;
+    if (!qrConnectionId || !qrConnectionName) return;
     let active = true;
 
-    const syncConnectionStatus = async () => {
+    let timeoutId: number | undefined;
+    const syncQrCode = async () => {
+      let shouldPoll = true;
       try {
-        const updated = await connectionsApi.status(qr.connectionId);
+        const result = await connectionsApi.qrStatus(qrConnectionId);
         if (!active) return;
-        qc.setQueryData<ApiMessagingConnection[]>(["trixus", "messaging-connections"], (current) =>
-          current?.map((item) => (item.id === updated.id ? updated : item)),
-        );
+        if (result.errorCode === "OWNER_PHONE_MISMATCH") {
+          shouldPoll = false;
+          setQr((current) =>
+            current?.connectionId === result.connectionId
+              ? {
+                  ...current,
+                  value: null,
+                  status: "error",
+                  errorCode: result.errorCode,
+                  expectedOwnerPhone: result.expectedOwnerPhone,
+                }
+              : current,
+          );
+          void qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+          toast.error("Número diferente recusado", {
+            description: `Conecte o número original${result.expectedOwnerPhone ? ` ${result.expectedOwnerPhone}` : ""}.`,
+          });
+          return;
+        }
+        if (result.status.toLowerCase() === "connected") {
+          setQr(null);
+          qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+          toast.success(`${qrConnectionName} conectada`);
+          return;
+        }
+        setQr((current) => {
+          if (current?.connectionId !== result.connectionId) return current;
+          const value = result.qrCodeBase64 ?? current.value;
+          if (value === current.value && result.status === current.status) return current;
+          return { ...current, value, status: result.status };
+        });
       } catch {
-        // A leitura em segundo plano não deve interromper a leitura do QR Code.
+        // Uma falha transitória não remove um QR já exibido nem o vínculo da instância.
+      } finally {
+        if (active && shouldPoll) timeoutId = window.setTimeout(() => void syncQrCode(), 2_000);
       }
     };
 
-    void syncConnectionStatus();
-    const intervalId = window.setInterval(() => void syncConnectionStatus(), 3_000);
+    void syncQrCode();
     return () => {
       active = false;
-      window.clearInterval(intervalId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [qc, qr]);
+  }, [qc, qrConnectionId, qrConnectionName]);
   const update = useMutation({
     mutationFn: async ({
       connection,
@@ -240,6 +288,14 @@ function Page() {
       connection,
       result: await connectionsApi.qr(connection.id),
     }),
+    onMutate: (connection) => {
+      setQr({
+        connectionId: connection.id,
+        name: connection.name,
+        value: null,
+        status: "connecting",
+      });
+    },
     onSuccess: ({ connection, result }) => {
       if (result.status.toLowerCase() === "connected") {
         setQr(null);
@@ -250,11 +306,16 @@ function Page() {
           name: connection.name,
           value: result.qrCodeBase64,
           status: result.status,
+          errorCode: result.errorCode,
+          expectedOwnerPhone: result.expectedOwnerPhone,
         });
       }
       qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => {
+      setQr((current) => (current ? { ...current, status: "error" } : current));
+      toast.error((e as Error).message);
+    },
   });
   const logout = useMutation({
     mutationFn: connectionsApi.logout,
@@ -265,20 +326,14 @@ function Page() {
     onError: (e) => toast.error((e as Error).message),
   });
   const remove = useMutation({
-    mutationFn: ({
-      connection,
-      options,
-    }: {
-      connection: ApiMessagingConnection;
-      options: RemoveConnectionOptions;
-    }) => connectionsApi.remove(connection.id, options),
+    mutationFn: (connection: ApiMessagingConnection) => connectionsApi.remove(connection.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
       qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
       qc.invalidateQueries({ queryKey: ["operations", "history"] });
       qc.invalidateQueries({ queryKey: ["trixus", "groups"] });
       setRemoving(null);
-      toast.success("Conexão removida");
+      toast.success("Instância excluída permanentemente");
     },
     onError: (e) => toast.error(connectionRemoveErrorMessage(e)),
   });
@@ -367,6 +422,17 @@ function Page() {
                     )}
                   </div>
                   <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    {canView && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setViewing(connection)}
+                        title="Visualizar"
+                        aria-label={`Visualizar ${connection.name}`}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     {canUpdate && connection.status !== "connected" && (
                       <Button
                         variant="secondary"
@@ -397,7 +463,10 @@ function Page() {
                         variant="ghost"
                         size="sm"
                         className="hover:!bg-destructive hover:!text-destructive-foreground"
-                        onClick={() => setDisconnecting(connection)}
+                        onClick={() => {
+                          setRemoving(null);
+                          setDisconnecting(connection);
+                        }}
                         disabled={!canDisconnect}
                         title="Desconectar"
                         aria-label="Desconectar"
@@ -422,7 +491,10 @@ function Page() {
                         variant="ghost"
                         size="sm"
                         className="trash-action"
-                        onClick={() => setRemoving(connection)}
+                        onClick={() => {
+                          setDisconnecting(null);
+                          setRemoving(connection);
+                        }}
                         disabled={remove.isPending}
                         title="Remover"
                         aria-label="Remover"
@@ -456,13 +528,24 @@ function Page() {
             onSubmit={(connection, data) => update.mutate({ connection, data })}
           />
         )}
+        {canView && (
+          <ConnectionSettingsModal
+            connection={viewing}
+            connections={visibleItems}
+            contactCustomFields={contactCustomFields}
+            busy={false}
+            readOnly
+            onClose={() => setViewing(null)}
+            onSubmit={() => undefined}
+          />
+        )}
         <QrModal qr={qr} onClose={() => setQr(null)} />
         {canDelete && (
           <RemoveConnectionModal
             connection={removing}
             busy={remove.isPending}
-            onClose={() => setRemoving(null)}
-            onConfirm={(connection, options) => remove.mutate({ connection, options })}
+            onClose={closeDestructiveFlow}
+            onConfirm={(connection) => remove.mutate(connection)}
           />
         )}
         {canUpdate && (
@@ -480,7 +563,7 @@ function Page() {
             }
             confirmLabel="Desligar"
             destructive
-            onClose={() => setDisconnecting(null)}
+            onClose={closeDestructiveFlow}
             onConfirm={() => {
               if (disconnecting) logout.mutate(disconnecting.id);
             }}
@@ -525,9 +608,9 @@ function ConnectionForm({
   const [serviceEnabled, setServiceEnabled] = React.useState(true);
   const [importHistory, setImportHistory] = React.useState(false);
   const [historyStartDate, setHistoryStartDate] = React.useState("");
+  const [requiredErrors, setRequiredErrors] = React.useState<Record<string, boolean>>({});
   const missingImportDate = serviceEnabled && importHistory && !historyStartDate;
   const duplicateName = instanceNameAlreadyExists(name, connections);
-  const canCreate = name.trim().length >= 2 && !missingImportDate && !duplicateName;
 
   React.useEffect(() => {
     if (!open) {
@@ -537,12 +620,37 @@ function ConnectionForm({
       setServiceEnabled(true);
       setImportHistory(false);
       setHistoryStartDate("");
+      setRequiredErrors({});
     }
   }, [open]);
 
+  React.useEffect(() => {
+    setRequiredErrors((current) => {
+      const next = { ...current };
+      if (name.trim().length >= 2) delete next.name;
+      if (!missingImportDate) delete next.historyStartDate;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [missingImportDate, name]);
+
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canCreate || busy) return;
+    const nextErrors: Record<string, boolean> = {};
+    const pendingFields: string[] = [];
+    if (name.trim().length < 2) {
+      nextErrors.name = true;
+      pendingFields.push("Nome da instância");
+    }
+    if (missingImportDate) {
+      nextErrors.historyStartDate = true;
+      pendingFields.push("Data inicial da importação");
+    }
+    if (pendingFields.length) {
+      setRequiredErrors(nextErrors);
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
+    if (duplicateName || busy) return;
     onSubmit({
       name: name.trim(),
       color: completeHexColor(color, "#22c55e"),
@@ -576,7 +684,7 @@ function ConnectionForm({
               size="sm"
               type="submit"
               form="new-whatsapp-instance-form"
-              disabled={busy || !canCreate}
+              disabled={busy || duplicateName}
             >
               Criar
             </Button>
@@ -629,7 +737,7 @@ function ConnectionForm({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Digite o nome da instância"
-                aria-invalid={duplicateName}
+                aria-invalid={duplicateName || Boolean(requiredErrors.name)}
                 className={
                   duplicateName ? "border-destructive focus:border-destructive" : undefined
                 }
@@ -663,7 +771,7 @@ function ConnectionForm({
             </Field>
           </div>
 
-          <div className="space-y-3">
+          <div className={SHOW_INSTANCE_SERVICE_CONTROLS ? "space-y-3" : "hidden"}>
             <ImportOption
               label="Ativar Atendimento"
               checked={serviceEnabled}
@@ -681,7 +789,9 @@ function ConnectionForm({
           </div>
 
           <section
-            className="space-y-4 border-t border-border pt-5"
+            className={
+              SHOW_INSTANCE_SERVICE_CONTROLS ? "space-y-4 border-t border-border pt-5" : "hidden"
+            }
             aria-label="Importar mensagens"
           >
             <h3 className="text-base font-semibold">Importar Mensagens</h3>
@@ -701,6 +811,7 @@ function ConnectionForm({
                   value={historyStartDate}
                   onChange={setHistoryStartDate}
                   disabled={!serviceEnabled}
+                  invalid={Boolean(requiredErrors.historyStartDate)}
                 />
               )}
             </div>
@@ -720,21 +831,7 @@ function ConnectionForm({
           </section>
         </form>
       </Modal>
-      {busy && typeof document !== "undefined"
-        ? createPortal(
-            <div className="fixed inset-0 z-[280] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
-              <div
-                role="status"
-                aria-live="assertive"
-                className="flex min-w-72 flex-col items-center gap-4 rounded-xl border border-border bg-card px-6 py-7 text-center text-sm font-semibold text-foreground shadow-2xl"
-              >
-                <RefreshCw className="h-7 w-7 animate-spin text-primary" aria-hidden="true" />
-                <span>Aguarde, QR Code está sendo gerado!</span>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      <QrGenerationLoadingOverlay open={busy} />
     </>
   );
 }
@@ -754,19 +851,12 @@ function ImportOption({
     <label
       className={`flex items-center gap-3 text-sm text-muted-foreground ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
     >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
+      <Switch
+        checked={checked}
         aria-label={label}
         disabled={disabled}
-        onClick={() => onCheckedChange(!checked)}
-        className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${checked ? "bg-blue-600" : "bg-slate-300"}`}
-      >
-        <span
-          className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`}
-        />
-      </button>
+        onCheckedChange={onCheckedChange}
+      />
       <span>{label}</span>
     </label>
   );
@@ -823,12 +913,14 @@ function ImportDate({
   value,
   onChange,
   disabled,
+  invalid = false,
 }: {
   label: string;
   required?: boolean;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
+  invalid?: boolean;
 }) {
   const nativeDateInputRef = React.useRef<HTMLInputElement>(null);
   const [draft, setDraft] = React.useState(() => formatImportDate(value));
@@ -875,9 +967,10 @@ function ImportDate({
             onChange(parsed.iso);
           }}
           disabled={disabled}
+          aria-invalid={invalid}
           aria-label={label}
-          placeholder="00/00/0000"
-          className="h-11 w-full rounded-xl border border-border bg-surface-1 px-3 pr-10 text-center text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          placeholder="dd/mm/aaaa"
+          className={`h-11 w-full rounded-xl border bg-surface-1 px-3 pr-10 text-center text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60 ${invalid ? "border-destructive focus:border-destructive" : "border-border"}`}
         />
         <button
           type="button"
@@ -943,10 +1036,6 @@ function parseImportDate(value: string) {
     iso: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
   };
 }
-type RemoveConnectionOptions = {
-  removeConversationHistory: boolean;
-};
-
 type ConnectionSettingsFormData = {
   serviceEnabled?: boolean;
   timezone?: string;
@@ -983,7 +1072,7 @@ Seja bem-vindo(a)
 
 Poderia informar seu nome para iniciarmos o atendimento?`;
 
-const EXISTING_CONTACT_MESSAGE_PLACEHOLDER = `{{cumprimento}} *{{nome}}*!
+const EXISTING_CONTACT_MESSAGE_PLACEHOLDER = `{{saudacao}} *{{nome}}*!
 Tudo bem?
 
 Já identificamos você na nossa base, informe seu problema que logo iremos te atender.`;
@@ -1045,6 +1134,7 @@ function ConnectionSettingsModal({
   busy,
   onClose,
   onSubmit,
+  readOnly = false,
 }: {
   connection: ApiMessagingConnection | null;
   connections: ApiMessagingConnection[];
@@ -1052,6 +1142,7 @@ function ConnectionSettingsModal({
   busy: boolean;
   onClose: () => void;
   onSubmit: (connection: ApiMessagingConnection, data: ConnectionSettingsFormData) => void;
+  readOnly?: boolean;
 }) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const qc = useQueryClient();
@@ -1234,7 +1325,7 @@ function ConnectionSettingsModal({
       <Modal
         open={!!connection}
         onClose={onClose}
-        title="Editar Instância"
+        title={readOnly ? "Visualizar Instância" : "Editar Instância"}
         size="xl"
         className="sm:max-w-[35.84rem] lg:max-h-[calc(90dvh-2rem)]"
         footer={
@@ -1242,16 +1333,19 @@ function ConnectionSettingsModal({
             <EntityFormLog createdAt={connection?.createdAt} updatedAt={connection?.updatedAt} />
             <div className="flex shrink-0 justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-                Cancelar
+                {readOnly ? "Fechar" : "Cancelar"}
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={save}
-                disabled={busy || form.name.trim().length < 2 || duplicateName}
-              >
-                Salvar
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="save-action-button"
+                  onClick={save}
+                  disabled={busy || form.name.trim().length < 2 || duplicateName}
+                >
+                  Salvar
+                </Button>
+              )}
             </div>
           </div>
         }
@@ -1269,395 +1363,404 @@ function ConnectionSettingsModal({
             </TabButton>
           </div>
 
-          {tab === "general" && (
-            <div className="space-y-5">
-              <div className="grid gap-5 lg:gap-8">
-                <div className="relative grid max-w-md grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 lg:mx-auto lg:w-full lg:max-w-[32rem] lg:grid-cols-[9rem_minmax(0,1fr)] lg:place-items-center lg:gap-16">
-                  <button
-                    ref={logoButtonRef}
-                    type="button"
-                    className="group relative flex h-28 w-28 shrink-0 items-center justify-center justify-self-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground lg:h-36 lg:w-36"
-                    onClick={() => setLogoMenuOpen((open) => !open)}
-                    aria-label="Opções da foto"
-                  >
-                    {logoPreview ? (
-                      <img
-                        src={logoPreview}
-                        alt="Foto de perfil do WhatsApp"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <MessageCircle className="h-10 w-10 text-[#25D366]" aria-label="WhatsApp" />
-                    )}
-                    <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white opacity-0 transition group-hover:opacity-100">
-                      <Camera className="h-8 w-8" />
-                    </span>
-                  </button>
-                  <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center">
-                    {connection && (
-                      <div className="mb-3">
-                        <Badge tone={STATUS_TONE[connection.status]}>
-                          {statusIcon(connection.status)}
-                          {statusLabel(connection.status)}
-                        </Badge>
-                      </div>
-                    )}
-                    <span className="text-base uppercase tracking-wide text-muted-foreground">
-                      {connection ? providerLabel(connection.providerType) : "WhatsApp"}
-                    </span>
-                    <span className="text-base font-medium text-foreground">
-                      {connection?.ownerPhone
-                        ? maskBrazilPhone(connection.ownerPhone)
-                        : "Sem número conectado"}
-                    </span>
-                  </div>
-                  <FloatingLogoMenu
-                    open={logoMenuOpen}
-                    anchorRef={logoButtonRef}
-                    onClose={() => setLogoMenuOpen(false)}
-                  >
-                    <LogoMenuButton
-                      icon={<Eye className="h-4 w-4" />}
-                      onClick={showWhatsAppProfilePicture}
+          <fieldset disabled={readOnly} className="contents">
+            {tab === "general" && (
+              <div className="space-y-5">
+                <div className="grid gap-5 lg:gap-8">
+                  <div className="relative grid max-w-md grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 lg:mx-auto lg:w-full lg:max-w-[32rem] lg:grid-cols-[9rem_minmax(0,1fr)] lg:place-items-center lg:gap-16">
+                    <button
+                      ref={logoButtonRef}
+                      type="button"
+                      className="group relative flex h-28 w-28 shrink-0 items-center justify-center justify-self-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground lg:h-36 lg:w-36"
+                      onClick={() => setLogoMenuOpen((open) => !open)}
+                      aria-label="Opções da foto"
                     >
-                      Mostrar foto
-                    </LogoMenuButton>
-                    <LogoMenuButton
-                      icon={<Camera className="h-4 w-4" />}
-                      onClick={() => {
-                        setLogoMenuOpen(false);
-                        setCameraOpen(true);
-                      }}
-                    >
-                      Tirar foto
-                    </LogoMenuButton>
-                    <LogoMenuButton
-                      icon={<Upload className="h-4 w-4" />}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      Carregar foto
-                    </LogoMenuButton>
-                    <div className="my-1 border-t border-border" />
-                    <LogoMenuButton
-                      className="trash-action"
-                      icon={<Trash2 className="h-3.5 w-3.5" />}
-                      onClick={async () => {
-                        if (!connection) return;
-                        try {
-                          applyConnectionUpdate(
-                            await connectionsApi.removeProfilePicture(connection.id),
-                          );
-                          toast.success("Foto removida do perfil do WhatsApp.");
-                        } catch (error) {
-                          toast.error((error as Error).message);
-                        } finally {
-                          setLogoMenuOpen(false);
-                        }
-                      }}
-                    >
-                      Remover foto
-                    </LogoMenuButton>
-                  </FloatingLogoMenu>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(event) => {
-                      void handleLogoFile(event.target.files?.[0]);
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                </div>
-
-                <div className="space-y-4">
-                  <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_9.75rem]">
-                    <div className="min-w-0">
-                      <Field label="Nome *">
-                        <Input
-                          value={form.name}
-                          onChange={(event) => setForm({ ...form, name: event.target.value })}
-                          aria-invalid={duplicateName}
-                          className={
-                            duplicateName
-                              ? "border-destructive focus:border-destructive"
-                              : undefined
-                          }
+                      {logoPreview ? (
+                        <img
+                          src={logoPreview}
+                          alt="Foto de perfil do WhatsApp"
+                          className="h-full w-full object-cover"
                         />
-                        {duplicateName && (
-                          <p className="mt-1 text-xs text-destructive" role="alert">
-                            Já existe uma instância com este nome.
-                          </p>
-                        )}
-                      </Field>
-                    </div>
-                    <div className="min-w-0">
-                      <Field label="Cor">
-                        <div className="flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary max-sm:gap-1 max-sm:px-1.5 max-sm:py-0">
-                          <input
-                            type="color"
-                            value={completeHexColor(form.color, "#22c55e")}
-                            onChange={(event) =>
-                              setForm({
-                                ...form,
-                                color: normalizeHexColor(event.target.value, "#22c55e"),
-                              })
-                            }
-                            className="h-7 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 max-sm:h-6 max-sm:w-9"
-                          />
-                          <input
-                            type="text"
-                            value={form.color || ""}
-                            onChange={(event) =>
-                              setForm({
-                                ...form,
-                                color: normalizeHexColor(event.target.value, "#22c55e"),
-                              })
-                            }
-                            placeholder={completeHexColor("#22c55e")}
-                            maxLength={7}
-                            className="min-w-0 flex-1 border-0 bg-transparent font-mono text-sm uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
-                          />
+                      ) : (
+                        <MessageCircle className="h-10 w-10 text-[#25D366]" aria-label="WhatsApp" />
+                      )}
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white opacity-0 transition group-hover:opacity-100">
+                        <Camera className="h-8 w-8" />
+                      </span>
+                    </button>
+                    <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center">
+                      {connection && (
+                        <div className="mb-3">
+                          <Badge tone={STATUS_TONE[connection.status]}>
+                            {statusIcon(connection.status)}
+                            {statusLabel(connection.status)}
+                          </Badge>
                         </div>
-                      </Field>
+                      )}
+                      <span className="text-base uppercase tracking-wide text-muted-foreground">
+                        {connection ? providerLabel(connection.providerType) : "WhatsApp"}
+                      </span>
+                      <span className="text-base font-medium text-foreground">
+                        {connection?.ownerPhone
+                          ? maskBrazilPhone(connection.ownerPhone)
+                          : "Sem número conectado"}
+                      </span>
                     </div>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                        <label htmlFor="instance-ai-agent">Agente de IA</label>
-                        <InfoTooltip label="agente de IA">
-                          Será preenchido pelos agentes cadastrados no módulo de IA.
-                        </InfoTooltip>
-                      </div>
-                      <Select
-                        id="instance-ai-agent"
-                        value={aiAgentId}
-                        onChange={(event) => setAiAgentId(event.target.value)}
+                    <FloatingLogoMenu
+                      open={logoMenuOpen}
+                      anchorRef={logoButtonRef}
+                      onClose={() => setLogoMenuOpen(false)}
+                    >
+                      <LogoMenuButton
+                        icon={<Eye className="h-4 w-4" />}
+                        onClick={showWhatsAppProfilePicture}
                       >
-                        <option value="">- Selecione um agente -</option>
-                      </Select>
-                    </div>
-                    <Field label="Time Zone">
-                      <TimezoneSelect value={timezone} onChange={setTimezone} />
-                    </Field>
+                        Mostrar foto
+                      </LogoMenuButton>
+                      <LogoMenuButton
+                        icon={<Camera className="h-4 w-4" />}
+                        onClick={() => {
+                          setLogoMenuOpen(false);
+                          setCameraOpen(true);
+                        }}
+                      >
+                        Tirar foto
+                      </LogoMenuButton>
+                      <LogoMenuButton
+                        icon={<Upload className="h-4 w-4" />}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        Carregar foto
+                      </LogoMenuButton>
+                      <div className="my-1 border-t border-border" />
+                      <LogoMenuButton
+                        className="trash-action"
+                        icon={<Trash2 className="h-3.5 w-3.5" />}
+                        onClick={async () => {
+                          if (!connection) return;
+                          try {
+                            applyConnectionUpdate(
+                              await connectionsApi.removeProfilePicture(connection.id),
+                            );
+                            toast.success("Foto removida do perfil do WhatsApp.");
+                          } catch (error) {
+                            toast.error((error as Error).message);
+                          } finally {
+                            setLogoMenuOpen(false);
+                          }
+                        }}
+                      >
+                        Remover foto
+                      </LogoMenuButton>
+                    </FloatingLogoMenu>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        void handleLogoFile(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
                   </div>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <ImportOption
-                  label="Ativar Atendimento"
-                  checked={serviceEnabled}
-                  onCheckedChange={setServiceEnabled}
-                  disabled={busy}
-                />
-                <InstanceInfoNotice
-                  label="ativar atendimento"
-                  tooltip="Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp conectado."
-                >
-                  <p className="font-semibold">
-                    Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp
-                    conectado.
-                  </p>
-                </InstanceInfoNotice>
-              </div>
-              <section
-                className="space-y-4 border-t border-border pt-5"
-                aria-label="Importar mensagens"
-              >
-                <h3 className="text-base font-semibold text-foreground">Importar Mensagens</h3>
-                <div className="space-y-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-end sm:gap-4 sm:space-y-0">
-                  {(() => {
-                    const job = importJobs.find((item) => item.kind === "DIRECT");
-                    return (
-                      <>
-                        <div className="sm:flex sm:h-11 sm:items-center">
-                          <ImportOption
-                            label="Importar histórico de mensagens"
-                            checked={connection?.importHistoryEnabled === true}
-                            onCheckedChange={() => undefined}
-                            disabled
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_9.75rem]">
+                      <div className="min-w-0">
+                        <Field label="Nome *">
+                          <Input
+                            value={form.name}
+                            onChange={(event) => setForm({ ...form, name: event.target.value })}
+                            aria-invalid={duplicateName}
+                            className={
+                              duplicateName
+                                ? "border-destructive focus:border-destructive"
+                                : undefined
+                            }
                           />
-                        </div>
-                        {connection?.importHistoryEnabled === true && (
-                          <ImportDate
-                            label="Dt. início p/ importação"
-                            value={connection.importHistoryStartDate ?? ""}
-                            onChange={() => undefined}
-                            disabled
-                          />
-                        )}
-                        <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs sm:col-span-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium text-foreground">
-                              Histórico de mensagens
-                            </span>
-                            <ImportStatusBadge job={job} />
-                          </div>
-                          {job && (
-                            <p className="mt-1 text-muted-foreground">
-                              {job.chatsProcessed} conversa(s) · {job.messagesImported} mensagem(ns)
-                              importada(s)
+                          {duplicateName && (
+                            <p className="mt-1 text-xs text-destructive" role="alert">
+                              Já existe uma instância com este nome.
                             </p>
                           )}
-                          {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}
-                          {job && (job.status === "FAILED" || job.status === "PARTIAL_FAILED") && (
-                            <div className="mt-2 flex justify-end">
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                disabled={retryImport.isPending}
-                                onClick={() => retryImport.mutate("DIRECT")}
-                              >
-                                Tentar novamente
-                              </Button>
-                            </div>
-                          )}
+                        </Field>
+                      </div>
+                      <div className="min-w-0">
+                        <Field label="Cor">
+                          <div className="flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary max-sm:gap-1 max-sm:px-1.5 max-sm:py-0">
+                            <input
+                              type="color"
+                              value={completeHexColor(form.color, "#22c55e")}
+                              onChange={(event) =>
+                                setForm({
+                                  ...form,
+                                  color: normalizeHexColor(event.target.value, "#22c55e"),
+                                })
+                              }
+                              className="h-7 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 max-sm:h-6 max-sm:w-9"
+                            />
+                            <input
+                              type="text"
+                              value={form.color || ""}
+                              onChange={(event) =>
+                                setForm({
+                                  ...form,
+                                  color: normalizeHexColor(event.target.value, "#22c55e"),
+                                })
+                              }
+                              placeholder={completeHexColor("#22c55e")}
+                              maxLength={7}
+                              className="min-w-0 flex-1 border-0 bg-transparent font-mono text-sm uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
+                            />
+                          </div>
+                        </Field>
+                      </div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                          <label htmlFor="instance-ai-agent">Agente de IA</label>
+                          <InfoTooltip label="agente de IA">
+                            Será preenchido pelos agentes cadastrados no módulo de IA.
+                          </InfoTooltip>
                         </div>
-                      </>
-                    );
-                  })()}
+                        <Select
+                          id="instance-ai-agent"
+                          value={aiAgentId}
+                          onChange={(event) => setAiAgentId(event.target.value)}
+                        >
+                          <option value="">- Selecione um agente -</option>
+                        </Select>
+                      </div>
+                      <Field label="Time Zone">
+                        <TimezoneSelect value={timezone} onChange={setTimezone} />
+                      </Field>
+                    </div>
+                  </div>
                 </div>
-              </section>
-            </div>
-          )}
+                <div className={SHOW_INSTANCE_SERVICE_CONTROLS ? "space-y-3" : "hidden"}>
+                  <ImportOption
+                    label="Ativar Atendimento"
+                    checked={serviceEnabled}
+                    onCheckedChange={setServiceEnabled}
+                    disabled={busy}
+                  />
+                  <InstanceInfoNotice
+                    label="ativar atendimento"
+                    tooltip="Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp conectado."
+                  >
+                    <p className="font-semibold">
+                      Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp
+                      conectado.
+                    </p>
+                  </InstanceInfoNotice>
+                </div>
+                <section
+                  className={
+                    SHOW_INSTANCE_SERVICE_CONTROLS
+                      ? "space-y-4 border-t border-border pt-5"
+                      : "hidden"
+                  }
+                  aria-label="Importar mensagens"
+                >
+                  <h3 className="text-base font-semibold text-foreground">Importar Mensagens</h3>
+                  <div className="space-y-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-end sm:gap-4 sm:space-y-0">
+                    {(() => {
+                      const job = importJobs.find((item) => item.kind === "DIRECT");
+                      return (
+                        <>
+                          <div className="sm:flex sm:h-11 sm:items-center">
+                            <ImportOption
+                              label="Importar histórico de mensagens"
+                              checked={connection?.importHistoryEnabled === true}
+                              onCheckedChange={() => undefined}
+                              disabled
+                            />
+                          </div>
+                          {connection?.importHistoryEnabled === true && (
+                            <ImportDate
+                              label="Dt. início p/ importação"
+                              value={connection.importHistoryStartDate ?? ""}
+                              onChange={() => undefined}
+                              disabled
+                            />
+                          )}
+                          <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs sm:col-span-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium text-foreground">
+                                Histórico de mensagens
+                              </span>
+                              <ImportStatusBadge job={job} />
+                            </div>
+                            {job && (
+                              <p className="mt-1 text-muted-foreground">
+                                {job.chatsProcessed} conversa(s) · {job.messagesImported}{" "}
+                                mensagem(ns) importada(s)
+                              </p>
+                            )}
+                            {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}
+                            {job &&
+                              (job.status === "FAILED" || job.status === "PARTIAL_FAILED") && (
+                                <div className="mt-2 flex justify-end">
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={retryImport.isPending}
+                                    onClick={() => retryImport.mutate("DIRECT")}
+                                  >
+                                    Tentar novamente
+                                  </Button>
+                                </div>
+                              )}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </section>
+              </div>
+            )}
 
-          {tab === "greeting" && (
-            <div className="space-y-4">
-              <ImportOption
-                label="Ativar mensagem de saudação"
-                checked={form.welcomeEnabled}
-                onCheckedChange={(checked) => {
-                  setForm({ ...form, welcomeEnabled: checked });
-                  setShowWelcomeValidation(false);
-                }}
-              />
-              <Field
-                label={
-                  form.welcomeEnabled
-                    ? "Mensagem para novo contato *"
-                    : "Mensagem para novo contato"
-                }
-                error={
-                  showWelcomeValidation && form.welcomeEnabled && !form.welcomeNewMessage?.trim()
-                    ? "Preencha a mensagem para novo contato."
-                    : undefined
-                }
-              >
-                <GreetingMessageEditor
-                  value={form.welcomeNewMessage ?? ""}
-                  attachment={form.welcomeNewAttachment}
-                  showEmoji
-                  attachmentLayout="segmented"
-                  variables={mergeMessageVariables(
-                    CONNECTION_MESSAGE_VARIABLES,
-                    contactCustomFields,
-                  )}
-                  disabled={!form.welcomeEnabled}
-                  invalid={
-                    showWelcomeValidation && form.welcomeEnabled && !form.welcomeNewMessage?.trim()
-                  }
-                  placeholder={NEW_CONTACT_MESSAGE_PLACEHOLDER}
-                  onSubmit={save}
-                  onChange={(welcomeNewMessage, welcomeNewAttachment) =>
-                    setForm({ ...form, welcomeNewMessage, welcomeNewAttachment })
-                  }
+            {tab === "greeting" && (
+              <div className="space-y-4">
+                <ImportOption
+                  label="Ativar mensagem de saudação"
+                  checked={form.welcomeEnabled}
+                  onCheckedChange={(checked) => {
+                    setForm({ ...form, welcomeEnabled: checked });
+                    setShowWelcomeValidation(false);
+                  }}
                 />
-              </Field>
-              <Field
-                label={
-                  form.welcomeEnabled
-                    ? "Mensagem para contato existente *"
-                    : "Mensagem para contato existente"
-                }
-                error={
-                  showWelcomeValidation &&
-                  form.welcomeEnabled &&
-                  !form.welcomeExistingMessage?.trim()
-                    ? "Preencha a mensagem para contato existente."
-                    : undefined
-                }
-              >
-                <GreetingMessageEditor
-                  value={form.welcomeExistingMessage ?? ""}
-                  attachment={form.welcomeExistingAttachment}
-                  showEmoji
-                  attachmentLayout="segmented"
-                  variables={mergeMessageVariables(
-                    CONNECTION_MESSAGE_VARIABLES,
-                    contactCustomFields,
-                  )}
-                  disabled={!form.welcomeEnabled}
-                  invalid={
+                <Field
+                  label={
+                    form.welcomeEnabled
+                      ? "Mensagem para novo contato *"
+                      : "Mensagem para novo contato"
+                  }
+                  error={
+                    showWelcomeValidation && form.welcomeEnabled && !form.welcomeNewMessage?.trim()
+                      ? "Preencha a mensagem para novo contato."
+                      : undefined
+                  }
+                >
+                  <GreetingMessageEditor
+                    value={form.welcomeNewMessage ?? ""}
+                    attachment={form.welcomeNewAttachment}
+                    showEmoji
+                    attachmentLayout="segmented"
+                    variables={mergeMessageVariables(
+                      CONNECTION_MESSAGE_VARIABLES,
+                      contactCustomFields,
+                    )}
+                    disabled={readOnly || !form.welcomeEnabled}
+                    invalid={
+                      showWelcomeValidation &&
+                      form.welcomeEnabled &&
+                      !form.welcomeNewMessage?.trim()
+                    }
+                    placeholder={NEW_CONTACT_MESSAGE_PLACEHOLDER}
+                    onSubmit={save}
+                    onChange={(welcomeNewMessage, welcomeNewAttachment) =>
+                      setForm({ ...form, welcomeNewMessage, welcomeNewAttachment })
+                    }
+                  />
+                </Field>
+                <Field
+                  label={
+                    form.welcomeEnabled
+                      ? "Mensagem para contato existente *"
+                      : "Mensagem para contato existente"
+                  }
+                  error={
                     showWelcomeValidation &&
                     form.welcomeEnabled &&
                     !form.welcomeExistingMessage?.trim()
+                      ? "Preencha a mensagem para contato existente."
+                      : undefined
                   }
-                  placeholder={EXISTING_CONTACT_MESSAGE_PLACEHOLDER}
-                  onSubmit={save}
-                  onChange={(welcomeExistingMessage, welcomeExistingAttachment) =>
-                    setForm({ ...form, welcomeExistingMessage, welcomeExistingAttachment })
-                  }
-                />
-              </Field>
-            </div>
-          )}
+                >
+                  <GreetingMessageEditor
+                    value={form.welcomeExistingMessage ?? ""}
+                    attachment={form.welcomeExistingAttachment}
+                    showEmoji
+                    attachmentLayout="segmented"
+                    variables={mergeMessageVariables(
+                      CONNECTION_MESSAGE_VARIABLES,
+                      contactCustomFields,
+                    )}
+                    disabled={readOnly || !form.welcomeEnabled}
+                    invalid={
+                      showWelcomeValidation &&
+                      form.welcomeEnabled &&
+                      !form.welcomeExistingMessage?.trim()
+                    }
+                    placeholder={EXISTING_CONTACT_MESSAGE_PLACEHOLDER}
+                    onSubmit={save}
+                    onChange={(welcomeExistingMessage, welcomeExistingAttachment) =>
+                      setForm({ ...form, welcomeExistingMessage, welcomeExistingAttachment })
+                    }
+                  />
+                </Field>
+              </div>
+            )}
 
-          {tab === "absence" && (
-            <div className="space-y-4">
-              <ImportOption
-                label="Ativar mensagem de ausência"
-                checked={absenceEnabled}
-                onCheckedChange={(checked) => {
-                  setAbsenceEnabled(checked);
-                  setShowAbsenceValidation(false);
-                  if (checked) {
-                    setServiceHours((current) =>
-                      current.map((row) => ({
-                        ...row,
-                        periods: row.periods.length ? row.periods : [createServiceHoursPeriod()],
-                      })),
-                    );
-                    setAbsenceActivation((current) => current + 1);
-                  }
-                }}
-              />
-              <Field
-                label={absenceEnabled ? "Mensagem de Ausência *" : "Mensagem de Ausência"}
-                error={
-                  showAbsenceValidation && absenceEnabled && !absenceMessage.trim()
-                    ? "Preencha a mensagem de ausência."
-                    : undefined
-                }
-              >
-                <GreetingMessageEditor
-                  value={absenceMessage}
-                  attachment={absenceAttachment}
-                  showEmoji
-                  attachmentLayout="segmented"
-                  variables={mergeMessageVariables(
-                    CONNECTION_MESSAGE_VARIABLES,
-                    contactCustomFields,
-                  )}
-                  disabled={!absenceEnabled}
-                  invalid={showAbsenceValidation && absenceEnabled && !absenceMessage.trim()}
-                  placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
-                  onChange={(value, attachment) => {
-                    setAbsenceMessage(value);
-                    setAbsenceAttachment(attachment);
+            {tab === "absence" && (
+              <div className="space-y-4">
+                <ImportOption
+                  label="Ativar mensagem de ausência"
+                  checked={absenceEnabled}
+                  onCheckedChange={(checked) => {
+                    setAbsenceEnabled(checked);
                     setShowAbsenceValidation(false);
+                    if (checked) {
+                      setServiceHours((current) =>
+                        current.map((row) => ({
+                          ...row,
+                          periods: row.periods.length ? row.periods : [createServiceHoursPeriod()],
+                        })),
+                      );
+                      setAbsenceActivation((current) => current + 1);
+                    }
                   }}
                 />
-              </Field>
-              <ServiceHoursTable
-                rows={serviceHours}
-                onChange={setServiceHours}
-                enabled={absenceEnabled}
-                focusStartSignal={absenceActivation}
-              />
-            </div>
-          )}
+                <Field
+                  label={absenceEnabled ? "Mensagem de Ausência *" : "Mensagem de Ausência"}
+                  error={
+                    showAbsenceValidation && absenceEnabled && !absenceMessage.trim()
+                      ? "Preencha a mensagem de ausência."
+                      : undefined
+                  }
+                >
+                  <GreetingMessageEditor
+                    value={absenceMessage}
+                    attachment={absenceAttachment}
+                    showEmoji
+                    attachmentLayout="segmented"
+                    variables={mergeMessageVariables(
+                      CONNECTION_MESSAGE_VARIABLES,
+                      contactCustomFields,
+                    )}
+                    disabled={readOnly || !absenceEnabled}
+                    invalid={showAbsenceValidation && absenceEnabled && !absenceMessage.trim()}
+                    placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
+                    onChange={(value, attachment) => {
+                      setAbsenceMessage(value);
+                      setAbsenceAttachment(attachment);
+                      setShowAbsenceValidation(false);
+                    }}
+                  />
+                </Field>
+                <ServiceHoursTable
+                  rows={serviceHours}
+                  onChange={setServiceHours}
+                  enabled={absenceEnabled}
+                  focusStartSignal={absenceActivation}
+                />
+              </div>
+            )}
+          </fieldset>
         </div>
       </Modal>
       {photoCrop.dialog}
@@ -2380,7 +2483,14 @@ function QrModal({
   qr,
   onClose,
 }: {
-  qr: { connectionId: string; name: string; value: string | null; status?: string } | null;
+  qr: {
+    connectionId: string;
+    name: string;
+    value: string | null;
+    status?: string;
+    errorCode?: string | null;
+    expectedOwnerPhone?: string | null;
+  } | null;
   onClose: () => void;
 }) {
   return (
@@ -2400,8 +2510,17 @@ function QrModal({
           />
         </div>
       ) : (
-        <div className="p-8 text-center text-sm text-muted-foreground">
-          QR indisponivel. Atualize o status ou tente conectar novamente.
+        <div className="flex flex-col items-center gap-3 p-8 text-center text-sm text-muted-foreground">
+          {qr?.status !== "error" ? (
+            <RefreshCw className="h-6 w-6 animate-spin text-blue-600" aria-hidden="true" />
+          ) : (
+            <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden="true" />
+          )}
+          {qr?.errorCode === "OWNER_PHONE_MISMATCH"
+            ? `Este número foi recusado. Conecte o número original${qr.expectedOwnerPhone ? ` ${qr.expectedOwnerPhone}` : ""}.`
+            : qr?.status === "error"
+              ? "Não foi possível gerar o QR Code. Feche esta janela e tente novamente."
+              : "Gerando um novo QR Code. A instância e todo o histórico estão preservados."}
         </div>
       )}
     </Modal>
@@ -2417,59 +2536,71 @@ function RemoveConnectionModal({
   connection: ApiMessagingConnection | null;
   busy: boolean;
   onClose: () => void;
-  onConfirm: (connection: ApiMessagingConnection, options: RemoveConnectionOptions) => void;
+  onConfirm: (connection: ApiMessagingConnection) => void;
 }) {
-  const [removeConversationHistory, setRemoveConversationHistory] = React.useState(false);
+  const [confirmation, setConfirmation] = React.useState("");
   React.useEffect(() => {
-    if (!connection) {
-      setRemoveConversationHistory(false);
-    }
+    setConfirmation("");
   }, [connection]);
   return (
     <Modal
       open={!!connection}
       onClose={onClose}
       title="Remover Instância?"
-      initialFocus="[data-confirm-action]"
+      initialFocus="[data-remove-confirmation]"
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-lg sm:min-w-20"
+            onClick={onClose}
+            disabled={busy}
+          >
             Cancelar
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="trash-action focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card"
+            className="trash-action h-8 rounded-lg sm:min-w-20 focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card"
             data-confirm-action
-            autoFocus
-            onClick={() => connection && onConfirm(connection, { removeConversationHistory })}
-            disabled={busy}
+            onClick={() => connection && onConfirm(connection)}
+            disabled={busy || confirmation !== "REMOVER"}
           >
-            <Trash2 className="h-3.5 w-3.5" /> Remover
+            <Trash2 className="h-3.5 w-3.5" /> Excluir permanentemente
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          <p className="font-medium">
-            Instância: <strong className="font-semibold">"{connection?.name}"</strong>
-          </p>
-          <p className="mt-1">
-            A conexão será indisponibilizada para novos envios e campanhas. Se o histórico não for
-            removido, as conversas ativas desta instância serão encerradas e mantidas no histórico.
-          </p>
+        <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-foreground">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 pt-1">
+            <p className="font-medium">
+              Instância: <strong className="font-semibold">"{connection?.name}"</strong>
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              A instância, conversas, mensagens, mídias, campanhas, destinatários, notificações,
+              agendamentos e importações vinculadas serão excluídos permanentemente. Contatos,
+              departamentos e chamados serão preservados sem vínculo com a instância. Esta ação não
+              pode ser desfeita.
+            </p>
+          </div>
         </div>
         <div className="space-y-2">
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-xs italic">
-            <input
-              type="checkbox"
-              checked={removeConversationHistory}
-              onChange={(event) => setRemoveConversationHistory(event.target.checked)}
-              className="h-4 w-4 accent-primary"
+          <Field label={'Digite "REMOVER" para confirmar'}>
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value.toUpperCase())}
+              autoComplete="off"
+              disabled={busy}
+              placeholder="REMOVER"
+              aria-label='Digite "REMOVER" para confirmar'
+              data-remove-confirmation
             />
-            <span className="font-semibold">Remover histórico de conversas</span>
-          </label>
+          </Field>
         </div>
       </div>
     </Modal>

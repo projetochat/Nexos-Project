@@ -4,10 +4,13 @@ import {
   type CustomFieldFormat,
 } from "@/lib/custom-field-formats";
 import * as React from "react";
+import { listOptionsFromText } from "@/lib/contact-custom-field-options";
 import { createFileRoute } from "@tanstack/react-router";
 import { Copy, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { ConfirmDialog, Modal } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   Button,
@@ -20,9 +23,17 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { crmApi, type ApiContactCustomField } from "@/lib/trixus-api";
+import { crmApi, TrixusApiError, type ApiContactCustomField } from "@/lib/trixus-api";
+import {
+  isNativeContactFieldName,
+  NATIVE_MESSAGE_VARIABLE_KEYS,
+  normalizeCustomFieldName,
+  previewCustomFieldVariableKey,
+} from "@/lib/message-variables";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { Switch } from "@/components/ui/switch";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/configuracoes/campos-contato")({
   component: ContactFieldsSettings,
@@ -69,6 +80,7 @@ const NUMBER_SYMBOL_OPTIONS: Array<{ value: NumberSymbol; label: string }> = [
 const RESERVED_CONTACT_TAB = "Geral";
 const RESERVED_CONTACT_GROUP = "Dados do contato";
 const DEFAULT_CONTACT_CUSTOM_TAB = "Dados Adicionais";
+const FIELD_NAME_CONFLICT_MESSAGE = "Já existe um campo com este nome. Informe um nome diferente.";
 
 function ContactFieldsSettings() {
   const permissions = useSession((state) => state.user?.permissions ?? []);
@@ -84,6 +96,16 @@ function ContactFieldsSettings() {
   const [requiredFilter, setRequiredFilter] = React.useState("");
   const [tabFilter, setTabFilter] = React.useState("");
   const [groupFilter, setGroupFilter] = React.useState("");
+  const hasFilters = Boolean(
+    query.trim() || typeFilter || requiredFilter || tabFilter || groupFilter,
+  );
+  const clearFilters = () => {
+    setQuery("");
+    setTypeFilter("");
+    setRequiredFilter("");
+    setTabFilter("");
+    setGroupFilter("");
+  };
   const [draggingFieldId, setDraggingFieldId] = React.useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = React.useState<string | null>(null);
   const create = useDisclosure();
@@ -119,10 +141,7 @@ function ContactFieldsSettings() {
       note: data.note.trim() || null,
       options:
         data.type === "list"
-          ? data.optionsText
-              .split(/\r?\n|,/)
-              .map((item) => item.trim())
-              .filter(Boolean)
+          ? listOptionsFromText(data.optionsText).map((item) => item.trim())
           : [],
     };
     const duplicate = fields.find(
@@ -132,13 +151,9 @@ function ContactFieldsSettings() {
     );
     if (duplicate) {
       toast.error("Falha ao salvar campo", {
-        description: (
-          <span>
-            Campo Adicional "<strong>{payload.label}</strong>" já existente.
-          </span>
-        ),
+        description: FIELD_NAME_CONFLICT_MESSAGE,
       });
-      return;
+      return FIELD_NAME_CONFLICT_MESSAGE;
     }
     try {
       if (editing) {
@@ -152,7 +167,14 @@ function ContactFieldsSettings() {
       setDuplicating(null);
       await load();
     } catch (error) {
-      toast.error("Falha ao salvar campo", { description: (error as Error).message });
+      const message =
+        error instanceof TrixusApiError && error.code === "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS"
+          ? FIELD_NAME_CONFLICT_MESSAGE
+          : (error as Error).message;
+      toast.error("Falha ao salvar campo", { description: message });
+      return error instanceof TrixusApiError && error.code === "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS"
+        ? FIELD_NAME_CONFLICT_MESSAGE
+        : undefined;
     }
   };
 
@@ -232,7 +254,7 @@ function ContactFieldsSettings() {
         }
       />
       <div className="mb-4 rounded-lg border border-border bg-card p-4">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(12rem,1.25fr)_minmax(9rem,0.8fr)_minmax(8rem,0.65fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)]">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(12rem,1.25fr)_minmax(9rem,0.8fr)_minmax(8rem,0.65fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)_auto]">
           <div className="col-span-2 lg:col-span-1">
             <Field label="Busca">
               <SearchInput
@@ -283,6 +305,11 @@ function ContactFieldsSettings() {
               ))}
             </Select>
           </Field>
+          {hasFilters && (
+            <div className="flex items-end">
+              <ClearFiltersButton onClick={clearFilters} />
+            </div>
+          )}
         </div>
       </div>
       <div className="mt-4 space-y-3 md:hidden">
@@ -499,26 +526,26 @@ function ContactFieldsSettings() {
             }}
             onSubmit={save}
           />
-          <ConfirmDialog
+          <DeletionConfirmDialog
             open={!!deleting}
-            title="Excluir Campo?"
-            description={
-              <p>
-                Deseja realmente excluir o campo adicional "
-                <strong className="font-semibold text-foreground">{deleting?.label ?? ""}</strong>
-                "?
-              </p>
-            }
-            destructive
-            confirmLabel="Excluir"
-            onClose={() => setDeleting(null)}
-            onConfirm={async () => {
-              if (!deleting) return;
-              await crmApi.deleteContactCustomField(deleting.id);
+            resourceKey={`contact-custom-field:${deleting?.id ?? "none"}`}
+            onOpenChange={(open) => {
+              if (!open) setDeleting(null);
+            }}
+            loadImpact={(signal) => {
+              if (!deleting) return Promise.reject(new Error("Campo não selecionado."));
+              return crmApi.contactCustomFieldDeletionPreview(deleting.id, signal);
+            }}
+            onConfirm={({ snapshotToken, signal }) => {
+              if (!deleting) return Promise.reject(new Error("Campo não selecionado."));
+              return crmApi.deleteContactCustomField(deleting.id, snapshotToken, signal);
+            }}
+            onDeleted={() => {
               toast.success("Campo excluído");
               setDeleting(null);
-              await load();
+              void load();
             }}
+            formatError={(error) => (error as Error).message}
           />
         </>
       )}
@@ -536,7 +563,7 @@ function ContactFieldFormModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: FieldForm) => void | Promise<void>;
+  onSubmit: (data: FieldForm) => void | string | Promise<void | string>;
   initial?: ApiContactCustomField;
   clone?: boolean;
   fields: ApiContactCustomField[];
@@ -544,35 +571,54 @@ function ContactFieldFormModal({
   const isMobile = useIsMobile();
   const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
   const [labelError, setLabelError] = React.useState("");
+  const [requiredErrors, setRequiredErrors] = React.useState({ label: false, tabName: false });
+  const [saving, setSaving] = React.useState(false);
+  const [draggingOptionIndex, setDraggingOptionIndex] = React.useState<number | null>(null);
   const duplicateLabelError = (label: string) => {
     const normalizedLabel = normalizeFieldName(label);
     if (!normalizedLabel) return "";
+    const technicalKey = previewCustomFieldVariableKey(label);
+    if (
+      isNativeContactFieldName(label) ||
+      (NATIVE_MESSAGE_VARIABLE_KEYS as readonly string[]).includes(technicalKey)
+    ) {
+      return FIELD_NAME_CONFLICT_MESSAGE;
+    }
     return fields.some(
       (field) =>
         field.id !== (initial && !clone ? initial.id : undefined) &&
-        normalizeFieldName(field.label) === normalizedLabel,
+        (normalizeFieldName(field.label) === normalizedLabel ||
+          ((!initial || clone) && field.variableKey === technicalKey)),
     )
-      ? "Já existe um campo adicional com este nome."
+      ? FIELD_NAME_CONFLICT_MESSAGE
       : "";
   };
   React.useEffect(() => {
     if (!open) return;
     setForm(initial ? fieldToForm(initial, clone) : emptyFieldForm());
     setLabelError("");
+    setRequiredErrors({ label: false, tabName: false });
+    setSaving(false);
+    setDraggingOptionIndex(null);
   }, [clone, initial, open]);
 
-  const save = () => {
-    if (form.label.trim().length < 2) {
-      toast.error("Informe o nome do campo.");
+  const save = async () => {
+    if (saving) return;
+    const nextRequiredErrors = {
+      label: form.label.trim().length < 2,
+      tabName: form.tabName.trim().length < 2,
+    };
+    if (nextRequiredErrors.label || nextRequiredErrors.tabName) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast([
+        ...(nextRequiredErrors.label ? ["Nome"] : []),
+        ...(nextRequiredErrors.tabName ? ["Aba"] : []),
+      ]);
       return;
     }
     const duplicateError = duplicateLabelError(form.label);
     if (duplicateError) {
       setLabelError(duplicateError);
-      return;
-    }
-    if (form.tabName.trim().length < 2) {
-      toast.error("Informe a aba do campo.");
       return;
     }
     if (isReservedContactTab(form.tabName)) {
@@ -583,24 +629,52 @@ function ContactFieldFormModal({
       toast.error("Este agrupamento é reservado para os campos padrão do contato.");
       return;
     }
-    if (form.type === "list" && !form.optionsText.trim()) {
-      toast.error("Informe as opções da lista.");
-      return;
+    if (form.type === "list") {
+      const options = listOptionsFromText(form.optionsText);
+      if (options.some((option) => !option.trim())) {
+        toast.error("Preencha ou remova as opções vazias da lista.");
+        return;
+      }
+      const normalized = options.map((option) => option.trim().toLocaleLowerCase("pt-BR"));
+      if (new Set(normalized).size !== normalized.length) {
+        toast.error("Não é permitido repetir opções da lista.");
+        return;
+      }
     }
-    void onSubmit(form);
+    setSaving(true);
+    try {
+      const serverError = await onSubmit(form);
+      if (serverError) setLabelError(serverError);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const technicalKey =
+    initial && !clone ? initial.variableKey : previewCustomFieldVariableKey(form.label);
+  const listOptions = listOptionsFromText(form.optionsText);
+  const setListOptions = (options: string[]) =>
+    setForm((current) => ({ ...current, optionsText: options.join("\n") }));
 
   return (
     <Modal
       open={open}
       onClose={onClose}
+      dismissible={!saving}
+      closeOnBackdrop={!saving}
       title={initial && !clone ? "Editar Campo" : clone ? "Duplicar Campo" : "Novo Campo"}
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button variant="primary" size="sm" onClick={save}>
+          <Button
+            variant="primary"
+            size="sm"
+            className="save-action-button"
+            onClick={() => void save()}
+            disabled={saving}
+          >
             Salvar
           </Button>
         </>
@@ -613,11 +687,17 @@ function ContactFieldFormModal({
             onChange={(event) => {
               setForm({ ...form, label: event.target.value });
               setLabelError(duplicateLabelError(event.target.value));
+              if (event.target.value.trim().length >= 2)
+                setRequiredErrors((current) => ({ ...current, label: false }));
             }}
-            aria-invalid={!!labelError}
+            aria-invalid={requiredErrors.label || !!labelError}
+            className={requiredFieldClassName(requiredErrors.label || !!labelError)}
           />
         </Field>
-        <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-3">
+        <Field label="Variável técnica">
+          <Input value={technicalKey ? `{{${technicalKey}}}` : ""} readOnly />
+        </Field>
+        <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-3">
           <Field label="Tipo *">
             <Select
               value={form.type}
@@ -640,11 +720,11 @@ function ContactFieldFormModal({
               <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
                 Obrigatório
               </span>
-              <span className="flex h-10 items-center justify-center rounded-lg border border-border bg-surface-1">
-                <input
-                  type="checkbox"
+              <span className="flex h-10 items-center justify-start">
+                <Switch
                   checked={form.required}
-                  onChange={(event) => setForm({ ...form, required: event.target.checked })}
+                  onCheckedChange={(required) => setForm({ ...form, required })}
+                  aria-label="Obrigatório"
                 />
               </span>
             </label>
@@ -750,14 +830,77 @@ function ContactFieldFormModal({
                 <option value="multi">Lista Múltipla</option>
               </Select>
             </Field>
-            <Field label="Opções da lista *">
-              <Textarea
-                rows={4}
-                value={form.optionsText}
-                onChange={(event) => setForm({ ...form, optionsText: event.target.value })}
-                placeholder="Uma opção por linha"
-              />
-            </Field>
+            <div className="space-y-2">
+              <div className="grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-center gap-2">
+                <span className="col-span-2 text-xs font-medium text-muted-foreground">
+                  Opções da lista *
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="action-hover-primary justify-self-center"
+                  aria-label="Adicionar opção da lista"
+                  title="Adicionar opção"
+                  onClick={() => setListOptions([...listOptions, ""])}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {listOptions.map((option, index) => (
+                  <div
+                    key={index}
+                    className="grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-center gap-2"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (draggingOptionIndex === null || draggingOptionIndex === index) return;
+                      const reordered = [...listOptions];
+                      const [moved] = reordered.splice(draggingOptionIndex, 1);
+                      reordered.splice(index, 0, moved);
+                      setListOptions(reordered);
+                      setDraggingOptionIndex(null);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      draggable
+                      className="flex h-10 cursor-grab items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-2 active:cursor-grabbing"
+                      aria-label={`Reordenar opção ${index + 1}`}
+                      title="Arraste para reordenar"
+                      onDragStart={() => setDraggingOptionIndex(index)}
+                      onDragEnd={() => setDraggingOptionIndex(null)}
+                    >
+                      <GripVertical className="h-5 w-5" />
+                    </button>
+                    <Input
+                      value={option}
+                      aria-label={`Opção ${index + 1}`}
+                      onChange={(event) => {
+                        const next = [...listOptions];
+                        next[index] = event.target.value;
+                        setListOptions(next);
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="trash-action justify-self-center"
+                      aria-label={`Excluir opção ${index + 1}`}
+                      title="Excluir opção"
+                      onClick={() => {
+                        const next = listOptions.filter((_, optionIndex) => optionIndex !== index);
+                        setListOptions(next.length ? next : [""]);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
         <div className="grid gap-3 md:grid-cols-2">
@@ -765,8 +908,14 @@ function ContactFieldFormModal({
             <Field label="Aba *">
               <Input
                 value={form.tabName}
-                onChange={(event) => setForm({ ...form, tabName: event.target.value })}
+                onChange={(event) => {
+                  setForm({ ...form, tabName: event.target.value });
+                  if (event.target.value.trim().length >= 2)
+                    setRequiredErrors((current) => ({ ...current, tabName: false }));
+                }}
                 placeholder="Dados Adicionais"
+                aria-invalid={requiredErrors.tabName}
+                className={requiredFieldClassName(requiredErrors.tabName)}
               />
             </Field>
             {isReservedContactTab(form.tabName) && (
@@ -893,7 +1042,7 @@ function uniqueLabels(values: string[]) {
 }
 
 function normalizeFieldName(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
+  return normalizeCustomFieldName(value);
 }
 
 function clampInteger(value: string | number, min: number, max: number) {

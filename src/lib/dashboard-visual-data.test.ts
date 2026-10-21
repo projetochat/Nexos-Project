@@ -29,4 +29,16 @@ describe("normalizeDashboardData", () => {
 
     expect(result.map((item) => item.nome)).toEqual(["Mais recente", "Anterior"]);
   });
+
+  it("preserves every platform client without Top N or an Outros bucket", () => {
+    const data = Array.from({ length: 25 }, (_, index) => ({
+      nome: `Cliente ${index + 1}`,
+      total: 25 - index,
+    }));
+
+    const result = normalizeDashboardData(data, "count", 2, "columns", false, true);
+
+    expect(result).toHaveLength(25);
+    expect(result.some((item) => item.nome === "Outros")).toBe(false);
+  });
 });

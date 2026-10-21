@@ -18,6 +18,7 @@ export type OperationsMetricFilters = {
   connectionId?: string;
   allowedConnectionIds?: string[];
   allowedDepartmentIds?: string[];
+  conversationAccess?: Prisma.ConversationWhereInput;
   contactId?: string;
 };
 
@@ -496,20 +497,18 @@ export function closedConversationWhere(tenantId: string, range?: OperationsRang
 }
 
 function conversationMetricScope(tenantId: string, filters: OperationsMetricFilters) {
+  const accessFilters: Prisma.ConversationWhereInput[] = [
+    ...(filters.conversationAccess ? [filters.conversationAccess] : []),
+    ...(filters.allowedConnectionIds
+      ? [{ connectionId: { in: filters.allowedConnectionIds } }]
+      : []),
+    ...(filters.allowedDepartmentIds
+      ? [{ departmentId: { in: filters.allowedDepartmentIds } }]
+      : []),
+  ];
   return {
     tenantId,
-    ...(filters.allowedConnectionIds || filters.allowedDepartmentIds
-      ? {
-          AND: [
-            ...(filters.allowedConnectionIds
-              ? [{ connectionId: { in: filters.allowedConnectionIds } }]
-              : []),
-            ...(filters.allowedDepartmentIds
-              ? [{ departmentId: { in: filters.allowedDepartmentIds } }]
-              : []),
-          ],
-        }
-      : {}),
+    ...(accessFilters.length > 0 ? { AND: accessFilters } : {}),
     ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
     ...(filters.assignedMembershipId ? { assignedMembershipId: filters.assignedMembershipId } : {}),
     ...(filters.contactId ? { contactId: filters.contactId } : {}),
@@ -519,6 +518,10 @@ function conversationMetricScope(tenantId: string, filters: OperationsMetricFilt
 }
 
 function leadMetricScope(tenantId: string, filters: OperationsMetricFilters) {
+  const conversationFilters: Prisma.ConversationWhereInput[] = [
+    ...(filters.conversationAccess ? [filters.conversationAccess] : []),
+    ...(filters.connectionId ? [{ connectionId: filters.connectionId }] : []),
+  ];
   return {
     ...(filters.allowedConnectionIds || filters.allowedDepartmentIds
       ? {
@@ -541,7 +544,7 @@ function leadMetricScope(tenantId: string, filters: OperationsMetricFilters) {
     ...(filters.assignedMembershipId ? { assignedMembershipId: filters.assignedMembershipId } : {}),
     ...(filters.contactId ? { contactId: filters.contactId } : {}),
     ...(filters.customerId ? { contact: { customerId: filters.customerId } } : {}),
-    ...(filters.connectionId ? { conversation: { connectionId: filters.connectionId } } : {}),
+    ...(conversationFilters.length > 0 ? { conversation: { AND: conversationFilters } } : {}),
   } satisfies Prisma.LeadWhereInput;
 }
 

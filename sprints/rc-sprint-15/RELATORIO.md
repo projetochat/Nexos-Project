@@ -1,5 +1,9 @@
 # RC Sprint 15 - Atendimento Operacional
 
+> **HISTORICO — NAO EXECUTAR:** comandos Prisma deste relatorio registram um
+> ensaio antigo. Migracoes atuais usam exclusivamente o wrapper documentado em
+> `docs/PRODUCTION-AUTOMATION.md`.
+
 ## Status
 
 PARTIAL PASS. A consolidacao tecnica foi implementada e testada, mas a RC nao declara piloto fisico

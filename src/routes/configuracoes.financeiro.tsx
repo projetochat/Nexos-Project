@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, CreditCard } from "lucide-react";
 import { Badge, Card, Field, SearchInput, Select } from "@/components/ui-kit";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { organizationApi, type ApiFinancialPayment } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/configuracoes/financeiro")({
@@ -12,6 +13,11 @@ export const Route = createFileRoute("/configuracoes/financeiro")({
 function FinanceiroSettings() {
   const [search, setSearch] = React.useState("");
   const [period, setPeriod] = React.useState("all");
+  const hasFilters = Boolean(search.trim() || period !== "all");
+  const clearFilters = () => {
+    setSearch("");
+    setPeriod("all");
+  };
   const {
     data: payments = [],
     isLoading,
@@ -56,7 +62,7 @@ function FinanceiroSettings() {
       </div>
 
       <div className="space-y-4 p-4 sm:p-6">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto]">
           <div className="col-span-2 md:col-span-1">
             <Field label="Busca">
               <SearchInput
@@ -83,6 +89,11 @@ function FinanceiroSettings() {
               </Select>
             </div>
           </Field>
+          {hasFilters && (
+            <div className="flex items-end">
+              <ClearFiltersButton onClick={clearFilters} />
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-border">

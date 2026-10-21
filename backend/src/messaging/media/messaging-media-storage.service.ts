@@ -185,8 +185,8 @@ export function maxSizeBytes(type: MessageType) {
           : type === MessageType.IMAGE
             ? 8
             : type === MessageType.VIDEO
-              ? 32
-              : 16),
+              ? 64
+              : 32),
     ) *
     1024 *
     1024

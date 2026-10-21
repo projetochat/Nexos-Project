@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Inject, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Inject, Post, Query, UseGuards } from "@nestjs/common";
 import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { CurrentUser } from "./current-user.decorator";
 import { JwtAuthGuard } from "./jwt-auth.guard";
@@ -34,6 +34,11 @@ class AcceptInvitationDto {
   @IsOptional()
   @IsString()
   name?: string;
+}
+
+class InvitationPreviewDto {
+  @IsString()
+  token!: string;
 }
 
 class CompleteRequiredPasswordChangeDto {
@@ -94,6 +99,11 @@ export class AuthController {
   @Post("invitations/accept")
   acceptInvitation(@Body() dto: AcceptInvitationDto) {
     return this.auth.acceptInvitation(dto);
+  }
+
+  @Get("invitations/preview")
+  invitationPreview(@Query() dto: InvitationPreviewDto) {
+    return this.auth.invitationPreview(dto.token);
   }
 
   @Post("password/required-change")

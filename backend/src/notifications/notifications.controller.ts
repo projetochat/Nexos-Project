@@ -47,11 +47,12 @@ export class NotificationsController {
   async list(@Query() query: ListNotificationsQueryDto, @CurrentUser() current: AuthenticatedUser) {
     const page = integerQueryValue(query.page, 1, 1);
     const pageSize = integerQueryValue(query.pageSize, 25, 1, 100);
+    const access = await this.notificationAccess(current);
     const where: Prisma.NotificationWhereInput = {
       tenantId: current.tenantId,
       membershipId: current.membershipId,
       ...(query.status ? { status: query.status } : {}),
-      ...notificationAccess(current),
+      ...access,
     };
     const [items, total, unread] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
@@ -77,13 +78,14 @@ export class NotificationsController {
 
   @Patch(":id/read")
   async markRead(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    const access = await this.notificationAccess(current);
     await this.prisma.notification.updateMany({
       where: {
         id,
         tenantId: current.tenantId,
         membershipId: current.membershipId,
         status: "UNREAD",
-        ...notificationAccess(current),
+        ...access,
       },
       data: { status: "READ", readAt: new Date() },
     });
@@ -131,33 +133,45 @@ export class NotificationsController {
 
   @Post("read-all")
   async markAllRead(@CurrentUser() current: AuthenticatedUser) {
+    const access = await this.notificationAccess(current);
     const result = await this.prisma.notification.updateMany({
       where: {
         tenantId: current.tenantId,
         membershipId: current.membershipId,
         status: "UNREAD",
-        ...notificationAccess(current),
+        ...access,
       },
       data: { status: "READ", readAt: new Date() },
     });
     return { ok: true, updated: result.count };
   }
-}
 
-function notificationAccess(current: AuthenticatedUser): Prisma.NotificationWhereInput {
-  if (current.roleKey === "tenant_admin") return {};
-  return {
-    OR: [
-      {
+  private async notificationAccess(
+    current: AuthenticatedUser,
+  ): Promise<Prisma.NotificationWhereInput> {
+    if (current.roleKey === "tenant_admin") return {};
+    const conversations = await this.prisma.conversation.findMany({
+      where: {
         AND: [
-          { entityType: { in: ["conversation", "lead"] } },
-          { connectionId: { in: current.connectionIds ?? [] } },
-          { departmentId: { in: current.chatDepartmentIds ?? [] } },
+          { tenantId: current.tenantId, archivedAt: null },
+          conversationVisibilityWhere(current),
         ],
       },
-      { OR: [{ entityType: null }, { entityType: { notIn: ["conversation", "lead"] } }] },
-    ],
-  };
+      select: { id: true },
+    });
+    const conversationIds = conversations.map((conversation) => conversation.id);
+    const leads = await this.prisma.lead.findMany({
+      where: { tenantId: current.tenantId, conversationId: { in: conversationIds } },
+      select: { id: true },
+    });
+    return {
+      OR: [
+        { entityType: "conversation", entityId: { in: conversationIds } },
+        { entityType: "lead", entityId: { in: leads.map((lead) => lead.id) } },
+        { OR: [{ entityType: null }, { entityType: { notIn: ["conversation", "lead"] } }] },
+      ],
+    };
+  }
 }
 
 function integerQueryValue(

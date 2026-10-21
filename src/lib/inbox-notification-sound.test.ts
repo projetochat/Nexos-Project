@@ -114,4 +114,32 @@ describe("isInboundConversationUpdate", () => {
     );
     expect(shouldNotifyInboxUpdate(event, "user-a")).toBe(true);
   });
+
+  it("emits the tag alert only for a newly created passive conversation", () => {
+    setInboxNotificationQueues("user-a", []);
+    const base = {
+      eventId: "tag-alert",
+      event: "conversation.updated" as const,
+      version: 1 as const,
+      occurredAt: "2026-10-21T12:00:00Z",
+    };
+    expect(
+      shouldNotifyInboxUpdate(
+        { ...base, data: { reason: "inbound.created", tagNotification: true } },
+        "user-a",
+      ),
+    ).toBe(true);
+    expect(
+      shouldNotifyInboxUpdate(
+        { ...base, data: { reason: "inbound.updated", tagNotification: true } },
+        "user-a",
+      ),
+    ).toBe(false);
+    expect(
+      shouldNotifyInboxUpdate(
+        { ...base, data: { reason: "outbound.synced", tagNotification: true } },
+        "user-a",
+      ),
+    ).toBe(false);
+  });
 });

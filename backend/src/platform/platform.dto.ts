@@ -10,6 +10,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -72,7 +73,65 @@ export class PlatformListQueryDto {
   period?: string;
 }
 
+export class PlatformDashboardQueryDto {
+  @IsOptional()
+  @IsString()
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+
+  @IsOptional()
+  @IsIn([
+    "today",
+    "yesterday",
+    "week",
+    "previous_week",
+    "month",
+    "previous_month",
+    "year",
+    "previous_year",
+    "7d",
+    "30d",
+    "custom",
+  ])
+  period?:
+    | "today"
+    | "yesterday"
+    | "week"
+    | "previous_week"
+    | "month"
+    | "previous_month"
+    | "year"
+    | "previous_year"
+    | "7d"
+    | "30d"
+    | "custom";
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  start?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  end?: string;
+}
+
+export class UpdatePlatformDashboardConfigurationDto {
+  @IsObject()
+  configuration!: Record<string, unknown>;
+
+  @IsInt()
+  @Min(0)
+  version!: number;
+}
+
 export class CreatePlatformClientDto {
+  @IsOptional()
+  @IsUUID()
+  cityId?: string;
+
   @IsString()
   @IsNotEmpty()
   name!: string;
@@ -82,20 +141,35 @@ export class CreatePlatformClientDto {
   @Matches(/^\d{14}$/)
   document?: string;
 
+  @ValidateIf(
+    (dto: CreatePlatformClientDto) =>
+      dto.status !== "PROSPECTING" || Boolean(dto.responsibleName?.trim()),
+  )
   @IsString()
   @IsNotEmpty()
-  responsibleName!: string;
+  responsibleName?: string;
 
+  @ValidateIf(
+    (dto: CreatePlatformClientDto) =>
+      dto.status !== "PROSPECTING" || Boolean(dto.responsibleEmail?.trim()),
+  )
   @IsEmail()
-  responsibleEmail!: string;
+  responsibleEmail?: string;
 
+  @ValidateIf((dto: CreatePlatformClientDto) => !dto.cityId)
   @IsString()
   @IsNotEmpty()
-  city!: string;
+  city?: string;
 
+  @ValidateIf((dto: CreatePlatformClientDto) => !dto.cityId)
   @IsString()
-  @Matches(/^[A-Z]{2}$/)
-  state!: string;
+  @MaxLength(20)
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  country?: string;
 
   @IsOptional()
   @IsISO8601()
@@ -112,6 +186,10 @@ export class CreatePlatformClientDto {
 
 export class UpdatePlatformClientDto {
   @IsOptional()
+  @IsUUID()
+  cityId?: string | null;
+
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   name?: string;
@@ -123,12 +201,22 @@ export class UpdatePlatformClientDto {
   @Matches(/^\d{14}$/)
   document?: string;
 
-  @IsOptional()
+  @ValidateIf(
+    (dto: UpdatePlatformClientDto) =>
+      dto.responsibleName !== undefined &&
+      (dto.status !== "PROSPECTING" ||
+        (typeof dto.responsibleName === "string" && Boolean(dto.responsibleName.trim()))),
+  )
   @IsString()
   @IsNotEmpty()
   responsibleName?: string;
 
-  @IsOptional()
+  @ValidateIf(
+    (dto: UpdatePlatformClientDto) =>
+      dto.responsibleEmail !== undefined &&
+      (dto.status !== "PROSPECTING" ||
+        (typeof dto.responsibleEmail === "string" && Boolean(dto.responsibleEmail.trim()))),
+  )
   @IsEmail()
   responsibleEmail?: string;
 
@@ -139,8 +227,13 @@ export class UpdatePlatformClientDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^[A-Z]{2}$/)
+  @MaxLength(20)
   state?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  country?: string;
 
   @IsOptional()
   @IsISO8601()
@@ -379,6 +472,26 @@ export class UpdateTenantAdministratorCredentialsDto {
   @MaxLength(72)
   @IsByteLength(0, 72, { message: "A senha deve possuir no máximo 72 bytes." })
   newPassword?: string;
+}
+
+export class ChangePlatformPasswordDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(72)
+  @IsByteLength(0, 72, { message: "A senha atual deve possuir no máximo 72 bytes." })
+  currentPassword!: string;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(72)
+  @IsByteLength(0, 72, { message: "A nova senha deve possuir no máximo 72 bytes." })
+  newPassword!: string;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(72)
+  @IsByteLength(0, 72, { message: "A confirmação deve possuir no máximo 72 bytes." })
+  confirmPassword!: string;
 }
 
 export class UpdatePlatformSettingsDto {

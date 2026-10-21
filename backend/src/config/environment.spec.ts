@@ -3,6 +3,7 @@ import { validateEnvironment } from "./environment";
 
 const validProductionEnvironment = {
   NODE_ENV: "production",
+  TRIXUS_ENVIRONMENT: "production",
   DATABASE_URL: "postgresql://trixus:password@postgres:5432/trixus",
   JWT_SECRET: "access-secret-with-at-least-32-characters",
   JWT_REFRESH_SECRET: "refresh-secret-with-at-least-32-characters",
@@ -23,6 +24,29 @@ const validProductionEnvironment = {
 describe("production environment validation", () => {
   it("accepts a complete production configuration", () => {
     expect(validateEnvironment(validProductionEnvironment)).toEqual(validProductionEnvironment);
+  });
+
+  it.each(["production", "homologation", "staging"])(
+    "accepts the supported Trixus environment %s",
+    (environment) => {
+      expect(
+        validateEnvironment({
+          ...validProductionEnvironment,
+          TRIXUS_ENVIRONMENT: environment,
+        }),
+      ).toMatchObject({ TRIXUS_ENVIRONMENT: environment });
+    },
+  );
+
+  it("rejects an unknown or non-canonical Trixus environment", () => {
+    for (const environment of ["development", "Staging"]) {
+      expect(() =>
+        validateEnvironment({
+          ...validProductionEnvironment,
+          TRIXUS_ENVIRONMENT: environment,
+        }),
+      ).toThrow(/TRIXUS_ENVIRONMENT must be production, homologation or staging/);
+    }
   });
 
   it("does not impose production integrations on test and development", () => {

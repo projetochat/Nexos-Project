@@ -3,6 +3,7 @@ import type { ApiQuickReply } from "./trixus-api";
 import {
   assertQuickReplySaved,
   createSequence,
+  quickReplyAttachmentMediaType,
   quickReplyMessages,
   sendSequence,
 } from "./quick-reply-sequence";
@@ -23,22 +24,25 @@ const draft = () =>
   createSequence(
     reply({
       messages: [{ text: "Olá" }, { text: "", attachment }, { text: "Posso ajudar?" }],
-      intervalSeconds: 2,
     }),
   );
 
 describe("quick reply sequences", () => {
+  it("envia anexos de áudio como mensagem de voz do WhatsApp", () => {
+    expect(quickReplyAttachmentMediaType("audio/ogg")).toBe("voice");
+    expect(quickReplyAttachmentMediaType("audio/mpeg")).toBe("voice");
+    expect(quickReplyAttachmentMediaType("application/pdf")).toBe("document");
+  });
+
   it("rejects an outdated server response that kept only the combined text", () => {
     const messages = [{ text: "Primeira" }, { text: "Segunda" }];
-    expect(() => assertQuickReplySaved(reply({ texto: "Primeira\nSegunda" }), messages, 0)).toThrow(
+    expect(() => assertQuickReplySaved(reply({ texto: "Primeira\nSegunda" }), messages)).toThrow(
       "não confirmou",
     );
-    expect(() =>
-      assertQuickReplySaved(reply({ messages, intervalSeconds: 0 }), messages, 0),
-    ).not.toThrow();
-    expect(() =>
-      assertQuickReplySaved(reply({ messages: [messages[0]], intervalSeconds: 0 }), messages, 0),
-    ).toThrow("não confirmou");
+    expect(() => assertQuickReplySaved(reply({ messages }), messages)).not.toThrow();
+    expect(() => assertQuickReplySaved(reply({ messages: [messages[0]] }), messages)).toThrow(
+      "não confirmou",
+    );
   });
   it("preserves legacy text and attachments", () => {
     expect(
@@ -60,9 +64,29 @@ describe("quick reply sequences", () => {
     );
 
     expect(sequence.items.map((item) => item.text)).toEqual(["Olá, Ana", "Instância: Comercial"]);
+    expect(sequence.items.map((item) => item.templateText)).toEqual([
+      "Olá, {{nome}}",
+      "Instância: {{instancia}}",
+    ]);
   });
 
-  it("waits for provider confirmation before sending the next text or file", async () => {
+  it("keeps the raw template so each item is resolved by the backend at effective send", async () => {
+    const sequence = createSequence(
+      reply({ messages: [{ text: "{{saudacao}}" }] }),
+      () => "Bom dia",
+    );
+    const sent: string[] = [];
+    await sendSequence(sequence, new AbortController().signal, {
+      send: async (item) => {
+        sent.push(item.templateText ?? item.text);
+        return { id: item.clientMessageId, status: "sent" };
+      },
+      progress: () => {},
+    });
+    expect(sent).toEqual(["{{saudacao}}"]);
+  });
+
+  it("dispatches every item in order without waiting between messages", async () => {
     const sequence = draft();
     const events: string[] = [];
     await sendSequence(sequence, new AbortController().signal, {
@@ -70,29 +94,16 @@ describe("quick reply sequences", () => {
         events.push(`send:${item.text || item.attachment?.fileName}`);
         return { id: item.clientMessageId, status: "queued" };
       },
-      get: async (id) => {
-        events.push("confirmed");
-        return { id, status: "sent" };
-      },
-      wait: async (ms) => {
-        events.push(`wait:${ms}`);
-      },
       progress: (sent) => {
         events.push(`progress:${sent}`);
       },
     });
     expect(events).toEqual([
       "send:Olá",
-      "wait:1000",
-      "confirmed",
       "progress:1",
       "send:catalogo.pdf",
-      "wait:1000",
-      "confirmed",
       "progress:2",
       "send:Posso ajudar?",
-      "wait:1000",
-      "confirmed",
       "progress:3",
     ]);
   });
@@ -105,8 +116,6 @@ describe("quick reply sequences", () => {
       .mockRejectedValueOnce(new Error("network"));
     const transport = {
       send,
-      get: vi.fn(),
-      wait: vi.fn().mockResolvedValue(undefined),
       progress: vi.fn(),
     };
     await expect(sendSequence(sequence, new AbortController().signal, transport)).rejects.toThrow(
@@ -127,27 +136,11 @@ describe("quick reply sequences", () => {
     await expect(
       sendSequence(sequence, new AbortController().signal, {
         send,
-        get: vi.fn(),
         progress: vi.fn(),
       }),
     ).rejects.toThrow("mensagem 1 falhou");
     expect(send).toHaveBeenCalledTimes(1);
     expect(sequence.next).toBe(0);
-  });
-
-  it("keeps the queued message ID after timeout so continuing only checks its status", async () => {
-    const sequence = draft();
-    const send = vi.fn().mockResolvedValue({ id: "queued-id", status: "queued" });
-    const get = vi.fn().mockResolvedValue({ id: "queued-id", status: "queued" });
-    const transport = { send, get, progress: vi.fn(), wait: vi.fn().mockResolvedValue(undefined) };
-    await expect(sendSequence(sequence, new AbortController().signal, transport)).rejects.toThrow(
-      "ainda não foi confirmado",
-    );
-    expect(sequence.items[0].messageId).toBe("queued-id");
-    get.mockResolvedValue({ id: "queued-id", status: "sent" });
-    send.mockResolvedValue({ id: "other", status: "sent" });
-    await sendSequence(sequence, new AbortController().signal, transport);
-    expect(send).toHaveBeenCalledTimes(3);
   });
 
   it("pauses remaining items on navigation", async () => {
@@ -157,7 +150,6 @@ describe("quick reply sequences", () => {
     await expect(
       sendSequence(sequence, controller.signal, {
         send,
-        get: vi.fn(),
         progress: () => controller.abort(),
       }),
     ).rejects.toThrow("interrompido");

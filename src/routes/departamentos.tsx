@@ -1,19 +1,36 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Copy, Check } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Copy,
+  Check,
+  AlertTriangle,
+  ChevronDown,
+  X,
+  Trash2,
+  Clock3,
+  Eye,
+  Info,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import {
   SectionHeader,
   Card,
+  Badge,
   Button,
   Field,
   Input,
   Textarea,
   SearchInput,
+  InstanceFilterSelect,
+  Select,
 } from "@/components/ui-kit";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import {
@@ -24,17 +41,32 @@ import {
 } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
-import { DepartmentIcon, DEPARTMENT_ICON_OPTIONS } from "@/components/department-icon";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
+import { DepartmentIcon, DepartmentIconSelect } from "@/components/department-icon";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { GreetingMessageEditor } from "@/components/greeting-message-editor";
+import {
+  CONNECTION_MESSAGE_VARIABLES,
+  mergeMessageVariables,
+} from "@/lib/message-variable-options";
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
 
-type DepartamentoFormData = {
+export type DepartamentoFormData = {
   name?: string;
   description?: string | null;
   color?: string;
   icon?: DepartmentIconName;
   connectionIds: string[];
+  active?: boolean;
+  inactivityClosureEnabled?: boolean;
+  inactivityTimeoutMinutes?: number | null;
+  inactivityClosureMessage?: string | null;
 };
+
+type DepartmentDeactivationPreview = Awaited<
+  ReturnType<typeof organizationApi.departmentDeactivationPreview>
+>;
 
 function normalizeDepartmentName(value: string) {
   return value
@@ -72,10 +104,23 @@ function Page() {
   const canCreate = permissions.includes("departments.create");
   const canUpdate = permissions.includes("departments.update");
   const canDelete = permissions.includes("departments.delete");
+  const canRead = permissions.includes("departments.read");
   const [editing, setEditing] = React.useState<ApiDepartment | null>(null);
+  const [viewing, setViewing] = React.useState<ApiDepartment | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = React.useState<ApiDepartment | null>(null);
+  const [pendingDeactivation, setPendingDeactivation] = React.useState<{
+    department: ApiDepartment;
+    preview: DepartmentDeactivationPreview;
+  } | null>(null);
+  const [migrationTargets, setMigrationTargets] = React.useState<Record<string, string>>({});
   const [query, setQuery] = React.useState("");
+  const [instanceFilter, setInstanceFilter] = React.useState("");
+  const hasFilters = Boolean(query.trim() || instanceFilter);
+  const clearFilters = () => {
+    setQuery("");
+    setInstanceFilter("");
+  };
   const novo = useDisclosure();
 
   const {
@@ -83,8 +128,12 @@ function Page() {
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["trixus", "departments"],
-    queryFn: organizationApi.listDepartments,
+    queryKey: ["trixus", "departments", instanceFilter],
+    queryFn: () =>
+      organizationApi.listDepartmentsByConnection({
+        connectionId: instanceFilter || undefined,
+        status: "all",
+      }),
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
   });
@@ -103,6 +152,9 @@ function Page() {
             color: payload.data.color,
             icon: payload.data.icon,
             connectionIds: payload.data.connectionIds,
+            inactivityClosureEnabled: payload.data.inactivityClosureEnabled,
+            inactivityTimeoutMinutes: payload.data.inactivityTimeoutMinutes,
+            inactivityClosureMessage: payload.data.inactivityClosureMessage,
           }),
     onSuccess: (data, vars) => {
       const previous = vars.id ? editing : null;
@@ -118,6 +170,7 @@ function Page() {
         return [savedDepartment, ...current];
       });
       qc.invalidateQueries({ queryKey: ["trixus", "departments"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
       toast.success(vars.id ? "Departamento atualizado" : "Departamento criado");
       novo.hide();
       setEditing(null);
@@ -126,18 +179,46 @@ function Page() {
     onError: (error) => toast.error((error as Error).message),
   });
 
-  const remove = useMutation({
-    mutationFn: (id: string) => organizationApi.deleteDepartment(id),
-    onSuccess: (_department, deletedId) => {
-      qc.setQueryData<ApiDepartment[]>(["trixus", "departments"], (current = []) =>
-        current.filter((department) => department.id !== deletedId),
-      );
+  const deactivate = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      targets: Array<{ connectionId: string | null; departmentId: string }>;
+    }) => organizationApi.deactivateDepartment(payload.id, payload.targets),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["trixus", "departments"] });
-      toast.success("Departamento excluído");
-      setDeleting(null);
+      qc.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
+      toast.success("Departamento inativado");
+      setPendingDeactivation(null);
+      setMigrationTargets({});
+      setEditing(null);
     },
     onError: (error) => toast.error((error as Error).message),
   });
+
+  const submitDepartment = async (data: DepartamentoFormData) => {
+    if (!editing || !editing.active || data.active !== false) {
+      save.mutate({ id: editing?.id, data });
+      return;
+    }
+    try {
+      const changes = { ...data };
+      delete changes.active;
+      await organizationApi.updateDepartment(editing.id, changes);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["trixus", "departments"] }),
+        qc.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] }),
+      ]);
+      const preview = await organizationApi.departmentDeactivationPreview(editing.id);
+      if (preview.openConversationCount === 0) {
+        deactivate.mutate({ id: editing.id, targets: [] });
+        return;
+      }
+      setMigrationTargets({});
+      setPendingDeactivation({ department: editing, preview });
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
 
   const filtered = sortByOptionLabel(departamentos, (department) => department.name).filter((d) => {
     if (
@@ -164,9 +245,28 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <Field label="Busca">
-            <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
-          </Field>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)] gap-2 sm:gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)_auto]">
+            <Field label="Busca">
+              <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
+            </Field>
+            <Field label="Instância">
+              <InstanceFilterSelect
+                value={instanceFilter}
+                onChange={setInstanceFilter}
+                allLabel="Todas"
+                options={connectionOptions.map((connection) => ({
+                  value: connection.id,
+                  label: connection.name,
+                  color: connection.color,
+                }))}
+              />
+            </Field>
+            {hasFilters && (
+              <div className="flex items-end">
+                <ClearFiltersButton onClick={clearFilters} />
+              </div>
+            )}
+          </div>
         </Card>
 
         {isLoading ? (
@@ -180,55 +280,86 @@ function Page() {
             {filtered.map((d) => (
               <Card
                 key={d.id}
-                className="min-h-[86px] p-4 transition hover:border-primary/35 hover:bg-surface-1"
+                className="flex min-h-[148px] flex-col p-4 transition hover:border-primary/35 hover:bg-surface-1"
               >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
-                      style={{ background: d.color }}
-                    >
-                      <DepartmentIcon icon={d.icon} />
-                    </div>
-                    <p className="min-w-0 truncate font-semibold">{d.name}</p>
+                <div className="flex min-w-0 items-start gap-3">
+                  <div
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
+                    style={{ background: d.color }}
+                  >
+                    <DepartmentIcon icon={d.icon} />
                   </div>
-                  <div className="flex shrink-0 gap-1">
-                    {canCreate && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Duplicar departamento"
-                        aria-label={`Duplicar departamento ${d.name}`}
-                        onClick={() => setDuplicating(d)}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold">{d.name}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                      {d.description?.trim() || "Sem descrição"}
+                    </p>
+                    {d.inactivityClosureEnabled && d.inactivityTimeoutMinutes && (
+                      <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Clock3 className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span>
+                          Encerramento por inatividade: {d.inactivityTimeoutMinutes}{" "}
+                          {d.inactivityTimeoutMinutes === 1 ? "minuto" : "minutos"}
+                        </span>
+                      </p>
                     )}
-                    {canUpdate && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Editar departamento"
-                        aria-label={`Editar departamento ${d.name}`}
-                        onClick={() => setEditing(d)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="trash-action"
-                        title="Excluir departamento"
-                        aria-label={`Excluir departamento ${d.name}`}
-                        onClick={() => setDeleting(d)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                  </div>
+                  <div className="ml-auto shrink-0 self-start">
+                    <Badge tone={d.active ? "success" : "destructive"}>
+                      {d.active ? "Ativo" : "Inativo"}
+                    </Badge>
                   </div>
                 </div>
+                {(canRead || canCreate || canUpdate || canDelete) && (
+                  <div className="mt-auto flex min-h-11 items-end justify-end border-t border-border pt-3">
+                    <div className="flex shrink-0 gap-1.5">
+                      {canRead && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Visualizar departamento"
+                          aria-label={`Visualizar departamento ${d.name}`}
+                          onClick={() => setViewing(d)}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canCreate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Duplicar departamento"
+                          aria-label={`Duplicar departamento ${d.name}`}
+                          onClick={() => setDuplicating(d)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canUpdate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Editar departamento"
+                          aria-label={`Editar departamento ${d.name}`}
+                          onClick={() => setEditing(d)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Excluir departamento"
+                          aria-label={`Excluir departamento ${d.name}`}
+                          onClick={() => setDeleting(d)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </Card>
             ))}
             {filtered.length === 0 && (
@@ -266,47 +397,97 @@ function Page() {
             departments={departamentos}
             connections={connectionOptions}
             onClose={() => setEditing(null)}
-            onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
+            onSubmit={(data) => void submitDepartment(data)}
           />
         )}
-        <ConfirmDialog
-          open={!!deleting}
-          title="Excluir Departamento?"
-          destructive
-          description={
-            <p>
-              Deseja realmente excluir o departamento{" "}
-              <strong className="font-semibold text-foreground">"{deleting?.name ?? ""}"</strong>?
-            </p>
+        {canRead && (
+          <DepartamentoForm
+            open={!!viewing}
+            initial={viewing ?? undefined}
+            readOnly
+            departments={departamentos}
+            connections={connectionOptions}
+            onClose={() => setViewing(null)}
+          />
+        )}
+        <DepartmentDeactivationModal
+          value={pendingDeactivation}
+          connectionOptions={connectionOptions}
+          targets={migrationTargets}
+          busy={deactivate.isPending}
+          onTargetChange={(connectionId, departmentId) =>
+            setMigrationTargets((current) => ({ ...current, [connectionId ?? ""]: departmentId }))
           }
-          confirmLabel="Excluir"
-          onClose={() => setDeleting(null)}
-          onConfirm={() => deleting && remove.mutate(deleting.id)}
+          onClose={() => {
+            setPendingDeactivation(null);
+            setMigrationTargets({});
+          }}
+          onConfirm={() => {
+            if (!pendingDeactivation) return;
+            deactivate.mutate({
+              id: pendingDeactivation.department.id,
+              targets: pendingDeactivation.preview.groups.map((group) => ({
+                connectionId: group.connectionId,
+                departmentId: migrationTargets[group.connectionId ?? ""],
+              })),
+            });
+          }}
+        />
+        <DeletionConfirmDialog
+          open={!!deleting}
+          resourceKey={`department:${deleting?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          loadImpact={(signal) => {
+            if (!deleting) return Promise.reject(new Error("Departamento não selecionado."));
+            return organizationApi.departmentDeletionPreview(deleting.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!deleting) return Promise.reject(new Error("Departamento não selecionado."));
+            return organizationApi.deleteDepartment(deleting.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
+            toast.success("Departamento excluído");
+            setDeleting(null);
+            void Promise.all([
+              qc.invalidateQueries({ queryKey: ["trixus", "departments"] }),
+              qc.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] }),
+              qc.invalidateQueries({ queryKey: ["tickets"] }),
+            ]);
+          }}
+          formatError={(error) => (error as Error).message}
         />
       </PageContainer>
     </AppShell>
   );
 }
 
-function DepartamentoForm({
+export function DepartamentoForm({
   open,
   onClose,
   onSubmit,
   initial,
   clone = false,
+  readOnly = false,
   departments,
   connections,
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: DepartamentoFormData) => void;
+  onSubmit?: (data: DepartamentoFormData) => void;
   initial?: ApiDepartment;
   clone?: boolean;
+  readOnly?: boolean;
   departments: ApiDepartment[];
   connections: Array<Pick<ApiMessagingConnection, "id" | "name" | "status" | "color" | "logoUrl">>;
 }) {
   const [form, setForm] = React.useState<DepartamentoFormData>({ connectionIds: [] });
   const [error, setError] = React.useState("");
+  const [inactivityErrors, setInactivityErrors] = React.useState({
+    timeout: false,
+    message: false,
+  });
   const duplicateNameError = (name: string) => {
     const normalizedName = normalizeDepartmentName(name);
     if (!normalizedName) return "";
@@ -327,27 +508,47 @@ function DepartamentoForm({
             color: initial.color,
             icon: initial.icon,
             connectionIds: initial.connectionIds,
+            active: clone ? true : initial.active,
+            inactivityClosureEnabled: initial.inactivityClosureEnabled,
+            inactivityTimeoutMinutes: initial.inactivityTimeoutMinutes,
+            inactivityClosureMessage: initial.inactivityClosureMessage,
           }
-        : { color: "#3B82F6", icon: "department", connectionIds: [] },
+        : {
+            color: "#3B82F6",
+            icon: "department",
+            connectionIds: [],
+            active: true,
+            inactivityClosureEnabled: false,
+          },
     );
     setError("");
+    setInactivityErrors({ timeout: false, message: false });
   }, [clone, departments, initial, open]);
 
   const submit = () => {
+    if (readOnly || !onSubmit) return;
+    const requiredFields: string[] = [];
     if (!form.name || form.name.trim().length < 2) {
       setError("Informe o nome.");
-      toast.error("Nome obrigatório.");
-      return;
+      requiredFields.push("Nome");
     }
-    const duplicateError = duplicateNameError(form.name);
+    const duplicateError = form.name ? duplicateNameError(form.name) : "";
     if (duplicateError) {
       setError(duplicateError);
+    }
+    const timeoutMissing = Boolean(form.inactivityClosureEnabled && !form.inactivityTimeoutMinutes);
+    const messageMissing = Boolean(
+      form.inactivityClosureEnabled && !form.inactivityClosureMessage?.trim(),
+    );
+    setInactivityErrors({ timeout: timeoutMissing, message: messageMissing });
+    if (timeoutMissing) requiredFields.push("Tempo sem resposta do cliente");
+    if (messageMissing) requiredFields.push("Mensagem");
+    if (requiredFields.length) {
+      showRequiredFieldsToast(requiredFields);
       return;
     }
-    if (connections.length > 0 && form.connectionIds.length === 0) {
-      toast.error("Vincule ao menos uma instância.");
-      return;
-    }
+    if (duplicateError) return;
+    setInactivityErrors({ timeout: false, message: false });
     onSubmit({ ...form, color: completeHexColor(form.color) });
   };
 
@@ -356,11 +557,13 @@ function DepartamentoForm({
       open={open}
       onClose={onClose}
       title={
-        initial && !clone
-          ? "Editar Departamento"
-          : clone
-            ? "Duplicar Departamento"
-            : "Novo Departamento"
+        readOnly
+          ? "Visualizar Departamento"
+          : initial && !clone
+            ? "Editar Departamento"
+            : clone
+              ? "Duplicar Departamento"
+              : "Novo Departamento"
       }
       size="md"
       footer={
@@ -372,24 +575,40 @@ function DepartamentoForm({
           />
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>
-              Cancelar
+              {readOnly ? "Fechar" : "Cancelar"}
             </Button>
-            <Button variant="primary" size="sm" onClick={submit}>
-              Salvar
-            </Button>
+            {!readOnly && (
+              <Button variant="primary" size="sm" className="save-action-button" onClick={submit}>
+                Salvar
+              </Button>
+            )}
           </div>
         </div>
       }
     >
-      <div className="space-y-4">
+      <fieldset disabled={readOnly} className="min-w-0 space-y-4 disabled:opacity-80">
+        {!clone && (
+          <div className="flex items-center gap-2">
+            <Switch
+              id="department-active"
+              checked={form.active !== false}
+              onCheckedChange={(active) => setForm((current) => ({ ...current, active }))}
+            />
+            <label htmlFor="department-active" className="cursor-pointer text-sm">
+              Ativo
+            </label>
+          </div>
+        )}
         <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
-          <Field label="Nome *" error={error || undefined}>
+          <Field label="Nome *" error={error && error !== "Informe o nome." ? error : undefined}>
             <Input
               value={form.name ?? ""}
               onChange={(e) => {
                 setForm({ ...form, name: e.target.value });
-                setError(duplicateNameError(e.target.value));
+                if (e.target.value.trim().length >= 2) setError(duplicateNameError(e.target.value));
               }}
+              aria-invalid={Boolean(error)}
+              className={requiredFieldClassName(Boolean(error))}
             />
           </Field>
           <Field label="Cor">
@@ -408,62 +627,20 @@ function DepartamentoForm({
             </div>
           </Field>
         </div>
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_13rem]">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_7.5rem]">
           <Field label="Instâncias">
-            <div className="min-h-11 rounded-lg border border-border bg-surface-1 p-2">
-              {connections.length === 0 ? (
-                <p className="px-1 py-1 text-sm text-muted-foreground">
-                  Nenhuma instância cadastrada.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {connections.map((connection) => {
-                    const selected = form.connectionIds.includes(connection.id);
-                    return (
-                      <button
-                        key={connection.id}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() =>
-                          setForm((current) => ({
-                            ...current,
-                            connectionIds: selected
-                              ? current.connectionIds.filter((id) => id !== connection.id)
-                              : [...current.connectionIds, connection.id],
-                          }))
-                        }
-                        className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm transition ${selected ? "border-primary bg-primary/10 text-primary" : "border-border bg-background"}`}
-                      >
-                        <span className="h-2 w-2 rounded-full bg-success" />
-                        {connection.name}
-                        {selected && <Check className="h-3.5 w-3.5" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <DepartmentInstanceMultiSelect
+              connections={connections}
+              selectedIds={form.connectionIds}
+              onChange={(connectionIds) => setForm((current) => ({ ...current, connectionIds }))}
+            />
           </Field>
           <Field label="Ícone">
-            <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface-1 p-1.5">
-              {DEPARTMENT_ICON_OPTIONS.map((option) => {
-                const Icon = option.icon;
-                const selected = (form.icon ?? "department") === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    title={option.label}
-                    aria-label={option.label}
-                    aria-pressed={selected}
-                    onClick={() => setForm((current) => ({ ...current, icon: option.id }))}
-                    className={`flex min-h-11 items-center justify-center rounded-md border transition ${selected ? "border-primary bg-primary/10 text-primary" : "border-transparent hover:bg-muted"}`}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </button>
-                );
-              })}
-            </div>
+            <DepartmentIconSelect
+              value={form.icon}
+              onChange={(icon) => setForm((current) => ({ ...current, icon }))}
+              disabled={readOnly}
+            />
           </Field>
         </div>
         <Field label="Nota">
@@ -473,6 +650,317 @@ function DepartamentoForm({
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
         </Field>
+        <div className="border-t border-border pt-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 font-semibold text-text-primary">
+              <Clock3 className="h-5 w-5 text-blue-700 dark:text-blue-300" />
+              <span>Encerramento por inatividade</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="department-inactivity-closure"
+                checked={form.inactivityClosureEnabled === true}
+                onCheckedChange={(inactivityClosureEnabled) => {
+                  setInactivityErrors({ timeout: false, message: false });
+                  setForm((current) => ({ ...current, inactivityClosureEnabled }));
+                }}
+              />
+              <label htmlFor="department-inactivity-closure" className="text-sm text-text-muted">
+                {form.inactivityClosureEnabled ? "Ativado" : "Desativado"}
+              </label>
+            </div>
+          </div>
+          {form.inactivityClosureEnabled && (
+            <div className="mt-3 space-y-3">
+              <Field label="Tempo sem resposta do cliente *">
+                <div
+                  className={`flex overflow-hidden rounded-lg border border-border bg-surface-1 ${requiredFieldClassName(inactivityErrors.timeout)}`}
+                >
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10080}
+                    value={form.inactivityTimeoutMinutes ?? ""}
+                    onChange={(event) => {
+                      if (event.target.value)
+                        setInactivityErrors((current) => ({ ...current, timeout: false }));
+                      setForm((current) => ({
+                        ...current,
+                        inactivityTimeoutMinutes: event.target.value
+                          ? Number(event.target.value)
+                          : null,
+                      }));
+                    }}
+                    className="rounded-none border-0"
+                    aria-invalid={inactivityErrors.timeout}
+                  />
+                  <span className="flex items-center border-l border-border px-3 text-sm text-text-muted">
+                    minutos
+                  </span>
+                </div>
+              </Field>
+              <Field label="Mensagem *">
+                <GreetingMessageEditor
+                  value={form.inactivityClosureMessage ?? ""}
+                  attachment={null}
+                  variables={mergeMessageVariables(CONNECTION_MESSAGE_VARIABLES, [])}
+                  disabled={readOnly}
+                  invalid={inactivityErrors.message}
+                  placeholder="Digite a mensagem de encerramento..."
+                  showAttachment={false}
+                  showEmoji
+                  maxLength={4000}
+                  rows={4}
+                  onChange={(value) => {
+                    if (value.trim())
+                      setInactivityErrors((current) => ({ ...current, message: false }));
+                    setForm((current) => ({
+                      ...current,
+                      inactivityClosureMessage: value,
+                    }));
+                  }}
+                />
+              </Field>
+              <div
+                role="note"
+                data-department-inactivity-notice
+                className="flex gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+              >
+                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  O prazo começa após a mensagem do atendente. Se o cliente responder, a contagem é
+                  interrompida.
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </fieldset>
+    </Modal>
+  );
+}
+
+export function DepartmentInstanceMultiSelect({
+  connections,
+  selectedIds,
+  onChange,
+}: {
+  connections: Array<Pick<ApiMessagingConnection, "id" | "name" | "color">>;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const selectedConnections = connections.filter((connection) =>
+    selectedIds.includes(connection.id),
+  );
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [open]);
+
+  const toggle = (id: string) => {
+    onChange(
+      selectedIds.includes(id)
+        ? selectedIds.filter((selectedId) => selectedId !== id)
+        : [...selectedIds, id],
+    );
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm outline-none transition hover:border-primary/50 focus:border-primary ${
+          selectedConnections.length > 0 ? "text-foreground" : "text-muted-foreground"
+        }`}
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {selectedConnections.length === 0 ? (
+            <span className="text-muted-foreground">- Selecione -</span>
+          ) : (
+            selectedConnections.map((connection) => (
+              <span
+                key={connection.id}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-medium"
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: connection.color ?? "#22c55e" }}
+                />
+                <span className="truncate">{connection.name}</span>
+              </span>
+            ))
+          )}
+        </span>
+        <span className="flex shrink-0 items-center gap-1">
+          {selectedConnections.length > 0 && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(event) => {
+                event.stopPropagation();
+                onChange([]);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                event.stopPropagation();
+                onChange([]);
+              }}
+              className="rounded p-0.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+              aria-label="Limpar seleção"
+            >
+              <X className="h-3.5 w-3.5" />
+            </span>
+          )}
+          <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
+        </span>
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute bottom-full z-[90] mb-2 max-h-[min(22rem,calc(100vh-10rem))] w-full overflow-auto rounded-lg border border-border bg-card p-1 shadow-card"
+        >
+          {connections.map((connection) => {
+            const selected = selectedIds.includes(connection.id);
+            return (
+              <button
+                key={connection.id}
+                type="button"
+                onClick={() => toggle(connection.id)}
+                role="option"
+                aria-selected={selected}
+                className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
+                  selected ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                <span
+                  className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                    selected
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-surface-1"
+                  }`}
+                >
+                  {selected && <Check className="h-2.5 w-2.5" />}
+                </span>
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: connection.color ?? "#22c55e" }}
+                />
+                <span className="truncate">{connection.name}</span>
+              </button>
+            );
+          })}
+          {connections.length === 0 && (
+            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+              Nenhuma instância cadastrada.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DepartmentDeactivationModal({
+  value,
+  connectionOptions,
+  targets,
+  busy,
+  onTargetChange,
+  onClose,
+  onConfirm,
+}: {
+  value: { department: ApiDepartment; preview: DepartmentDeactivationPreview } | null;
+  connectionOptions: Array<Pick<ApiMessagingConnection, "id" | "name">>;
+  targets: Record<string, string>;
+  busy: boolean;
+  onTargetChange: (connectionId: string | null, departmentId: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const groups = value?.preview.groups ?? [];
+  const ready =
+    groups.length > 0 &&
+    groups.every(
+      (group) =>
+        !!targets[group.connectionId ?? ""] &&
+        group.destinations.some(
+          (destination) => destination.id === targets[group.connectionId ?? ""],
+        ),
+    );
+  return (
+    <Modal
+      open={!!value}
+      onClose={onClose}
+      title="Inativar Departamento"
+      size="md"
+      dismissible={!busy}
+      footer={
+        <>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" disabled={!ready || busy} onClick={onConfirm}>
+            Confirmar
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+          <div className="space-y-1 text-sm">
+            <p className="font-semibold">
+              Existem {value?.preview.openConversationCount ?? 0} conversas ativas vinculadas a este
+              departamento.
+            </p>
+            <p className="text-muted-foreground">
+              Selecione o destino compatível para cada instância. A inativação ocorrerá somente após
+              todas as transferências.
+            </p>
+          </div>
+        </div>
+        {groups.map((group) => {
+          const key = group.connectionId ?? "";
+          const connectionName = group.connectionId
+            ? (connectionOptions.find((connection) => connection.id === group.connectionId)?.name ??
+              "Instância")
+            : "Sem instância";
+          return (
+            <Field
+              key={key || "without-connection"}
+              label={`${connectionName} · ${group.count} conversa${group.count === 1 ? "" : "s"}`}
+            >
+              <Select
+                value={targets[key] ?? ""}
+                onChange={(event) => onTargetChange(group.connectionId, event.target.value)}
+              >
+                <option value="">Selecione um departamento ativo</option>
+                {group.destinations.map((destination) => (
+                  <option key={destination.id} value={destination.id}>
+                    {destination.name}
+                  </option>
+                ))}
+              </Select>
+              {group.destinations.length === 0 && (
+                <p className="mt-1 text-xs text-destructive">
+                  Não existe departamento ativo e compatível para esta instância.
+                </p>
+              )}
+            </Field>
+          );
+        })}
       </div>
     </Modal>
   );

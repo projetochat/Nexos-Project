@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   DASHBOARD_CHART_MARGIN,
   DASHBOARD_CHART_TEXT_COLOR,
+  dashboardCategoryAxisLayout,
+  dashboardColumnAxisLayout,
   DESKTOP_MESSAGE_HOUR_TICKS,
   messageHourTicks,
   messageTrafficSummary,
   MOBILE_MESSAGE_HOUR_TICKS,
+  formatDashboardAxisLabelToWidth,
 } from "./dashboard-chart-layout";
 
 describe("dashboard chart layout", () => {
@@ -39,5 +42,34 @@ describe("dashboard chart layout", () => {
         1,
       ),
     ).toEqual({ recebidas: 12, enviadas: 3, total: 15, contatos: 1 });
+  });
+
+  it("reserves more category-axis space for long labels without hiding the beginning", () => {
+    const compact = dashboardCategoryAxisLayout(["Cliente com um nome muito extenso"], 320);
+    const desktop = dashboardCategoryAxisLayout(["Cliente com um nome muito extenso"], 900);
+
+    expect(compact.maxLabelWidth).toBeGreaterThanOrEqual(58);
+    expect(desktop.width).toBeGreaterThan(compact.width);
+    expect(desktop.width).toBeLessThanOrEqual(202);
+  });
+
+  it("keeps complete column labels whenever their measured slot has room", () => {
+    const layout = dashboardColumnAxisLayout(["VOCICAL", "FLOWID"], 640);
+
+    expect(layout.angle).toBe(0);
+    expect(formatDashboardAxisLabelToWidth("VOCICAL", layout.maxLabelWidth)).toBe("VOCICAL");
+  });
+
+  it("adapts column labels to width and category count while preserving the prefix", () => {
+    const label = "GV/ROBRACON SINOP 10/60";
+    const spacious = dashboardColumnAxisLayout([label, "VOCICAL"], 900);
+    const crowded = dashboardColumnAxisLayout(
+      Array.from({ length: 10 }, () => label),
+      320,
+    );
+
+    expect(spacious.maxLabelWidth).toBeGreaterThan(crowded.maxLabelWidth);
+    expect(crowded.angle).toBe(-35);
+    expect(formatDashboardAxisLabelToWidth(label, crowded.maxLabelWidth)).toMatch(/^GV\/.+\.\.\.$/);
   });
 });

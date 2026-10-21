@@ -1,4 +1,5 @@
 import * as React from "react";
+import { toast } from "sonner";
 import {
   AlignCenter,
   AlignJustify,
@@ -21,19 +22,22 @@ import {
 import { Modal } from "./modal";
 import { Button } from "./ui-kit";
 import {
+  insertTicketEditorHtml,
+  normalizeTicketEditorHtml,
+  ticketEditorClipboardHtml,
   writeTicketEditorHtml,
-  readTicketEditorHtml,
-  pasteTicketEditorText,
 } from "../lib/ticket-editor-dom";
 
 export function RichTextEditor({
   value,
   onChange,
   expanded = false,
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   expanded?: boolean;
+  invalid?: boolean;
 }) {
   const editorRef = React.useRef<HTMLDivElement>(null);
   const selectionRef = React.useRef<Range | null>(null);
@@ -48,7 +52,11 @@ export function RichTextEditor({
     if (editor && document.activeElement !== editor) writeTicketEditorHtml(editor, value);
   }, [value]);
 
-  const sync = () => onChange(readTicketEditorHtml(editorRef.current));
+  const sync = () => {
+    const editor = editorRef.current;
+    const safeHtml = normalizeTicketEditorHtml(editor);
+    onChange(safeHtml);
+  };
   const saveSelection = () => {
     const selection = window.getSelection();
     const editor = editorRef.current;
@@ -95,7 +103,10 @@ export function RichTextEditor({
     </button>
   );
   const editor = (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface-1 focus-within:border-primary">
+    <div
+      aria-invalid={invalid}
+      className={`overflow-hidden rounded-lg border bg-surface-1 focus-within:border-primary ${invalid ? "border-destructive focus-within:border-destructive" : "border-border"}`}
+    >
       <div className="border-b border-border bg-card px-2 py-1.5">
         <div className="flex flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
           {tool("Desfazer", "undo", <Undo2 className="h-4 w-4" />)}
@@ -203,11 +214,39 @@ export function RichTextEditor({
         aria-multiline="true"
         onPaste={(event) => {
           event.preventDefault();
-          pasteTicketEditorText(event.currentTarget, event.clipboardData.getData("text/plain"));
+          saveSelection();
+          const editor = event.currentTarget;
+          const range = selectionRef.current?.cloneRange() ?? null;
+          void ticketEditorClipboardHtml(event.clipboardData)
+            .then((html) => {
+              insertTicketEditorHtml(editor, html, range);
+              saveSelection();
+              sync();
+            })
+            .catch((error) =>
+              toast.error(
+                error instanceof Error ? error.message : "Não foi possível colar o conteúdo.",
+              ),
+            );
+        }}
+        onDrop={(event) => event.preventDefault()}
+        onKeyDown={(event) => {
+          if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+          const key = event.key.toLowerCase();
+          const command =
+            key === "z" && event.shiftKey
+              ? "redo"
+              : key === "z"
+                ? "undo"
+                : key === "y"
+                  ? "redo"
+                  : null;
+          if (!command) return;
+          event.preventDefault();
+          document.execCommand(command);
           saveSelection();
           sync();
         }}
-        onDrop={(event) => event.preventDefault()}
         onBlur={saveSelection}
         onInput={() => {
           saveSelection();
@@ -216,7 +255,7 @@ export function RichTextEditor({
         onKeyUp={saveSelection}
         onMouseUp={saveSelection}
         data-placeholder="Descreva os detalhes do chamado..."
-        className={`w-full overflow-y-auto px-3 py-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${expanded ? "h-[62vh]" : "h-44"}`}
+        className={`w-full overflow-y-auto px-3 py-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${expanded ? "h-[62vh]" : "h-44"}`}
       />
     </div>
   );

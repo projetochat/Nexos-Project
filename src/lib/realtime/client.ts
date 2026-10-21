@@ -104,6 +104,7 @@ export async function connectRealtime() {
     "conversation.unread.updated",
     "connection.status.updated",
     "instance-access.updated",
+    "authorization.updated",
     "contact.updated",
     "contact.tags.updated",
     "ticket.created",

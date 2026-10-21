@@ -2,7 +2,7 @@ import * as React from "react";
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  MessageCirclePlus,
+  MessageSquarePlus,
   Plus,
   Inbox as InboxIcon,
   Clock,
@@ -14,35 +14,52 @@ import {
   X,
   PauseCircle,
   RefreshCw,
-  Pencil,
   ChevronLeft,
   ChevronRight,
   MoreVertical,
+  Image as ImageIcon,
+  Mic,
+  CalendarClock,
+  UserRound,
+  UsersRound,
+  ArrowLeftRight,
+  CircleCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Avatar, Badge, Button, Field, Input, SearchInput, Select } from "@/components/ui-kit";
 import { ContactFormModal, contactPayload } from "./contatos";
+import { CreateGroupModal } from "./grupos";
 import { Modal } from "@/components/modal";
 import { useDisclosure } from "@/hooks/use-disclosure";
-import { BulkCloseConversationsModal } from "@/components/bulk-close-conversations-modal";
+import {
+  BulkConversationActionModal,
+  type BulkConversationAction,
+} from "@/components/bulk-conversation-action-modal";
+import {
+  ActiveConversationOrchestrator,
+  type ActiveConversationRequest,
+} from "@/components/active-conversation-orchestrator";
+import { canStartActiveConversation } from "@/lib/active-conversation-permissions";
+import { conversationAuthorizationScope } from "@/lib/conversation-query-authorization";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { TipoBadge, type TipoInstancia } from "@/components/instancia-tipos";
 import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,
   crmApi,
-  organizationApi,
+  groupsApi,
   type ApiConversation,
   type ApiContact,
-  type ApiContactInstanceOption,
+  type ApiMessageContactPickerItem,
   type ApiConversationStatus as ConvStatus,
+  type ApiWhatsappGroupSummary,
 } from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import { useSession } from "@/lib/session";
@@ -51,14 +68,10 @@ import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { useRealtimeInbox } from "@/lib/realtime/hooks";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
-import { resolveConnectedContactInstances } from "@/lib/contact-instance-selection";
-import {
-  departmentsForConnection,
-  favoriteDepartmentForConnection,
-} from "@/lib/favorite-department";
 import { refreshInboxData } from "@/lib/refresh-inbox";
 import { DisconnectedInstanceAlerts } from "@/components/disconnected-instance-alerts";
 import { conversationListMetadataLabel } from "@/lib/conversation-list-metadata";
+import { conversationPreview } from "@/lib/conversation-preview";
 import {
   getInboxTab,
   setInboxTab,
@@ -118,13 +131,14 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const newConv = useDisclosure();
-  const bulkClose = useDisclosure();
+  const [bulkAction, setBulkAction] = React.useState<BulkConversationAction | null>(null);
   const queuePrefs = useQueuePrefs();
   const perms = useChatPerms();
-  const permissions = useSession((state) => state.user?.permissions ?? []);
-  const canStartConversation =
-    permissions.includes("messages.send") && permissions.includes("contacts.read");
-  const canBulkClose = permissions.includes("messages.send");
+  const user = useSession((state) => state.user);
+  const permissions = user?.permissions ?? [];
+  const conversationScope = conversationAuthorizationScope(user);
+  const canStartConversation = canStartActiveConversation(permissions);
+  const canBulkActions = permissions.includes("chat.bulk_actions.execute");
   const activeTabs = React.useMemo(
     () => queuePrefs.filter((p) => p.enabled && (perms.visualiza_leads || p.id !== "leads")),
     [queuePrefs, perms.visualiza_leads],
@@ -150,12 +164,32 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const [selectedClientes, setSelectedClientes] = React.useState<Set<string>>(
     () => new Set(inboxListMemory.selectedClientes),
   );
+  const hasListFilters = Boolean(
+    query || selectedInstancias.size || selectedClientes.size || source !== "todos" || onlyUnread,
+  );
+  const clearListFilters = () => {
+    setQuery("");
+    setSelectedInstancias(new Set());
+    setSelectedClientes(new Set());
+    setSource("todos");
+    setOnlyUnread(false);
+  };
   React.useEffect(() => {
     inboxListMemory.onlyUnread = onlyUnread;
     inboxListMemory.query = query;
     inboxListMemory.selectedInstancias = [...selectedInstancias];
     inboxListMemory.selectedClientes = [...selectedClientes];
   }, [onlyUnread, query, selectedClientes, selectedInstancias]);
+  const bulkSelection = React.useMemo(
+    () => ({
+      q: query || undefined,
+      source,
+      onlyUnread,
+      customerIds: selectedClientes.size ? [...selectedClientes] : undefined,
+      instances: selectedInstancias.size ? [...selectedInstancias] : undefined,
+    }),
+    [onlyUnread, query, selectedClientes, selectedInstancias, source],
+  );
   const selectedCliente = selectedClientes.size === 1 ? [...selectedClientes][0] : undefined;
   const selectedInstancia = selectedInstancias.size === 1 ? [...selectedInstancias][0] : undefined;
   const realtime = useRealtimeInbox(activeId);
@@ -165,9 +199,10 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
       [
         "trixus",
         "conversations",
+        conversationScope,
         { tab, source, onlyUnread, query, selectedCliente, selectedInstancia },
       ] as const,
-    [onlyUnread, query, selectedCliente, selectedInstancia, source, tab],
+    [conversationScope, onlyUnread, query, selectedCliente, selectedInstancia, source, tab],
   );
   const { data: conversationsPage, isLoading } = useQuery({
     queryKey: conversationListQueryKey,
@@ -246,13 +281,6 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
 
   const counts = conversationsPage?.counts ?? { ativas: 0, standby: 0, fila: 0, leads: 0 };
 
-  const toggle = (set: Set<string>, key: string, setter: (s: Set<string>) => void) => {
-    const next = new Set(set);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    setter(next);
-  };
-
   return (
     <AppShellFull>
       <div className="flex h-full min-h-0 w-full">
@@ -267,6 +295,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 placeholder="Buscar cliente..."
                 className="flex-1"
               />
+              {hasListFilters && <ClearFiltersButton onClick={clearListFilters} />}
               <Button
                 variant="ghost"
                 size="icon"
@@ -299,10 +328,10 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   title="Nova Conversa"
                   onClick={newConv.show}
                 >
-                  <MessageCirclePlus className="h-4 w-4" />
+                  <MessageSquarePlus className="h-4 w-4" />
                 </Button>
               )}
-              {canBulkClose && (
+              {canBulkActions && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -315,7 +344,25 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={bulkClose.show}>Fechar Conversas</DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => setBulkAction("start")}
+                      className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
+                    >
+                      <Play className="h-4 w-4" /> Iniciar em Massa
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => setBulkAction("transfer")}
+                      className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
+                    >
+                      <ArrowLeftRight className="h-4 w-4" /> Transferência em Massa
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => setBulkAction("close")}
+                      className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
+                    >
+                      <CircleCheck className="h-4 w-4" />
+                      Fechar Conversas em Massa
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
@@ -358,7 +405,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   >
                     <Icon className="h-3.5 w-3.5 shrink-0" />
                     <span className="whitespace-nowrap">{t.label}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground">
+                    <span className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 font-sans text-[9px] font-semibold leading-none tabular-nums text-primary-foreground">
                       {counts[t.id]}
                     </span>
                   </button>
@@ -428,11 +475,11 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   legacyProfile: c.contact?.nivel_gerencia,
                 });
                 return (
-                  <li key={c.id}>
+                  <li key={c.id} className="flex border-b border-border/60">
                     <Link
                       to="/inbox/$conversationId"
                       params={{ conversationId: c.id }}
-                      className={`flex gap-3 border-b border-border/60 px-4 py-3 transition ${active ? "bg-surface-2" : "hover:bg-surface-1"}`}
+                      className={`flex min-w-0 flex-1 gap-3 px-4 py-3 transition ${active ? "bg-surface-2" : "hover:bg-surface-1"}`}
                     >
                       <div className="relative">
                         <Avatar
@@ -461,7 +508,11 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                               </span>
                             )}
                           </p>
-                          <ConversationListTimestamp value={c.last_message_at} unread={u > 0} />
+                          <ConversationListTimestamp
+                            value={c.last_message_at}
+                            unread={u > 0}
+                            hasPendingScheduledMessage={Boolean(c.hasPendingScheduledMessage)}
+                          />
                         </div>
                         {metadataLabel && (
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -469,6 +520,13 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                           </p>
                         )}
                         <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{
+                              backgroundColor: c.connection?.color ?? "var(--muted-foreground)",
+                            }}
+                            aria-hidden="true"
+                          />
                           <span className="truncate">
                             {[
                               instanceLabel || "Sem instância",
@@ -478,13 +536,16 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                               .filter(Boolean)
                               .join(" - ")}
                           </span>
-                          <TipoBadge tipo={instanceTipo(c)} size={16} />
                         </div>
-                        <p
+                        <div
                           className={`mt-0.5 truncate text-xs ${u > 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}
                         >
-                          {messagePreviewLabel(c.lastMessagePreview)}
-                        </p>
+                          <ConversationMessagePreview
+                            value={c.lastMessagePreview}
+                            type={c.lastMessageType}
+                            durationMs={c.lastMessageDurationMs}
+                          />
+                        </div>
                       </div>
                     </Link>
                   </li>
@@ -504,10 +565,16 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {canStartConversation && <NewConversationModal open={newConv.open} onClose={newConv.hide} />}
-      {canBulkClose && bulkClose.open && (
-        <BulkCloseConversationsModal
-          onClose={bulkClose.hide}
-          onSuccess={() => void navigate({ to: "/inbox" })}
+      {canBulkActions && bulkAction && (
+        <BulkConversationActionModal
+          action={bulkAction}
+          selection={bulkSelection}
+          queues={activeTabs.map(({ id, label }) => ({ id, label }))}
+          onClose={() => setBulkAction(null)}
+          onSuccess={() => {
+            if (bulkAction === "close") void navigate({ to: "/inbox" });
+            setBulkAction(null);
+          }}
         />
       )}
     </AppShellFull>
@@ -516,25 +583,50 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
 
 export const Route = createFileRoute("/inbox/")({ component: InboxIndex });
 
-function messagePreviewLabel(value: string | null | undefined) {
-  const clean = (value ?? "").trim();
-  if (!clean) return "Sem mensagens";
-  const normalized = clean.toLowerCase();
-  if (normalized.includes("[imagem]") || normalized === "imagem") return "Foto";
-  if (
-    normalized.includes("[audio]") ||
-    normalized.includes("[áudio]") ||
-    normalized === "audio" ||
-    normalized === "áudio"
-  )
-    return "Áudio";
-  if (normalized.includes("[video]") || normalized.includes("[vídeo]")) return "Vídeo";
-  if (normalized.includes("[documento]") || normalized === "documento") return "Documento";
-  if (normalized.includes("[figurinha]") || normalized === "figurinha") return "Figurinha";
-  return clean;
+function ConversationMessagePreview({
+  value,
+  type,
+  durationMs,
+}: {
+  value: string | null | undefined;
+  type?: ApiConversation["lastMessageType"];
+  durationMs?: number | null;
+}) {
+  const preview = conversationPreview(value, type, durationMs);
+  const Icon =
+    preview.kind === "image"
+      ? ImageIcon
+      : preview.kind === "audio"
+        ? Mic
+        : preview.kind === "contact"
+          ? UserRound
+          : null;
+  return (
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1 align-middle">
+      {Icon && <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />}
+      <span className="truncate">
+        {preview.segments.map((segment, index) =>
+          segment.bold ? (
+            <strong key={index}>{segment.text}</strong>
+          ) : (
+            <React.Fragment key={index}>{segment.text}</React.Fragment>
+          ),
+        )}
+        {preview.duration ? ` ${preview.duration}` : ""}
+      </span>
+    </span>
+  );
 }
 
-function ConversationListTimestamp({ value, unread }: { value: string; unread: boolean }) {
+function ConversationListTimestamp({
+  value,
+  unread,
+  hasPendingScheduledMessage,
+}: {
+  value: string;
+  unread: boolean;
+  hasPendingScheduledMessage: boolean;
+}) {
   const timestamp = conversationTimestamp(new Date(value).getTime());
   return (
     <span
@@ -542,17 +634,14 @@ function ConversationListTimestamp({ value, unread }: { value: string; unread: b
     >
       {timestamp.day && <span className="block">{timestamp.day}</span>}
       <span className="block">{timestamp.time}</span>
+      {hasPendingScheduledMessage && (
+        <CalendarClock
+          className="ml-auto mt-0.5 h-3.5 w-3.5 text-primary"
+          aria-label="Mensagem agendada pendente"
+        />
+      )}
     </span>
   );
-}
-
-function instanceTipo(conversation: ApiConversation): TipoInstancia {
-  const label = `${conversation.connection?.name ?? ""} ${conversation.contact?.instancia ?? ""}`
-    .trim()
-    .toLowerCase();
-  if (label.includes("instagram")) return "instagram";
-  if (label.includes("telegram")) return "telegram";
-  return "whatsapp";
 }
 
 function InboxIndex() {
@@ -582,31 +671,30 @@ function InboxIndex() {
 export function NewConversationModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const user = useSession((s) => s.user);
   const permissions = user?.permissions ?? [];
-  const canStartConversation =
-    permissions.includes("conversations.assign") && permissions.includes("contacts.read");
+  const canStartConversation = canStartActiveConversation(permissions);
   const canCreateContact = permissions.includes("contacts.create");
   const canEditContact = permissions.includes("contacts.update");
+  const canViewGroups = permissions.includes("groups.read");
+  const canCreateGroup = canViewGroups && permissions.includes("groups.create");
+  const canOpenGroup = canViewGroups && permissions.includes("conversations.read");
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [tab, setTab] = React.useState<"contacts" | "groups">("contacts");
   const [q, setQ] = React.useState("");
   const [page, setPage] = React.useState(1);
-  const [selectedContact, setSelectedContact] = React.useState<ApiContact | null>(null);
-  const [selectedConnectionId, setSelectedConnectionId] = React.useState("");
-  const [selectedDepartmentId, setSelectedDepartmentId] = React.useState("");
-  const [connectionChoice, setConnectionChoice] = React.useState<{
-    contact: ApiContact;
-    instances: ApiContactInstanceOption[];
-  } | null>(null);
+  const [groupQuery, setGroupQuery] = React.useState("");
+  const [groupPage, setGroupPage] = React.useState(1);
+  const [createGroupOpen, setCreateGroupOpen] = React.useState(false);
+  const [selectedContact, setSelectedContact] = React.useState<ApiMessageContactPickerItem | null>(
+    null,
+  );
+  const [conversationRequest, setConversationRequest] =
+    React.useState<ActiveConversationRequest | null>(null);
+  const conversationRequestKey = React.useRef(0);
   const [contactForm, setContactForm] = React.useState<{ initial?: ApiContact } | null>(null);
-  const [busy, setBusy] = React.useState(false);
   const savingContact = React.useRef(false);
   const { allConnections: availableConnections, error: connectionsError } =
     useConnectedMessagingConnections({ enabled: open && canStartConversation });
-  const { data: chatDepartments = [], isLoading: chatDepartmentsLoading } = useQuery({
-    queryKey: ["trixus", "chat-departments"],
-    queryFn: organizationApi.listChatDepartments,
-    enabled: open && canStartConversation,
-  });
   const {
     data: contactsPage,
     isFetching: loadingContacts,
@@ -614,112 +702,88 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   } = useQuery({
     queryKey: ["trixus", "contacts", "conversation-modal", q.trim(), page],
     queryFn: () =>
-      crmApi.listContacts({
+      crmApi.listContactsForMessagePicker({
         q: q.trim() || undefined,
         page,
         pageSize: 10,
       }),
     enabled: open && canStartConversation,
   });
+  const {
+    data: groupsPage,
+    isFetching: loadingGroups,
+    error: groupsError,
+  } = useQuery({
+    queryKey: ["trixus", "groups", "conversation-modal", groupQuery.trim(), groupPage],
+    queryFn: () =>
+      groupsApi.list({
+        q: groupQuery.trim() || undefined,
+        page: groupPage,
+        pageSize: 10,
+      }),
+    enabled: open && tab === "groups" && canViewGroups,
+  });
+  const { data: groupInstances = [], error: groupInstancesError } = useQuery({
+    queryKey: ["trixus", "groups", "conversation-modal", "instances"],
+    queryFn: groupsApi.instanceOptions,
+    enabled: open && tab === "groups" && canViewGroups,
+  });
   const { data: contactOptions, error: optionsError } = useQuery({
     queryKey: ["trixus", "contacts", "conversation-options"],
     queryFn: crmApi.contactOptions,
-    enabled: open && canStartConversation,
+    enabled: open && canCreateContact,
   });
   const { data: customersPage, error: customersError } = useQuery({
     queryKey: ["trixus", "customers", "conversation-options"],
     queryFn: () => crmApi.listCustomers({ pageSize: 10000 }),
-    enabled: open && canStartConversation,
+    enabled: open && canCreateContact,
   });
-  const instances = React.useMemo(() => {
-    const allowedIds = new Set(availableConnections.map((connection) => connection.id));
-    return (contactOptions?.instances ?? []).filter((instance) => allowedIds.has(instance.id));
-  }, [availableConnections, contactOptions?.instances]);
+  const instances = React.useMemo(
+    () =>
+      availableConnections.map((connection) => ({
+        id: connection.id,
+        value: connectionInstanceValue(connection),
+        name: connection.name,
+        color: connection.color ?? null,
+        logoUrl: connection.logoUrl ?? null,
+        externalReference: connection.externalReference,
+        ownerPhone: connection.ownerPhone ?? null,
+        instanceName: connection.name,
+        status: connection.status.toUpperCase(),
+      })),
+    [availableConnections],
+  );
   const contacts = contactsPage?.items ?? [];
+  const groups = groupsPage?.items ?? [];
   const formReady = !!contactOptions && !!customersPage;
 
   React.useEffect(() => {
     if (!open) {
       setQ("");
       setPage(1);
+      setGroupQuery("");
+      setGroupPage(1);
+      setTab("contacts");
+      setCreateGroupOpen(false);
       setSelectedContact(null);
-      setSelectedConnectionId("");
-      setSelectedDepartmentId("");
-      setConnectionChoice(null);
+      setConversationRequest(null);
       setContactForm(null);
     }
   }, [open]);
 
-  const startConversation = async (
-    contact: ApiContact,
-    connectionId: string,
-    departmentId?: string,
-  ) => {
-    if (!user) return toast.error("Sessão inválida.");
-    if (!canStartConversation)
-      return toast.error("Você não possui permissão para iniciar conversas.");
-    if (
-      availableConnections.find((connection) => connection.id === connectionId)?.status !==
-      "connected"
-    )
-      return toast.error("Conecte a instância selecionada antes de iniciar a conversa.");
-    setBusy(true);
-    try {
-      const conversation = await conversationApi.create({
-        contactId: contact.id,
-        connectionId,
-        ...(departmentId ? { departmentId } : {}),
-        assignToSelf: true,
-      });
-      setInboxTab("ativas");
-      toast.success("Conversa iniciada");
-      void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-      onClose();
-      void navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  const selectContact = (contact: ApiMessageContactPickerItem) => {
+    setSelectedContact(contact);
+    conversationRequestKey.current += 1;
+    setConversationRequest({ key: conversationRequestKey.current, contact });
   };
 
-  const selectContact = (contact: ApiContact) => {
-    if (chatDepartmentsLoading) {
-      toast.info("Carregando departamentos. Tente novamente em instantes.");
-      return;
-    }
-    const connectedInstances = resolveConnectedContactInstances(contact, instances);
-    if (connectedInstances.length === 0) {
-      setSelectedContact(null);
-      setSelectedConnectionId("");
-      setSelectedDepartmentId("");
-      toast.error("Nenhuma instância conectada", {
-        description: "Vincule uma instância conectada ao contato para iniciar a conversa.",
-      });
-      return;
-    }
-    if (connectedInstances.length === 1) {
-      const connectionId = connectedInstances[0].id;
-      const favorite = favoriteDepartmentForConnection(chatDepartments, connectionId);
-      if (favorite) {
-        void startConversation(contact, connectionId);
-        return;
-      }
-      setSelectedContact(contact);
-      setSelectedConnectionId(connectionId);
-      setSelectedDepartmentId("");
-      return;
-    }
-    setSelectedContact(null);
-    setSelectedConnectionId("");
-    setSelectedDepartmentId("");
-    setConnectionChoice({ contact, instances: connectedInstances });
-  };
-
-  const submit = async () => {
-    if (!selectedContact) return toast.error("Selecione um contato.");
-    if (!selectedDepartmentId) return toast.error("Selecione um departamento.");
-    await startConversation(selectedContact, selectedConnectionId, selectedDepartmentId);
+  const openGroup = (group: ApiWhatsappGroupSummary) => {
+    if (!canOpenGroup) return;
+    navigate({
+      to: "/inbox/$conversationId",
+      params: { conversationId: group.conversationId },
+    });
+    onClose();
   };
 
   return (
@@ -728,24 +792,44 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
         open={open}
         onClose={onClose}
         title="Nova Conversa"
+        className="h-[calc(100dvh-1rem)] sm:h-[min(55rem,calc(100dvh-2rem))]"
         footer={
-          <>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={submit}
-              disabled={busy || !selectedContact || !selectedConnectionId || !selectedDepartmentId}
-            >
-              {busy ? "Iniciando…" : "Iniciar conversa"}
-            </Button>
-          </>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
         }
       >
-        <div className="space-y-3">
-          {canCreateContact && (
+        <div className="flex h-full min-h-0 flex-col gap-3">
+          <div className="grid grid-cols-2 border-b border-border" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "contacts"}
+              onClick={() => setTab("contacts")}
+              className={`flex items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+                tab === "contacts"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <UserRound className="h-4 w-4" /> Contatos
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "groups"}
+              disabled={!canViewGroups}
+              onClick={() => setTab("groups")}
+              className={`flex items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                tab === "groups"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <UsersRound className="h-4 w-4" /> Grupos
+            </button>
+          </div>
+          {tab === "contacts" && canCreateContact && (
             <div className="flex justify-end">
               <Button
                 variant="primary"
@@ -757,174 +841,202 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
               </Button>
             </div>
           )}
-          {(optionsError || customersError) && (
+          {tab === "groups" && canCreateGroup && (
+            <div className="flex justify-end">
+              <Button variant="primary" size="sm" onClick={() => setCreateGroupOpen(true)}>
+                <Plus className="h-3.5 w-3.5" /> Novo Grupo
+              </Button>
+            </div>
+          )}
+          {tab === "contacts" && canCreateContact && (optionsError || customersError) && (
             <p className="text-xs text-destructive">
               Não foi possível carregar o cadastro de contatos. Tente abrir novamente.
             </p>
           )}
-          {connectionsError ? (
+          {tab === "groups" && groupInstancesError && (
+            <p className="text-xs text-destructive">
+              Não foi possível carregar as instâncias dos grupos. Tente abrir novamente.
+            </p>
+          )}
+          {tab === "contacts" && connectionsError ? (
             <p className="text-xs text-destructive">{(connectionsError as Error).message}</p>
-          ) : availableConnections.length === 0 ? (
+          ) : tab === "contacts" && availableConnections.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               Conecte uma instância antes de iniciar uma conversa.
             </p>
           ) : null}
-          <Field label="Buscar contato">
-            <SearchInput
-              value={q}
-              onChange={(value) => {
-                setQ(value);
-                setPage(1);
-              }}
-              placeholder="Nome ou telefone…"
-            />
-          </Field>
-          <ul
-            aria-label="Contatos"
-            aria-busy={loadingContacts}
-            className="overflow-hidden rounded-lg border border-border"
-          >
-            {contacts.map((contact) => (
-              <li
-                key={contact.id}
-                className={
-                  "flex h-12 items-center gap-2 border-b border-border/60 pr-3 last:border-b-0 " +
-                  (selectedContact?.id === contact.id ? "bg-surface-2" : "hover:bg-surface-1")
-                }
+          {tab === "contacts" ? (
+            <>
+              <Field label="Buscar contato">
+                <SearchInput
+                  value={q}
+                  onChange={(value) => {
+                    setQ(value);
+                    setPage(1);
+                  }}
+                  placeholder="Nome ou telefone..."
+                />
+              </Field>
+              <ul
+                aria-label="Contatos"
+                aria-busy={loadingContacts}
+                className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border"
               >
-                <button
-                  type="button"
-                  aria-pressed={selectedContact?.id === contact.id}
-                  disabled={!contactOptions || busy}
-                  onClick={() => selectContact(contact)}
-                  className="flex h-full min-w-0 flex-1 items-center gap-3 px-3 text-left text-sm"
-                >
-                  <Avatar name={contact.nome} src={contact.avatar_url} size={30} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate">{contact.nome}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">
-                      {maskBrazilPhone(contact.telefone)}
-                    </p>
-                  </div>
-                  {selectedContact?.id === contact.id && (
-                    <Check className="h-4 w-4 shrink-0 text-primary" />
-                  )}
-                </button>
-                {canEditContact && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
-                    title="Editar contato"
-                    aria-label={"Editar contato " + contact.nome}
-                    disabled={!formReady}
-                    onClick={() => setContactForm({ initial: contact })}
+                {contacts.map((contact) => (
+                  <li
+                    key={contact.id}
+                    className="flex h-14 items-center gap-3 border-b border-border/60 px-3 last:border-b-0 hover:bg-surface-1"
                   >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                    <Avatar name={contact.nome} src={contact.avatar_url} size={34} />
+                    <div className="min-w-0 flex-1 text-sm">
+                      <p className="truncate font-medium">{contact.nome}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {maskBrazilPhone(contact.telefone)}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      title="Nova conversa"
+                      aria-label={`Nova conversa com ${contact.nome}`}
+                      aria-pressed={selectedContact?.id === contact.id}
+                      onClick={() => selectContact(contact)}
+                    >
+                      <MessageSquarePlus className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+                {contacts.length === 0 && (
+                  <li className="p-4 text-center text-xs text-muted-foreground">
+                    {loadingContacts
+                      ? "Buscando contatos…"
+                      : contactsError
+                        ? "Não foi possível carregar os contatos."
+                        : "Nenhum contato encontrado."}
+                  </li>
                 )}
-              </li>
-            ))}
-            {contacts.length === 0 && (
-              <li className="p-4 text-center text-xs text-muted-foreground">
-                {loadingContacts
-                  ? "Buscando contatos…"
-                  : contactsError
-                    ? "Não foi possível carregar os contatos."
-                    : "Nenhum contato encontrado."}
-              </li>
-            )}
-          </ul>
-          {selectedContact && selectedConnectionId && (
-            <Field label="Departamento">
-              <Select
-                value={selectedDepartmentId}
-                onChange={(event) => setSelectedDepartmentId(event.target.value)}
+              </ul>
+              {(contactsPage?.totalPages ?? 0) > 1 && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    Página {page} de {contactsPage?.totalPages}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Página anterior de contatos"
+                      disabled={loadingContacts || page <= 1}
+                      onClick={() => setPage(page - 1)}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Próxima página de contatos"
+                      disabled={loadingContacts || page >= (contactsPage?.totalPages ?? 1)}
+                      onClick={() => setPage(page + 1)}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <Field label="Buscar grupo">
+                <SearchInput
+                  value={groupQuery}
+                  onChange={(value) => {
+                    setGroupQuery(value);
+                    setGroupPage(1);
+                  }}
+                  placeholder="Nome do grupo..."
+                />
+              </Field>
+              <ul
+                aria-label="Grupos"
+                aria-busy={loadingGroups}
+                className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border"
               >
-                <option value="">- Selecione um departamento -</option>
-                {departmentsForConnection(chatDepartments, selectedConnectionId).map(
-                  (department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.name}
-                    </option>
-                  ),
+                {groups.map((group) => (
+                  <li
+                    key={group.id}
+                    className="flex min-h-16 items-center gap-3 border-b border-border/60 px-3 py-2 last:border-b-0 hover:bg-surface-1"
+                  >
+                    <Avatar name={group.name} src={group.imageUrl ?? undefined} size={38} />
+                    <div className="min-w-0 flex-1 text-sm">
+                      <p className="truncate font-medium">{group.name}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {group.participantsCount.toLocaleString("pt-BR")} participante(s)
+                        {group.connection?.name ? ` · ${group.connection.name}` : ""}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      title="Nova conversa"
+                      aria-label={`Nova conversa com o grupo ${group.name}`}
+                      disabled={!canOpenGroup}
+                      onClick={() => openGroup(group)}
+                    >
+                      <MessageSquarePlus className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+                {groups.length === 0 && (
+                  <li className="p-4 text-center text-xs text-muted-foreground">
+                    {loadingGroups
+                      ? "Buscando grupos…"
+                      : groupsError
+                        ? "Não foi possível carregar os grupos."
+                        : "Nenhum grupo encontrado."}
+                  </li>
                 )}
-              </Select>
-            </Field>
-          )}
-          {(contactsPage?.totalPages ?? 0) > 1 && (
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                Página {page} de {contactsPage?.totalPages}
-              </span>
-              <div className="flex gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label="Página anterior de contatos"
-                  disabled={loadingContacts || page <= 1}
-                  onClick={() => setPage(page - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label="Próxima página de contatos"
-                  disabled={loadingContacts || page >= (contactsPage?.totalPages ?? 1)}
-                  onClick={() => setPage(page + 1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+              </ul>
+              {(groupsPage?.totalPages ?? 0) > 1 && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    Página {groupPage} de {groupsPage?.totalPages}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Página anterior de grupos"
+                      disabled={loadingGroups || groupPage <= 1}
+                      onClick={() => setGroupPage(groupPage - 1)}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Próxima página de grupos"
+                      disabled={loadingGroups || groupPage >= (groupsPage?.totalPages ?? 1)}
+                      onClick={() => setGroupPage(groupPage + 1)}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </Modal>
-      <Modal
-        open={!!connectionChoice}
-        onClose={() => setConnectionChoice(null)}
-        title="Escolher Instância"
-        description={
-          connectionChoice
-            ? `Selecione a instância para iniciar a conversa com ${connectionChoice.contact.nome}.`
-            : undefined
-        }
-        size="sm"
-        footer={
-          <Button variant="ghost" size="sm" onClick={() => setConnectionChoice(null)}>
-            Cancelar
-          </Button>
-        }
-      >
-        <div className="space-y-2">
-          {connectionChoice?.instances.map((instance) => (
-            <Button
-              key={instance.id}
-              variant="secondary"
-              className="w-full justify-start"
-              onClick={() => {
-                const favorite = favoriteDepartmentForConnection(chatDepartments, instance.id);
-                if (favorite) {
-                  void startConversation(connectionChoice.contact, instance.id);
-                  setConnectionChoice(null);
-                  return;
-                }
-                setSelectedContact(connectionChoice.contact);
-                setSelectedConnectionId(instance.id);
-                setSelectedDepartmentId("");
-                setConnectionChoice(null);
-              }}
-            >
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: instance.color ?? "#22c55e" }}
-              />
-              {instance.name}
-            </Button>
-          ))}
-        </div>
-      </Modal>
+      <ActiveConversationOrchestrator
+        request={conversationRequest}
+        onCancel={() => {
+          setConversationRequest(null);
+          setSelectedContact(null);
+        }}
+        onOpened={onClose}
+      />
       {contactForm &&
         formReady &&
         ((contactForm.initial && canEditContact) || (!contactForm.initial && canCreateContact)) && (
@@ -1005,6 +1117,20 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
             }}
           />
         )}
+      {canCreateGroup && (
+        <CreateGroupModal
+          open={open && createGroupOpen}
+          onClose={() => setCreateGroupOpen(false)}
+          instances={groupInstances}
+          onSubmit={async (data) => {
+            const group = await groupsApi.create(data);
+            setCreateGroupOpen(false);
+            await qc.invalidateQueries({ queryKey: ["trixus", "groups"] });
+            toast.success("Grupo criado");
+            if (group.conversationId && canOpenGroup) openGroup(group);
+          }}
+        />
+      )}
     </>
   );
 }

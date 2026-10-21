@@ -1,5 +1,10 @@
 # Banco de Dados
 
+> **HISTORICO — NAO EXECUTAR (06/10/2026):** referencias a `prisma migrate
+deploy` neste documento descrevem ensaios antigos. O unico caminho operacional
+> vigente e o wrapper documentado em
+> [PRODUCTION-AUTOMATION.md](./PRODUCTION-AUTOMATION.md).
+
 ## Estado atual de persistencia
 
 IMPLEMENTADO NO MVP: migrations Supabase/Postgres em `supabase/migrations` com tabelas operacionais, RLS, triggers e seeds.
@@ -313,7 +318,14 @@ Nao houve nova migration. Para cleanup de connection Evolution removida, mensage
 
 O seed nao cria connection `EVOLUTION`. Connections `DEVELOPMENT` seedadas continuam internas para testes/dev e nao sao exibidas como instancias operacionais em `/instancias`.
 
-## Sprint 08.01 - Identidade inbound e seed limpo
+## Politica atual de seed — D-011 (08/10/2026)
+
+`prisma:seed` cria somente o Platform Admin ausente nos modos `production`, `homologation` e
+`staging`, preserva o administrador existente e nao altera outros registros. Fixtures demo foram
+separadas e sao bloqueadas para bancos locais descartaveis. Consulte
+[`SEED_POLICY.md`](SEED_POLICY.md). As secoes de Sprint abaixo preservam o historico anterior.
+
+## Sprint 08.01 - Identidade inbound e seed limpo (historico)
 
 Inbound resolve contato por identidade remota canonica tenant-scoped. O backend normaliza JIDs `@s.whatsapp.net`, `@c.us`, sufixo de device e variantes brasileiras com/sem nono digito antes de decidir criar contato. A resolucao de Conversation reutiliza uma conversa aberta compativel por `tenantId + contactId + connectionId`; se o reconnect preservar o owner do WhatsApp, tambem aceita `tenantId + contactId + ownerPhoneNormalized`. Conversas fechadas continuam gerando uma nova conversa aberta.
 
@@ -324,7 +336,7 @@ O seed Prisma agora e minimo por padrao: tenant `homologacao`, admin, membership
 Cleanup seguro:
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0801?schema=public"
 bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao
 bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confirm
 ```
@@ -336,7 +348,7 @@ O script e dry-run por padrao, tenant-scoped, nao remove usuarios/memberships/de
 O fluxo oficial para recuperar homologacao e reconstruir o banco, nao limpar manualmente pela UI:
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0802?schema=public"
 bun run --cwd backend reset:homologation -- --confirm
 ```
 

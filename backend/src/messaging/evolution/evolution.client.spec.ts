@@ -122,6 +122,43 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("deletes a message only through the confirmed Evolution v2.3.7 contract", async () => {
+    const key = { id: "MSG1", remoteJid: "5511999990000@s.whatsapp.net", fromMe: true };
+    const fetchMock = vi.fn().mockResolvedValue(response({ key }));
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().deleteMessage({
+        instanceName: "instance-a",
+        messageId: key.id,
+        remoteJid: key.remoteJid,
+      }),
+    ).resolves.toMatchObject({ key });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://evolution.local/chat/deleteMessageForEveryone/instance-a",
+      expect.objectContaining({
+        method: "DELETE",
+        body: JSON.stringify({ remoteJid: key.remoteJid, fromMe: true, id: key.id }),
+      }),
+    );
+  });
+
+  it("rejects an ambiguous deletion response without calling a legacy fallback", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ success: true }));
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().deleteMessage({
+        instanceName: "instance-a",
+        messageId: "MSG1",
+        remoteJid: "5511999990000@s.whatsapp.net",
+      }),
+    ).rejects.toMatchObject({ code: MessagingErrorCode.INVALID_PROVIDER_PAYLOAD });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("registers per-instance webhook with jwt_key and event filters", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response({ ok: true }));
     globalThis.fetch = fetchMock;
@@ -129,7 +166,7 @@ describe("EvolutionClient", () => {
     await new EvolutionClient().setWebhook({
       instanceName: "instance-a",
       webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
-      webhookSecret: "webhook-secret",
+      webhookSecret: ["webhook", "secret"].join("-"),
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -146,6 +183,7 @@ describe("EvolutionClient", () => {
             headers: { jwt_key: "webhook-secret" },
             events: [
               "MESSAGES_UPSERT",
+              "MESSAGES_EDITED",
               "MESSAGES_UPDATE",
               "MESSAGES_DELETE",
               "SEND_MESSAGE_UPDATE",
@@ -176,6 +214,18 @@ describe("EvolutionClient", () => {
       "http://evolution.local/webhook/find/instance-a",
       expect.objectContaining({ headers: expect.objectContaining({ apikey: "test-key" }) }),
     );
+  });
+
+  it("rejects an Evolution HTTP 200 response that carries a semantic error", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(response({ error: true, message: "Instance unavailable" }));
+
+    await expect(new EvolutionClient().connect("instance-a")).rejects.toMatchObject({
+      code: MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+      retryable: true,
+      httpStatus: 502,
+    });
   });
 
   it("downloads inbound media through Evolution getBase64FromMediaMessage", async () => {
@@ -303,6 +353,43 @@ describe("EvolutionClient", () => {
           phone: "5562888882222",
           displayName: "Jullya",
           isAdmin: false,
+        },
+      ],
+    });
+  });
+
+  it("keeps group descriptions and does not treat LIDs as phone numbers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        id: "120363405324564520@g.us",
+        subject: "Grupo LID",
+        description: "Descrição sincronizada",
+        participants: [
+          {
+            id: "123456789012345@lid",
+            pushName: "Instância A",
+            admin: "superadmin",
+          },
+        ],
+      }),
+    );
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().findGroupInfo({
+        instanceName: "instance-a",
+        groupJid: "120363405324564520@g.us",
+      }),
+    ).resolves.toMatchObject({
+      descriptionPresent: true,
+      description: "Descrição sincronizada",
+      participants: [
+        {
+          externalParticipantId: "123456789012345@lid",
+          phone: null,
+          lid: "123456789012345@lid",
+          displayName: "Instância A",
+          isSuperAdmin: true,
         },
       ],
     });

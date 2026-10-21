@@ -1,13 +1,17 @@
 import * as React from "react";
+import { historyTotalLabel } from "@/lib/history-total-label";
 import { useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, MessageCirclePlus } from "lucide-react";
-import { toast } from "sonner";
+import { ChevronLeft, ChevronRight, MessageSquarePlus } from "lucide-react";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Button } from "@/components/ui-kit";
-import { Modal } from "@/components/modal";
-import { DepartmentIcon } from "@/components/department-icon";
-import { useDisclosure } from "@/hooks/use-disclosure";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  ActiveConversationOrchestrator,
+  type ActiveConversationRequest,
+} from "@/components/active-conversation-orchestrator";
+import { canStartActiveConversation } from "@/lib/active-conversation-permissions";
+import { conversationAuthorizationScope } from "@/lib/conversation-query-authorization";
 import { DashboardFiltersBar } from "@/components/dashboard-filters";
 import {
   datesForOperationalPeriod,
@@ -16,14 +20,11 @@ import {
 import { conversationTimestamp, num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { useSession } from "@/lib/session";
-import { conversationApi, messageApi, operationsApi, organizationApi } from "@/lib/trixus-api";
-import {
-  departmentsForConnection,
-  favoriteDepartmentForConnection,
-} from "@/lib/favorite-department";
+import { conversationApi, messageApi, operationsApi } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { ContactPanel, MessageBubble } from "./inbox.$conversationId";
 import { orderHistoryMessages } from "@/lib/history-message-order";
+import { chatBackgroundStyle } from "@/lib/chat-appearance";
 
 const PAGE_SIZE = 20;
 const HISTORY_PERIODS = new Set([
@@ -72,6 +73,9 @@ function loadHistoryFilters(storageKey: string): HistoryFiltersMemory {
       filters: {
         period: filters.period as OperationalReportFilters["period"],
         ...(typeof filters.q === "string" ? { q: filters.q } : {}),
+        ...(filters.conversationType === "contacts" || filters.conversationType === "groups"
+          ? { conversationType: filters.conversationType }
+          : {}),
         ...(typeof filters.departmentId === "string" ? { departmentId: filters.departmentId } : {}),
         ...(typeof filters.customerId === "string" ? { customerId: filters.customerId } : {}),
         ...(typeof filters.connectionId === "string" ? { connectionId: filters.connectionId } : {}),
@@ -88,6 +92,11 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const user = useSession((state) => state.user);
+  const conversationScope = conversationAuthorizationScope(user);
+  const canStartConversation = canStartActiveConversation(user?.permissions);
+  const canOpenGroup =
+    (user?.permissions?.includes("groups.read") ?? false) &&
+    (user?.permissions?.includes("conversations.read") ?? false);
   const canViewPhone = user?.permissions?.includes("chat.phone.read") ?? false;
   const filtersStorageKey = `trixus.history.filters.${user?.id ?? "anonymous"}`;
   const [search, setSearch] = React.useState(() => loadHistoryFilters(filtersStorageKey).search);
@@ -149,7 +158,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
   }, [initialConversationId]);
 
   const history = useQuery({
-    queryKey: ["operations", "history", filters],
+    queryKey: ["operations", "history", conversationScope, filters],
     queryFn: () => operationsApi.history(filters),
   });
   const conversations = React.useMemo(() => history.data?.items ?? [], [history.data?.items]);
@@ -163,11 +172,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
   React.useEffect(
     () =>
       onRealtimeEvent((event) => {
-        if (
-          event.event.startsWith("message.") ||
-          event.event.startsWith("conversation.") ||
-          event.event === "contact.updated"
-        ) {
+        if (event.event.startsWith("message.") || event.event.startsWith("conversation.")) {
           queryClient.invalidateQueries({ queryKey: ["operations", "history"] });
           if (activeId) {
             queryClient.invalidateQueries({ queryKey: ["history-messages", activeId] });
@@ -178,13 +183,9 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
   );
 
   const active = conversations.find((conversation) => conversation.id === activeId) ?? null;
-  const newConversationDepartmentModal = useDisclosure();
-  const [newConversationDepartmentId, setNewConversationDepartmentId] = React.useState("");
-  const { data: apiDepartments = [], isLoading: departmentsLoading } = useQuery({
-    queryKey: ["trixus", "chat-departments"],
-    queryFn: organizationApi.listChatDepartments,
-    enabled: !!active?.connection_id,
-  });
+  const [conversationRequest, setConversationRequest] =
+    React.useState<ActiveConversationRequest | null>(null);
+  const conversationRequestKey = React.useRef(0);
   const messages = useInfiniteQuery({
     queryKey: ["history-messages", activeId],
     initialPageParam: undefined as string | undefined,
@@ -198,33 +199,19 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
     [messages.data],
   );
 
-  const handleNewConversation = async (departmentId?: string) => {
-    if (!active?.contact_id) return;
-    if (departmentsLoading) return;
-    const favorite = favoriteDepartmentForConnection(apiDepartments, active.connection_id);
-    if (!departmentId && !favorite) {
-      if (departmentsForConnection(apiDepartments, active.connection_id).length === 0) {
-        toast.error("Nenhum departamento liberado para esta instância.");
-        return;
-      }
-      setNewConversationDepartmentId("");
-      newConversationDepartmentModal.show();
+  const handleNewConversation = () => {
+    if (!active) return;
+    if (active.is_group) {
+      if (!canStartConversation || !canOpenGroup) return;
+      void navigate({
+        to: "/inbox/$conversationId",
+        params: { conversationId: active.id },
+      });
       return;
     }
-    try {
-      const created = await conversationApi.create({
-        contactId: active.contact_id,
-        connectionId: active.connection_id,
-        ...(departmentId ? { departmentId } : {}),
-        assignToSelf: true,
-        firstMessagePreview: active.lastMessagePreview,
-      });
-      newConversationDepartmentModal.hide();
-      toast.success("Nova conversa iniciada com protocolo oficial");
-      navigate({ to: "/inbox/$conversationId", params: { conversationId: created.id } });
-    } catch (error) {
-      toast.error((error as Error).message);
-    }
+    if (!active.contact) return;
+    conversationRequestKey.current += 1;
+    setConversationRequest({ key: conversationRequestKey.current, contact: active.contact });
   };
 
   return (
@@ -235,6 +222,9 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
         >
           <div>
             <h1 className="text-lg font-semibold">Histórico de Conversas</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {historyTotalLabel(history.data?.total ?? 0)}
+            </p>
           </div>
         </header>
 
@@ -247,6 +237,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
             setPage(1);
           }}
           showDepartment={false}
+          showConversationType
           onClear={() => {
             clearConversationDeepLink({ clearSelection: true });
             setSearch("");
@@ -260,69 +251,106 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
               setSearch(value);
               setPage(1);
             },
-            placeholder: "Buscar protocolo, contato...",
+            placeholder: "Buscar protocolo, contato, grupo...",
           }}
         />
 
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[380px_1fr]">
           <aside
             aria-label="Lista de conversas do histórico"
-            className={`${selectedId ? "hidden lg:flex" : "flex"} min-h-0 flex-col rounded-xl border border-border bg-card shadow-card`}
+            className={`${selectedId ? "hidden lg:flex" : "flex"} min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-card`}
           >
-            <ul className="min-h-0 flex-1 overflow-y-auto">
-              {history.isLoading && (
-                <li className="px-4 py-8 text-center text-xs text-muted-foreground">
-                  Carregando...
-                </li>
-              )}
-              {!history.isLoading && conversations.length === 0 && (
-                <li className="px-4 py-10 text-center text-xs text-muted-foreground">
-                  Nenhuma conversa encontrada.
-                </li>
-              )}
-              {conversations.map((conversation) => {
-                const selected = conversation.id === activeId;
-                return (
-                  <li key={conversation.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveId(conversation.id);
-                        if (conversation.id !== initialConversationId) {
-                          clearConversationDeepLink();
-                        }
-                        setPanelOpen(false);
-                      }}
-                      aria-pressed={selected}
-                      className={`flex w-full items-start gap-3 border-b border-border/60 px-3 py-3 text-left transition ${
-                        selected ? "bg-surface-2" : "hover:bg-surface-1"
-                      }`}
-                    >
-                      <Avatar name={conversation.contact?.nome ?? "?"} size={36} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-sm font-medium">
-                            {conversation.contact?.nome ?? "Contato"}
-                          </p>
-                          <ConversationListTimestamp value={conversation.last_message_at} />
-                        </div>
-                        <p className="truncate text-[11px] text-muted-foreground">
-                          {canViewPhone && conversation.contact?.telefone
-                            ? maskBrazilPhone(conversation.contact.telefone)
-                            : ""}
-                        </p>
-                        <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
-                          <span className="font-mono">{conversation.protocolo ?? "-"}</span>
-                          <span>{conversation.department?.nome ?? "Sem departamento"}</span>
-                        </div>
-                      </div>
-                    </button>
+            <ScrollArea className="min-h-0 flex-1">
+              <ul>
+                {history.isLoading && (
+                  <li className="px-4 py-8 text-center text-xs text-muted-foreground">
+                    Carregando...
                   </li>
-                );
-              })}
-            </ul>
+                )}
+                {!history.isLoading && conversations.length === 0 && (
+                  <li className="px-4 py-10 text-center text-xs text-muted-foreground">
+                    Nenhuma conversa encontrada.
+                  </li>
+                )}
+                {conversations.map((conversation) => {
+                  const selected = conversation.id === activeId;
+                  const displayName = conversationDisplayName(conversation);
+                  return (
+                    <li key={conversation.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveId(conversation.id);
+                          if (conversation.id !== initialConversationId) {
+                            clearConversationDeepLink();
+                          }
+                          setPanelOpen(false);
+                        }}
+                        aria-pressed={selected}
+                        className={`flex w-full items-start gap-3 border-b border-border/60 px-3 py-3 text-left transition ${
+                          selected ? "bg-surface-2" : "hover:bg-surface-1"
+                        }`}
+                      >
+                        <Avatar name={displayName} size={36} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">{displayName}</p>
+                            </div>
+                            <ConversationListClosureMeta
+                              closedAt={conversation.closed_at ?? conversation.last_message_at}
+                            />
+                          </div>
+                          <div className="flex min-w-0 items-center justify-between gap-3 text-[11px] text-muted-foreground">
+                            <span className="truncate">
+                              {!conversation.is_group &&
+                              canViewPhone &&
+                              conversation.contact?.telefone
+                                ? maskBrazilPhone(conversation.contact.telefone)
+                                : ""}
+                            </span>
+                            <span
+                              className="shrink-0 font-mono text-[10px] text-foreground/80"
+                              aria-label={`protocolo ${conversation.protocolo ?? "não informado"}`}
+                            >
+                              #{conversation.protocolo ?? "-"}
+                            </span>
+                          </div>
+                          <div
+                            className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-muted-foreground"
+                            aria-label="Instância, departamento e atendente do encerramento"
+                          >
+                            <span
+                              aria-label="Cor da instância"
+                              className="h-2 w-2 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: conversation.connection?.color ?? "#22c55e",
+                              }}
+                            />
+                            <span className="truncate">
+                              {conversation.connection?.name ?? "Sem instância"}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span className="truncate">
+                              {conversation.department?.nome ?? "Sem departamento"}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span className="truncate">
+                              {conversation.closed_by?.nome ??
+                                conversation.agent?.nome ??
+                                conversation.assigned_membership_name_snapshot ??
+                                "Sem atendente"}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </ScrollArea>
 
-            <footer className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
+            <footer className="flex items-center justify-between border-t border-border bg-surface-2 px-3 py-2 text-xs text-muted-foreground">
               <span>
                 Pagina {num(history.data?.page ?? page)} de {num(history.data?.totalPages ?? 1)}
               </span>
@@ -376,11 +404,11 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                       aria-label="Abrir informações do contato"
                       className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 py-0.5 text-left transition hover:bg-surface-2/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     >
-                      <Avatar name={active.contact?.nome ?? "?"} size={40} />
+                      <Avatar name={conversationDisplayName(active)} size={40} />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="truncate text-sm font-semibold">
-                            {active.contact?.nome ?? "Contato"}
+                            {conversationDisplayName(active)}
                           </p>
                         </div>
                         <p className="truncate text-[11px] text-muted-foreground">
@@ -396,17 +424,21 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="hover:!bg-secondary hover:!text-blue-500"
-                      onClick={() => void handleNewConversation()}
+                      className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
+                      onClick={handleNewConversation}
+                      disabled={!canStartConversation || (active.is_group && !canOpenGroup)}
                       aria-label="Nova conversa"
                       title="Nova conversa"
                     >
-                      <MessageCirclePlus className="h-3.5 w-3.5" />
+                      <MessageSquarePlus className="h-3.5 w-3.5" />
                       <span className="hidden sm:inline">Nova conversa</span>
                     </Button>
                   </header>
 
-                  <div className="inbox-message-background min-h-0 flex-1 overflow-y-auto px-2 py-6">
+                  <div
+                    className="inbox-message-background min-h-0 flex-1 overflow-y-auto px-2 py-6"
+                    style={chatBackgroundStyle(user?.chatBackgroundColor, user?.chatBackgroundMode)}
+                  >
                     <div className="w-full">
                       <div className="space-y-4">
                         {messages.hasNextPage && (
@@ -426,7 +458,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                             key={message.id}
                             m={message}
                             agents={[]}
-                            contactName={active.contact?.nome ?? "Contato"}
+                            contactName={conversationDisplayName(active)}
                             contactAvatarUrl={active.contact?.avatar_url}
                             isGroup={active.is_group}
                             conversationOriginatedAsLead={
@@ -459,65 +491,34 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
             )}
           </section>
         </div>
-        <Modal
-          open={newConversationDepartmentModal.open}
-          onClose={newConversationDepartmentModal.hide}
-          title="Escolher Departamento"
-          description="Selecione o departamento para iniciar uma nova conversa nesta instância."
-          size="sm"
-          footer={
-            <div className="flex w-full justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={newConversationDepartmentModal.hide}>
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!newConversationDepartmentId}
-                onClick={() => void handleNewConversation(newConversationDepartmentId)}
-              >
-                Iniciar conversa
-              </Button>
-            </div>
-          }
-        >
-          <div className="space-y-2">
-            {departmentsForConnection(apiDepartments, active?.connection_id).map((department) => (
-              <button
-                key={department.id}
-                type="button"
-                onClick={() => setNewConversationDepartmentId(department.id)}
-                className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-4 text-left ${newConversationDepartmentId === department.id ? "border-primary bg-primary/5" : "border-border"}`}
-              >
-                <span
-                  className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
-                  style={{ backgroundColor: department.color }}
-                >
-                  <DepartmentIcon icon={department.icon} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">{department.name}</span>
-                  {department.description && (
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {department.description}
-                    </span>
-                  )}
-                </span>
-              </button>
-            ))}
-          </div>
-        </Modal>
+        <ActiveConversationOrchestrator
+          request={conversationRequest}
+          onCancel={() => setConversationRequest(null)}
+        />
       </div>
     </AppShellFull>
   );
 }
 
-function ConversationListTimestamp({ value }: { value: string }) {
-  const timestamp = conversationTimestamp(new Date(value).getTime());
+function conversationDisplayName(conversation: {
+  is_group: boolean;
+  group_name?: string | null;
+  contact?: { nome?: string | null } | null;
+}) {
+  if (conversation.is_group && conversation.group_name?.trim())
+    return conversation.group_name.trim();
+  return conversation.contact?.nome?.trim() || (conversation.is_group ? "Grupo" : "Contato");
+}
+
+function ConversationListClosureMeta({ closedAt }: { closedAt: string }) {
+  const timestamp = conversationTimestamp(new Date(closedAt).getTime());
+  const timestampLabel = timestamp.day ? `${timestamp.day} ${timestamp.time}` : timestamp.time;
   return (
-    <span className="shrink-0 text-right font-mono text-[10px] leading-4 text-muted-foreground">
-      {timestamp.day && <span className="block">{timestamp.day}</span>}
-      <span className="block">{timestamp.time}</span>
+    <span
+      className="shrink-0 text-right text-[10px] leading-4 text-muted-foreground"
+      aria-label={`Encerrada em ${timestampLabel}`}
+    >
+      <span className="block font-mono">{timestampLabel}</span>
     </span>
   );
 }

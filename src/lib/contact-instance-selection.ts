@@ -1,5 +1,12 @@
 import type { ApiContact, ApiContactInstanceOption } from "./trixus-api";
 
+export function contactInstanceReferences(contact: Pick<ApiContact, "instanceIds" | "instancia">) {
+  const canonical = (contact.instanceIds ?? []).filter(Boolean);
+  return [
+    ...new Set(canonical.length > 0 ? canonical : contact.instancia ? [contact.instancia] : []),
+  ];
+}
+
 export function resolveConnectedContactInstances(
   contact: Pick<ApiContact, "instanceIds" | "instancia">,
   instances: ApiContactInstanceOption[],
@@ -10,13 +17,11 @@ export function resolveConnectedContactInstances(
       if (key) byKey.set(key, instance);
     }
   }
-  const values = [...(contact.instanceIds ?? []), contact.instancia].filter(
-    (value): value is string => Boolean(value),
-  );
+  const values = contactInstanceReferences(contact);
+  const candidates = values.length > 0 ? values.map((value) => byKey.get(value)) : instances;
   return Array.from(
     new Map(
-      values
-        .map((value) => byKey.get(value))
+      candidates
         .filter(
           (instance): instance is ApiContactInstanceOption =>
             instance?.status?.toUpperCase() === "CONNECTED",

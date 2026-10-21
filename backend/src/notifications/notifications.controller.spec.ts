@@ -21,8 +21,11 @@ function setup() {
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
     },
-    lead: { findFirst: vi.fn() },
-    conversation: { findFirst: vi.fn() },
+    lead: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([{ id: "lead-a" }]) },
+    conversation: {
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([{ id: "conversation-a" }]),
+    },
   };
   return {
     prisma,
@@ -76,7 +79,7 @@ describe("NotificationsController.target", () => {
     );
   });
 
-  it("filters notification previews by the profile Chat department scope", async () => {
+  it("filters notification previews by conversations actually visible to the attendant", async () => {
     const { controller, prisma } = setup();
 
     await controller.list({}, current);
@@ -85,15 +88,29 @@ describe("NotificationsController.target", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           OR: expect.arrayContaining([
-            {
-              AND: [
-                { entityType: { in: ["conversation", "lead"] } },
-                { connectionId: { in: ["connection-a"] } },
-                { departmentId: { in: ["department-a"] } },
-              ],
-            },
+            { entityType: "conversation", entityId: { in: ["conversation-a"] } },
+            { entityType: "lead", entityId: { in: ["lead-a"] } },
           ]),
         }),
+      }),
+    );
+    expect(prisma.conversation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { tenantId: "tenant-a", archivedAt: null },
+            {
+              AND: [
+                { connectionId: { in: ["connection-a"] } },
+                { departmentId: { in: ["department-a"] } },
+                {
+                  OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
+                },
+              ],
+            },
+          ],
+        },
+        select: { id: true },
       }),
     );
   });

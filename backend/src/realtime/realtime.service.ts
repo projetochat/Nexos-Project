@@ -1,9 +1,10 @@
 import {
   roleChatDepartmentIds,
-  roleChatScopes,
+  roleChatPreferences,
   roleConnectionIds,
 } from "../auth/connection-access";
 import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
+import { pendingLeadVisibilityWhere } from "../leads/lead-visibility";
 import { effectivePermissions } from "../auth/effective-permissions";
 import type { PermissionKey } from "../auth/permissions.constants";
 import { Inject, Injectable, Logger } from "@nestjs/common";
@@ -167,7 +168,7 @@ export class RealtimeService {
       roleKey: membership.role.key,
       connectionIds: roleConnectionIds(membership.role),
       chatDepartmentIds: roleChatDepartmentIds(membership.role),
-      chatScopes: membership.role.key === "tenant_admin" ? null : roleChatScopes(membership.role),
+      chatScopes: roleChatPreferences(membership.role),
       permissions: effectivePermissions(membership.role),
     };
   }
@@ -177,10 +178,11 @@ export class RealtimeService {
     if (!scope?.permissions.includes("conversations.read")) return false;
     return !!(await this.prisma.conversation.findFirst({
       where: {
-        id: conversationId,
-        tenantId: context.tenantId,
-        archivedAt: null,
-        ...conversationVisibilityWhere(scope),
+        AND: [
+          { id: conversationId, tenantId: context.tenantId, archivedAt: null },
+          conversationVisibilityWhere(scope),
+          pendingLeadVisibilityWhere(scope),
+        ],
       },
       select: { id: true },
     }));
@@ -201,9 +203,11 @@ export class RealtimeService {
         if (payload.conversationId) {
           const conversation = await this.prisma.conversation.findFirst({
             where: {
-              id: payload.conversationId,
-              tenantId: context.tenantId,
-              ...conversationVisibilityWhere(scope),
+              AND: [
+                { id: payload.conversationId, tenantId: context.tenantId },
+                conversationVisibilityWhere(scope),
+                pendingLeadVisibilityWhere(scope),
+              ],
             },
             select: { id: true },
           });
@@ -215,7 +219,6 @@ export class RealtimeService {
             where: {
               id: payload.contactId,
               tenantId: context.tenantId,
-              conversations: { some: conversationVisibilityWhere(scope) },
             },
             select: { id: true },
           });
@@ -374,7 +377,7 @@ function realtimeEventPermission(event: RealtimeServerEvent): PermissionKey | nu
   }
   if (event.startsWith("connection.")) return "connections.read";
   if (event.startsWith("contact.")) return "contacts.read";
-  if (event.startsWith("lead.")) return "conversations.read";
+  if (event.startsWith("lead.")) return "leads.read";
   if (event.startsWith("notification.")) return null;
   if (event.startsWith("ticket.")) return "tickets.read";
   if (event.startsWith("campaign.")) return "campaigns.read";

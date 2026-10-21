@@ -5,9 +5,13 @@ import {
   IsHexColor,
   IsIn,
   IsOptional,
+  IsInt,
   IsString,
   IsUUID,
   MinLength,
+  MaxLength,
+  Max,
+  Min,
 } from "class-validator";
 
 export const DEPARTMENT_ICONS = [
@@ -29,7 +33,7 @@ export class CreateDepartmentDto {
 
   @IsOptional()
   @IsString()
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsHexColor()
@@ -48,4 +52,19 @@ export class CreateDepartmentDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inactivityClosureEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10_080)
+  inactivityTimeoutMinutes?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4_000)
+  inactivityClosureMessage?: string | null;
 }

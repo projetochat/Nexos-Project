@@ -8,6 +8,7 @@ const connection = {
   name: "Atendimento",
   archivedAt: null,
   serviceEnabled: true,
+  timezone: "America/Sao_Paulo",
 };
 const conversation = {
   id: "conversation-a",
@@ -19,12 +20,21 @@ const conversation = {
   conversationType: "DIRECT",
   assignedMembershipId: "membership-a",
   contact: {
+    id: "contact-a",
     name: "Maria",
     phone: "+5511999999999",
     email: "maria@example.com",
     departmentName: "Comercial",
-    customer: { name: "Cliente XPTO" },
-    customFieldValues: [{ value: "Premium", field: { label: "Plano" } }],
+    customer: {
+      tenantId: "tenant-a",
+      name: "Cliente XPTO",
+      archivedAt: null,
+    },
+    contactDepartment: {
+      tenantId: "tenant-a",
+      name: "Financeiro",
+      archivedAt: null,
+    },
   },
   connection,
   department: { name: "Vendas" },
@@ -55,6 +65,8 @@ function setup(
     existing?: ReturnType<typeof message> | null;
     mediaStorage?: object;
     senderDisplayName?: object;
+    timezone?: string;
+    now?: Date;
   } = {},
 ) {
   const tx = {
@@ -72,6 +84,7 @@ function setup(
           permissions: [
             { permissionId: "chat.agent_name.show" },
             { permissionId: "messages.send" },
+            { permissionId: "contacts.additional_fields.read" },
           ],
         },
       }),
@@ -82,9 +95,29 @@ function setup(
   };
   const prisma = {
     message: { findFirst: vi.fn().mockResolvedValue(options.existing ?? null) },
-    conversation: { findFirst: vi.fn().mockResolvedValue(conversation) },
+    conversation: {
+      findFirst: vi.fn().mockResolvedValue({
+        ...conversation,
+        connection: { ...connection, timezone: options.timezone ?? connection.timezone },
+      }),
+    },
     schedule: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     tenantMembership: tx.tenantMembership,
+    contactCustomFieldValue: {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          tenantId: "tenant-a",
+          value: "Premium",
+          field: {
+            label: "Plano",
+            variableKey: "plano",
+            type: "TEXT",
+            mask: null,
+            tenantId: "tenant-a",
+          },
+        },
+      ]),
+    },
     $transaction: vi.fn().mockImplementation(async (callback) => callback(tx)),
   };
   const dispatcher = { dispatchMessage: vi.fn().mockResolvedValue(true) };
@@ -100,13 +133,14 @@ function setup(
     undefined,
     realtime as never,
     options.senderDisplayName as never,
+    { now: () => options.now ?? occurrenceAt },
   );
   return { service, prisma, tx, dispatcher, realtime };
 }
 
 describe("MessagingOutboundService scheduled messages", () => {
   it("renders current conversation variables and atomically creates Message, Outbox and schedule link", async () => {
-    const { service, tx, dispatcher } = setup();
+    const { service, prisma, tx, dispatcher } = setup();
 
     await expect(
       service.queueScheduledMessage({
@@ -116,7 +150,7 @@ describe("MessagingOutboundService scheduled messages", () => {
         occurrenceAt,
         conversationId: "conversation-a",
         createdByMembershipId: "membership-a",
-        content: "Olá, {{nome}} da {{cliente}} — plano {{plano}} / {{departamento}}",
+        content: "Olá, {{nome}} da {{cliente}} / {{empresa}} — plano {{plano}} / {{departamento}}",
       }),
     ).resolves.toMatchObject({ created: true });
 
@@ -124,7 +158,7 @@ describe("MessagingOutboundService scheduled messages", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           clientMessageId: "schedule:schedule-a:2026-09-27T14:00:00.000Z",
-          content: "Olá, Maria da Cliente XPTO — plano Premium / Vendas",
+          content: "Olá, Maria da Cliente XPTO / Cliente XPTO — plano Premium / Financeiro",
           authorMembershipId: "membership-a",
           status: "QUEUED",
         }),
@@ -144,6 +178,44 @@ describe("MessagingOutboundService scheduled messages", () => {
       }),
     );
     expect(dispatcher.dispatchMessage).toHaveBeenCalledWith("message-a");
+    expect(prisma.contactCustomFieldValue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: "tenant-a",
+          contactId: "contact-a",
+          field: { tenantId: "tenant-a", archivedAt: null },
+        },
+      }),
+    );
+  });
+
+  it("does not resolve additional-field templates after the creator loses read permission", async () => {
+    const { service, prisma, tx } = setup();
+    prisma.tenantMembership.findFirst.mockResolvedValue({
+      id: "membership-a",
+      role: {
+        key: "agent",
+        metadata: { connectionIds: ["connection-a"] },
+        permissions: [{ permissionId: "messages.send" }],
+      },
+    });
+
+    await service.queueScheduledMessage({
+      tenantId: "tenant-a",
+      scheduleId: "schedule-restricted",
+      claimedVersion: 2,
+      occurrenceAt,
+      conversationId: "conversation-a",
+      createdByMembershipId: "membership-a",
+      content: "Plano: {{plano}}",
+    });
+
+    expect(prisma.contactCustomFieldValue.findMany).not.toHaveBeenCalled();
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "Plano: {{plano}}" }),
+      }),
+    );
   });
 
   it("prefixes the active attendant name using the same display-name rule as normal chat", async () => {
@@ -170,6 +242,29 @@ describe("MessagingOutboundService scheduled messages", () => {
     expect(tx.message.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ content: "*Ana Atendimento:*\n\nOlá, Maria" }),
+      }),
+    );
+  });
+
+  it("renders the greeting using the connection timezone and injected effective-send clock", async () => {
+    const { service, tx } = setup({
+      timezone: "America/Manaus",
+      now: new Date("2026-09-17T16:00:00.000Z"),
+    });
+
+    await service.queueScheduledMessage({
+      tenantId: "tenant-a",
+      scheduleId: "schedule-timezone",
+      claimedVersion: 1,
+      occurrenceAt: new Date("2026-09-17T15:00:00.000Z"),
+      conversationId: "conversation-a",
+      createdByMembershipId: "membership-a",
+      content: "{{saudacao}}, {{nome}}",
+    });
+
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "Boa tarde, Maria" }),
       }),
     );
   });
@@ -244,6 +339,94 @@ describe("MessagingOutboundService scheduled messages", () => {
     );
   });
 
+  it("keeps a captionless scheduled image free of an automatic signature", async () => {
+    const mediaStorage = {
+      storeDownloaded: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/image",
+        checksum: "checksum-image",
+        mimeType: "image/jpeg",
+        fileName: "foto.jpg",
+        sizeBytes: 4,
+      }),
+      deleteObject: vi.fn().mockResolvedValue(undefined),
+    };
+    const senderDisplayName = {
+      resolveForMembership: vi.fn().mockResolvedValue("Ana Atendimento"),
+    };
+    const { service, tx } = setup({ mediaStorage, senderDisplayName });
+
+    await service.queueScheduledMessage({
+      tenantId: "tenant-a",
+      scheduleId: "schedule-image",
+      claimedVersion: 2,
+      occurrenceAt,
+      conversationId: "conversation-a",
+      createdByMembershipId: "membership-a",
+      content: "",
+      attachment: {
+        fileName: "foto.jpg",
+        mimeType: "image/jpeg",
+        size: 4,
+        dataUrl: "data:image/jpeg;base64,VGVzdA==",
+      },
+    });
+
+    expect(senderDisplayName.resolveForMembership).not.toHaveBeenCalled();
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "IMAGE",
+          content: null,
+          mediaCaption: null,
+        }),
+      }),
+    );
+  });
+
+  it("adds the attendant signature once to a captioned scheduled image", async () => {
+    const mediaStorage = {
+      storeDownloaded: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/image-captioned",
+        checksum: "checksum-image-captioned",
+        mimeType: "image/jpeg",
+        fileName: "foto.jpg",
+        sizeBytes: 4,
+      }),
+      deleteObject: vi.fn().mockResolvedValue(undefined),
+    };
+    const senderDisplayName = {
+      resolveForMembership: vi.fn().mockResolvedValue("Ana Atendimento"),
+    };
+    const { service, tx } = setup({ mediaStorage, senderDisplayName });
+
+    await service.queueScheduledMessage({
+      tenantId: "tenant-a",
+      scheduleId: "schedule-image-captioned",
+      claimedVersion: 2,
+      occurrenceAt,
+      conversationId: "conversation-a",
+      createdByMembershipId: "membership-a",
+      content: "Legenda da imagem",
+      attachment: {
+        fileName: "foto.jpg",
+        mimeType: "image/jpeg",
+        size: 4,
+        dataUrl: "data:image/jpeg;base64,VGVzdA==",
+      },
+    });
+
+    expect(senderDisplayName.resolveForMembership).toHaveBeenCalledOnce();
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "IMAGE",
+          content: "*Ana Atendimento:*\n\nLegenda da imagem",
+          mediaCaption: "*Ana Atendimento:*\n\nLegenda da imagem",
+        }),
+      }),
+    );
+  });
+
   it("keeps scheduled audio enabled when the creator retains the send-message permission", async () => {
     const mediaStorage = {
       storeDownloaded: vi.fn().mockResolvedValue({
@@ -255,7 +438,7 @@ describe("MessagingOutboundService scheduled messages", () => {
       }),
       deleteObject: vi.fn().mockResolvedValue(undefined),
     };
-    const { service, prisma } = setup({ mediaStorage });
+    const { service, prisma, tx } = setup({ mediaStorage });
     prisma.tenantMembership.findFirst.mockResolvedValue({
       id: "membership-a",
       role: {
@@ -282,7 +465,12 @@ describe("MessagingOutboundService scheduled messages", () => {
         },
       }),
     ).resolves.toMatchObject({ created: true });
-    expect(mediaStorage.storeDownloaded).toHaveBeenCalledOnce();
+    expect(mediaStorage.storeDownloaded).toHaveBeenCalledWith(
+      expect.objectContaining({ messageType: "VOICE" }),
+    );
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ type: "VOICE" }) }),
+    );
   });
 
   it("rejects delivery when the stored creator is no longer active", async () => {
@@ -348,7 +536,7 @@ describe("MessagingOutboundService scheduled messages", () => {
       role: {
         key: "agent",
         metadata: { connectionIds: ["connection-other"] },
-        permissions: [],
+        permissions: [{ permissionId: "messages.send" }],
       },
     });
     await expect(

@@ -51,7 +51,8 @@ expectPresent("automation UI/API contract", `${contents.automationPage}\n${conte
   [/BOT_REPLY/, "bot reply action"],
   [/ASSIGN_DEPARTMENT/, "assign department action"],
   [/NOTIFY_TEAM/, "notify team action"],
-  [/automationApi\.archive/, "automation archive action"],
+  [/automationApi\.deletionPreview/, "automation deletion preview action"],
+  [/automationApi\.remove/, "automation protected deletion action"],
   [/organizationApi\.listDepartments/, "department-backed assignment UI"],
 ]);
 

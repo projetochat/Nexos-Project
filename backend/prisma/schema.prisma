@@ -35,6 +35,11 @@ enum TenantStatus {
   TERMINATED
 }
 
+enum TenantOnboardingStatus {
+  PENDING
+  COMPLETED
+}
+
 enum PlatformClientStatus {
   ACTIVE
   SUSPENDED
@@ -96,6 +101,25 @@ enum ContactCustomFieldType {
   CHECKBOX
   LIST
   DATE
+}
+
+enum ProtocolModule {
+  CHAT
+  TICKET
+}
+
+enum ProtocolFormat {
+  YEAR_SEQUENCE
+  YEAR_MONTH_SEQUENCE
+  SEQUENCE
+  DATE_SEQUENCE
+  CUSTOM
+}
+
+enum ProtocolReset {
+  YEARLY
+  MONTHLY
+  NEVER
 }
 
 enum ConversationStatus {
@@ -200,6 +224,13 @@ enum TicketStatus {
   RESOLVIDO
   FECHADO
   CANCELADO
+  NOVO
+  AGUARDANDO_APROVACAO
+  NA_FILA
+  EM_EXECUCAO
+  CONCLUIDA
+  VALIDADO
+  REPROVADO
 }
 
 enum TicketPriority {
@@ -207,6 +238,7 @@ enum TicketPriority {
   NORMAL
   ALTA
   URGENTE
+  ALTISSIMA
 }
 
 enum TicketCategory {
@@ -221,6 +253,36 @@ enum TicketAttachmentStatus {
   READY
   DELETED
   REJECTED
+}
+
+enum TicketDialogType {
+  RESPONSE
+  TRANSFER
+  APPROVAL_REQUEST
+  SOLUTION
+  CANCELLATION
+  APPROVAL_DECISION
+  SOLUTION_VALIDATION
+}
+
+enum TicketApprovalKind {
+  SUPPORT
+  DEVELOPMENT
+  SOLUTION_VALIDATION
+}
+
+enum TicketApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum TicketSubstatus {
+  OPENED_IN_SANKHYA
+  FORWARDED_TO_THIRD_PARTY
+  WAITING
+  WAITING_INFRASTRUCTURE
 }
 
 enum AttachmentScanStatus {
@@ -290,6 +352,29 @@ enum UserInvitationStatus {
   REVOKED
 }
 
+enum CustomerPersonType {
+  PHYSICAL
+  LEGAL
+}
+
+enum CustomerStatus {
+  ACTIVE
+  PROSPECT
+  SUSPENDED
+  CANCELLED
+}
+
+enum CustomerAccessProfile {
+  COLLABORATOR
+  MANAGER
+  FULL_ACCESS
+}
+
+enum CustomerBranchStatus {
+  ACTIVE
+  INACTIVE
+}
+
 enum LeadStatus {
   NEW
   QUEUED
@@ -332,14 +417,14 @@ enum AutomationActionType {
 
 model Tenant {
   schedules                   Schedule[]
-  id                          String                       @id @default(uuid())
+  id                          String                          @id @default(uuid())
   name                        String
-  slug                        String                       @unique
+  slug                        String                          @unique
   legalName                   String?
   displayName                 String?
-  status                      TenantStatus                 @default(ACTIVE)
-  timezone                    String                       @default("America/Sao_Paulo")
-  locale                      String                       @default("pt-BR")
+  status                      TenantStatus                    @default(ACTIVE)
+  timezone                    String                          @default("America/Sao_Paulo")
+  locale                      String                          @default("pt-BR")
   document                    String?
   billingEmail                String?
   technicalEmail              String?
@@ -357,12 +442,14 @@ model Tenant {
   suspendedAt                 DateTime?
   terminatedAt                DateTime?
   suspensionReason            String?
-  createdAt                   DateTime                     @default(now())
-  updatedAt                   DateTime                     @updatedAt
+  createdAt                   DateTime                        @default(now())
+  updatedAt                   DateTime                        @updatedAt
   users                       TenantMembership[]
   departments                 Department[]
   roles                       Role[]
   customers                   Customer[]
+  customerBranches            CustomerBranch[]
+  customerDepartments         CustomerDepartment[]
   contacts                    Contact[]
   contactDepartments          ContactDepartment[]
   contactProfiles             ContactProfile[]
@@ -382,6 +469,7 @@ model Tenant {
   ticketComments              TicketComment[]
   ticketHistory               TicketHistory[]
   ticketAttachments           TicketAttachment[]
+  ticketApprovals             TicketApproval[]
   campaigns                   Campaign[]
   campaignRecipients          CampaignRecipient[]
   contactMessagingPreferences ContactMessagingPreference[]
@@ -396,9 +484,86 @@ model Tenant {
   notifications               Notification[]
   automationRules             AutomationRule[]
   platformClient              PlatformClient?
+  onboarding                  TenantOnboarding?
+  dashboardConfiguration      TenantDashboardConfiguration?
+  protocolConfigurations      TenantProtocolConfiguration[]
+  protocolSequenceCounters    ProtocolSequenceCounter[]
+  registrationCaseSettings    TenantRegistrationCaseSettings?
 
   @@index([status])
   @@map("tenants")
+}
+
+model TenantRegistrationCaseSettings {
+  tenantId           String   @id
+  contacts           Boolean  @default(false)
+  contactCompanies   Boolean  @default(false) @map("contact_companies")
+  contactDepartments Boolean  @default(false) @map("contact_departments")
+  contactProfiles    Boolean  @default(false) @map("contact_profiles")
+  attendants         Boolean  @default(false)
+  accessProfiles     Boolean  @default(false) @map("access_profiles")
+  departments        Boolean  @default(false)
+  tags               Boolean  @default(false)
+  botFlows           Boolean  @default(false) @map("bot_flows")
+  automations        Boolean  @default(false)
+  aiAgents           Boolean  @default(false) @map("ai_agents")
+  ticketTitles       Boolean  @default(false) @map("ticket_titles")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_registration_case_settings")
+}
+
+model TenantProtocolConfiguration {
+  tenantId      String
+  module        ProtocolModule
+  format        ProtocolFormat
+  digits        Int            @default(6)
+  reset         ProtocolReset  @default(NEVER)
+  customPattern String?
+  updatedAt     DateTime       @updatedAt
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, module])
+  @@map("tenant_protocol_configurations")
+}
+
+model ProtocolSequenceCounter {
+  tenantId   String
+  module     ProtocolModule
+  periodKey  String
+  lastNumber Int            @default(0)
+  updatedAt  DateTime       @updatedAt
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, module, periodKey])
+  @@map("protocol_sequence_counters")
+}
+
+model TenantDashboardConfiguration {
+  tenantId      String   @id
+  configuration Json
+  updatedAt     DateTime @updatedAt
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_dashboard_configurations")
+}
+
+model TenantOnboarding {
+  tenantId         String                 @id
+  status           TenantOnboardingStatus @default(PENDING)
+  currentStep      Int                    @default(1)
+  maxCompletedStep Int                    @default(0)
+  version          Int                    @default(1)
+  startedAt        DateTime               @default(now())
+  completedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, updatedAt])
+  @@map("tenant_onboarding_states")
 }
 
 model PlatformClient {
@@ -409,6 +574,8 @@ model PlatformClient {
   responsibleEmail String
   city             String
   state            String
+  country          String               @default("Brasil")
+  cityId           String?              @map("city_id")
   registeredAt     DateTime             @default(now())
   status           PlatformClientStatus @default(ACTIVE)
   notes            String?
@@ -416,32 +583,109 @@ model PlatformClient {
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
   tenant           Tenant?              @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  cityReference    City?                @relation(fields: [cityId], references: [id], onDelete: SetNull)
   subscriptions    TenantSubscription[]
 
   @@index([name])
   @@index([city, state])
+  @@index([cityId])
   @@index([status])
   @@map("platform_clients")
 }
 
+model Country {
+  id         String                   @id @default(uuid())
+  code       String                   @unique @db.VarChar(2)
+  name       String
+  geonamesId String?                  @unique @map("geonames_id")
+  active     Boolean                  @default(true)
+  createdAt  DateTime                 @default(now()) @map("created_at")
+  updatedAt  DateTime                 @updatedAt @map("updated_at")
+  divisions  AdministrativeDivision[]
+  cities     City[]
+
+  @@index([active, name])
+  @@map("countries")
+}
+
+model AdministrativeDivision {
+  id         String   @id @default(uuid())
+  countryId  String   @map("country_id")
+  code       String
+  name       String
+  geonamesId String?  @unique @map("geonames_id")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  country    Country  @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  cities     City[]
+
+  @@unique([countryId, code])
+  @@index([countryId, active, name])
+  @@map("administrative_divisions")
+}
+
+model City {
+  id              String                  @id @default(uuid())
+  name            String
+  normalizedName  String                  @map("normalized_name")
+  dedupeKey       String                  @unique @map("dedupe_key")
+  countryId       String                  @map("country_id")
+  divisionId      String?                 @map("division_id")
+  ibgeCode        String?                 @unique @map("ibge_code")
+  geonamesId      String?                 @unique @map("geonames_id")
+  latitude        Float?
+  longitude       Float?
+  active          Boolean                 @default(true)
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+  country         Country                 @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  division        AdministrativeDivision? @relation(fields: [divisionId], references: [id], onDelete: Restrict)
+  customers       Customer[]
+  platformClients PlatformClient[]
+
+  @@index([countryId, divisionId, active, normalizedName])
+  @@index([normalizedName])
+  @@index([name])
+  @@map("cities")
+}
+
+model LocationCatalogVersion {
+  version        String   @id
+  artifactSha256 String   @unique @map("artifact_sha256") @db.VarChar(64)
+  status         String
+  countriesCount Int      @map("countries_count")
+  divisionsCount Int      @map("divisions_count")
+  citiesCount    Int      @map("cities_count")
+  loadedAt       DateTime @map("loaded_at")
+
+  @@map("location_catalog_versions")
+}
+
 model User {
-  id                    String                 @id @default(uuid())
-  email                 String                 @unique
-  name                  String
-  avatarUrl             String?                @map("avatar_url")
-  keepSidebarCollapsed  Boolean                @default(false) @map("keep_sidebar_collapsed")
-  passwordHash          String
-  status                UserStatus             @default(ACTIVE)
-  platformRole          PlatformRole           @default(USER)
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  memberships           TenantMembership[]
-  requestedTickets      Ticket[]
-  subscriptions         TenantSubscription[]
-  platformAuditLogs     PlatformAuditLog[]
-  impersonationSessions ImpersonationSession[]
-  passwordResetTokens   PasswordResetToken[]
-  authSessions          AuthSession[]
+  id                      String                 @id @default(uuid())
+  email                   String                 @unique
+  name                    String
+  avatarUrl               String?                @map("avatar_url")
+  keepSidebarCollapsed    Boolean                @default(false) @map("keep_sidebar_collapsed")
+  chatBubbleColor         String?                @map("chat_bubble_color")
+  chatBubbleTextColor     String?                @map("chat_bubble_text_color")
+  customerBubbleColor     String?                @map("customer_bubble_color")
+  customerBubbleTextColor String?                @map("customer_bubble_text_color")
+  chatBackgroundColor     String?                @map("chat_background_color")
+  chatBackgroundMode      String                 @default("IMAGE") @map("chat_background_mode")
+  passwordHash            String
+  status                  UserStatus             @default(ACTIVE)
+  platformRole            PlatformRole           @default(USER)
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  memberships             TenantMembership[]
+  requestedTickets        Ticket[]
+  subscriptions           TenantSubscription[]
+  platformAuditLogs       PlatformAuditLog[]
+  impersonationSessions   ImpersonationSession[]
+  passwordResetTokens     PasswordResetToken[]
+  authSessions            AuthSession[]
 
   @@index([status])
   @@index([platformRole])
@@ -643,35 +887,39 @@ model PlatformAuditLog {
 }
 
 model TenantMembership {
-  id                 String                 @id @default(uuid())
-  tenantId           String
-  userId             String
-  roleId             String
-  presentationName   String?                @map("presentation_name")
-  status             MembershipStatus       @default(ACTIVE)
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  tenant             Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role               Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
-  departments        DepartmentMembership[]
-  conversations      Conversation[]
-  messages           Message[]
-  messageReactions   MessageReaction[]
-  quickReplies       QuickReply[]
-  assignedTickets    Ticket[]               @relation("TicketAssignee")
-  createdTickets     Ticket[]               @relation("TicketCreator")
-  closedTickets      Ticket[]               @relation("TicketCloser")
-  ticketComments     TicketComment[]
-  ticketHistory      TicketHistory[]
-  ticketAttachments  TicketAttachment[]
-  createdCampaigns   Campaign[]             @relation("CampaignCreator")
-  cancelledCampaigns Campaign[]             @relation("CampaignCanceller")
-  sentInvitations    UserInvitation[]       @relation("InvitationSender")
-  assignedLeads      Lead[]                 @relation("LeadAssignee")
-  notifications      Notification[]
-  automationRules    AutomationRule[]       @relation("AutomationCreator")
-  authSessions       AuthSession[]
+  id                       String                 @id @default(uuid())
+  tenantId                 String
+  userId                   String
+  roleId                   String
+  presentationName         String?                @map("presentation_name")
+  status                   MembershipStatus       @default(ACTIVE)
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  tenant                   Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role                     Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
+  departments              DepartmentMembership[]
+  conversations            Conversation[]
+  messages                 Message[]
+  messageReactions         MessageReaction[]
+  quickReplies             QuickReply[]
+  assignedTickets          Ticket[]               @relation("TicketAssignee")
+  createdTickets           Ticket[]               @relation("TicketCreator")
+  closedTickets            Ticket[]               @relation("TicketCloser")
+  ticketComments           TicketComment[]
+  ticketHistory            TicketHistory[]
+  ticketAttachments        TicketAttachment[]
+  requestedTicketApprovals TicketApproval[]       @relation("TicketApprovalRequester")
+  decidedTicketApprovals   TicketApproval[]       @relation("TicketApprovalDecider")
+  assignedTicketApprovals  TicketApproval[]       @relation("TicketApprovalAssignee")
+  portalContacts           Contact[]              @relation("ContactPortalMembership")
+  createdCampaigns         Campaign[]             @relation("CampaignCreator")
+  cancelledCampaigns       Campaign[]             @relation("CampaignCanceller")
+  sentInvitations          UserInvitation[]       @relation("InvitationSender")
+  assignedLeads            Lead[]                 @relation("LeadAssignee")
+  notifications            Notification[]
+  automationRules          AutomationRule[]       @relation("AutomationCreator")
+  authSessions             AuthSession[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -705,25 +953,28 @@ model AuthSession {
 }
 
 model Department {
-  id              String                 @id @default(uuid())
-  tenantId        String
-  name            String
-  description     String?
-  color           String                 @default("#3B82F6")
-  icon            String                 @default("department")
-  active          Boolean                @default(true)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  members         DepartmentMembership[]
-  contacts        Contact[]
-  conversations   Conversation[]
-  quickReplies    QuickReply[]
-  tickets         Ticket[]
-  leads           Lead[]
-  notifications   Notification[]
-  automationRules AutomationRule[]
-  connections     DepartmentConnection[]
+  id                       String                 @id @default(uuid())
+  tenantId                 String
+  name                     String
+  description              String?
+  color                    String                 @default("#3B82F6")
+  icon                     String                 @default("department")
+  active                   Boolean                @default(true)
+  inactivityClosureEnabled Boolean                @default(false)
+  inactivityTimeoutMinutes Int?
+  inactivityClosureMessage String?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  tenant                   Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members                  DepartmentMembership[]
+  contacts                 Contact[]
+  conversations            Conversation[]
+  quickReplies             QuickReply[]
+  tickets                  Ticket[]
+  leads                    Lead[]
+  notifications            Notification[]
+  automationRules          AutomationRule[]
+  connections              DepartmentConnection[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, id])
@@ -770,6 +1021,7 @@ model Role {
   description String?
   metadata    Json?
   system      Boolean            @default(false)
+  active      Boolean            @default(true)
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -780,6 +1032,7 @@ model Role {
   @@unique([tenantId, key])
   @@unique([tenantId, id])
   @@index([tenantId])
+  @@index([tenantId, active])
   @@map("roles")
 }
 
@@ -804,59 +1057,138 @@ model RolePermission {
 }
 
 model Customer {
-  id                     String              @id @default(uuid())
+  id                     String               @id @default(uuid())
   tenantId               String
   name                   String
   email                  String?
   phone                  String?
   notes                  String?
   responsibleContactName String?
-  color                  String              @default("#3B82F6")
+  color                  String               @default("#3B82F6")
+  personType             CustomerPersonType   @default(LEGAL)
+  status                 CustomerStatus       @default(ACTIVE)
+  legalName              String?
+  document               String?
+  addressFullEnabled     Boolean              @default(false)
+  postalCode             String?
+  street                 String?
+  addressNumber          String?
+  addressWithoutNumber   Boolean              @default(false)
+  complement             String?
+  neighborhood           String?
+  city                   String?
+  state                  String?
+  country                String?              @default("Brasil")
+  cityId                 String?              @map("city_id")
   archivedAt             DateTime?
-  createdAt              DateTime            @default(now())
-  updatedAt              DateTime            @updatedAt
-  tenant                 Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cityReference          City?                @relation(fields: [cityId], references: [id], onDelete: SetNull)
   contacts               Contact[]
   campaignRecipients     CampaignRecipient[]
   tickets                Ticket[]
+  branches               CustomerBranch[]
+  customerDepartments    CustomerDepartment[]
 
   @@unique([tenantId, id])
   @@index([tenantId, name])
   @@index([tenantId, archivedAt])
+  @@index([tenantId, status, archivedAt])
+  @@index([tenantId, personType, archivedAt])
+  @@index([tenantId, document])
+  @@index([cityId])
   @@map("customers")
 }
 
+model CustomerBranch {
+  id         String               @id @default(uuid())
+  tenantId   String
+  customerId String
+  name       String
+  city       String
+  state      String
+  status     CustomerBranchStatus @default(ACTIVE)
+  archivedAt DateTime?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer   Customer             @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
+  contacts   Contact[]
+  tickets    Ticket[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, customerId, name])
+  @@index([tenantId, customerId, archivedAt])
+  @@map("customer_branches")
+}
+
+model CustomerDepartment {
+  id               String    @id @default(uuid())
+  tenantId         String
+  customerId       String
+  name             String
+  managerContactId String?
+  active           Boolean   @default(true)
+  archivedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer         Customer  @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
+  managerContact   Contact?  @relation("CustomerDepartmentManager", fields: [managerContactId], references: [id], onDelete: SetNull)
+  contacts         Contact[] @relation("CustomerDepartmentContacts")
+  tickets          Ticket[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, customerId, name])
+  @@index([tenantId, customerId, archivedAt])
+  @@index([tenantId, managerContactId])
+  @@map("customer_departments")
+}
+
 model Contact {
-  id                   String                       @id @default(uuid())
-  tenantId             String
-  customerId           String?
-  departmentId         String?
-  contactDepartmentId  String?
-  contactProfileId     String?
-  name                 String
-  phone                String
-  normalizedPhone      String
-  email                String?
-  avatarUrl            String?
-  departmentName       String?
-  companyRole          ContactCompanyRole?
-  instance             String?
-  instanceIds          String[]                     @default([])
-  archivedAt           DateTime?
-  createdAt            DateTime                     @default(now())
-  updatedAt            DateTime                     @updatedAt
-  tenant               Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer             Customer?                    @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  department           Department?                  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  contactDepartment    ContactDepartment?           @relation(fields: [contactDepartmentId], references: [id], onDelete: SetNull)
-  contactProfile       ContactProfile?              @relation(fields: [contactProfileId], references: [id], onDelete: SetNull)
-  customFieldValues    ContactCustomFieldValue[]
-  tags                 ContactTag[]
-  conversations        Conversation[]
-  tickets              Ticket[]
-  campaignRecipients   CampaignRecipient[]
-  messagingPreferences ContactMessagingPreference[]
-  leads                Lead[]
+  id                         String                       @id @default(uuid())
+  tenantId                   String
+  customerId                 String?
+  departmentId               String?
+  contactDepartmentId        String?
+  contactProfileId           String?
+  name                       String
+  phone                      String
+  normalizedPhone            String
+  email                      String?
+  avatarUrl                  String?
+  departmentName             String?
+  companyRole                ContactCompanyRole?
+  instance                   String?
+  instanceIds                String[]                     @default([])
+  customerBranchId           String?
+  customerDepartmentId       String?
+  customerAccessProfile      CustomerAccessProfile?
+  active                     Boolean                      @default(true)
+  portalMembershipId         String?                      @unique
+  portalAccessActive         Boolean                      @default(false)
+  archivedAt                 DateTime?
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime                     @updatedAt
+  tenant                     Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer                   Customer?                    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  department                 Department?                  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  contactDepartment          ContactDepartment?           @relation(fields: [contactDepartmentId], references: [id], onDelete: SetNull)
+  contactProfile             ContactProfile?              @relation(fields: [contactProfileId], references: [id], onDelete: SetNull)
+  customFieldValues          ContactCustomFieldValue[]
+  tags                       ContactTag[]
+  conversations              Conversation[]
+  tickets                    Ticket[]
+  campaignRecipients         CampaignRecipient[]
+  messagingPreferences       ContactMessagingPreference[]
+  leads                      Lead[]
+  customerBranch             CustomerBranch?              @relation(fields: [customerBranchId], references: [id], onDelete: SetNull)
+  customerDepartment         CustomerDepartment?          @relation("CustomerDepartmentContacts", fields: [customerDepartmentId], references: [id], onDelete: SetNull)
+  managedCustomerDepartments CustomerDepartment[]         @relation("CustomerDepartmentManager")
+  ticketApprovals            TicketApproval[]
+  portalMembership           TenantMembership?            @relation("ContactPortalMembership", fields: [portalMembershipId], references: [id], onDelete: SetNull)
+  portalInvitations          UserInvitation[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedPhone])
@@ -868,6 +1200,8 @@ model Contact {
   @@index([tenantId, departmentName])
   @@index([tenantId, instance])
   @@index([tenantId, archivedAt])
+  @@index([tenantId, customerBranchId])
+  @@index([tenantId, customerDepartmentId])
   @@map("contacts")
 }
 
@@ -912,6 +1246,7 @@ model ContactCustomField {
   tenantId       String
   label          String
   normalizedName String
+  variableKey    String
   type           ContactCustomFieldType
   required       Boolean                   @default(false)
   mask           String?
@@ -927,6 +1262,7 @@ model ContactCustomField {
   values         ContactCustomFieldValue[]
 
   @@unique([tenantId, normalizedName])
+  @@unique([tenantId, variableKey])
   @@index([tenantId, archivedAt, position])
   @@map("contact_custom_fields")
 }
@@ -948,21 +1284,25 @@ model ContactCustomFieldValue {
 }
 
 model Tag {
-  id             String       @id @default(uuid())
-  tenantId       String
-  name           String
-  normalizedName String
-  color          String       @default("#3B82F6")
-  archivedAt     DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contacts       ContactTag[]
+  id                      String       @id @default(uuid())
+  tenantId                String
+  name                    String
+  normalizedName          String
+  description             String?
+  color                   String       @default("#3B82F6")
+  active                  Boolean      @default(true)
+  notifyOnNewConversation Boolean      @default(false) @map("notify_on_new_conversation")
+  archivedAt              DateTime?
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+  tenant                  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts                ContactTag[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedName])
   @@index([tenantId])
   @@index([tenantId, archivedAt])
+  @@index([tenantId, active, archivedAt])
   @@map("tags")
 }
 
@@ -990,39 +1330,40 @@ model ConversationProtocolCounter {
 }
 
 model Conversation {
-  id                    String                    @id @default(uuid())
-  tenantId              String
-  contactId             String
-  departmentId          String?
-  assignedMembershipId  String?
-  connectionId          String?
-  status                ConversationStatus        @default(ABERTA)
-  protocol              String?
-  isGroup               Boolean                   @default(false)
-  conversationType      ConversationType          @default(DIRECT)
-  externalChatId        String?
-  externalGroupId       String?
-  groupName             String?
-  groupImageUrl         String?
-  groupSubjectUpdatedAt DateTime?
-  groupMetadataJson     Json?
-  unreadCount           Int                       @default(0)
-  lastMessagePreview    String?
-  lastMessageAt         DateTime?
-  inboxArchivedAt       DateTime?
-  archivedAt            DateTime?
-  closedAt              DateTime?
-  createdAt             DateTime                  @default(now())
-  updatedAt             DateTime                  @updatedAt
-  tenant                Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact               Contact                   @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  department            Department?               @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  assignedMembership    TenantMembership?         @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
-  connection            MessagingConnection?      @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
-  messages              Message[]
-  participants          ConversationParticipant[]
-  tickets               Ticket[]
-  lead                  Lead?
+  id                             String                    @id @default(uuid())
+  tenantId                       String
+  contactId                      String
+  departmentId                   String?
+  assignedMembershipId           String?
+  assignedMembershipNameSnapshot String?
+  connectionId                   String?
+  status                         ConversationStatus        @default(ABERTA)
+  protocol                       String?
+  isGroup                        Boolean                   @default(false)
+  conversationType               ConversationType          @default(DIRECT)
+  externalChatId                 String?
+  externalGroupId                String?
+  groupName                      String?
+  groupImageUrl                  String?
+  groupSubjectUpdatedAt          DateTime?
+  groupMetadataJson              Json?
+  unreadCount                    Int                       @default(0)
+  lastMessagePreview             String?
+  lastMessageAt                  DateTime?
+  inboxArchivedAt                DateTime?
+  archivedAt                     DateTime?
+  closedAt                       DateTime?
+  createdAt                      DateTime                  @default(now())
+  updatedAt                      DateTime                  @updatedAt
+  tenant                         Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact                        Contact                   @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  department                     Department?               @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignedMembership             TenantMembership?         @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  connection                     MessagingConnection?      @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
+  messages                       Message[]
+  participants                   ConversationParticipant[]
+  tickets                        Ticket[]
+  lead                           Lead?
 
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])
@@ -1207,6 +1548,7 @@ model MessagingConnection {
   externalReference         String?
   ownerExternalId           String?
   ownerPhoneNormalized      String?
+  connectionErrorCode       String?
   groupsLastSyncedAt        DateTime?
   groupsSyncStatus          String?                   @default("IDLE")
   groupsSyncError           String?
@@ -1260,7 +1602,6 @@ model MessagingHistoryImport {
 
 model QuickReply {
   messages              Json?
-  intervalSeconds       Int               @default(0)
   id                    String            @id @default(uuid())
   tenantId              String
   title                 String
@@ -1272,6 +1613,7 @@ model QuickReply {
   attachmentSize        Int?
   attachmentDataUrl     String?
   closeOnSend           Boolean           @default(false)
+  active                Boolean           @default(true)
   departmentId          String?
   createdByMembershipId String?
   archivedAt            DateTime?
@@ -1284,6 +1626,7 @@ model QuickReply {
   @@unique([tenantId, departmentId, normalizedShortcut])
   @@unique([tenantId, id])
   @@index([tenantId, archivedAt])
+  @@index([tenantId, active, archivedAt])
   @@index([tenantId, departmentId])
   @@map("quick_replies")
 }
@@ -1298,40 +1641,51 @@ model TicketProtocolCounter {
 }
 
 model Ticket {
-  id                       String             @id @default(uuid())
+  id                       String              @id @default(uuid())
   tenantId                 String
   number                   Int
   protocol                 String
   title                    String
   descriptionText          String
   descriptionHtmlSanitized String
-  status                   TicketStatus       @default(ABERTO)
-  priority                 TicketPriority     @default(NORMAL)
-  category                 TicketCategory     @default(SUPORTE)
+  status                   TicketStatus        @default(ABERTO)
+  priority                 TicketPriority      @default(NORMAL)
+  category                 TicketCategory      @default(SUPORTE)
   requesterUserId          String?
   requesterContactId       String?
   customerId               String?
+  customerDepartmentId     String?
+  originBranchId           String?
   conversationId           String?
-  departmentId             String
+  departmentId             String?
   assignedMembershipId     String?
-  createdByMembershipId    String
+  createdByMembershipId    String?
+  createdByNameSnapshot    String?
   closedByMembershipId     String?
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
   closedAt                 DateTime?
+  startedAt                DateTime?
+  approvedAt               DateTime?
+  solvedAt                 DateTime?
+  validatedAt              DateTime?
+  substatus                TicketSubstatus?
   archivedAt               DateTime?
-  tenant                   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  requesterUser            User?              @relation(fields: [requesterUserId], references: [id], onDelete: SetNull)
-  requesterContact         Contact?           @relation(fields: [requesterContactId], references: [id], onDelete: SetNull)
-  customer                 Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  conversation             Conversation?      @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Restrict)
-  department               Department         @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Restrict)
-  assignedMembership       TenantMembership?  @relation("TicketAssignee", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
-  createdByMembership      TenantMembership   @relation("TicketCreator", fields: [createdByMembershipId], references: [id], onDelete: Restrict)
-  closedByMembership       TenantMembership?  @relation("TicketCloser", fields: [closedByMembershipId], references: [id], onDelete: SetNull)
+  tenant                   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requesterUser            User?               @relation(fields: [requesterUserId], references: [id], onDelete: SetNull)
+  requesterContact         Contact?            @relation(fields: [requesterContactId], references: [id], onDelete: SetNull)
+  customer                 Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerDepartment       CustomerDepartment? @relation(fields: [customerDepartmentId], references: [id], onDelete: SetNull)
+  originBranch             CustomerBranch?     @relation(fields: [originBranchId], references: [id], onDelete: SetNull)
+  conversation             Conversation?       @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Restrict)
+  department               Department?         @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: SetNull)
+  assignedMembership       TenantMembership?   @relation("TicketAssignee", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  createdByMembership      TenantMembership?   @relation("TicketCreator", fields: [createdByMembershipId], references: [id], onDelete: SetNull)
+  closedByMembership       TenantMembership?   @relation("TicketCloser", fields: [closedByMembershipId], references: [id], onDelete: SetNull)
   comments                 TicketComment[]
   history                  TicketHistory[]
   attachments              TicketAttachment[]
+  approvals                TicketApproval[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])
@@ -1342,6 +1696,8 @@ model Ticket {
   @@index([tenantId, createdAt])
   @@index([tenantId, requesterContactId])
   @@index([tenantId, customerId])
+  @@index([tenantId, customerDepartmentId])
+  @@index([tenantId, originBranchId])
   @@index([tenantId, conversationId])
   @@map("tickets")
 }
@@ -1350,22 +1706,58 @@ model TicketComment {
   id                 String             @id @default(uuid())
   tenantId           String
   ticketId           String
-  authorMembershipId String
+  authorMembershipId String?
+  authorNameSnapshot String?
   bodyText           String
   bodyHtmlSanitized  String?
   internal           Boolean            @default(true)
+  dialogType         TicketDialogType   @default(RESPONSE)
+  editedAt           DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
   archivedAt         DateTime?
   tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ticket             Ticket             @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
-  authorMembership   TenantMembership   @relation(fields: [authorMembershipId], references: [id], onDelete: Restrict)
+  authorMembership   TenantMembership?  @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
   attachments        TicketAttachment[]
+  requestedApprovals TicketApproval[]   @relation("TicketApprovalRequestComment")
+  decidedApprovals   TicketApproval[]   @relation("TicketApprovalDecisionComment")
 
   @@unique([tenantId, id])
   @@index([tenantId, ticketId, createdAt])
   @@index([authorMembershipId])
   @@map("ticket_comments")
+}
+
+model TicketApproval {
+  id                      String               @id @default(uuid())
+  tenantId                String
+  ticketId                String
+  kind                    TicketApprovalKind
+  status                  TicketApprovalStatus @default(PENDING)
+  requestedByMembershipId String?
+  requestedByNameSnapshot String?
+  approverMembershipId    String?
+  approverContactId       String?
+  requestCommentId        String?
+  decisionCommentId       String?
+  requestedAt             DateTime             @default(now())
+  decidedAt               DateTime?
+  tenant                  Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket                  Ticket               @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
+  requestedByMembership   TenantMembership?    @relation("TicketApprovalRequester", fields: [requestedByMembershipId], references: [id], onDelete: SetNull)
+  approverMembership      TenantMembership?    @relation("TicketApprovalAssignee", fields: [approverMembershipId], references: [id], onDelete: SetNull)
+  decidedByMembership     TenantMembership?    @relation("TicketApprovalDecider", fields: [decidedByMembershipId], references: [id], onDelete: SetNull)
+  approverContact         Contact?             @relation(fields: [approverContactId], references: [id], onDelete: SetNull)
+  requestComment          TicketComment?       @relation("TicketApprovalRequestComment", fields: [requestCommentId], references: [id], onDelete: SetNull)
+  decisionComment         TicketComment?       @relation("TicketApprovalDecisionComment", fields: [decisionCommentId], references: [id], onDelete: SetNull)
+  decidedByMembershipId   String?
+
+  @@unique([tenantId, id])
+  @@index([tenantId, ticketId, requestedAt])
+  @@index([tenantId, approverMembershipId, status])
+  @@index([tenantId, approverContactId, status])
+  @@map("ticket_approvals")
 }
 
 model TicketHistory {
@@ -1392,7 +1784,8 @@ model TicketAttachment {
   tenantId               String
   ticketId               String
   commentId              String?
-  uploadedByMembershipId String
+  uploadedByMembershipId String?
+  uploadedByNameSnapshot String?
   storageProvider        String
   objectKey              String
   originalNameSanitized  String
@@ -1406,7 +1799,7 @@ model TicketAttachment {
   tenant                 Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ticket                 Ticket                 @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
   comment                TicketComment?         @relation(fields: [tenantId, commentId], references: [tenantId, id], onDelete: Restrict)
-  uploadedByMembership   TenantMembership       @relation(fields: [uploadedByMembershipId], references: [id], onDelete: Restrict)
+  uploadedByMembership   TenantMembership?      @relation(fields: [uploadedByMembershipId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, id])
   @@index([tenantId, ticketId, createdAt])
@@ -1442,6 +1835,7 @@ model UserInvitation {
   status                UserInvitationStatus @default(PENDING)
   expiresAt             DateTime
   invitedByMembershipId String?
+  contactId             String?
   acceptedAt            DateTime?
   revokedAt             DateTime?
   createdAt             DateTime             @default(now())
@@ -1449,10 +1843,12 @@ model UserInvitation {
   tenant                Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   role                  Role                 @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Restrict)
   invitedByMembership   TenantMembership?    @relation("InvitationSender", fields: [invitedByMembershipId], references: [id], onDelete: SetNull)
+  contact               Contact?             @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   @@unique([tokenHash])
   @@index([tenantId, status])
   @@index([expiresAt])
+  @@index([tenantId, contactId, status])
   @@map("user_invitations")
 }
 
@@ -1514,7 +1910,7 @@ model Notification {
   readAt       DateTime?
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   membership   TenantMembership?  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  department   Department?        @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Cascade)
+  department   Department?        @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: SetNull)
 
   @@unique([tenantId, id])
   @@index([tenantId, membershipId, status, createdAt])
@@ -1567,7 +1963,8 @@ model Campaign {
   completedAt             DateTime?
   cancelledAt             DateTime?
   cancelledByMembershipId String?
-  createdByMembershipId   String
+  createdByMembershipId   String?
+  createdByNameSnapshot   String?
   archivedAt              DateTime?
   version                 Int                   @default(1)
   totalCount              Int                   @default(0)
@@ -1587,7 +1984,7 @@ model Campaign {
   updatedAt               DateTime              @updatedAt
   tenant                  Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   connection              MessagingConnection   @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
-  createdByMembership     TenantMembership      @relation("CampaignCreator", fields: [createdByMembershipId], references: [id], onDelete: Restrict)
+  createdByMembership     TenantMembership?     @relation("CampaignCreator", fields: [createdByMembershipId], references: [id], onDelete: SetNull)
   cancelledByMembership   TenantMembership?     @relation("CampaignCanceller", fields: [cancelledByMembershipId], references: [id], onDelete: SetNull)
   recipients              CampaignRecipient[]
   messages                Message[]

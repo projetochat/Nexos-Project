@@ -1,13 +1,8 @@
 import type { ApiQuickReply, QuickReplyMessage } from "./trixus-api";
 
-export function assertQuickReplySaved(
-  saved: ApiQuickReply,
-  expected: QuickReplyMessage[],
-  intervalSeconds: number,
-) {
+export function assertQuickReplySaved(saved: ApiQuickReply, expected: QuickReplyMessage[]) {
   const matches =
     saved?.messages?.length === expected.length &&
-    saved.intervalSeconds === intervalSeconds &&
     expected.every((item, index) => {
       const actual = saved.messages![index];
       return (
@@ -41,12 +36,24 @@ export function quickReplyMessages(reply: ApiQuickReply): QuickReplyMessage[] {
   ];
 }
 
-export type SequenceItem = QuickReplyMessage & { clientMessageId: string; messageId?: string };
+export type SequenceItem = QuickReplyMessage & {
+  clientMessageId: string;
+  /** Raw template is resolved by the backend when this individual item is enqueued. */
+  templateText?: string;
+};
 export type SequenceDraft = {
   items: SequenceItem[];
   next: number;
   closeAfter: boolean;
 };
+
+export function quickReplyAttachmentMediaType(mimeType: string) {
+  if (mimeType.startsWith("image/")) return "image" as const;
+  if (mimeType.startsWith("video/")) return "video" as const;
+  if (mimeType.startsWith("audio/")) return "voice" as const;
+  return "document" as const;
+}
+
 export function createSequence(
   reply: ApiQuickReply,
   resolveText: (text: string) => string = (text) => text,
@@ -55,6 +62,7 @@ export function createSequence(
     items: quickReplyMessages(reply).map((item) => ({
       ...item,
       text: resolveText(item.text),
+      templateText: item.text,
       clientMessageId: crypto.randomUUID(),
     })),
     next: 0,
@@ -62,57 +70,27 @@ export function createSequence(
   };
 }
 
-export function waitForSequence(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) return reject(new Error("Envio interrompido."));
-    const cancel = () => {
-      clearTimeout(timer);
-      reject(new Error("Envio interrompido."));
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", cancel);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", cancel, { once: true });
-  });
-}
-
 const activeSequences = new WeakSet<SequenceItem[]>();
 
-// Keep IDs and the confirmed cursor in the draft so retrying cannot resend earlier items.
+// Keep stable IDs and the accepted cursor so retrying cannot resend earlier items.
 export async function sendSequence(
   draft: SequenceDraft,
   signal: AbortSignal,
   transport: {
     send: (item: SequenceItem) => Promise<{ id: string; status: string }>;
-    get: (id: string) => Promise<{ id: string; status: string }>;
     progress: (sent: number) => void;
-    wait?: (ms: number, signal: AbortSignal) => Promise<void>;
   },
 ) {
   if (activeSequences.has(draft.items))
     throw new Error("Aguarde a conclusão do envio em andamento para continuar.");
   activeSequences.add(draft.items);
   try {
-    const wait = transport.wait ?? waitForSequence;
     while (draft.next < draft.items.length) {
       if (signal.aborted) throw new Error("Envio interrompido.");
       const item = draft.items[draft.next];
-      let result = item.messageId
-        ? await transport.get(item.messageId)
-        : await transport.send(item);
-      item.messageId = result.id;
-      let polls = 0;
-      while (!["sent", "delivered", "read"].includes(result.status)) {
-        if (result.status === "failed")
-          throw new Error(`A mensagem ${draft.next + 1} falhou. A sequência foi interrompida.`);
-        if (++polls > 120)
-          throw new Error(
-            "O envio ainda não foi confirmado. Clique em Continuar para verificar e retomar a sequência.",
-          );
-        await wait(1000, signal);
-        result = await transport.get(item.messageId);
-      }
+      const result = await transport.send(item);
+      if (result.status === "failed")
+        throw new Error(`A mensagem ${draft.next + 1} falhou. A sequência foi interrompida.`);
       draft.next++;
       transport.progress(draft.next);
     }

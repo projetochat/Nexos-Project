@@ -16,7 +16,7 @@ function fixture() {
     campaignId: "c",
     status: "PENDING",
     campaign,
-    contact: { messagingPreferences: [] },
+    contact: { active: true, messagingPreferences: [] },
     messageId: null as string | null,
     processingAt: new Date("2026-01-01T00:00:00.000Z"),
     lastErrorCode: null as string | null,
@@ -169,6 +169,22 @@ describe("campaign recovery without duplicate dispatch", () => {
     expect(create).toHaveBeenCalledTimes(2);
     expect(f.outbox.dispatchMessage).toHaveBeenCalledTimes(1);
     expect(await f.service.dispatchRecipient("c", "r", 3)).toEqual({ skipped: true });
+  });
+  it("revalidates an inactive contact before dispatch and classifies it as blocked", async () => {
+    const f = fixture();
+    f.recipient.status = "QUEUED";
+    f.recipient.contact.active = false;
+    const create = vi.spyOn(f.internals, "createCampaignMessage");
+
+    await expect(f.service.dispatchRecipient("c", "r", 1)).resolves.toEqual({
+      skipped: true,
+      reason: "BLOCKED",
+    });
+
+    expect(f.recipient.status).toBe("SKIPPED");
+    expect(f.count).toHaveBeenCalledWith("c", { skippedCount: 1, blockedCount: 1 });
+    expect(create).not.toHaveBeenCalled();
+    expect(f.outbox.dispatchMessage).not.toHaveBeenCalled();
   });
   it("keeps a crash after claim but before the creation transaction safe to retry", async () => {
     const f = fixture();

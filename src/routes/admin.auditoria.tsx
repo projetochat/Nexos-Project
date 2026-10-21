@@ -2,6 +2,7 @@ import * as React from "react";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { ShieldAlert } from "lucide-react";
 import { Avatar, Card, SearchInput, SectionHeader } from "@/components/ui-kit";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { fmtDateTime } from "@/lib/format";
 import { platformApi, type PlatformAuditLog } from "@/lib/trixus-api";
 
@@ -43,12 +44,15 @@ export function AuditoriaSettingsContent() {
         }
       />
       <Card>
-        <SearchInput
-          value={q}
-          onChange={setQ}
-          placeholder="Ação, ator ou tenant..."
-          className="mb-4 max-w-md"
-        />
+        <div className="mb-4 flex max-w-[31.5rem] items-end gap-3">
+          <SearchInput
+            value={q}
+            onChange={setQ}
+            placeholder="Ação, ator ou tenant..."
+            className="min-w-0 flex-1"
+          />
+          {q && <ClearFiltersButton onClick={() => setQ("")} />}
+        </div>
         {error && <div className="mb-4 text-sm text-destructive">{error}</div>}
         <div className="divide-y divide-border">
           {filtered.map((row) => (

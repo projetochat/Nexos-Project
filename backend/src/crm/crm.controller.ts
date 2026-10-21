@@ -27,8 +27,12 @@ import {
 } from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
+import {
+  canReadContactAdditionalFields,
+  projectContactAdditionalFields,
+} from "../auth/contact-additional-fields-access";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import {
   ContactCompanyRole,
@@ -38,10 +42,15 @@ import {
   Prisma,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizeRegistrationText } from "../common/registration-case";
+import {
+  ConfirmDeletionDto,
+  type DeletionImpactPreview,
+  deletionSnapshot,
+} from "../common/deletion-impact";
 import {
   isHtmlContactCustomField,
   sanitizeContactCustomFieldHtml,
-  sanitizeContactCustomFieldValueForOutput,
 } from "./contact-custom-field-html";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
@@ -49,7 +58,9 @@ import { ContactProfilePictureSyncService } from "../messaging/contact-profile-p
 import { EvolutionClient } from "../messaging/evolution/evolution.client";
 import { CreateContactDto } from "./dto/create-contact.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
+import { CustomerBranchDto, CustomerDepartmentDto } from "./dto/customer-structure.dto";
 import { ListContactsQueryDto } from "./dto/list-contacts-query.dto";
+import { ListCustomersQueryDto } from "./dto/list-customers-query.dto";
 import { PaginationDto } from "./dto/pagination.dto";
 import { UpdateContactDto } from "./dto/update-contact.dto";
 import { UpdateCustomerDto } from "./dto/update-customer.dto";
@@ -58,6 +69,14 @@ import {
   groupContactIdentityFromPhone,
   normalizePhone,
 } from "./phone-normalization";
+import {
+  contactCustomFieldVariableKey,
+  isNativeContactFieldName,
+  isNativeMessageVariableKey,
+  normalizeContactCustomFieldName,
+} from "./contact-custom-field-identity";
+import { ConversationPurgeService } from "../conversations/conversation-purge.service";
+import { LocationsService } from "../locations/locations.service";
 
 class ContactCatalogDto {
   @IsOptional()
@@ -196,14 +215,25 @@ class BulkUpdateContactsDto {
 }
 const customerInclude = {
   contacts: { where: { archivedAt: null }, select: { id: true } },
+  branches: { where: { archivedAt: null }, orderBy: { name: "asc" as const } },
+  customerDepartments: {
+    where: { archivedAt: null },
+    orderBy: { name: "asc" as const },
+    include: { managerContact: { select: { id: true, name: true } } },
+  },
 } satisfies Prisma.CustomerInclude;
 
 const contactInclude = {
   customer: { select: { id: true, name: true, color: true } },
+  customerBranch: { select: { id: true, name: true, city: true, state: true } },
+  customerDepartment: { select: { id: true, name: true } },
   contactDepartment: { select: { id: true, name: true, color: true } },
   contactProfile: { select: { id: true, name: true, color: true } },
   tags: { include: { tag: true } },
-  customFieldValues: { include: { field: true } },
+  customFieldValues: {
+    where: { field: { archivedAt: null } },
+    include: { field: true },
+  },
 } satisfies Prisma.ContactInclude;
 
 const agendaImportedContactSelect = {
@@ -229,16 +259,23 @@ export class CrmController {
     @Inject(ContactProfilePictureSyncService)
     private readonly profilePictures: ContactProfilePictureSyncService,
     @Inject(EvolutionClient) private readonly evolution: EvolutionClient,
+    @Inject(ConversationPurgeService) private readonly conversationPurge: ConversationPurgeService,
+    @Inject(LocationsService) private readonly locations: LocationsService,
   ) {}
 
   @Get("customers")
   @RequirePermissions("contacts.read")
-  async listCustomers(@Query() query: PaginationDto, @CurrentUser() current: AuthenticatedUser) {
+  async listCustomers(
+    @Query() query: ListCustomersQueryDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
     const { page, pageSize, skip } = pagination(query);
     const q = query.q?.trim();
     const where: Prisma.CustomerWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
+      ...(query.personType ? { personType: query.personType } : {}),
+      ...(query.status ? { status: query.status } : {}),
       ...(q
         ? {
             OR: [
@@ -246,6 +283,7 @@ export class CrmController {
               { email: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
               { responsibleContactName: { contains: q, mode: "insensitive" } },
+              { document: { contains: q, mode: "insensitive" } },
             ],
           }
         : {}),
@@ -280,16 +318,38 @@ export class CrmController {
   @Post("customers")
   @RequirePermissions("contacts.create")
   async createCustomer(@Body() dto: CreateCustomerDto, @CurrentUser() current: AuthenticatedUser) {
-    await this.assertCustomerNameAvailable(dto.name, current.tenantId);
+    const name = await normalizeRegistrationText(
+      this.prisma,
+      current.tenantId,
+      "contactCompanies",
+      dto.name,
+    );
+    await this.assertCustomerNameAvailable(name, current.tenantId);
+    const location = dto.cityId ? await this.locations.resolveCity(dto.cityId) : null;
     const customer = await this.prisma.customer.create({
       data: {
         tenantId: current.tenantId,
-        name: dto.name.trim(),
+        name,
+        personType: dto.personType,
+        status: dto.status,
         email: normalizeNullableEmail(dto.email),
         phone: cleanNullable(dto.phone),
         notes: cleanNullable(dto.notes),
         responsibleContactName: cleanNullable(dto.responsibleContactName),
         color: dto.color ?? "#3B82F6",
+        legalName: cleanNullable(dto.legalName),
+        document: cleanNullable(dto.document),
+        addressFullEnabled: dto.addressFullEnabled,
+        postalCode: cleanNullable(dto.postalCode),
+        street: cleanNullable(dto.street),
+        addressNumber: cleanNullable(dto.addressNumber),
+        addressWithoutNumber: dto.addressWithoutNumber,
+        complement: cleanNullable(dto.complement),
+        neighborhood: cleanNullable(dto.neighborhood),
+        cityId: location?.cityId,
+        city: location?.city ?? cleanNullable(dto.city),
+        state: location?.state ?? cleanNullable(dto.state)?.toUpperCase(),
+        country: location?.country ?? cleanNullable(dto.country),
       },
       include: customerInclude,
     });
@@ -304,16 +364,38 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findCustomerOrThrow(id, current.tenantId);
-    if (dto.name) await this.assertCustomerNameAvailable(dto.name, current.tenantId, id);
+    const name = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "contactCompanies", dto.name)
+      : undefined;
+    if (name) await this.assertCustomerNameAvailable(name, current.tenantId, id);
+    const location =
+      typeof dto.cityId === "string" ? await this.locations.resolveCity(dto.cityId) : null;
     const customer = await this.prisma.customer.update({
       where: { id },
       data: {
-        name: dto.name?.trim(),
+        name,
+        personType: dto.personType,
+        status: dto.status,
         email: normalizeEmailUpdate(dto.email),
         phone: nullableUpdate(dto.phone),
         notes: nullableUpdate(dto.notes),
         responsibleContactName: nullableUpdate(dto.responsibleContactName),
         color: dto.color,
+        legalName: nullableUpdate(dto.legalName),
+        document: nullableUpdate(dto.document),
+        addressFullEnabled: dto.addressFullEnabled,
+        postalCode: nullableUpdate(dto.postalCode),
+        street: nullableUpdate(dto.street),
+        addressNumber: nullableUpdate(dto.addressNumber),
+        addressWithoutNumber: dto.addressWithoutNumber,
+        complement: nullableUpdate(dto.complement),
+        neighborhood: nullableUpdate(dto.neighborhood),
+        cityId: dto.cityId === undefined ? undefined : (location?.cityId ?? null),
+        city: location?.city ?? nullableUpdate(dto.city),
+        state:
+          location?.state ??
+          (dto.state === undefined ? undefined : cleanNullable(dto.state)?.toUpperCase()),
+        country: location?.country ?? nullableUpdate(dto.country),
       },
       include: customerInclude,
     });
@@ -358,9 +440,183 @@ export class CrmController {
     });
     return contacts.map((contact) =>
       this.serializeContact(contact, {
-        includeAdditionalFields: this.canReadAdditionalFields(current),
+        additionalFieldsViewer: current,
       }),
     );
+  }
+
+  @Get("customers/:id/branches")
+  @RequirePermissions("contacts.read")
+  async listCustomerBranches(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    await this.findCustomerOrThrow(id, current.tenantId);
+    return this.prisma.customerBranch.findMany({
+      where: { tenantId: current.tenantId, customerId: id, archivedAt: null },
+      orderBy: [{ name: "asc" }],
+    });
+  }
+
+  @Post("customers/:id/branches")
+  @RequirePermissions("contacts.create")
+  async createCustomerBranch(
+    @Param("id") id: string,
+    @Body() dto: CustomerBranchDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerOrThrow(id, current.tenantId);
+    const archived = await this.prisma.customerBranch.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        customerId: id,
+        name: dto.name.trim(),
+        archivedAt: { not: null },
+      },
+      select: { id: true },
+    });
+    if (archived) {
+      return this.prisma.customerBranch.update({
+        where: { id: archived.id },
+        data: {
+          city: dto.city.trim(),
+          state: dto.state.trim().toUpperCase(),
+          status: dto.status ?? "ACTIVE",
+          archivedAt: null,
+        },
+      });
+    }
+    return this.prisma.customerBranch.create({
+      data: {
+        tenantId: current.tenantId,
+        customerId: id,
+        name: dto.name.trim(),
+        city: dto.city.trim(),
+        state: dto.state.trim().toUpperCase(),
+        status: dto.status,
+      },
+    });
+  }
+
+  @Patch("customers/:id/branches/:branchId")
+  @RequirePermissions("contacts.update")
+  async updateCustomerBranch(
+    @Param("id") id: string,
+    @Param("branchId") branchId: string,
+    @Body() dto: CustomerBranchDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerBranchOrThrow(id, branchId, current.tenantId);
+    return this.prisma.customerBranch.update({
+      where: { id: branchId },
+      data: {
+        name: dto.name.trim(),
+        city: dto.city.trim(),
+        state: dto.state.trim().toUpperCase(),
+        status: dto.status,
+      },
+    });
+  }
+
+  @Delete("customers/:id/branches/:branchId")
+  @RequirePermissions("contacts.delete")
+  async deleteCustomerBranch(
+    @Param("id") id: string,
+    @Param("branchId") branchId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerBranchOrThrow(id, branchId, current.tenantId);
+    return this.prisma.customerBranch.update({
+      where: { id: branchId },
+      data: { archivedAt: new Date() },
+    });
+  }
+
+  @Get("customers/:id/departments")
+  @RequirePermissions("contacts.read")
+  async listCustomerDepartments(
+    @Param("id") id: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerOrThrow(id, current.tenantId);
+    return this.prisma.customerDepartment.findMany({
+      where: { tenantId: current.tenantId, customerId: id, archivedAt: null },
+      include: { managerContact: { select: { id: true, name: true } } },
+      orderBy: [{ name: "asc" }],
+    });
+  }
+
+  @Post("customers/:id/departments")
+  @RequirePermissions("contacts.create")
+  async createCustomerDepartment(
+    @Param("id") id: string,
+    @Body() dto: CustomerDepartmentDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerOrThrow(id, current.tenantId);
+    await this.assertCustomerManager(dto.managerContactId, id, current.tenantId);
+    const archived = await this.prisma.customerDepartment.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        customerId: id,
+        name: dto.name.trim(),
+        archivedAt: { not: null },
+      },
+      select: { id: true },
+    });
+    if (archived) {
+      return this.prisma.customerDepartment.update({
+        where: { id: archived.id },
+        data: {
+          managerContactId: dto.managerContactId ?? null,
+          active: dto.active ?? true,
+          archivedAt: null,
+        },
+        include: { managerContact: { select: { id: true, name: true } } },
+      });
+    }
+    return this.prisma.customerDepartment.create({
+      data: {
+        tenantId: current.tenantId,
+        customerId: id,
+        name: dto.name.trim(),
+        managerContactId: dto.managerContactId ?? null,
+        active: dto.active ?? true,
+      },
+      include: { managerContact: { select: { id: true, name: true } } },
+    });
+  }
+
+  @Patch("customers/:id/departments/:departmentId")
+  @RequirePermissions("contacts.update")
+  async updateCustomerDepartment(
+    @Param("id") id: string,
+    @Param("departmentId") departmentId: string,
+    @Body() dto: CustomerDepartmentDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerDepartmentOrThrow(id, departmentId, current.tenantId);
+    await this.assertCustomerManager(dto.managerContactId, id, current.tenantId);
+    return this.prisma.customerDepartment.update({
+      where: { id: departmentId },
+      data: {
+        name: dto.name.trim(),
+        managerContactId: dto.managerContactId === undefined ? undefined : dto.managerContactId,
+        active: dto.active,
+      },
+      include: { managerContact: { select: { id: true, name: true } } },
+    });
+  }
+
+  @Delete("customers/:id/departments/:departmentId")
+  @RequirePermissions("contacts.delete")
+  async deleteCustomerDepartment(
+    @Param("id") id: string,
+    @Param("departmentId") departmentId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findCustomerDepartmentOrThrow(id, departmentId, current.tenantId);
+    return this.prisma.customerDepartment.update({
+      where: { id: departmentId },
+      data: { archivedAt: new Date() },
+    });
   }
 
   @Get("contacts")
@@ -371,6 +627,48 @@ export class CrmController {
   ) {
     const { page, pageSize, skip } = pagination(query);
     const where = await this.buildContactListWhere(query, current.tenantId);
+    const orderBy = contactListOrderBy(query.sortBy);
+
+    if (query.sortBy === "instance") {
+      const [orderRows, total, connections] = await this.prisma.$transaction([
+        this.prisma.contact.findMany({
+          where,
+          select: { id: true, name: true, instance: true, instanceIds: true, createdAt: true },
+        }),
+        this.prisma.contact.count({ where }),
+        this.prisma.messagingConnection.findMany({
+          where: { tenantId: current.tenantId, archivedAt: null },
+          select: { id: true, name: true, externalReference: true },
+        }),
+      ]);
+      const pageIds = orderContactIdsByInstance(orderRows, connections).slice(
+        skip,
+        skip + pageSize,
+      );
+      const unorderedItems = pageIds.length
+        ? await this.prisma.contact.findMany({
+            where: { AND: [where, { id: { in: pageIds } }] },
+            include: contactInclude,
+          })
+        : [];
+      const byId = new Map(unorderedItems.map((contact) => [contact.id, contact]));
+      const items = pageIds.flatMap((id) => {
+        const contact = byId.get(id);
+        return contact ? [contact] : [];
+      });
+
+      this.profilePictures.enqueueMissing({ tenantId: current.tenantId, contacts: items });
+      return paginated(
+        items.map((contact) =>
+          this.serializeContact(contact, {
+            additionalFieldsViewer: current,
+          }),
+        ),
+        total,
+        page,
+        pageSize,
+      );
+    }
 
     if (query.priorityInstance?.trim()) {
       const priorityKeys = await this.resolveInstanceFilterKeys(
@@ -395,14 +693,14 @@ export class CrmController {
       const [priorityItems, regularItems] = await this.prisma.$transaction([
         this.prisma.contact.findMany({
           where: priorityWhere,
-          orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+          orderBy,
           skip: prioritySkip,
           take: priorityTake,
           include: contactInclude,
         }),
         this.prisma.contact.findMany({
           where: regularWhere,
-          orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+          orderBy,
           skip: regularSkip,
           take: regularTake,
           include: contactInclude,
@@ -418,7 +716,7 @@ export class CrmController {
       return paginated(
         items.map((contact) =>
           this.serializeContact(contact, {
-            includeAdditionalFields: this.canReadAdditionalFields(current),
+            additionalFieldsViewer: current,
           }),
         ),
         total,
@@ -430,7 +728,7 @@ export class CrmController {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.contact.findMany({
         where,
-        orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+        orderBy,
         skip,
         take: pageSize,
         include: contactInclude,
@@ -446,7 +744,7 @@ export class CrmController {
     return paginated(
       items.map((contact) =>
         this.serializeContact(contact, {
-          includeAdditionalFields: this.canReadAdditionalFields(current),
+          additionalFieldsViewer: current,
         }),
       ),
       total,
@@ -458,7 +756,7 @@ export class CrmController {
   // Keep this endpoint outside `/contacts/:id`: some router builds resolve dynamic
   // contact routes before nested static paths, treating "picker" as a contact id.
   @Get("group-contact-picker")
-  @RequirePermissions("contacts.read")
+  @RequireAnyPermission("contacts.read", "groups.create", "groups.update")
   async listContactsForGroupPicker(
     @Query() query: PaginationDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -473,6 +771,7 @@ export class CrmController {
     const where: Prisma.ContactWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
+      active: true,
       NOT: { normalizedPhone: { startsWith: "group:" } },
       ...(q
         ? {
@@ -507,6 +806,99 @@ export class CrmController {
       page,
       pageSize,
     );
+  }
+
+  @Get("message-contact-picker")
+  @RequirePermissions("messages.send")
+  async listContactsForMessagePicker(
+    @Query() query: ListContactsQueryDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 100));
+    const q = query.q?.trim();
+    const digits = q?.replace(/\D/g, "") ?? "";
+    const accentInsensitiveContactIds = q
+      ? await this.findContactsByAccentInsensitiveText(current.tenantId, q)
+      : [];
+    const where: Prisma.ContactWhereInput = {
+      tenantId: current.tenantId,
+      archivedAt: null,
+      active: true,
+      NOT: { normalizedPhone: { startsWith: "group:" } },
+      ...(q
+        ? {
+            OR: [
+              { id: { in: accentInsensitiveContactIds } },
+              { name: { contains: q, mode: "insensitive" } },
+              { phone: { contains: q, mode: "insensitive" } },
+              ...(digits ? [{ normalizedPhone: { contains: digits } }] : []),
+            ],
+          }
+        : {}),
+    };
+    const priorityInstance = query.priorityInstance?.trim();
+    const [items, total, instance] = await this.prisma.$transaction([
+      this.prisma.contact.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          normalizedPhone: true,
+          avatarUrl: true,
+          instance: true,
+          instanceIds: true,
+        },
+        orderBy: { name: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.contact.count({ where }),
+      this.prisma.messagingConnection.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          archivedAt: null,
+          status: { in: ["CONNECTED", "DISCONNECTED"] },
+          OR: priorityInstance
+            ? [
+                { id: priorityInstance },
+                { externalReference: priorityInstance },
+                { name: priorityInstance },
+              ]
+            : [{ id: "__no-priority-instance__" }],
+        },
+        select: { id: true, name: true, ownerPhoneNormalized: true },
+      }),
+    ]);
+    return {
+      ...paginated(
+        items.map((contact) => ({
+          id: contact.id,
+          nome: contact.name,
+          telefone: contact.phone,
+          normalizedPhone: contact.normalizedPhone,
+          avatar_url: contact.avatarUrl,
+          active: true,
+          instancia: contact.instance,
+          instanceIds: contact.instanceIds.length
+            ? contact.instanceIds
+            : contact.instance
+              ? [contact.instance]
+              : [],
+        })),
+        total,
+        page,
+        pageSize,
+      ),
+      instance: instance
+        ? {
+            id: instance.id,
+            name: instance.name,
+            ownerPhone: instance.ownerPhoneNormalized,
+          }
+        : null,
+    };
   }
 
   @Get("contacts/options")
@@ -569,47 +961,38 @@ export class CrmController {
   }
 
   @Post("contact-custom-fields")
-  @RequirePermissions("contacts.create")
+  @RequirePermissions("contacts.create", "contacts.additional_fields.read")
   async createContactCustomField(
     @Body() dto: ContactCustomFieldDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const data = this.prepareContactCustomField(dto);
     await this.assertContactCustomFieldNameAvailable(data.label!, current.tenantId);
-    await this.prisma.contactCustomField.updateMany({
-      where: {
-        tenantId: current.tenantId,
-        normalizedName: data.normalizedName!,
-        archivedAt: { not: null },
-      },
-      data: { normalizedName: `${data.normalizedName}__archived__${Date.now()}` },
-    });
     const lastField = await this.prisma.contactCustomField.findFirst({
       where: { tenantId: current.tenantId, archivedAt: null },
       orderBy: { position: "desc" },
       select: { position: true },
     });
     const position = (lastField?.position ?? -1) + 1;
-    const field = await this.prisma.contactCustomField.create({
-      data: {
-        tenantId: current.tenantId,
-        label: data.label!,
-        normalizedName: data.normalizedName!,
-        type: data.type!,
-        required: data.required ?? false,
-        mask: data.mask,
-        note: data.note,
-        tabName: data.tabName!,
-        groupName: data.groupName!,
-        options: data.options,
-        position,
-      },
+    const field = await this.createContactCustomFieldWithConflictMapping({
+      tenantId: current.tenantId,
+      label: data.label!,
+      normalizedName: data.normalizedName!,
+      variableKey: data.variableKey!,
+      type: data.type!,
+      required: data.required ?? false,
+      mask: data.mask,
+      note: data.note,
+      tabName: data.tabName!,
+      groupName: data.groupName!,
+      options: data.options,
+      position,
     });
     return this.serializeContactCustomField(field);
   }
 
   @Patch("contact-custom-fields/reorder")
-  @RequirePermissions("contacts.update")
+  @RequirePermissions("contacts.update", "contacts.additional_fields.read")
   async reorderContactCustomFields(
     @Body() dto: ReorderContactCustomFieldsDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -636,7 +1019,7 @@ export class CrmController {
   }
 
   @Patch("contact-custom-fields/:id")
-  @RequirePermissions("contacts.update")
+  @RequirePermissions("contacts.update", "contacts.additional_fields.read")
   async updateContactCustomField(
     @Param("id") id: string,
     @Body() dto: ContactCustomFieldDto,
@@ -645,28 +1028,188 @@ export class CrmController {
     await this.findContactCustomFieldOrThrow(id, current.tenantId);
     if (dto.label)
       await this.assertContactCustomFieldNameAvailable(dto.label, current.tenantId, id);
-    const field = await this.prisma.contactCustomField.update({
-      where: { id },
-      data: this.prepareContactCustomField(dto, true),
-    });
+    let field;
+    try {
+      field = await this.prisma.contactCustomField.update({
+        where: { id },
+        data: this.prepareContactCustomField(dto, true),
+      });
+    } catch (error) {
+      this.rethrowContactCustomFieldUniqueConflict(error);
+      throw error;
+    }
     return this.serializeContactCustomField(field);
   }
 
   @Delete("contact-custom-fields/:id")
-  @RequirePermissions("contacts.delete")
+  @RequirePermissions("contacts.delete", "contacts.additional_fields.read")
   async deleteContactCustomField(
     @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    const currentField = await this.findContactCustomFieldOrThrow(id, current.tenantId);
-    const field = await this.prisma.contactCustomField.update({
-      where: { id },
-      data: {
-        archivedAt: new Date(),
-        normalizedName: `${currentField.normalizedName}__archived__${Date.now()}`,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "contact_custom_fields" WHERE id = ${id} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
+      );
+      const impact = await this.buildCustomFieldDeletionPreview(id, current.tenantId, tx);
+      if (impact.snapshotToken !== dto.snapshotToken) {
+        return {
+          status: "changed" as const,
+          impact,
+          message: "Os usos deste campo mudaram. Revise os dados antes de confirmar novamente.",
+        };
+      }
+      if (impact.blockedReason) throw new BadRequestException(impact.blockedReason);
+      await tx.contactCustomFieldValue.deleteMany({
+        where: { tenantId: current.tenantId, fieldId: id },
+      });
+      await tx.contactCustomField.delete({ where: { id } });
+      return { status: "deleted" as const };
     });
-    return this.serializeContactCustomField(field);
+  }
+
+  @Get("contact-custom-fields/:id/deletion-preview")
+  @RequirePermissions("contacts.delete", "contacts.additional_fields.read")
+  customFieldDeletionPreview(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.buildCustomFieldDeletionPreview(id, current.tenantId);
+  }
+
+  private async buildCustomFieldDeletionPreview(
+    id: string,
+    tenantId: string,
+    db: Pick<
+      Prisma.TransactionClient,
+      | "contactCustomField"
+      | "contactCustomFieldValue"
+      | "quickReply"
+      | "campaign"
+      | "automationRule"
+      | "schedule"
+    > = this.prisma,
+  ): Promise<DeletionImpactPreview> {
+    const field = await db.contactCustomField.findFirst({
+      where: { id, tenantId, archivedAt: null },
+    });
+    if (!field) throw new NotFoundException("Campo adicional não encontrado.");
+    const [values, quickReplies, campaigns, automations, schedules] = await Promise.all([
+      db.contactCustomFieldValue.findMany({
+        where: { tenantId, fieldId: id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, updatedAt: true, contact: { select: { id: true, name: true } } },
+      }),
+      db.quickReply.findMany({
+        where: { tenantId, archivedAt: null },
+        select: { id: true, title: true, content: true, messages: true, updatedAt: true },
+      }),
+      db.campaign.findMany({
+        where: { tenantId, archivedAt: null },
+        select: { id: true, name: true, messageText: true, updatedAt: true },
+      }),
+      db.automationRule.findMany({
+        where: { tenantId, archivedAt: null },
+        select: { id: true, name: true, matchText: true, responseText: true, updatedAt: true },
+      }),
+      db.schedule.findMany({
+        where: { tenantId },
+        select: { id: true, payload: true, updatedAt: true },
+      }),
+    ]);
+    const token = `{{${field.variableKey}}}`;
+    const references = [
+      ...quickReplies
+        .filter((item) => hasDeletionVariableReference([item.content, item.messages], token))
+        .map((item) => ({
+          id: `quick-reply:${item.id}`,
+          label: item.title,
+          kind: "Mensagem rápida",
+          updatedAt: item.updatedAt,
+        })),
+      ...campaigns
+        .filter((item) => hasDeletionVariableReference(item.messageText, token))
+        .map((item) => ({
+          id: `campaign:${item.id}`,
+          label: item.name,
+          kind: "Campanha",
+          updatedAt: item.updatedAt,
+        })),
+      ...automations
+        .filter((item) => hasDeletionVariableReference([item.matchText, item.responseText], token))
+        .map((item) => ({
+          id: `automation:${item.id}`,
+          label: item.name,
+          kind: "Automação",
+          updatedAt: item.updatedAt,
+        })),
+      ...schedules
+        .filter((item) => hasDeletionVariableReference(item.payload, token))
+        .map((item) => ({
+          id: `schedule:${item.id}`,
+          label: item.id,
+          kind: "Agendamento",
+          updatedAt: item.updatedAt,
+        })),
+    ];
+    const blockedReason = references.length
+      ? "Este campo é usado em conteúdos ativos. Remova as variáveis indicadas antes de excluí-lo."
+      : undefined;
+    return {
+      snapshotToken: deletionSnapshot({
+        id: field.id,
+        updatedAt: field.updatedAt,
+        values: values.map((item) => [item.id, item.updatedAt]),
+        references: references.map((item) => [item.id, item.updatedAt]),
+      }),
+      title: "Excluir Campo Adicional?",
+      prompt: blockedReason
+        ? "A exclusão foi bloqueada para não corromper mensagens ou regras que usam esta variável."
+        : "Os valores armazenados para este campo serão excluídos definitivamente.",
+      record: {
+        name: field.label,
+        identifiers: [{ label: "Variável", value: token }],
+      },
+      dependencies: [
+        {
+          id: "values",
+          label: "Valores preenchidos",
+          count: values.length,
+          operation: "delete",
+          operationLabel: "Os valores serão excluídos; os contatos serão preservados.",
+          items: values.slice(0, 10).map((item) => ({
+            id: item.id,
+            label: item.contact.name,
+          })),
+          hasMore: values.length > 10,
+        },
+        {
+          id: "templates",
+          label: "Conteúdos que usam a variável",
+          count: references.length,
+          operation: "unlink",
+          operationLabel: references.length
+            ? "Precisam ser corrigidos manualmente antes da exclusão."
+            : "Nenhum conteúdo textual será afetado.",
+          items: references.slice(0, 10).map((item) => ({
+            id: item.id,
+            label: item.label,
+            description: item.kind,
+          })),
+          hasMore: references.length > 10,
+        },
+      ],
+      consequences: [
+        {
+          id: "field-values",
+          text: "A definição do campo e todos os seus valores serão excluídos definitivamente.",
+          irreversible: true,
+        },
+      ],
+      confirmation: {
+        level: "standard",
+        confirmLabel: "Confirmar",
+      },
+      blockedReason,
+    };
   }
 
   @Patch("contacts/bulk")
@@ -675,6 +1218,7 @@ export class CrmController {
     @Body() dto: BulkUpdateContactsDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    this.assertCanWriteContactAdditionalFields(dto.customFields, current);
     const allFiltered = dto.allFiltered === true;
     const contactIds = Array.from(new Set(dto.contactIds ?? []));
     if (!allFiltered && !contactIds.length)
@@ -759,7 +1303,7 @@ export class CrmController {
   async findContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const contact = await this.findContactOrThrow(id, current.tenantId);
     return this.serializeContact(contact, {
-      includeAdditionalFields: this.canReadAdditionalFields(current),
+      additionalFieldsViewer: current,
     });
   }
 
@@ -1054,6 +1598,7 @@ export class CrmController {
     const rows = await this.prisma.contactDepartment.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
       orderBy: { name: "asc" },
+      include: { _count: { select: { contacts: true } } },
     });
     return rows.map((item) => this.serializeContactCatalog(item));
   }
@@ -1064,19 +1609,49 @@ export class CrmController {
     @Body() dto: ContactCatalogDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    const name = dto.name?.trim();
+    const name = dto.name
+      ? await normalizeRegistrationText(
+          this.prisma,
+          current.tenantId,
+          "contactDepartments",
+          dto.name,
+        )
+      : "";
     if (!name) throw new BadRequestException("Informe o nome.");
     await this.assertContactCatalogNameAvailable("department", name, current.tenantId);
-    const item = await this.prisma.contactDepartment.create({
-      data: {
-        tenantId: current.tenantId,
-        name,
-        normalizedName: normalizeCatalogName(name),
-        description: cleanNullable(dto.description),
-        color: dto.color || "#3B82F6",
-      },
-    });
-    return this.serializeContactCatalog(item);
+    const normalizedName = normalizeCatalogName(name);
+    try {
+      const archived = await this.prisma.contactDepartment.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          normalizedName,
+          archivedAt: { not: null },
+        },
+      });
+      const item = archived
+        ? await this.prisma.contactDepartment.update({
+            where: { id: archived.id },
+            data: {
+              name,
+              normalizedName,
+              description: cleanNullable(dto.description),
+              color: dto.color || "#3B82F6",
+              archivedAt: null,
+            },
+          })
+        : await this.prisma.contactDepartment.create({
+            data: {
+              tenantId: current.tenantId,
+              name,
+              normalizedName,
+              description: cleanNullable(dto.description),
+              color: dto.color || "#3B82F6",
+            },
+          });
+      return this.serializeContactCatalog(item);
+    } catch (error) {
+      handleContactCatalogUniqueError(error, "department", name);
+    }
   }
 
   @Patch("contact-departments/:id")
@@ -1087,13 +1662,21 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.assertContactCatalog("department", id, current.tenantId);
-    if (dto.name)
-      await this.assertContactCatalogNameAvailable("department", dto.name, current.tenantId, id);
+    const name = dto.name
+      ? await normalizeRegistrationText(
+          this.prisma,
+          current.tenantId,
+          "contactDepartments",
+          dto.name,
+        )
+      : undefined;
+    if (name)
+      await this.assertContactCatalogNameAvailable("department", name, current.tenantId, id);
     const item = await this.prisma.contactDepartment.update({
       where: { id },
       data: {
-        name: dto.name?.trim(),
-        normalizedName: dto.name ? normalizeCatalogName(dto.name) : undefined,
+        name,
+        normalizedName: name ? normalizeCatalogName(name) : undefined,
         description: nullableUpdate(dto.description),
         color: dto.color,
       },
@@ -1108,13 +1691,15 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.assertContactCatalog("department", id, current.tenantId);
-    const item = await this.prisma.contactDepartment.update({
-      where: { id },
-      data: { archivedAt: new Date() },
-    });
-    await this.prisma.contact.updateMany({
-      where: { tenantId: current.tenantId, contactDepartmentId: id },
-      data: { contactDepartmentId: null },
+    const item = await this.prisma.$transaction(async (tx) => {
+      await tx.contact.updateMany({
+        where: { tenantId: current.tenantId, contactDepartmentId: id },
+        data: { contactDepartmentId: null },
+      });
+      return tx.contactDepartment.update({
+        where: { id },
+        data: { archivedAt: new Date() },
+      });
     });
     return this.serializeContactCatalog(item);
   }
@@ -1125,6 +1710,7 @@ export class CrmController {
     const rows = await this.prisma.contactProfile.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
       orderBy: { name: "asc" },
+      include: { _count: { select: { contacts: true } } },
     });
     return rows.map((item) => this.serializeContactCatalog(item));
   }
@@ -1135,19 +1721,44 @@ export class CrmController {
     @Body() dto: ContactCatalogDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    const name = dto.name?.trim();
+    const name = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "contactProfiles", dto.name)
+      : "";
     if (!name) throw new BadRequestException("Informe o nome.");
     await this.assertContactCatalogNameAvailable("profile", name, current.tenantId);
-    const item = await this.prisma.contactProfile.create({
-      data: {
-        tenantId: current.tenantId,
-        name,
-        normalizedName: normalizeCatalogName(name),
-        description: cleanNullable(dto.description),
-        color: dto.color || "#3B82F6",
-      },
-    });
-    return this.serializeContactCatalog(item);
+    const normalizedName = normalizeCatalogName(name);
+    try {
+      const archived = await this.prisma.contactProfile.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          normalizedName,
+          archivedAt: { not: null },
+        },
+      });
+      const item = archived
+        ? await this.prisma.contactProfile.update({
+            where: { id: archived.id },
+            data: {
+              name,
+              normalizedName,
+              description: cleanNullable(dto.description),
+              color: dto.color || "#3B82F6",
+              archivedAt: null,
+            },
+          })
+        : await this.prisma.contactProfile.create({
+            data: {
+              tenantId: current.tenantId,
+              name,
+              normalizedName,
+              description: cleanNullable(dto.description),
+              color: dto.color || "#3B82F6",
+            },
+          });
+      return this.serializeContactCatalog(item);
+    } catch (error) {
+      handleContactCatalogUniqueError(error, "profile", name);
+    }
   }
 
   @Patch("contact-profiles/:id")
@@ -1158,13 +1769,15 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.assertContactCatalog("profile", id, current.tenantId);
-    if (dto.name)
-      await this.assertContactCatalogNameAvailable("profile", dto.name, current.tenantId, id);
+    const name = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "contactProfiles", dto.name)
+      : undefined;
+    if (name) await this.assertContactCatalogNameAvailable("profile", name, current.tenantId, id);
     const item = await this.prisma.contactProfile.update({
       where: { id },
       data: {
-        name: dto.name?.trim(),
-        normalizedName: dto.name ? normalizeCatalogName(dto.name) : undefined,
+        name,
+        normalizedName: name ? normalizeCatalogName(name) : undefined,
         description: nullableUpdate(dto.description),
         color: dto.color,
       },
@@ -1176,13 +1789,15 @@ export class CrmController {
   @RequirePermissions("contacts.delete")
   async deleteContactProfile(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.assertContactCatalog("profile", id, current.tenantId);
-    const item = await this.prisma.contactProfile.update({
-      where: { id },
-      data: { archivedAt: new Date() },
-    });
-    await this.prisma.contact.updateMany({
-      where: { tenantId: current.tenantId, contactProfileId: id },
-      data: { contactProfileId: null },
+    const item = await this.prisma.$transaction(async (tx) => {
+      await tx.contact.updateMany({
+        where: { tenantId: current.tenantId, contactProfileId: id },
+        data: { contactProfileId: null },
+      });
+      return tx.contactProfile.update({
+        where: { id },
+        data: { archivedAt: new Date() },
+      });
     });
     return this.serializeContactCatalog(item);
   }
@@ -1190,11 +1805,22 @@ export class CrmController {
   @Post("contacts")
   @RequirePermissions("contacts.create")
   async createContact(@Body() dto: CreateContactDto, @CurrentUser() current: AuthenticatedUser) {
+    this.assertCanWriteContactAdditionalFields(dto.customFields, current);
     await this.entitlements.assertTenantOperational(current.tenantId);
-    await this.entitlements.assertWithinLimit(
+    if (!dto.linkExistingToCustomer) {
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxContacts",
+        await this.prisma.contact.count({
+          where: { tenantId: current.tenantId, archivedAt: null },
+        }),
+      );
+    }
+    const contactName = await normalizeRegistrationText(
+      this.prisma,
       current.tenantId,
-      "maxContacts",
-      await this.prisma.contact.count({ where: { tenantId: current.tenantId, archivedAt: null } }),
+      "contacts",
+      dto.name,
     );
     const links = await this.resolveContactLinks(dto, current.tenantId);
     const normalizedPhone = groupContactIdentityFromPhone(dto.phone) ?? normalizePhone(dto.phone);
@@ -1204,6 +1830,57 @@ export class CrmController {
       include: contactInclude,
     });
     if (existing?.archivedAt === null) {
+      if (dto.linkExistingToCustomer && links.customerId) {
+        if (!current.permissions?.includes("contacts.update")) {
+          throw new ForbiddenException("Permissão insuficiente para vincular o contato existente.");
+        }
+        const requiresCustomerTransfer = Boolean(
+          existing.customerId && existing.customerId !== links.customerId,
+        );
+        if (
+          requiresCustomerTransfer &&
+          (!dto.confirmCustomerTransfer || dto.expectedCustomerId !== existing.customerId)
+        ) {
+          await this.throwContactCustomerTransferRequired(
+            existing,
+            links.customerId,
+            current.tenantId,
+          );
+        }
+        const linked = await this.prisma.contact.updateMany({
+          where: {
+            id: existing.id,
+            tenantId: current.tenantId,
+            archivedAt: null,
+            customerId: existing.customerId,
+          },
+          data: {
+            customerId: links.customerId,
+            customerBranchId: links.customerBranchId,
+            customerDepartmentId: links.customerDepartmentId,
+            customerAccessProfile: dto.customerAccessProfile ?? null,
+            active: dto.active,
+          },
+        });
+        if (linked.count !== 1) {
+          throw new ConflictException({
+            code: "CONTACT_CUSTOMER_LINK_CHANGED",
+            message: "O vínculo deste contato foi alterado. Revise os dados e tente novamente.",
+          });
+        }
+        const contact = await this.prisma.contact.findFirstOrThrow({
+          where: { id: existing.id, tenantId: current.tenantId, archivedAt: null },
+          include: contactInclude,
+        });
+        this.realtime.publishContactUpdated({
+          tenantId: current.tenantId,
+          contactId: contact.id,
+        });
+        return this.serializeContact(contact, {
+          lifecycle: "linked",
+          additionalFieldsViewer: current,
+        });
+      }
       if (links.instanceIds.length) {
         const nextInstanceIds = [...new Set([...existing.instanceIds, ...links.instanceIds])];
         const shouldUpdateInstances = nextInstanceIds.length !== existing.instanceIds.length;
@@ -1217,7 +1894,7 @@ export class CrmController {
             include: contactInclude,
           });
           return this.serializeContact(contact, {
-            includeAdditionalFields: this.canReadAdditionalFields(current),
+            additionalFieldsViewer: current,
           });
         }
       }
@@ -1225,6 +1902,15 @@ export class CrmController {
         code: "CONTACT_ALREADY_EXISTS",
         message: "Já existe um contato ativo com este telefone.",
       });
+    }
+    if (dto.linkExistingToCustomer) {
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxContacts",
+        await this.prisma.contact.count({
+          where: { tenantId: current.tenantId, archivedAt: null },
+        }),
+      );
     }
     if (existing?.archivedAt) {
       const contact = await this.prisma.$transaction(async (tx) => {
@@ -1244,12 +1930,15 @@ export class CrmController {
         return tx.contact.update({
           where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
           data: {
-            name: dto.name.trim(),
+            name: contactName,
             phone: dto.phone.trim(),
             normalizedPhone,
             email: normalizeNullableEmail(dto.email),
             avatarUrl: cleanNullable(dto.avatarUrl),
             customerId: links.customerId,
+            customerBranchId: links.customerBranchId,
+            customerDepartmentId: links.customerDepartmentId,
+            customerAccessProfile: dto.customerAccessProfile ?? null,
             departmentId: links.departmentId,
             contactDepartmentId: links.contactDepartmentId,
             contactProfileId: links.contactProfileId,
@@ -1257,6 +1946,7 @@ export class CrmController {
             companyRole: dto.companyRole ?? null,
             instance: links.instance,
             instanceIds: links.instanceIds,
+            active: dto.active ?? true,
             archivedAt: null,
           },
           include: contactInclude,
@@ -1264,7 +1954,7 @@ export class CrmController {
       });
       return this.serializeContact(contact, {
         lifecycle: "restored",
-        includeAdditionalFields: this.canReadAdditionalFields(current),
+        additionalFieldsViewer: current,
       });
     }
     try {
@@ -1272,12 +1962,15 @@ export class CrmController {
         const created = await tx.contact.create({
           data: {
             tenantId: current.tenantId,
-            name: dto.name.trim(),
+            name: contactName,
             phone: dto.phone.trim(),
             normalizedPhone,
             email: normalizeNullableEmail(dto.email),
             avatarUrl: cleanNullable(dto.avatarUrl),
             customerId: links.customerId,
+            customerBranchId: links.customerBranchId,
+            customerDepartmentId: links.customerDepartmentId,
+            customerAccessProfile: dto.customerAccessProfile ?? null,
             departmentId: links.departmentId,
             contactDepartmentId: links.contactDepartmentId,
             contactProfileId: links.contactProfileId,
@@ -1285,6 +1978,7 @@ export class CrmController {
             companyRole: dto.companyRole ?? null,
             instance: links.instance,
             instanceIds: links.instanceIds,
+            active: dto.active ?? true,
             tags: links.tagIds.length
               ? {
                   createMany: {
@@ -1300,7 +1994,7 @@ export class CrmController {
       });
       return this.serializeContact(contact, {
         lifecycle: "created",
-        includeAdditionalFields: this.canReadAdditionalFields(current),
+        additionalFieldsViewer: current,
       });
     } catch (error) {
       handlePrismaError(error);
@@ -1314,7 +2008,11 @@ export class CrmController {
     @Body() dto: UpdateContactDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    this.assertCanWriteContactAdditionalFields(dto.customFields, current);
     const currentContact = await this.findContactOrThrow(id, current.tenantId);
+    const contactName = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "contacts", dto.name)
+      : undefined;
     if (
       dto.customerId !== undefined &&
       dto.customerId !== currentContact.customerId &&
@@ -1345,9 +2043,40 @@ export class CrmController {
         });
       }
     }
-    const links = await this.resolveContactLinks(dto, current.tenantId);
+    const links = await this.resolveContactLinks(dto, current.tenantId, currentContact.customerId);
     try {
       const contact = await this.prisma.$transaction(async (tx) => {
+        if (dto.active === false && currentContact.active) {
+          const revokedAt = new Date();
+          await tx.userInvitation.updateMany({
+            where: {
+              tenantId: current.tenantId,
+              contactId: id,
+              status: "PENDING",
+            },
+            data: { status: "REVOKED", revokedAt },
+          });
+          if (currentContact.portalMembershipId) {
+            const disabledMembership = await tx.tenantMembership.updateMany({
+              where: {
+                id: currentContact.portalMembershipId,
+                tenantId: current.tenantId,
+                role: { key: "customer_portal" },
+              },
+              data: { status: "DISABLED" },
+            });
+            if (disabledMembership.count) {
+              await tx.authSession.updateMany({
+                where: {
+                  tenantId: current.tenantId,
+                  membershipId: currentContact.portalMembershipId,
+                  revokedAt: null,
+                },
+                data: { revokedAt },
+              });
+            }
+          }
+        }
         if (dto.tagIds) {
           await tx.contactTag.deleteMany({ where: { contactId: id, tenantId: current.tenantId } });
           if (links.tagIds.length) {
@@ -1360,11 +2089,13 @@ export class CrmController {
             });
           }
         }
-        await this.saveContactCustomFields(tx, current.tenantId, id, dto.customFields);
+        if (dto.customFields !== undefined) {
+          await this.saveProvidedContactCustomFields(tx, current.tenantId, id, dto.customFields);
+        }
         return tx.contact.update({
           where: { id },
           data: {
-            name: dto.name?.trim(),
+            name: contactName,
             phone:
               dto.phone === undefined
                 ? undefined
@@ -1380,6 +2111,24 @@ export class CrmController {
             email: normalizeEmailUpdate(dto.email),
             avatarUrl: nullableUpdate(dto.avatarUrl),
             customerId: dto.customerId === undefined ? undefined : links.customerId,
+            customerBranchId:
+              dto.customerId === null
+                ? null
+                : dto.customerBranchId === undefined
+                  ? undefined
+                  : links.customerBranchId,
+            customerDepartmentId:
+              dto.customerId === null
+                ? null
+                : dto.customerDepartmentId === undefined
+                  ? undefined
+                  : links.customerDepartmentId,
+            customerAccessProfile:
+              dto.customerId === null
+                ? null
+                : dto.customerAccessProfile === undefined
+                  ? undefined
+                  : dto.customerAccessProfile,
             departmentId: dto.departmentId === undefined ? undefined : links.departmentId,
             contactDepartmentId:
               dto.contactDepartmentId === undefined ? undefined : links.contactDepartmentId,
@@ -1393,6 +2142,8 @@ export class CrmController {
                 ? undefined
                 : links.instance,
             instanceIds: dto.instanceIds === undefined ? undefined : links.instanceIds,
+            active: dto.active,
+            portalAccessActive: dto.active === false ? false : undefined,
           },
           include: contactInclude,
         });
@@ -1400,12 +2151,9 @@ export class CrmController {
       this.realtime.publishContactUpdated({
         tenantId: current.tenantId,
         contactId: contact.id,
-        contact: this.serializeContact(contact, {
-          includeAdditionalFields: this.canReadAdditionalFields(current),
-        }),
       });
       return this.serializeContact(contact, {
-        includeAdditionalFields: this.canReadAdditionalFields(current),
+        additionalFieldsViewer: current,
       });
     } catch (error) {
       handlePrismaError(error);
@@ -1435,28 +2183,29 @@ export class CrmController {
       include: contactInclude,
     });
     const serialized = this.serializeContact(contact, {
-      includeAdditionalFields: this.canReadAdditionalFields(current),
+      additionalFieldsViewer: current,
     });
     this.realtime.publishContactUpdated({
       tenantId: current.tenantId,
       contactId: contact.id,
-      contact: serialized,
     });
     return serialized;
   }
 
+  @Get("contacts/:id/deletion-impact")
+  @RequirePermissions("contacts.delete")
+  contactDeletionImpact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.conversationPurge.contactImpact(id, current.tenantId);
+  }
+
   @Delete("contacts/:id")
   @RequirePermissions("contacts.delete")
-  async deleteContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    await this.findContactOrThrow(id, current.tenantId);
-    const contact = await this.prisma.contact.update({
-      where: { id },
-      data: { archivedAt: new Date() },
-      include: contactInclude,
-    });
-    return this.serializeContact(contact, {
-      includeAdditionalFields: this.canReadAdditionalFields(current),
-    });
+  deleteContact(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.conversationPurge.purgeContact(id, dto.snapshotToken, current.tenantId);
   }
 
   @Get("tags")
@@ -1520,6 +2269,41 @@ export class CrmController {
     }
   }
 
+  private async findCustomerBranchOrThrow(customerId: string, branchId: string, tenantId: string) {
+    const branch = await this.prisma.customerBranch.findFirst({
+      where: { id: branchId, customerId, tenantId, archivedAt: null },
+    });
+    if (!branch) throw new NotFoundException("Filial do cliente não encontrada.");
+    return branch;
+  }
+
+  private async findCustomerDepartmentOrThrow(
+    customerId: string,
+    departmentId: string,
+    tenantId: string,
+  ) {
+    const department = await this.prisma.customerDepartment.findFirst({
+      where: { id: departmentId, customerId, tenantId, archivedAt: null },
+    });
+    if (!department) throw new NotFoundException("Departamento do cliente não encontrado.");
+    return department;
+  }
+
+  private async assertCustomerManager(
+    managerContactId: string | null | undefined,
+    customerId: string,
+    tenantId: string,
+  ) {
+    if (!managerContactId) return;
+    const contact = await this.prisma.contact.findFirst({
+      where: { id: managerContactId, customerId, tenantId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!contact) {
+      throw new BadRequestException("O gestor deve ser um contato ativo deste cliente.");
+    }
+  }
+
   private async findContactOrThrow(id: string, tenantId: string) {
     const contact = await this.prisma.contact.findFirst({
       where: { id, tenantId, archivedAt: null },
@@ -1529,9 +2313,41 @@ export class CrmController {
     return contact;
   }
 
+  private async throwContactCustomerTransferRequired(
+    existing: {
+      id: string;
+      name: string;
+      customerId: string | null;
+      customer?: { id: string; name: string } | null;
+    },
+    targetCustomerId: string,
+    tenantId: string,
+  ): Promise<never> {
+    const targetCustomer = await this.prisma.customer.findFirst({
+      where: { id: targetCustomerId, tenantId, archivedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!targetCustomer) {
+      throw new BadRequestException("Cliente inexistente para este tenant.");
+    }
+    throw new ConflictException({
+      code: "CONTACT_CUSTOMER_TRANSFER_REQUIRED",
+      message: "Este contato já está vinculado a outro cliente.",
+      details: {
+        contact: { id: existing.id, name: existing.name },
+        currentCustomer: existing.customer
+          ? { id: existing.customer.id, name: existing.customer.name }
+          : { id: existing.customerId, name: "Cliente atual" },
+        targetCustomer,
+      },
+    });
+  }
+
   private async resolveContactLinks(
     dto: {
       customerId?: string | null;
+      customerBranchId?: string | null;
+      customerDepartmentId?: string | null;
       departmentId?: string | null;
       contactDepartmentId?: string | null;
       contactProfileId?: string | null;
@@ -1541,12 +2357,41 @@ export class CrmController {
       tagIds?: string[];
     },
     tenantId: string,
+    currentCustomerId?: string | null,
   ) {
     if (dto.customerId) {
       const customer = await this.prisma.customer.findFirst({
         where: { id: dto.customerId, tenantId, archivedAt: null },
       });
       if (!customer) throw new BadRequestException("Cliente inexistente para este tenant.");
+    }
+
+    const effectiveCustomerId = dto.customerId === undefined ? currentCustomerId : dto.customerId;
+    const customerBranchId = dto.customerBranchId || null;
+    if (customerBranchId) {
+      if (!effectiveCustomerId) {
+        throw new BadRequestException("Selecione o cliente antes de vincular uma filial.");
+      }
+      const branch = await this.prisma.customerBranch.findFirst({
+        where: { id: customerBranchId, tenantId, archivedAt: null },
+        select: { customerId: true },
+      });
+      if (!branch || (effectiveCustomerId && branch.customerId !== effectiveCustomerId)) {
+        throw new BadRequestException("Filial inexistente para este cliente.");
+      }
+    }
+    const customerDepartmentId = dto.customerDepartmentId || null;
+    if (customerDepartmentId) {
+      if (!effectiveCustomerId) {
+        throw new BadRequestException("Selecione o cliente antes de vincular um departamento.");
+      }
+      const department = await this.prisma.customerDepartment.findFirst({
+        where: { id: customerDepartmentId, tenantId, archivedAt: null },
+        select: { customerId: true },
+      });
+      if (!department || (effectiveCustomerId && department.customerId !== effectiveCustomerId)) {
+        throw new BadRequestException("Departamento inexistente para este cliente.");
+      }
     }
 
     if (dto.departmentId) {
@@ -1614,13 +2459,17 @@ export class CrmController {
 
     const tagIds = [...new Set(dto.tagIds ?? [])];
     if (tagIds.length) {
-      const count = await this.prisma.tag.count({ where: { tenantId, id: { in: tagIds } } });
+      const count = await this.prisma.tag.count({
+        where: { tenantId, id: { in: tagIds }, active: true, archivedAt: null },
+      });
       if (count !== tagIds.length)
         throw new BadRequestException("Etiqueta inexistente para este tenant.");
     }
 
     return {
       customerId: dto.customerId || null,
+      customerBranchId,
+      customerDepartmentId,
       departmentId: dto.departmentId || null,
       contactDepartmentId: dto.contactDepartmentId || null,
       contactProfileId: dto.contactProfileId || null,
@@ -1887,40 +2736,54 @@ export class CrmController {
     tenantId: string,
     ignoreId?: string,
   ) {
-    const cleanLabel = label.trim().replace(/\s+/g, " ");
+    const cleanLabel = label.normalize("NFKC").trim().replace(/\s+/gu, " ");
+    const variableKey = contactCustomFieldVariableKey(cleanLabel);
+    if (
+      !variableKey ||
+      isNativeContactFieldName(cleanLabel) ||
+      isNativeMessageVariableKey(variableKey)
+    ) {
+      this.throwContactCustomFieldConflict();
+    }
     const duplicate = await this.prisma.contactCustomField.findFirst({
       where: {
         tenantId,
-        archivedAt: null,
-        normalizedName: normalizeCatalogName(cleanLabel),
+        OR: [
+          { normalizedName: normalizeContactCustomFieldName(cleanLabel) },
+          ...(!ignoreId ? [{ variableKey }] : []),
+        ],
         ...(ignoreId ? { id: { not: ignoreId } } : {}),
       },
       select: { id: true },
     });
-    if (duplicate) {
-      throw new ConflictException({
-        code: "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS",
-        message: `Campo Adicional "${cleanLabel}" já existente.`,
-      });
-    }
+    if (duplicate) this.throwContactCustomFieldConflict();
   }
 
   private prepareContactCustomField(dto: ContactCustomFieldDto, partial = false) {
-    const label = dto.label?.trim();
+    const label = dto.label?.normalize("NFKC").trim().replace(/\s+/gu, " ");
     if (!partial && !label) throw new BadRequestException("Informe o nome do campo.");
     const type = dto.type
       ? parseContactCustomFieldType(dto.type)
       : partial
         ? undefined
         : ContactCustomFieldType.TEXT;
-    const options =
-      type === ContactCustomFieldType.LIST
-        ? unique((dto.options ?? []).map((item) => item.trim()).filter(Boolean))
-        : [];
+    const rawOptions = type === ContactCustomFieldType.LIST ? (dto.options ?? []) : [];
+    const normalizedOptions = rawOptions.map((item) => item.trim());
+    if (type === ContactCustomFieldType.LIST && normalizedOptions.some((item) => !item)) {
+      throw new BadRequestException("Preencha ou remova as opcoes vazias da lista.");
+    }
+    const options = type === ContactCustomFieldType.LIST ? unique(normalizedOptions) : [];
+    if (type === ContactCustomFieldType.LIST && options.length !== normalizedOptions.length) {
+      throw new BadRequestException("Nao e permitido repetir opcoes da lista.");
+    }
     if (type === ContactCustomFieldType.LIST && options.length === 0) {
       throw new BadRequestException("Informe ao menos uma opcao para a lista.");
     }
-    const tabName = cleanNullable(dto.tabName) ?? (partial ? undefined : "Dados Adicionais");
+    const tabName =
+      dto.tabName === undefined ? (partial ? undefined : "Dados Adicionais") : dto.tabName.trim();
+    if (dto.tabName !== undefined && !tabName) {
+      throw new BadRequestException("Informe a aba do campo.");
+    }
     const groupName =
       dto.groupName === undefined ? (partial ? undefined : "") : dto.groupName.trim();
     if (tabName?.toLowerCase() === "geral") {
@@ -1931,20 +2794,25 @@ export class CrmController {
         "Este agrupamento é reservado para os campos padrão do contato.",
       );
     }
+    const mask =
+      type === ContactCustomFieldType.NUMBER
+        ? (cleanNullable(dto.mask) ?? "0,00")
+        : type === ContactCustomFieldType.TEXT ||
+            type === ContactCustomFieldType.DATE ||
+            type === ContactCustomFieldType.LIST ||
+            type === ContactCustomFieldType.CHECKBOX
+          ? cleanNullable(dto.mask)
+          : null;
+    if (type === ContactCustomFieldType.TEXT && mask) {
+      assertSupportedContactCustomFieldFormat(mask);
+    }
     return {
       label: label || undefined,
-      normalizedName: label ? normalizeCatalogName(label) : undefined,
+      normalizedName: label ? normalizeContactCustomFieldName(label) : undefined,
+      variableKey: !partial && label ? contactCustomFieldVariableKey(label) : undefined,
       type,
       required: dto.required,
-      mask:
-        type === ContactCustomFieldType.NUMBER
-          ? (cleanNullable(dto.mask) ?? "0,00")
-          : type === ContactCustomFieldType.TEXT ||
-              type === ContactCustomFieldType.DATE ||
-              type === ContactCustomFieldType.LIST ||
-              type === ContactCustomFieldType.CHECKBOX
-            ? cleanNullable(dto.mask)
-            : null,
+      mask,
       note: nullableUpdate(dto.note),
       tabName,
       groupName,
@@ -1958,6 +2826,30 @@ export class CrmController {
     });
     if (!field) throw new NotFoundException("Campo adicional não encontrado.");
     return field;
+  }
+
+  private async createContactCustomFieldWithConflictMapping(
+    data: Prisma.ContactCustomFieldUncheckedCreateInput,
+  ) {
+    try {
+      return await this.prisma.contactCustomField.create({ data });
+    } catch (error) {
+      this.rethrowContactCustomFieldUniqueConflict(error);
+      throw error;
+    }
+  }
+
+  private rethrowContactCustomFieldUniqueConflict(error: unknown): never | void {
+    if ((error as { code?: string } | null)?.code === "P2002") {
+      this.throwContactCustomFieldConflict();
+    }
+  }
+
+  private throwContactCustomFieldConflict(): never {
+    throw new ConflictException({
+      code: "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS",
+      message: "Já existe um campo com este nome. Informe um nome diferente.",
+    });
   }
 
   private async resolveInstanceFilterKeys(instance: string, tenantId: string) {
@@ -1997,11 +2889,25 @@ export class CrmController {
       ) {
         throw new BadRequestException(`Opcao invalida para ${field.label}.`);
       }
+      if (value && isCityContactCustomField(field.mask)) {
+        await this.locations.resolveCity(value);
+      }
       await tx.contactCustomFieldValue.upsert({
         where: { contactId_fieldId: { contactId, fieldId: field.id } },
         create: { tenantId, contactId, fieldId: field.id, value },
         update: { value },
       });
+    }
+  }
+
+  private assertCanWriteContactAdditionalFields(
+    values: Record<string, string | number | boolean | null> | undefined,
+    current: Pick<AuthenticatedUser, "roleKey" | "permissions">,
+  ) {
+    if (values !== undefined && !canReadContactAdditionalFields(current)) {
+      throw new ForbiddenException(
+        "Permissão de Campos Adicionais necessária para alterar estes valores.",
+      );
     }
   }
 
@@ -2031,6 +2937,9 @@ export class CrmController {
       ) {
         throw new BadRequestException(`Opcao invalida para ${field.label}.`);
       }
+      if (value && isCityContactCustomField(field.mask)) {
+        await this.locations.resolveCity(value);
+      }
       await tx.contactCustomFieldValue.upsert({
         where: { contactId_fieldId: { contactId, fieldId: field.id } },
         create: { tenantId, contactId, fieldId: field.id, value },
@@ -2043,6 +2952,7 @@ export class CrmController {
     id: string;
     tenantId: string;
     label: string;
+    variableKey: string;
     type: ContactCustomFieldType;
     required: boolean;
     mask: string | null;
@@ -2059,6 +2969,7 @@ export class CrmController {
       id: field.id,
       tenantId: field.tenantId,
       label: field.label,
+      variableKey: field.variableKey,
       type: field.type.toLowerCase(),
       required: field.required,
       mask: field.mask,
@@ -2087,7 +2998,29 @@ export class CrmController {
       notas: customer.notes,
       contato_responsavel: customer.responsibleContactName,
       cor: customer.color,
+      personType: customer.personType,
+      status: customer.status,
+      legalName: customer.legalName,
+      document: customer.document,
+      addressFullEnabled: customer.addressFullEnabled,
+      postalCode: customer.postalCode,
+      street: customer.street,
+      addressNumber: customer.addressNumber,
+      addressWithoutNumber: customer.addressWithoutNumber,
+      complement: customer.complement,
+      neighborhood: customer.neighborhood,
+      cityId: customer.cityId,
+      city: customer.city,
+      state: customer.state,
+      country: customer.country,
       contactCount: customer.contacts.length,
+      branchCount: customer.branches.length,
+      departmentCount: customer.customerDepartments.length,
+      branches: customer.branches,
+      departments: customer.customerDepartments.map((department) => ({
+        ...department,
+        manager: department.managerContact,
+      })),
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt,
     };
@@ -2096,10 +3029,13 @@ export class CrmController {
   private serializeContact(
     contact: Prisma.ContactGetPayload<{ include: typeof contactInclude }>,
     meta?: {
-      lifecycle?: "created" | "restored";
-      includeAdditionalFields?: boolean;
+      lifecycle?: "created" | "restored" | "linked";
+      additionalFieldsViewer?: Pick<AuthenticatedUser, "roleKey" | "permissions">;
     },
   ) {
+    const customFieldValues = contact.customFieldValues.filter(
+      (item) => item.tenantId === contact.tenantId && item.field.tenantId === contact.tenantId,
+    );
     const instanceIds = contact.instanceIds.length
       ? contact.instanceIds
       : contact.instance
@@ -2113,6 +3049,12 @@ export class CrmController {
       normalizedPhone: contact.normalizedPhone,
       avatar_url: contact.avatarUrl,
       customer_id: contact.customerId,
+      customerBranchId: contact.customerBranchId,
+      customerBranch: contact.customerBranch,
+      customerDepartmentId: contact.customerDepartmentId,
+      customerDepartment: contact.customerDepartment,
+      customerAccessProfile: contact.customerAccessProfile,
+      active: contact.active,
       email: contact.email,
       departamento: contact.departmentName,
       departmentId: contact.departmentId,
@@ -2139,33 +3081,15 @@ export class CrmController {
         ? { id: contact.customer.id, nome: contact.customer.name, cor: contact.customer.color }
         : null,
       tags: contact.tags.map((item) => this.serializeTag(item.tag)),
-      customFields: meta?.includeAdditionalFields
-        ? Object.fromEntries(
-            contact.customFieldValues.map((item) => [
-              item.fieldId,
-              sanitizeContactCustomFieldValueForOutput(item.field, item.value),
-            ]),
-          )
-        : {},
-      customFieldValues: meta?.includeAdditionalFields
-        ? contact.customFieldValues.map((item) => ({
-            fieldId: item.fieldId,
-            label: item.field.label,
-            type: item.field.type,
-            value: sanitizeContactCustomFieldValueForOutput(item.field, item.value),
-          }))
-        : [],
+      ...projectContactAdditionalFields(
+        contact.tenantId,
+        customFieldValues,
+        meta?.additionalFieldsViewer ?? { roleKey: "", permissions: [] },
+      ),
       lifecycle: meta?.lifecycle,
       createdAt: contact.createdAt,
       updatedAt: contact.updatedAt,
     };
-  }
-
-  private canReadAdditionalFields(current: AuthenticatedUser) {
-    return (
-      current.roleKey === "tenant_admin" ||
-      current.permissions?.includes("contacts.additional_fields.read") === true
-    );
   }
 
   private serializeContactCatalog(item: {
@@ -2177,6 +3101,7 @@ export class CrmController {
     archivedAt?: Date | null;
     createdAt?: Date;
     updatedAt?: Date;
+    _count?: { contacts: number };
   }) {
     return {
       id: item.id,
@@ -2187,6 +3112,7 @@ export class CrmController {
       archivedAt: item.archivedAt,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
+      contactCount: item._count?.contacts,
     };
   }
 
@@ -2214,7 +3140,7 @@ function parseContactCustomFieldType(value: string) {
   throw new BadRequestException("Tipo de campo inválido.");
 }
 
-function normalizeContactCustomFieldValue(
+export function normalizeContactCustomFieldValue(
   field: { type: ContactCustomFieldType; mask: string | null },
   raw: string | number | boolean | null | undefined,
 ) {
@@ -2226,8 +3152,52 @@ function normalizeContactCustomFieldValue(
   if (field.type === ContactCustomFieldType.TEXT && isHtmlContactCustomField(field.mask)) {
     return sanitizeContactCustomFieldHtml(value);
   }
+  if (field.type === ContactCustomFieldType.TEXT && isEmailContactCustomField(field.mask)) {
+    return value.toLowerCase();
+  }
   if (!value || field.type !== ContactCustomFieldType.DATE) return value;
   return parseContactCustomDateValue(value, field.mask) ?? value;
+}
+
+function isEmailContactCustomField(mask: string | null) {
+  if (!mask?.trim().startsWith("{")) return false;
+  try {
+    const parsed = JSON.parse(mask) as { custom?: { format?: string } };
+    return parsed.custom?.format === "email";
+  } catch {
+    return false;
+  }
+}
+
+const SUPPORTED_CONTACT_CUSTOM_FIELD_FORMATS = new Set([
+  "cpf_cnpj",
+  "cep",
+  "phone",
+  "email",
+  "city",
+]);
+
+function assertSupportedContactCustomFieldFormat(mask: string) {
+  if (!mask.trim().startsWith("{")) return;
+  try {
+    const parsed = JSON.parse(mask) as { custom?: { format?: unknown } };
+    const format = parsed.custom?.format;
+    if (format !== undefined && !SUPPORTED_CONTACT_CUSTOM_FIELD_FORMATS.has(String(format))) {
+      throw new BadRequestException("Formato de campo personalizado inválido.");
+    }
+  } catch (error) {
+    if (error instanceof BadRequestException) throw error;
+  }
+}
+
+function isCityContactCustomField(mask: string | null) {
+  if (!mask?.trim().startsWith("{")) return false;
+  try {
+    const parsed = JSON.parse(mask) as { custom?: { format?: string } };
+    return parsed.custom?.format === "city";
+  } catch {
+    return false;
+  }
 }
 
 function validContactListValue(field: { mask: string | null; options: string[] }, value: string) {
@@ -2305,6 +3275,60 @@ function pagination(query: PaginationDto) {
     throw new BadRequestException("Tamanho de página inválido.");
   }
   return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+export function contactListOrderBy(
+  sortBy: ListContactsQueryDto["sortBy"],
+): Prisma.ContactOrderByWithRelationInput[] {
+  if (sortBy === "customer") {
+    return [{ customer: { name: "asc" } }, { name: "asc" }, { createdAt: "desc" }];
+  }
+  return [{ name: "asc" }, { createdAt: "desc" }];
+}
+
+export function orderContactIdsByInstance(
+  contacts: Array<{
+    id: string;
+    name: string;
+    instance: string | null;
+    instanceIds: string[];
+    createdAt: Date;
+  }>,
+  connections: Array<{ id: string; name: string; externalReference: string | null }>,
+) {
+  const labels = new Map<string, string>();
+  for (const connection of connections) {
+    labels.set(connection.id, connection.name);
+    labels.set(connection.name, connection.name);
+    if (connection.externalReference) labels.set(connection.externalReference, connection.name);
+  }
+  const instanceLabel = (contact: (typeof contacts)[number]) => {
+    const candidates = [...contact.instanceIds, contact.instance].filter((value): value is string =>
+      Boolean(value),
+    );
+    return candidates
+      .map((candidate) => labels.get(candidate) ?? candidate)
+      .sort((left, right) =>
+        left.localeCompare(right, "pt-BR", { sensitivity: "base", numeric: true }),
+      )[0];
+  };
+  return [...contacts]
+    .sort((left, right) => {
+      const leftInstance = instanceLabel(left);
+      const rightInstance = instanceLabel(right);
+      if (!leftInstance && rightInstance) return 1;
+      if (leftInstance && !rightInstance) return -1;
+      const instanceOrder = (leftInstance ?? "").localeCompare(rightInstance ?? "", "pt-BR", {
+        sensitivity: "base",
+        numeric: true,
+      });
+      return (
+        instanceOrder ||
+        left.name.localeCompare(right.name, "pt-BR", { sensitivity: "base", numeric: true }) ||
+        right.createdAt.getTime() - left.createdAt.getTime()
+      );
+    })
+    .map((contact) => contact.id);
 }
 
 function paginated<T>(items: T[], total: number, page: number, pageSize: number) {
@@ -2415,6 +3439,12 @@ function normalizeCatalogName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function hasDeletionVariableReference(value: unknown, token: string) {
+  if (value === null || value === undefined) return false;
+  const searchable = typeof value === "string" ? value : JSON.stringify(value);
+  return searchable.includes(token);
+}
+
 function nullableUpdate(value?: string | null) {
   if (value === undefined) return undefined;
   return cleanNullable(value);
@@ -2440,6 +3470,26 @@ function handlePrismaError(error: unknown): never {
     throw new ConflictException({
       code: "CONTACT_ALREADY_EXISTS",
       message: "Já existe um contato ativo com este telefone.",
+    });
+  }
+  throw error;
+}
+
+function handleContactCatalogUniqueError(
+  error: unknown,
+  kind: "department" | "profile",
+  name: string,
+): never {
+  if (isPrismaError(error, "P2002")) {
+    throw new ConflictException({
+      code:
+        kind === "department"
+          ? "CONTACT_DEPARTMENT_ALREADY_EXISTS"
+          : "CONTACT_PROFILE_ALREADY_EXISTS",
+      message:
+        kind === "department"
+          ? `Departamento do Contato "${name}" já existente.`
+          : `Perfil do Contato "${name}" já existente.`,
     });
   }
   throw error;

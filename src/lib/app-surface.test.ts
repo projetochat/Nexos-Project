@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appSurfaceForHostname,
   appTitleForHostname,
+  appTitleWithUnreadConversations,
   loginEndpointForSurface,
   surfaceRedirect,
 } from "./app-surface";
 
 describe("app surface routing", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_TRIXUS_PLATFORM_APP_URL", "https://app.trixus.com.br");
+    vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "https://chat.trixus.com.br");
+  });
+
   afterEach(() => vi.unstubAllEnvs());
 
   it("keeps localhost on the compatible unified surface", () => {
@@ -20,9 +26,25 @@ describe("app surface routing", () => {
     expect(appSurfaceForHostname("app.trixus.com.br")).toBe("platform");
     expect(appSurfaceForHostname("chat.trixus.com.br")).toBe("tenant");
     expect(appTitleForHostname("app.trixus.com.br")).toBe("Trixus | App");
-    expect(appTitleForHostname("chat.trixus.com.br")).toBe("Trixus | Chat");
+    expect(appTitleForHostname("chat.trixus.com.br")).toBe("Trixus | App");
     expect(loginEndpointForSurface("platform")).toBe("/auth/platform/login");
     expect(loginEndpointForSurface("tenant")).toBe("/auth/tenant/login");
+  });
+
+  it("uses the unified login when Platform and Tenant share the same hostname", () => {
+    vi.stubEnv("VITE_TRIXUS_PLATFORM_APP_URL", "https://hom.trixus.com.br");
+    vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "https://hom.trixus.com.br");
+
+    expect(appSurfaceForHostname("hom.trixus.com.br")).toBe("unified");
+    expect(loginEndpointForSurface(appSurfaceForHostname("hom.trixus.com.br"))).toBe("/auth/login");
+    expect(surfaceRedirect({ hostname: "hom.trixus.com.br", pathname: "/admin" })).toBeNull();
+    expect(surfaceRedirect({ hostname: "hom.trixus.com.br", pathname: "/inbox" })).toBeNull();
+  });
+
+  it("keeps the fixed app title and adds only a positive unread conversation count", () => {
+    expect(appTitleWithUnreadConversations(3)).toBe("(3) Trixus | App");
+    expect(appTitleWithUnreadConversations(0)).toBe("Trixus | App");
+    expect(appTitleWithUnreadConversations(-1)).toBe("Trixus | App");
   });
 
   it("redirects routes to their correct origin without copying secrets", () => {

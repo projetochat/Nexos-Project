@@ -16,8 +16,9 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import { conversationChatScopeAccess } from "../auth/connection-access";
-import { ConversationStatus, LeadStatus, Prisma } from "../generated/prisma";
+import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
+import { ConversationStatus, LeadStatus, Prisma, ProtocolModule } from "../generated/prisma";
+import { nextProtocol } from "../common/protocol-numbering";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 
@@ -66,13 +67,13 @@ export class LeadsController {
   ) {}
 
   @Get()
-  @RequirePermissions("conversations.read")
+  @RequirePermissions("leads.read")
   async list(@Query() query: ListLeadsQueryDto, @CurrentUser() current: AuthenticatedUser) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
     const where: Prisma.LeadWhereInput = {
       tenantId: current.tenantId,
-      conversation: conversationChatScopeAccess(current),
+      conversation: conversationVisibilityWhere(current),
       ...(query.status ? { status: query.status } : { status: { not: LeadStatus.DISCARDED } }),
     };
     const [items, total] = await this.prisma.$transaction([
@@ -95,7 +96,7 @@ export class LeadsController {
   }
 
   @Patch(":id/assign")
-  @RequirePermissions("conversations.assign")
+  @RequirePermissions("leads.read", "conversations.assign")
   async assign(
     @Param("id") id: string,
     @Body() dto: AssignLeadDto,
@@ -110,7 +111,7 @@ export class LeadsController {
           id,
           tenantId: current.tenantId,
           status: { not: LeadStatus.DISCARDED },
-          conversation: conversationChatScopeAccess(current),
+          conversation: conversationVisibilityWhere(current),
         },
         include: { conversation: true },
       });
@@ -163,12 +164,7 @@ export class LeadsController {
 }
 
 async function nextConversationProtocol(tx: Prisma.TransactionClient, tenantId: string) {
-  const counter = await tx.conversationProtocolCounter.upsert({
-    where: { tenantId },
-    update: { lastNumber: { increment: 1 } },
-    create: { tenantId, lastNumber: 1 },
-  });
-  return String(counter.lastNumber).padStart(6, "0");
+  return (await nextProtocol(tx, tenantId, ProtocolModule.CHAT)).protocol;
 }
 
 function serializeLead(lead: Prisma.LeadGetPayload<{ include: typeof leadInclude }>) {

@@ -530,6 +530,88 @@ describe("EvolutionWebhookTranslator", () => {
     });
   });
 
+  it("normalizes the dedicated Evolution edited-message event", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_EDITED",
+        instance: "tenant-support",
+        data: {
+          key: { id: "MSG-ORIGINAL" },
+          message: { conversation: "CBA" },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "edit",
+      event: {
+        providerMessageId: "MSG-ORIGINAL",
+        content: "CBA",
+      },
+    });
+  });
+
+  it("normalizes an edited protocol message delivered through messages.upsert", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: {
+            remoteJid: "5511999999999@s.whatsapp.net",
+            fromMe: false,
+            id: "EDIT-EVENT",
+          },
+          message: {
+            protocolMessage: {
+              key: { id: "MSG-ORIGINAL" },
+              type: "MESSAGE_EDIT",
+              editedMessage: { conversation: "CBA" },
+            },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "edit",
+      event: {
+        providerMessageId: "MSG-ORIGINAL",
+        content: "CBA",
+      },
+    });
+  });
+
+  it("keeps a v2.3.7 secret edit as a recoverable edit signal", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          ID: "EDIT-EVENT",
+          Edit: "1",
+          key: { remoteJid: "5511999999999@s.whatsapp.net", fromMe: false },
+          secretEncryptedMessage: {
+            targetMessageKey: { ID: "MSG-ORIGINAL" },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "edit",
+      event: {
+        providerMessageId: "MSG-ORIGINAL",
+        content: null,
+        providerInstanceName: "tenant-support",
+        remoteJid: "5511999999999@s.whatsapp.net",
+      },
+    });
+  });
+
   it("normalizes reaction messages into canonical reaction events", () => {
     const result = translator.translate(
       {

@@ -1,6 +1,12 @@
 import { customFieldFormat, formatCustomField, customFieldError } from "@/lib/custom-field-formats";
 import { InfoTooltip } from "@/components/info-tooltip";
-import { DepartmentIcon } from "@/components/department-icon";
+import { CityAutocomplete } from "@/components/international-location-fields";
+import {
+  ActiveConversationOrchestrator,
+  type ActiveConversationRequest,
+} from "@/components/active-conversation-orchestrator";
+import { canStartActiveConversation } from "@/lib/active-conversation-permissions";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -17,8 +23,11 @@ import {
   AlignJustify,
   AlignLeft,
   AlignRight,
+  AlertCircle,
+  ArrowDownWideNarrow,
   Building2,
   Bold,
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -31,16 +40,18 @@ import {
   Italic,
   Link2,
   List,
+  LayoutGrid,
   ListIndentDecrease,
   ListIndentIncrease,
   ListOrdered,
-  MessageCirclePlus,
+  MessageSquarePlus,
   Network,
   Plug,
   Pencil,
   Phone,
   Plus,
   Search,
+  SlidersHorizontal,
   Star,
   Strikethrough,
   Tag,
@@ -48,13 +59,19 @@ import {
   Type,
   Underline,
   Undo2,
+  UserRound,
   Redo2,
   X,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Modal, ConfirmDialog } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Avatar,
   Badge,
@@ -69,18 +86,18 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
-import { connectionInstanceValue } from "@/lib/connection-options";
 import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
-import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import {
-  departmentsForConnection,
-  favoriteDepartmentForConnection,
-} from "@/lib/favorite-department";
+  CONTACT_GRID_NATIVE_COLUMNS,
+  DEFAULT_CONTACT_GRID_COLUMNS,
+  isEligibleContactGridCustomField,
+  sanitizeContactGridColumns,
+  type ContactGridColumnKey,
+} from "@/lib/contact-grid-preferences";
 import {
-  conversationApi,
   crmApi,
-  organizationApi,
+  locationApi,
   type ApiAgendaImportContact,
   type ApiAgendaImportIgnoredContact,
   type ApiContact,
@@ -91,14 +108,20 @@ import {
   type ApiTag,
 } from "@/lib/trixus-api";
 
+const OfficialTagForm = React.lazy(() =>
+  import("@/routes/etiquetas").then((module) => ({ default: module.EtiquetaForm })),
+);
+
 export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 
 const DEFAULT_PAGE_SIZE = 25;
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 10000] as const;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 5000] as const;
 const CUSTOMER_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const DEFAULT_CUSTOMER_PAGE_SIZE = 10;
 const FAVORITE_COUNTRY_CODES_KEY = "trixus.favorite-country-codes";
 const EMPTY_FILTER_VALUE = "__empty__";
+type ContactViewMode = "list" | "cards";
+type ContactSortMode = "name" | "customer" | "instance";
 type ContactFiltersMemory = {
   query: string;
   instance: string;
@@ -117,6 +140,12 @@ function defaultContactFiltersMemory(): ContactFiltersMemory {
     tag: "",
     pageSize: DEFAULT_PAGE_SIZE,
   };
+}
+
+function contactSortLabel(sortMode: ContactSortMode) {
+  if (sortMode === "customer") return "Empresa do contato";
+  if (sortMode === "instance") return "Instância";
+  return "Nome";
 }
 
 function loadContactFiltersMemory(storageKey: string): ContactFiltersMemory {
@@ -144,6 +173,7 @@ function loadContactFiltersMemory(storageKey: string): ContactFiltersMemory {
     return fallback;
   }
 }
+
 const COUNTRY_CODES = [
   { id: "br", code: "55", country: "Brasil", flag: "🇧🇷" },
   { id: "us", code: "1", country: "Estados Unidos", flag: "🇺🇸" },
@@ -385,13 +415,15 @@ type AgendaImportPreviewState = {
 function ContatosPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const user = useSession((state) => state.user);
   const canCreateContacts = user?.permissions?.includes("contacts.create") ?? false;
   const canUpdateContacts = user?.permissions?.includes("contacts.update") ?? false;
   const canDeleteContacts = user?.permissions?.includes("contacts.delete") ?? false;
+  const canViewContacts = user?.permissions?.includes("contacts.read") ?? false;
   const canReadAdditionalFields =
     user?.permissions?.includes("contacts.additional_fields.read") ?? false;
-  const canStartConversation = user?.permissions?.includes("conversations.assign") ?? false;
+  const canStartConversation = canStartActiveConversation(user?.permissions);
   const filtersStorageKey = `trixus.contacts.filters.${user?.id ?? "anonymous"}`;
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
@@ -399,31 +431,15 @@ function ContatosPage() {
   const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
   const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
   const [instances, setInstances] = React.useState<ContactInstanceOption[]>([]);
-  const { allConnections: chatConnections } = useConnectedMessagingConnections({
-    enabled: canStartConversation,
-  });
-  const chatInstances = React.useMemo<ContactInstanceOption[]>(
-    () =>
-      chatConnections.map((connection) => ({
-        id: connection.id,
-        value: connectionInstanceValue(connection),
-        name: connection.name,
-        color: connection.color ?? null,
-        externalReference: connection.externalReference,
-        ownerPhone: connection.ownerPhone ?? null,
-        instanceName: connection.name,
-        status: connection.status.toUpperCase(),
-      })),
-    [chatConnections],
-  );
-  const { data: chatDepartments = [], isLoading: chatDepartmentsLoading } = useQuery({
-    queryKey: ["trixus", "chat-departments"],
-    queryFn: organizationApi.listChatDepartments,
-    enabled: canStartConversation,
-  });
   const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
     [],
   );
+  const [customFieldsLoaded, setCustomFieldsLoaded] = React.useState(false);
+  const [viewMode, setViewMode] = React.useState<ContactViewMode>("list");
+  const [sortMode, setSortMode] = React.useState<ContactSortMode>("name");
+  const [visibleGridColumns, setVisibleGridColumns] = React.useState<ContactGridColumnKey[]>([
+    ...DEFAULT_CONTACT_GRID_COLUMNS,
+  ]);
   const [loading, setLoading] = React.useState(true);
   const [query, setQuery] = React.useState(() => loadContactFiltersMemory(filtersStorageKey).query);
   const [instanciaFilter, setInstanciaFilter] = React.useState(
@@ -442,6 +458,9 @@ function ContatosPage() {
   const [pageSize, setPageSize] = React.useState(
     () => loadContactFiltersMemory(filtersStorageKey).pageSize,
   );
+  React.useEffect(() => {
+    if (isMobile) setViewMode("cards");
+  }, [isMobile]);
   const [loadedFiltersStorageKey, setLoadedFiltersStorageKey] = React.useState(filtersStorageKey);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [allFilteredSelected, setAllFilteredSelected] = React.useState(false);
@@ -479,14 +498,11 @@ function ContatosPage() {
   const [total, setTotal] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
   const [editing, setEditing] = React.useState<Contact | null>(null);
+  const [viewing, setViewing] = React.useState<Contact | null>(null);
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
-  const [conversationChoice, setConversationChoice] = React.useState<{
-    contact: Contact;
-    instances: ContactInstanceOption[];
-    connectionId: string;
-    departmentId: string;
-  } | null>(null);
-  const [openingConversation, setOpeningConversation] = React.useState(false);
+  const [conversationRequest, setConversationRequest] =
+    React.useState<ActiveConversationRequest | null>(null);
+  const conversationRequestKey = React.useRef(0);
   const create = useDisclosure();
   const visibleInstances = React.useMemo(
     () =>
@@ -527,6 +543,25 @@ function ContatosPage() {
       ),
     [instances],
   );
+  const eligibleGridCustomFields = React.useMemo(
+    () => customFieldDefinitions.filter(isEligibleContactGridCustomField),
+    [customFieldDefinitions],
+  );
+  const allEligibleGridColumnKeys = React.useMemo<ContactGridColumnKey[]>(
+    () => [
+      ...CONTACT_GRID_NATIVE_COLUMNS.map((column) => column.key),
+      ...eligibleGridCustomFields.map((field) => `custom:${field.id}` as const),
+    ],
+    [eligibleGridCustomFields],
+  );
+  const visibleGridColumnSet = React.useMemo(
+    () => new Set(visibleGridColumns),
+    [visibleGridColumns],
+  );
+  const displayedGridColumns = React.useMemo(
+    () => allEligibleGridColumnKeys.filter((key) => visibleGridColumnSet.has(key)),
+    [allEligibleGridColumnKeys, visibleGridColumnSet],
+  );
   const currentContactFilters = React.useMemo(
     () => ({
       q: query,
@@ -549,6 +584,20 @@ function ContatosPage() {
     setPage(1);
     setLoadedFiltersStorageKey(filtersStorageKey);
   }, [filtersStorageKey]);
+
+  React.useEffect(() => {
+    if (!customFieldsLoaded) return;
+    setVisibleGridColumns((current) => {
+      const sanitized = sanitizeContactGridColumns(
+        current,
+        eligibleGridCustomFields.map((field) => field.id),
+      );
+      return sanitized.length === current.length &&
+        sanitized.every((key, index) => key === current[index])
+        ? current
+        : sanitized;
+    });
+  }, [customFieldsLoaded, eligibleGridCustomFields]);
 
   React.useEffect(() => {
     if (loadedFiltersStorageKey !== filtersStorageKey) return;
@@ -583,6 +632,7 @@ function ContatosPage() {
     try {
       const contactResponse = await crmApi.listContacts({
         ...currentContactFilters,
+        sortBy: sortMode,
         page,
         pageSize,
       });
@@ -594,13 +644,14 @@ function ContatosPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentContactFilters, page, pageSize]);
+  }, [currentContactFilters, page, pageSize, sortMode]);
 
   React.useEffect(() => {
     void load();
   }, [load]);
   React.useEffect(() => {
     let active = true;
+    setCustomFieldsLoaded(false);
     void Promise.all([
       crmApi.listCustomers({ pageSize: 100 }),
       crmApi.contactOptions(),
@@ -617,7 +668,10 @@ function ContatosPage() {
       })
       .catch((error) =>
         toast.error("Falha ao carregar opções", { description: (error as Error).message }),
-      );
+      )
+      .finally(() => {
+        if (active) setCustomFieldsLoaded(true);
+      });
     return () => {
       active = false;
     };
@@ -626,7 +680,7 @@ function ContatosPage() {
     setPage(1);
     setSelectedIds([]);
     setAllFilteredSelected(false);
-  }, [query, instanciaFilter, departamentoFilter, clienteFilter, tagFilter, pageSize]);
+  }, [query, instanciaFilter, departamentoFilter, clienteFilter, tagFilter, pageSize, sortMode]);
   const hasContactFilters = Boolean(
     query.trim() || instanciaFilter || departamentoFilter || clienteFilter || tagFilter,
   );
@@ -716,81 +770,23 @@ function ContatosPage() {
     const footer = document.querySelector<HTMLElement>("[data-contacts-list-footer]");
     footer?.scrollIntoView({ behavior: "smooth", block: "end" });
   };
+  const toggleGridColumn = (key: ContactGridColumnKey) => {
+    setVisibleGridColumns((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+    );
+  };
 
   const selectedBulkCustomField = bulkMode.startsWith("custom:")
     ? customFieldDefinitions.find((field) => field.id === bulkMode.slice("custom:".length))
     : undefined;
-
-  const startConversation = async (
-    contact: Contact,
-    connectionId: string,
-    departmentId?: string,
-  ) => {
-    if (!canStartConversation) {
-      toast.error("Você não possui permissão para iniciar conversas.");
-      return;
-    }
-    setOpeningConversation(true);
-    try {
-      const conversation = await conversationApi.create({
-        contactId: contact.id,
-        connectionId,
-        ...(departmentId ? { departmentId } : {}),
-        assignToSelf: true,
-      });
-      setConversationChoice(null);
-      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
-    } catch (e) {
-      toast.error("Falha ao abrir conversa", { description: (e as Error).message });
-    } finally {
-      setOpeningConversation(false);
-    }
-  };
 
   const openConversation = (contact: Contact) => {
     if (!canStartConversation) {
       toast.error("Você não possui permissão para iniciar conversas.");
       return;
     }
-    if (chatDepartmentsLoading) {
-      toast.info("Carregando departamentos. Tente novamente em instantes.");
-      return;
-    }
-    const connectedInstances = resolveContactInstances(contact.instanceIds, chatInstances).filter(
-      (instance) => isConnectedInstanceStatus(instance.status),
-    );
-    if (connectedInstances.length === 0) {
-      toast.error("Nenhuma instância conectada", {
-        description: "Vincule uma instância conectada ao contato para iniciar a conversa.",
-      });
-      return;
-    }
-    if (connectedInstances.length === 1) {
-      const instance = connectedInstances[0];
-      const departments = departmentsForConnection(chatDepartments, instance.id);
-      const favorite = favoriteDepartmentForConnection(chatDepartments, instance.id);
-      if (favorite) {
-        void startConversation(contact, instance.id);
-        return;
-      }
-      if (departments.length === 0) {
-        toast.error("Nenhum departamento liberado para esta instância.");
-        return;
-      }
-      setConversationChoice({
-        contact,
-        instances: connectedInstances,
-        connectionId: instance.id,
-        departmentId: "",
-      });
-      return;
-    }
-    setConversationChoice({
-      contact,
-      instances: connectedInstances,
-      connectionId: "",
-      departmentId: "",
-    });
+    conversationRequestKey.current += 1;
+    setConversationRequest({ key: conversationRequestKey.current, contact });
   };
 
   const exportContacts = async (format: "csv" | "xlsx" = "csv") => {
@@ -1460,6 +1456,72 @@ function ContatosPage() {
           </div>
         </Card>
 
+        <div
+          className="mb-3 hidden items-center justify-end gap-1 md:flex"
+          aria-label="Visualização de contatos"
+        >
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                aria-label="Ordenar contatos"
+                title={`Ordenação: ${contactSortLabel(sortMode)}`}
+              >
+                <ArrowDownWideNarrow className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-56 p-1">
+              {(
+                [
+                  ["name", "Nome"],
+                  ["customer", "Empresa do contato"],
+                  ["instance", "Instância"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSortMode(value)}
+                  className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition hover:bg-surface-2"
+                >
+                  <span>{label}</span>
+                  {sortMode === value && <Check className="h-4 w-4 text-primary" />}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+          <Button
+            type="button"
+            variant={viewMode === "cards" ? "primary" : "secondary"}
+            size="icon"
+            onClick={() => setViewMode("cards")}
+            aria-label="Visualizar contatos em cards"
+            title="Cards"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === "list" ? "primary" : "secondary"}
+            size="icon"
+            onClick={() => setViewMode("list")}
+            aria-label="Visualizar contatos em lista"
+            title="Lista"
+          >
+            <List className="h-4 w-4" />
+          </Button>
+          <ContactGridConfiguration
+            visibleColumns={visibleGridColumnSet}
+            customFields={eligibleGridCustomFields}
+            onToggle={toggleGridColumn}
+            onRestore={() => setVisibleGridColumns([...DEFAULT_CONTACT_GRID_COLUMNS])}
+            onHideAll={() => setVisibleGridColumns([])}
+            onShowAll={() => setVisibleGridColumns(allEligibleGridColumnKeys)}
+          />
+        </div>
+
         {selectedBulkCount > 0 && (canUpdateContacts || canDeleteContacts) && (
           <Card className="mb-4 hidden p-3 md:block">
             <div className="flex flex-wrap items-center gap-2">
@@ -1802,10 +1864,157 @@ function ContatosPage() {
                   <div
                     key={contact.id}
                     data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
-                    className="rounded-lg border border-border bg-surface-1 p-3 scroll-mt-4"
+                    className="overflow-hidden rounded-lg border border-border bg-surface-1 scroll-mt-4"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3 p-3">
+                      {(canUpdateContacts || canDeleteContacts) && (
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5 shrink-0"
+                          checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                          onChange={() => toggleContactSelection(contact.id)}
+                          aria-label={`Selecionar ${contact.nome}`}
+                        />
+                      )}
+                      <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={32} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{contact.nome}</p>
+                        <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                          {formatPhoneWithDdi(contact.telefone)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex justify-end border-t border-border px-3 py-2">
+                      <ContactActions
+                        contact={contact}
+                        canViewContacts={canViewContacts}
+                        canStartConversation={canStartConversation}
+                        canUpdateContacts={canUpdateContacts}
+                        canDeleteContacts={canDeleteContacts}
+                        onOpenConversation={openConversation}
+                        onView={setViewing}
+                        onEdit={setEditing}
+                        onDelete={setDeleting}
+                      />
+                    </div>
+                  </div>
+                ))}
+              {!loading && contacts.length === 0 && (
+                <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+                  Nenhum contato encontrado.
+                </div>
+              )}
+            </div>
+            {viewMode === "list" ? (
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-max text-sm">
+                  <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
+                    <tr>
+                      <th className="w-12 rounded-tl-lg px-4 py-3 font-medium">
+                        {(canUpdateContacts || canDeleteContacts) && (
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={allVisibleSelected}
+                            onChange={toggleVisibleSelection}
+                            aria-label="Selecionar contatos visíveis"
+                          />
+                        )}
+                      </th>
+                      {displayedGridColumns.map((columnKey) => (
+                        <th key={columnKey} className="min-w-40 px-4 py-3 font-medium">
+                          {contactGridColumnLabel(columnKey, eligibleGridCustomFields)}
+                        </th>
+                      ))}
+                      <th className="sticky right-0 w-44 min-w-44 rounded-tr-lg bg-surface-2 px-3 py-2 text-center font-medium">
+                        Ações
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {loading && (
+                      <tr>
+                        <td
+                          colSpan={displayedGridColumns.length + 2}
+                          className="px-4 py-12 text-center text-sm text-muted-foreground"
+                        >
+                          Carregando...
+                        </td>
+                      </tr>
+                    )}
+                    {!loading &&
+                      contacts.map((contact) => (
+                        <tr
+                          key={contact.id}
+                          data-contact-letter-anchor={
+                            contactAnchorLetters.get(contact.id) ?? undefined
+                          }
+                          className="group transition hover:bg-surface-1 scroll-mt-4"
+                        >
+                          <td className="px-4 py-3">
+                            {(canUpdateContacts || canDeleteContacts) && (
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                                onChange={() => toggleContactSelection(contact.id)}
+                                aria-label={`Selecionar ${contact.nome}`}
+                              />
+                            )}
+                          </td>
+                          {displayedGridColumns.map((columnKey) => (
+                            <td key={columnKey} className="max-w-72 px-4 py-3">
+                              <ContactGridValue
+                                columnKey={columnKey}
+                                contact={contact}
+                                customFields={eligibleGridCustomFields}
+                                connectionLabelByValue={connectionLabelByValue}
+                              />
+                            </td>
+                          ))}
+                          <td className="sticky right-0 bg-card px-3 py-3 group-hover:bg-surface-1">
+                            <ContactActions
+                              contact={contact}
+                              canViewContacts={canViewContacts}
+                              canStartConversation={canStartConversation}
+                              canUpdateContacts={canUpdateContacts}
+                              canDeleteContacts={canDeleteContacts}
+                              onOpenConversation={openConversation}
+                              onView={setViewing}
+                              onEdit={setEditing}
+                              onDelete={setDeleting}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    {!loading && contacts.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={displayedGridColumns.length + 2}
+                          className="px-4 py-12 text-center text-sm text-muted-foreground"
+                        >
+                          Nenhum contato encontrado.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="hidden gap-3 p-4 md:grid md:grid-cols-3">
+                {loading && (
+                  <div className="col-span-3 rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+                    Carregando...
+                  </div>
+                )}
+                {!loading &&
+                  contacts.map((contact) => (
+                    <div
+                      key={contact.id}
+                      data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
+                      className="min-w-0 overflow-hidden rounded-lg border border-border bg-surface-1 scroll-mt-4"
+                    >
+                      <div className="flex min-w-0 items-center gap-3 p-3">
                         {(canUpdateContacts || canDeleteContacts) && (
                           <input
                             type="checkbox"
@@ -1818,7 +2027,7 @@ function ContatosPage() {
                         <Avatar
                           name={contact.nome}
                           src={contact.avatar_url ?? undefined}
-                          size={32}
+                          size={40}
                         />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold">{contact.nome}</p>
@@ -1827,197 +2036,31 @@ function ContatosPage() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {canStartConversation && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Abrir conversa"
-                            onClick={() => void openConversation(contact)}
-                          >
-                            <MessageCirclePlus className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        {canUpdateContacts && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Editar"
-                            onClick={() => setEditing(contact)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        {canDeleteContacts && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="trash-action"
-                            title="Excluir"
-                            onClick={() => setDeleting(contact)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
+                      <div className="flex justify-end border-t border-border px-3 py-2">
+                        <ContactActions
+                          contact={contact}
+                          canViewContacts={canViewContacts}
+                          canStartConversation={canStartConversation}
+                          canUpdateContacts={canUpdateContacts}
+                          canDeleteContacts={canDeleteContacts}
+                          onOpenConversation={openConversation}
+                          onView={setViewing}
+                          onEdit={setEditing}
+                          onDelete={setDeleting}
+                        />
                       </div>
                     </div>
-                  </div>
-                ))}
-              {!loading && contacts.length === 0 && (
-                <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
-                  Nenhum contato encontrado.
-                </div>
-              )}
-            </div>
-            <table className="hidden w-full table-fixed overflow-hidden rounded-lg text-sm md:table">
-              <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
-                <tr>
-                  <th
-                    className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4"
-                    style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
-                  >
-                    {(canUpdateContacts || canDeleteContacts) && (
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
-                        checked={allVisibleSelected}
-                        onChange={toggleVisibleSelection}
-                        aria-label="Selecionar contatos visíveis"
-                      />
-                    )}
-                  </th>
-                  <th className="w-[35%] px-3 py-3 font-medium sm:px-4">Contato</th>
-                  <th className="w-[16%] px-3 py-3 font-medium sm:px-4">WhatsApp</th>
-                  <th className="w-[21%] px-4 py-3 font-medium">Empresa</th>
-                  <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
-                  <th className="w-40 rounded-tr-lg px-3 py-3 text-center font-medium sm:px-4">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {loading && (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-12 text-center text-sm text-muted-foreground"
-                    >
-                      Carregando...
-                    </td>
-                  </tr>
-                )}
-                {!loading &&
-                  contacts.map((contact) => (
-                    <tr
-                      key={contact.id}
-                      data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
-                      className="transition hover:bg-surface-1 scroll-mt-4"
-                    >
-                      <td
-                        className="relative px-3 py-3 sm:px-4"
-                        style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
-                      >
-                        {(canUpdateContacts || canDeleteContacts) && (
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4"
-                            style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
-                            checked={allFilteredSelected || selectedIds.includes(contact.id)}
-                            onChange={() => toggleContactSelection(contact.id)}
-                            aria-label={`Selecionar ${contact.nome}`}
-                          />
-                        )}
-                      </td>
-                      <td className="px-3 py-3 sm:px-4">
-                        <div className="flex items-center gap-3">
-                          <span className="hidden sm:inline-flex">
-                            <Avatar
-                              name={contact.nome}
-                              src={contact.avatar_url ?? undefined}
-                              size={30}
-                            />
-                          </span>
-                          <p className="truncate font-medium">{contact.nome}</p>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 font-mono text-xs sm:px-4">
-                        {formatPhoneWithDdi(contact.telefone)}
-                      </td>
-                      <td className="px-4 py-3">
-                        {contact.customer ? (
-                          <span
-                            className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                            style={{
-                              backgroundColor: `${contact.customer.cor ?? "#3B82F6"}1f`,
-                              borderColor: `${contact.customer.cor ?? "#3B82F6"}66`,
-                              color: contact.customer.cor ?? "#3B82F6",
-                            }}
-                          >
-                            <Link2 className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{contact.customer.nome}</span>
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Não vinculado</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        {contact.contactDepartment?.nome ?? contact.departamento ?? (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 sm:px-4">
-                        <div className="flex justify-center gap-1">
-                          {canStartConversation && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Abrir conversa"
-                              onClick={() => void openConversation(contact)}
-                            >
-                              <MessageCirclePlus className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {canUpdateContacts && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Editar"
-                              onClick={() => setEditing(contact)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {canDeleteContacts && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="trash-action"
-                              title="Excluir"
-                              onClick={() => setDeleting(contact)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
                   ))}
                 {!loading && contacts.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-12 text-center text-sm text-muted-foreground"
-                    >
-                      Nenhum contato encontrado.
-                    </td>
-                  </tr>
+                  <div className="col-span-3 rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+                    Nenhum contato encontrado.
+                  </div>
                 )}
-              </tbody>
-            </table>
+              </div>
+            )}
             <div
               data-contacts-list-footer
-              className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3"
+              className="flex items-center justify-between gap-2 border-t border-border bg-surface-2 px-3 py-1.5 text-xs text-muted-foreground sm:px-4"
             >
               <div className="flex min-w-0 items-center gap-2">
                 <span className="shrink-0 leading-tight sm:leading-normal">
@@ -2027,23 +2070,25 @@ function ContatosPage() {
                     {formatIntegerPtBr(contacts.length)} de {formatIntegerPtBr(total)}
                   </span>
                 </span>
-                <Select
-                  value={String(pageSize)}
-                  onChange={(event) => setPageSize(Number(event.target.value))}
-                  className="h-8 w-20 text-xs sm:w-24"
-                >
-                  {PAGE_SIZE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Select>
+                <div className="w-16 shrink-0">
+                  <Select
+                    value={String(pageSize)}
+                    onChange={(event) => setPageSize(Number(event.target.value))}
+                    className="!h-6 !min-h-6 !w-full !rounded-md !px-2 !py-0 !pr-6 !text-xs"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
               </div>
               <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0"
+                  className="!h-7 !min-h-7 !w-7 !p-0"
                   disabled={pageSafe === 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
@@ -2055,7 +2100,7 @@ function ContatosPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0"
+                  className="!h-7 !min-h-7 !w-7 !p-0"
                   disabled={pageSafe === totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 >
@@ -2131,131 +2176,27 @@ function ContatosPage() {
             }}
           />
         )}
-        <Modal
-          open={!!conversationChoice}
-          onClose={() => !openingConversation && setConversationChoice(null)}
-          title={
-            conversationChoice?.instances.length === 1
-              ? "Escolher Departamento"
-              : "Escolher Instância e Departamento"
-          }
-          description={
-            conversationChoice
-              ? `Selecione a instância e o departamento para iniciar a conversa com ${conversationChoice.contact.nome}.`
-              : undefined
-          }
-          size="md"
-          footer={
-            <div className="flex w-full justify-end gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setConversationChoice(null)}
-                disabled={openingConversation}
-              >
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={
-                  openingConversation ||
-                  !conversationChoice?.connectionId ||
-                  !conversationChoice.departmentId
-                }
-                onClick={() =>
-                  conversationChoice &&
-                  void startConversation(
-                    conversationChoice.contact,
-                    conversationChoice.connectionId,
-                    conversationChoice.departmentId,
-                  )
-                }
-              >
-                Iniciar Atendimento
-              </Button>
-            </div>
-          }
-        >
-          <div className="space-y-4">
-            {(conversationChoice?.instances.length ?? 0) > 1 && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">Instâncias</p>
-                {conversationChoice?.instances.map((instance) => (
-                  <button
-                    key={instance.id}
-                    type="button"
-                    onClick={() => {
-                      if (!conversationChoice) return;
-                      const favorite = favoriteDepartmentForConnection(
-                        chatDepartments,
-                        instance.id,
-                      );
-                      if (favorite) {
-                        void startConversation(conversationChoice.contact, instance.id);
-                        return;
-                      }
-                      setConversationChoice((current) =>
-                        current
-                          ? { ...current, connectionId: instance.id, departmentId: "" }
-                          : current,
-                      );
-                    }}
-                    className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-4 text-left ${conversationChoice.connectionId === instance.id ? "border-primary bg-primary/5" : "border-border"}`}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: instance.color ?? "#22c55e" }}
-                    />
-                    <span className="flex-1 font-medium">{instance.name}</span>
-                    <span
-                      className={`h-4 w-4 rounded-full border-4 ${conversationChoice.connectionId === instance.id ? "border-primary" : "border-muted-foreground/40"}`}
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
-            {conversationChoice?.connectionId && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">
-                  Departamentos
-                </p>
-                {departmentsForConnection(chatDepartments, conversationChoice.connectionId).map(
-                  (department) => (
-                    <button
-                      key={department.id}
-                      type="button"
-                      onClick={() =>
-                        setConversationChoice((current) =>
-                          current ? { ...current, departmentId: department.id } : current,
-                        )
-                      }
-                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-4 text-left ${conversationChoice.departmentId === department.id ? "border-primary bg-primary/5" : "border-border"}`}
-                    >
-                      <span
-                        className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
-                        style={{ backgroundColor: department.color }}
-                      >
-                        <DepartmentIcon icon={department.icon} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-semibold">{department.name}</span>
-                        {department.description && (
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {department.description}
-                          </span>
-                        )}
-                      </span>
-                      <span
-                        className={`h-4 w-4 rounded-full border-4 ${conversationChoice.departmentId === department.id ? "border-primary" : "border-muted-foreground/40"}`}
-                      />
-                    </button>
-                  ),
-                )}
-              </div>
-            )}
-          </div>
-        </Modal>
+        {canViewContacts && (
+          <ContactFormModal
+            open={!!viewing}
+            initial={viewing ?? undefined}
+            readOnly
+            customers={customers}
+            tags={tags}
+            departments={departments}
+            profiles={profiles}
+            instances={visibleInstances}
+            onCustomerCreated={() => undefined}
+            onDepartmentSaved={() => undefined}
+            onProfileSaved={() => undefined}
+            onClose={() => setViewing(null)}
+            onSubmit={() => undefined}
+          />
+        )}
+        <ActiveConversationOrchestrator
+          request={conversationRequest}
+          onCancel={() => setConversationRequest(null)}
+        />
         {canCreateContacts && (
           <ImportContactsModal
             open={importModal.open}
@@ -2316,52 +2257,365 @@ function ContatosPage() {
           />
         )}
         {canDeleteContacts && (
-          <ConfirmDialog
+          <DeletionConfirmDialog
             open={!!deleting}
-            title="Excluir Contato?"
-            description={
-              deleting ? (
-                <div className="space-y-3">
-                  <p>
-                    Contato abaixo será apagado.
-                    <br />
-                    Deseja continuar?
-                  </p>
-                  <div className="space-y-1 text-foreground">
-                    <p>
-                      <strong>Nome: </strong>{" "}
-                      <strong className="font-semibold text-foreground">"{deleting.nome}"</strong>
-                    </p>
-                    <p>
-                      <strong>Whatsapp: </strong> {formatPhoneWithDdi(deleting.telefone)}
-                    </p>
-                  </div>
-                  <p className="italic">
-                    Histórico de Conversas associadas a esse contato serão preservadas para
-                    auditoria.
-                  </p>
-                </div>
-              ) : undefined
+            resourceKey={`contact:${deleting?.id ?? "none"}`}
+            onOpenChange={(open) => !open && setDeleting(null)}
+            loadImpact={(signal) => crmApi.contactDeletionImpact(deleting!.id, signal)}
+            onConfirm={({ snapshotToken, signal }) =>
+              crmApi.deleteContact(deleting!.id, snapshotToken, signal)
             }
-            destructive
-            confirmLabel="Excluir"
-            onClose={() => setDeleting(null)}
-            onConfirm={async () => {
-              if (!deleting) return;
-              try {
-                await crmApi.deleteContact(deleting.id);
-                toast.success("Contato excluído");
-                setDeleting(null);
-                await load();
-              } catch (e) {
-                toast.error("Falha ao excluir", { description: (e as Error).message });
-              }
+            onDeleted={() => {
+              toast.success("Contato e histórico excluídos");
+              setDeleting(null);
+              void load();
+              void queryClient.invalidateQueries({ queryKey: ["operations", "history"] });
             }}
+            formatError={(error) => (error as Error).message}
           />
         )}
       </PageContainer>
     </AppShell>
   );
+}
+
+function ContactActions({
+  contact,
+  canViewContacts,
+  canStartConversation,
+  canUpdateContacts,
+  canDeleteContacts,
+  onOpenConversation,
+  onView,
+  onEdit,
+  onDelete,
+}: {
+  contact: Contact;
+  canViewContacts: boolean;
+  canStartConversation: boolean;
+  canUpdateContacts: boolean;
+  canDeleteContacts: boolean;
+  onOpenConversation: (contact: Contact) => void;
+  onView: (contact: Contact) => void;
+  onEdit: (contact: Contact) => void;
+  onDelete: (contact: Contact) => void;
+}) {
+  return (
+    <div className="flex shrink-0 justify-center gap-1">
+      {canViewContacts && (
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Visualizar"
+          aria-label={`Visualizar ${contact.nome}`}
+          onClick={() => onView(contact)}
+        >
+          <Eye className="h-3.5 w-3.5" />
+        </Button>
+      )}
+      {canStartConversation && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
+          title={
+            contact.active === false
+              ? "Contato inativo — reative para abrir uma conversa"
+              : "Abrir conversa"
+          }
+          aria-label={`Abrir conversa com ${contact.nome}`}
+          disabled={contact.active === false}
+          onClick={() => onOpenConversation(contact)}
+        >
+          <MessageSquarePlus className="h-3.5 w-3.5" />
+        </Button>
+      )}
+      {canUpdateContacts && (
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Editar"
+          aria-label={`Editar ${contact.nome}`}
+          onClick={() => onEdit(contact)}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      )}
+      {canDeleteContacts && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="trash-action"
+          title="Excluir"
+          aria-label={`Excluir ${contact.nome}`}
+          onClick={() => onDelete(contact)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ContactGridConfiguration({
+  visibleColumns,
+  customFields,
+  onToggle,
+  onRestore,
+  onHideAll,
+  onShowAll,
+}: {
+  visibleColumns: ReadonlySet<ContactGridColumnKey>;
+  customFields: ContactCustomField[];
+  onToggle: (key: ContactGridColumnKey) => void;
+  onRestore: () => void;
+  onHideAll: () => void;
+  onShowAll: () => void;
+}) {
+  const [query, setQuery] = React.useState("");
+  const normalizedQuery = normalizeGridSearch(query);
+  const nativeColumns = CONTACT_GRID_NATIVE_COLUMNS.filter((column) =>
+    normalizeGridSearch(column.label).includes(normalizedQuery),
+  );
+  const filteredCustomFields = customFields.filter((field) =>
+    normalizeGridSearch(field.label).includes(normalizedQuery),
+  );
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          aria-label="Configuração de grade"
+          title="Configuração de grade"
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 p-0 normal-case tracking-normal">
+        <div className="border-b border-border p-3">
+          <p className="mb-2 text-sm font-semibold text-foreground">Configuração de grade</p>
+          <SearchInput value={query} onChange={setQuery} placeholder="Buscar campo..." />
+        </div>
+        <div className="max-h-[min(28rem,60vh)] overflow-y-auto p-3">
+          <ContactGridColumnGroup
+            title="Campos Nativos"
+            items={nativeColumns}
+            visibleColumns={visibleColumns}
+            onToggle={onToggle}
+          />
+          {filteredCustomFields.length > 0 && (
+            <ContactGridColumnGroup
+              title="Campos Adicionais"
+              items={filteredCustomFields.map((field) => ({
+                key: `custom:${field.id}` as ContactGridColumnKey,
+                label: field.label,
+              }))}
+              visibleColumns={visibleColumns}
+              onToggle={onToggle}
+              className="mt-4 border-t border-border pt-3"
+            />
+          )}
+          {nativeColumns.length === 0 && filteredCustomFields.length === 0 && (
+            <p className="py-6 text-center text-xs text-muted-foreground">
+              Nenhum campo encontrado.
+            </p>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-1 border-t border-border p-2">
+          <Button variant="secondary" size="sm" onClick={onRestore}>
+            Restaurar grade
+          </Button>
+          <Button variant="secondary" size="sm" onClick={onHideAll}>
+            Ocultar todas
+          </Button>
+          <Button variant="secondary" size="sm" onClick={onShowAll}>
+            Mostrar todas
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function ContactGridColumnGroup({
+  title,
+  items,
+  visibleColumns,
+  onToggle,
+  className = "",
+}: {
+  title: string;
+  items: ReadonlyArray<{ key: ContactGridColumnKey; label: string }>;
+  visibleColumns: ReadonlySet<ContactGridColumnKey>;
+  onToggle: (key: ContactGridColumnKey) => void;
+  className?: string;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <section className={className}>
+      <p className="mb-1 text-xs font-semibold text-foreground">{title}</p>
+      <div className="space-y-0.5">
+        {items.map((item) => (
+          <label
+            key={item.key}
+            className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-md px-2 text-xs font-normal text-foreground hover:bg-surface-1"
+          >
+            <span className="truncate">{item.label}</span>
+            <Switch
+              checked={visibleColumns.has(item.key)}
+              onCheckedChange={() => onToggle(item.key)}
+              aria-label={`Exibir coluna ${item.label}`}
+            />
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function contactGridColumnLabel(key: ContactGridColumnKey, customFields: ContactCustomField[]) {
+  if (key.startsWith("custom:")) {
+    return customFields.find((field) => field.id === key.slice("custom:".length))?.label ?? "Campo";
+  }
+  return CONTACT_GRID_NATIVE_COLUMNS.find((column) => column.key === key)?.label ?? "Campo";
+}
+
+function ContactGridValue({
+  columnKey,
+  contact,
+  customFields,
+  connectionLabelByValue,
+}: {
+  columnKey: ContactGridColumnKey;
+  contact: Contact;
+  customFields: ContactCustomField[];
+  connectionLabelByValue: Map<string, string>;
+}) {
+  if (columnKey.startsWith("custom:")) {
+    const fieldId = columnKey.slice("custom:".length);
+    const field = customFields.find((item) => item.id === fieldId);
+    const value =
+      contact.customFields?.[fieldId] ??
+      contact.customFieldValues?.find((item) => item.fieldId === fieldId)?.value;
+    if (field && customFieldFormat(field) === "city") {
+      return <CityReferenceLabel cityId={String(value ?? "")} />;
+    }
+    return <span className="block truncate text-xs">{formatContactGridValue(value, field)}</span>;
+  }
+
+  switch (columnKey) {
+    case "native:name":
+      return (
+        <div className="flex min-w-44 items-center gap-3">
+          <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={30} />
+          <span className="truncate font-medium">{contact.nome}</span>
+        </div>
+      );
+    case "native:whatsapp":
+      return (
+        <span className="whitespace-nowrap font-mono text-xs">
+          {formatPhoneWithDdi(contact.telefone)}
+        </span>
+      );
+    case "native:email":
+      return <span className="block max-w-64 truncate text-xs">{contact.email || "-"}</span>;
+    case "native:instances": {
+      const values =
+        contact.instanceIds.length > 0 ? contact.instanceIds : [contact.instancia].filter(Boolean);
+      const labels = values
+        .map((value) => connectionLabelByValue.get(value!) ?? value)
+        .filter(Boolean);
+      return <span className="block max-w-64 truncate text-xs">{labels.join(", ") || "-"}</span>;
+    }
+    case "native:customer":
+      return contact.customer ? (
+        <span
+          className="inline-flex max-w-56 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+          style={{
+            backgroundColor: `${contact.customer.cor ?? "#3B82F6"}1f`,
+            borderColor: `${contact.customer.cor ?? "#3B82F6"}66`,
+            color: contact.customer.cor ?? "#3B82F6",
+          }}
+        >
+          <Link2 className="h-3 w-3 shrink-0" />
+          <span className="truncate">{contact.customer.nome}</span>
+        </span>
+      ) : (
+        <span className="text-xs text-muted-foreground">Não vinculado</span>
+      );
+    case "native:department":
+      return (
+        <span className="text-xs">
+          {contact.contactDepartment?.nome ?? contact.departamento ?? "-"}
+        </span>
+      );
+    case "native:profile":
+      return <span className="text-xs">{contact.contactProfile?.nome ?? "-"}</span>;
+    case "native:tags":
+      return (
+        <span className="block max-w-64 truncate text-xs">
+          {contact.tags.map((tag) => tag.nome).join(", ") || "-"}
+        </span>
+      );
+    case "native:managementLevel":
+      return <span className="text-xs">{contact.nivel_gerencia ?? "-"}</span>;
+    case "native:createdAt":
+      return (
+        <span className="whitespace-nowrap text-xs">
+          {formatContactGridDate(contact.createdAt)}
+        </span>
+      );
+    case "native:updatedAt":
+      return (
+        <span className="whitespace-nowrap text-xs">
+          {formatContactGridDate(contact.updatedAt)}
+        </span>
+      );
+  }
+}
+
+function formatContactGridValue(value: unknown, field?: ContactCustomField) {
+  if (value == null || value === "") return "-";
+  if (typeof value === "boolean") return value ? "Sim" : "Não";
+  if (field?.type === "date") return formatContactGridDate(String(value));
+  if (Array.isArray(value)) return value.join(", ") || "-";
+  return String(value);
+}
+
+function CityReferenceLabel({ cityId }: { cityId: string }) {
+  const city = useQuery({
+    queryKey: ["locations", "city", cityId],
+    queryFn: () => locationApi.city(cityId),
+    enabled: Boolean(cityId),
+    staleTime: 60 * 60 * 1000,
+  });
+  if (!cityId) return <span className="text-xs">-</span>;
+  if (city.isPending) return <span className="text-xs text-muted-foreground">Carregando...</span>;
+  if (!city.data) return <span className="text-xs text-destructive">Cidade indisponível</span>;
+  return (
+    <span className="block truncate text-xs">
+      {[city.data.name, city.data.divisionName || city.data.divisionCode, city.data.countryName]
+        .filter(Boolean)
+        .join(" — ")}
+    </span>
+  );
+}
+
+function formatContactGridDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("pt-BR");
+}
+
+function normalizeGridSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
 }
 
 function AlphabetFloatingNav({
@@ -3134,6 +3388,7 @@ export function ContactFormModal({
   onCustomerCreated,
   onDepartmentSaved,
   onProfileSaved,
+  readOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -3146,6 +3401,7 @@ export function ContactFormModal({
   onDepartmentSaved: (department: ContactCatalog) => void;
   onProfileSaved: (profile: ContactCatalog) => void;
   onSubmit: (data: {
+    active: boolean;
     nome: string;
     telefone: string;
     countryCode?: string;
@@ -3160,11 +3416,16 @@ export function ContactFormModal({
   }) => void | Promise<void>;
   initial?: Contact;
   defaultInstanceId?: string;
+  readOnly?: boolean;
 }) {
   const canReadAdditionalFields = useSession(
     (state) => state.user?.permissions?.includes("contacts.additional_fields.read") ?? false,
   );
+  const canCreateTags = useSession(
+    (state) => state.user?.permissions?.includes("chat.tags.create") ?? false,
+  );
   const [nome, setNome] = React.useState("");
+  const [active, setActive] = React.useState(true);
   const [telefone, setTelefone] = React.useState("");
   const [countryCode, setCountryCode] = React.useState("55");
   const [customerId, setCustomerId] = React.useState("");
@@ -3174,6 +3435,7 @@ export function ContactFormModal({
   const [contactProfileId, setContactProfileId] = React.useState("");
   const [instanceIds, setInstanceIds] = React.useState<string[]>([]);
   const [tagIds, setTagIds] = React.useState<string[]>([]);
+  const [availableTags, setAvailableTags] = React.useState<Tag[]>(tags);
   const [customFields, setCustomFields] = React.useState<Record<string, string | boolean>>({});
   const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
     [],
@@ -3184,6 +3446,7 @@ export function ContactFormModal({
   const customersManager = useDisclosure();
   const departmentsManager = useDisclosure();
   const profilesManager = useDisclosure();
+  const tagsManager = useDisclosure();
   const initializedFormSession = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -3194,6 +3457,7 @@ export function ContactFormModal({
     const sessionKey = initial?.id ?? "new-contact";
     if (initializedFormSession.current === sessionKey) return;
     initializedFormSession.current = sessionKey;
+    setActive(initial?.active ?? true);
     setNome(initial?.nome ?? "");
     const initialPhone = splitPhoneByCountry(initial?.telefone ?? "");
     setCountryCode(initialPhone.countryCode);
@@ -3215,6 +3479,7 @@ export function ContactFormModal({
       ),
     );
     setTagIds(initial?.tags.map((tag) => tag.id) ?? []);
+    setAvailableTags(tags);
     setCustomFields(initial?.customFields ?? {});
     setActiveContactTab("Geral");
     setErrors({});
@@ -3227,7 +3492,25 @@ export function ContactFormModal({
     } else {
       setCustomFieldDefinitions([]);
     }
-  }, [canReadAdditionalFields, defaultInstanceId, initial, instances, open]);
+  }, [canReadAdditionalFields, defaultInstanceId, initial, instances, open, tags]);
+
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if (nome.trim().length >= 2) delete next.nome;
+      if (isValidPhoneForCountry(telefone, countryCode)) delete next.telefone;
+      if (!email.trim() || /^\S+@\S+\.\S+$/.test(email.trim())) delete next.email;
+      for (const field of customFieldDefinitions) {
+        const errorKey = `custom_${field.id}`;
+        const value = String(customFields[field.id] ?? "");
+        const format = customFieldFormat(field);
+        if ((!field.required || value.trim()) && (!format || !customFieldError(value, format))) {
+          delete next[errorKey];
+        }
+      }
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [countryCode, customFieldDefinitions, customFields, email, nome, telefone]);
 
   const contactTabs = React.useMemo(
     () => uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),
@@ -3261,8 +3544,15 @@ export function ContactFormModal({
 
   const handle = () => {
     const errs: Record<string, string> = {};
-    if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
-    if (!isValidPhoneForCountry(telefone, countryCode)) errs.telefone = "WhatsApp inválido.";
+    const requiredFields: string[] = [];
+    if (!nome.trim() || nome.trim().length < 2) {
+      errs.nome = "Informe o nome.";
+      requiredFields.push("Nome");
+    }
+    if (!isValidPhoneForCountry(telefone, countryCode)) {
+      errs.telefone = "WhatsApp inválido.";
+      requiredFields.push("WhatsApp");
+    }
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail inválido.";
     const normalizedCustomFields = normalizeCustomFieldValues(customFields, customFieldDefinitions);
     for (const field of customFieldDefinitions) {
@@ -3271,12 +3561,15 @@ export function ContactFormModal({
         ? customFieldError(String(normalizedCustomFields[field.id] ?? ""), format)
         : null;
       if (formatError) errs[`custom_${field.id}`] = formatError;
-      if (field.required && !String(normalizedCustomFields[field.id] ?? "").trim())
+      if (field.required && !String(normalizedCustomFields[field.id] ?? "").trim()) {
         errs[`custom_${field.id}`] = "Campo obrigatório.";
+        requiredFields.push(field.label);
+      }
     }
     if (Object.keys(errs).length) {
       setErrors(errs);
-      toast.error("Preencha os campos obrigatórios.");
+      if (requiredFields.length) showRequiredFieldsToast(requiredFields);
+      else toast.error("Revise os campos inválidos.");
       return;
     }
     const validInstanceIds = canonicalContactInstanceIds(instanceIds, instances);
@@ -3285,6 +3578,7 @@ export function ContactFormModal({
       toast.info("Referências antigas de instância foram removidas deste contato.");
     }
     void onSubmit({
+      active,
       nome: nome.trim(),
       telefone,
       countryCode,
@@ -3299,12 +3593,21 @@ export function ContactFormModal({
     });
   };
 
+  const activeStateChanged = Boolean(initial) && initial?.active !== active;
+  const saveLabel = activeStateChanged
+    ? active
+      ? "Reativar contato"
+      : "Desativar contato"
+    : initial
+      ? "Salvar alterações"
+      : "Cadastrar contato";
+
   return (
     <>
       <Modal
         open={open}
         onClose={onClose}
-        title={initial ? "Editar Contato" : "Novo Contato"}
+        title={readOnly ? "Visualizar Contato" : initial ? "Editar Contato" : "Novo Contato"}
         description=""
         size="xl"
         footer={
@@ -3312,11 +3615,18 @@ export function ContactFormModal({
             <ContactFormLog contact={initial} />
             <div className="flex shrink-0 justify-end gap-1.5 sm:gap-2">
               <Button variant="ghost" size="sm" className="px-2 sm:px-2.5" onClick={onClose}>
-                Cancelar
+                {readOnly ? "Fechar" : "Cancelar"}
               </Button>
-              <Button variant="primary" size="sm" className="px-2.5 sm:px-2.5" onClick={handle}>
-                Salvar
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="save-action-button px-2.5 sm:px-2.5"
+                  onClick={handle}
+                >
+                  {saveLabel}
+                </Button>
+              )}
             </div>
           </div>
         }
@@ -3340,249 +3650,307 @@ export function ContactFormModal({
               ))}
             </div>
           )}
-          {activeContactTab === "Geral" && (
-            <div className="grid gap-x-4 md:grid-cols-2 md:gap-y-4">
+          <fieldset disabled={readOnly} className="contents">
+            {activeContactTab === "Geral" && (
               <div className="space-y-4">
-                <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3 md:grid-cols-[7.5rem_minmax(0,1fr)] md:items-start md:gap-x-4 md:gap-y-4">
-                  <div className="row-span-2 self-stretch">
-                    <div className="flex h-full min-h-[8.5rem] items-center justify-center">
-                      {avatarUrl ? (
-                        <button
-                          type="button"
-                          aria-label="Mostrar foto"
-                          onClick={() => setPhotoPreviewOpen(true)}
-                          className="group relative inline-flex cursor-pointer rounded-full outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                        >
-                          <Avatar name={nome || "Contato"} src={avatarUrl} size={88} />
-                          <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-foreground/80 px-1.5 py-0.5 text-[10px] font-medium text-background opacity-0 transition group-hover:opacity-100">
-                            Mostrar foto
-                          </span>
-                        </button>
-                      ) : (
-                        <Avatar name={nome || "Contato"} src={avatarUrl ?? undefined} size={88} />
-                      )}
-                    </div>
-                  </div>
-                  <Field label="Nome *">
-                    <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-                    {errors.nome && (
-                      <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-                    )}
-                  </Field>
-                  <Field label="WhatsApp *">
-                    <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
-                      <CountryCodeSelect
-                        value={countryCode}
-                        onChange={handleCountryCodeChange}
-                        compact
-                        embedded
-                      />
-                      <Input
-                        value={telefone}
-                        onChange={(e) => handlePhoneChange(e.target.value)}
-                        onBlur={handlePhoneBlur}
-                        placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
-                        className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
-                      />
-                    </div>
-                    {errors.telefone && (
-                      <span className="mt-1 block text-[11px] text-destructive">
-                        {errors.telefone}
-                      </span>
-                    )}
-                  </Field>
-                </div>
-                <Field label="E-mail">
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value.toLocaleLowerCase("en-US"))}
-                    placeholder="email@exemplo.com"
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="contact-active"
+                    checked={active}
+                    onCheckedChange={setActive}
+                    aria-label={active ? "Contato ativo" : "Contato inativo"}
                   />
-                  {errors.email && (
-                    <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
-                  )}
-                </Field>
-                <div className="hidden md:block">
-                  <Field label="Instâncias">
-                    <InstanceMultiSelect
-                      instances={instances}
-                      selectedIds={instanceIds}
-                      onChange={setInstanceIds}
-                    />
-                  </Field>
+                  <label htmlFor="contact-active" className="text-sm text-foreground">
+                    {active ? "Ativo" : "Inativo"}
+                  </label>
                 </div>
-              </div>
-              <div className="space-y-4">
-                <Field label="Empresa do Contato">
-                  <div className="flex gap-2">
-                    <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                      <option value="">- Sem empresa -</option>
-                      {customers.map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.nome}
-                        </option>
-                      ))}
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={customersManager.show}
-                      title="Gerenciar empresas"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </Field>
-                <Field label="Departamento do Contato">
-                  <div className="flex gap-2">
-                    <Select
-                      value={contactDepartmentId}
-                      onChange={(e) => setContactDepartmentId(e.target.value)}
-                    >
-                      <option value="">- Sem departamento -</option>
-                      {departments.map((department) => (
-                        <option key={department.id} value={department.id}>
-                          {department.nome}
-                        </option>
-                      ))}
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={departmentsManager.show}
-                      title="Gerenciar departamentos"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </Field>
-                <Field label="Perfil do Contato">
-                  <div className="flex gap-2">
-                    <Select
-                      value={contactProfileId}
-                      onChange={(e) => setContactProfileId(e.target.value)}
-                    >
-                      <option value="">- Sem perfil -</option>
-                      {profiles.map((profile) => (
-                        <option key={profile.id} value={profile.id}>
-                          {profile.nome}
-                        </option>
-                      ))}
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={profilesManager.show}
-                      title="Gerenciar perfis"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </Field>
-                <div className="md:hidden">
-                  <Field label="Instâncias">
-                    <InstanceMultiSelect
-                      instances={instances}
-                      selectedIds={instanceIds}
-                      onChange={setInstanceIds}
-                    />
-                  </Field>
-                </div>
-                <Field label="Etiquetas">
-                  <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
-                </Field>
-              </div>
-            </div>
-          )}
-          {groupedCustomFields.map(([group, fields]) => (
-            <div key={group} className="space-y-3">
-              {group && (
-                <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  {group}
-                </h3>
-              )}
-              <div className="grid gap-4 md:grid-cols-2">
-                {fields.map((field) => {
-                  const isHtmlField = field.type === "text" && contactTextVariant(field) === "html";
-                  const errorKey = `custom_${field.id}`;
-                  const format = customFieldFormat(field);
-                  const liveError = format
-                    ? customFieldError(String(customFields[field.id] ?? ""), format)
-                    : null;
-                  const fieldError = liveError ?? errors[errorKey];
-                  return (
-                    <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
-                      <div>
-                        {field.type !== "checkbox" && (
-                          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
-                            <span>
-                              {field.label}
-                              {field.required && <span className="text-destructive"> *</span>}
-                            </span>
-                            {field.note && (
-                              <InfoTooltip label={field.label}>{field.note}</InfoTooltip>
-                            )}
-                          </div>
-                        )}
+                <div className="grid gap-x-4 md:grid-cols-2 md:gap-y-4">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3 md:grid-cols-[7.5rem_minmax(0,1fr)] md:items-start md:gap-x-4 md:gap-y-4">
+                      <div className="row-span-2 self-stretch">
+                        <div className="flex h-full min-h-[8.5rem] items-center justify-center">
+                          {avatarUrl ? (
+                            <button
+                              type="button"
+                              aria-label="Mostrar foto"
+                              onClick={() => setPhotoPreviewOpen(true)}
+                              className="group relative inline-flex cursor-pointer rounded-full outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                            >
+                              <Avatar name={nome || "Contato"} src={avatarUrl} size={88} />
+                              <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-foreground/80 px-1.5 py-0.5 text-[10px] font-medium text-background opacity-0 transition group-hover:opacity-100">
+                                Mostrar foto
+                              </span>
+                            </button>
+                          ) : (
+                            <Avatar
+                              name={nome || "Contato"}
+                              src={avatarUrl ?? undefined}
+                              size={88}
+                            />
+                          )}
+                        </div>
+                      </div>
+                      <Field label="Nome *">
+                        <Input
+                          value={nome}
+                          onChange={(e) => setNome(e.target.value)}
+                          aria-invalid={Boolean(errors.nome)}
+                          className={requiredFieldClassName(Boolean(errors.nome))}
+                        />
+                      </Field>
+                      <Field label="WhatsApp *">
                         <div
-                          className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}
+                          className={`flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary ${requiredFieldClassName(Boolean(errors.telefone))}`}
                         >
-                          <CustomContactFieldInput
-                            field={field}
-                            value={customFields[field.id]}
-                            error={fieldError}
-                            onChange={(value) => {
-                              setCustomFields((current) => ({ ...current, [field.id]: value }));
-                              setErrors((current) => {
-                                if (!current[errorKey]) return current;
-                                const next = { ...current };
-                                delete next[errorKey];
-                                return next;
-                              });
-                            }}
+                          <CountryCodeSelect
+                            value={countryCode}
+                            onChange={handleCountryCodeChange}
+                            compact
+                            embedded
+                          />
+                          <Input
+                            value={telefone}
+                            onChange={(e) => handlePhoneChange(e.target.value)}
+                            onBlur={handlePhoneBlur}
+                            placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
+                            className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
+                            aria-invalid={Boolean(errors.telefone)}
                           />
                         </div>
-                        {fieldError && (
-                          <span className="mt-1 block text-[11px] text-destructive">
-                            {fieldError}
-                          </span>
+                      </Field>
+                    </div>
+                    <Field label="E-mail">
+                      <Input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value.toLocaleLowerCase("en-US"))}
+                        placeholder="email@exemplo.com"
+                        aria-invalid={Boolean(errors.email)}
+                        className={requiredFieldClassName(Boolean(errors.email))}
+                      />
+                    </Field>
+                    <div className="hidden md:block">
+                      <Field label="Instâncias">
+                        <InstanceMultiSelect
+                          instances={instances}
+                          selectedIds={instanceIds}
+                          onChange={setInstanceIds}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <Field label="Empresa do Contato">
+                      <div className="flex gap-2">
+                        <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                          <option value="">- Sem empresa -</option>
+                          {customers.map((customer) => (
+                            <option key={customer.id} value={customer.id}>
+                              {customer.nome}
+                            </option>
+                          ))}
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={customersManager.show}
+                          title="Gerenciar empresas"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </Field>
+                    <Field label="Departamento do Contato">
+                      <div className="flex gap-2">
+                        <Select
+                          value={contactDepartmentId}
+                          onChange={(e) => setContactDepartmentId(e.target.value)}
+                        >
+                          <option value="">- Sem departamento -</option>
+                          {departments.map((department) => (
+                            <option key={department.id} value={department.id}>
+                              {department.nome}
+                            </option>
+                          ))}
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={departmentsManager.show}
+                          title="Gerenciar departamentos"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </Field>
+                    <Field label="Perfil do Contato">
+                      <div className="flex gap-2">
+                        <Select
+                          value={contactProfileId}
+                          onChange={(e) => setContactProfileId(e.target.value)}
+                        >
+                          <option value="">- Sem perfil -</option>
+                          {profiles.map((profile) => (
+                            <option key={profile.id} value={profile.id}>
+                              {profile.nome}
+                            </option>
+                          ))}
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={profilesManager.show}
+                          title="Gerenciar perfis"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </Field>
+                    <div className="md:hidden">
+                      <Field label="Instâncias">
+                        <InstanceMultiSelect
+                          instances={instances}
+                          selectedIds={instanceIds}
+                          onChange={setInstanceIds}
+                        />
+                      </Field>
+                    </div>
+                    <Field label="Etiquetas">
+                      <div className="flex min-w-0 gap-2">
+                        <div className="min-w-0 flex-1">
+                          <TagMultiSelect
+                            tags={availableTags}
+                            selectedIds={tagIds}
+                            onChange={setTagIds}
+                          />
+                        </div>
+                        {canCreateTags && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={tagsManager.show}
+                            title="Nova etiqueta"
+                            aria-label="Nova etiqueta"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
                         )}
                       </div>
-                    </div>
-                  );
-                })}
+                    </Field>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            )}
+            {groupedCustomFields.map(([group, fields]) => (
+              <div key={group} className="space-y-3">
+                {group && (
+                  <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                    {group}
+                  </h3>
+                )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  {fields.map((field) => {
+                    const isHtmlField =
+                      field.type === "text" && contactTextVariant(field) === "html";
+                    const errorKey = `custom_${field.id}`;
+                    const format = customFieldFormat(field);
+                    const liveError = format
+                      ? customFieldError(String(customFields[field.id] ?? ""), format)
+                      : null;
+                    const fieldError = liveError ?? errors[errorKey];
+                    return (
+                      <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
+                        <div>
+                          {field.type !== "checkbox" && format !== "city" && (
+                            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
+                              <span>
+                                {field.label}
+                                {field.required && <span className="text-destructive"> *</span>}
+                              </span>
+                              {field.note && (
+                                <InfoTooltip label={field.label}>{field.note}</InfoTooltip>
+                              )}
+                            </div>
+                          )}
+                          <div
+                            className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}
+                          >
+                            <CustomContactFieldInput
+                              field={field}
+                              value={customFields[field.id]}
+                              error={fieldError}
+                              readOnly={readOnly}
+                              onChange={(value) => {
+                                setCustomFields((current) => ({ ...current, [field.id]: value }));
+                                setErrors((current) => {
+                                  if (!current[errorKey]) return current;
+                                  const next = { ...current };
+                                  delete next[errorKey];
+                                  return next;
+                                });
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </fieldset>
         </div>
-        <CustomersManagerModal
-          open={customersManager.open}
-          onClose={customersManager.hide}
-          onCustomerSelected={(customer) => {
-            onCustomerCreated(customer);
-            setCustomerId(customer.id);
-            customersManager.hide();
-          }}
-        />
-        <DepartmentsManagerModal
-          open={departmentsManager.open}
-          onClose={departmentsManager.hide}
-          onDepartmentSelected={(department) => {
-            onDepartmentSaved(department);
-            setContactDepartmentId(department.id);
-            departmentsManager.hide();
-          }}
-        />
-        <ContactProfilesManagerModal
-          open={profilesManager.open}
-          onClose={profilesManager.hide}
-          onProfileSelected={(profile) => {
-            onProfileSaved(profile);
-            setContactProfileId(profile.id);
-            profilesManager.hide();
-          }}
-        />
+        {!readOnly && (
+          <CustomersManagerModal
+            open={customersManager.open}
+            onClose={customersManager.hide}
+            onCustomerSelected={(customer) => {
+              onCustomerCreated(customer);
+              setCustomerId(customer.id);
+              customersManager.hide();
+            }}
+          />
+        )}
+        {!readOnly && (
+          <DepartmentsManagerModal
+            open={departmentsManager.open}
+            onClose={departmentsManager.hide}
+            onDepartmentSelected={(department) => {
+              onDepartmentSaved(department);
+              setContactDepartmentId(department.id);
+              departmentsManager.hide();
+            }}
+          />
+        )}
+        {!readOnly && (
+          <ContactProfilesManagerModal
+            open={profilesManager.open}
+            onClose={profilesManager.hide}
+            onProfileSelected={(profile) => {
+              onProfileSaved(profile);
+              setContactProfileId(profile.id);
+              profilesManager.hide();
+            }}
+          />
+        )}
+        {!readOnly && (
+          <React.Suspense fallback={null}>
+            <OfficialTagForm
+              open={tagsManager.open}
+              onClose={tagsManager.hide}
+              tags={availableTags}
+              onSubmit={async (data) => {
+                const created = await crmApi.createTag(data);
+                setAvailableTags((current) =>
+                  sortByOptionLabel([created, ...current], (item) => item.nome),
+                );
+                setTagIds((current) => [...new Set([...current, created.id])]);
+                tagsManager.hide();
+                toast.success("Etiqueta criada");
+              }}
+            />
+          </React.Suspense>
+        )}
       </Modal>
       {avatarUrl && (
         <Modal
@@ -3667,11 +4035,11 @@ function CustomersManagerModal({
     if (!deleting) return;
     try {
       await crmApi.deleteCustomer(deleting.id);
-      toast.success("Empresa excluida");
-      setDeleting(null);
       await load();
+      toast.success("Empresa excluida");
     } catch (error) {
       toast.error("Falha ao excluir empresa", { description: (error as Error).message });
+      throw error;
     }
   };
   return (
@@ -3800,7 +4168,11 @@ function CustomersManagerModal({
         open={!!deleting}
         title="Excluir Empresa do Contato?"
         description={
-          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="empresa" />
+          <DeleteLinkedContactCatalogMessage
+            name={deleting?.nome}
+            entityLabel="empresa"
+            contactCount={deleting?.contactCount ?? 0}
+          />
         }
         destructive
         confirmLabel="Excluir"
@@ -3875,11 +4247,11 @@ function DepartmentsManagerModal({
     if (!deleting) return;
     try {
       await crmApi.deleteContactDepartment(deleting.id);
-      toast.success("Departamento excluído");
-      setDeleting(null);
       await load();
+      toast.success("Departamento excluído");
     } catch (error) {
       toast.error("Falha ao excluir departamento", { description: (error as Error).message });
+      throw error;
     }
   };
 
@@ -3970,7 +4342,11 @@ function DepartmentsManagerModal({
         open={!!deleting}
         title="Excluir Departamento do Contato?"
         description={
-          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="departamento" />
+          <DeleteLinkedContactCatalogMessage
+            name={deleting?.nome}
+            entityLabel="departamento"
+            contactCount={deleting?.contactCount ?? 0}
+          />
         }
         destructive
         confirmLabel="Excluir"
@@ -4010,7 +4386,7 @@ function DepartmentFormModal({
   const save = async () => {
     if (!form.name || form.name.trim().length < 2) {
       setError("Informe o nome.");
-      toast.error("Nome obrigatório.");
+      showRequiredFieldsToast(["Nome"]);
       return;
     }
     await onSubmit({ ...form, name: form.name.trim() });
@@ -4029,7 +4405,7 @@ function DepartmentFormModal({
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancelar
             </Button>
-            <Button variant="primary" size="sm" onClick={save}>
+            <Button variant="primary" size="sm" className="save-action-button" onClick={save}>
               Salvar
             </Button>
           </div>
@@ -4041,9 +4417,13 @@ function DepartmentFormModal({
           <Field label="Nome *">
             <Input
               value={form.name ?? ""}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
+              onChange={(event) => {
+                setForm({ ...form, name: event.target.value });
+                if (event.target.value.trim().length >= 2) setError("");
+              }}
+              aria-invalid={Boolean(error)}
+              className={requiredFieldClassName(Boolean(error))}
             />
-            {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
           </Field>
           <Field label="Cor">
             <ColorField
@@ -4130,11 +4510,11 @@ function ContactProfilesManagerModal({
     if (!deleting) return;
     try {
       await crmApi.deleteContactProfile(deleting.id);
-      toast.success("Perfil excluído");
-      setDeleting(null);
       await load();
+      toast.success("Perfil excluído");
     } catch (error) {
       toast.error("Falha ao excluir perfil", { description: (error as Error).message });
+      throw error;
     }
   };
 
@@ -4242,7 +4622,11 @@ function ContactProfilesManagerModal({
         open={!!deleting}
         title="Excluir Perfil do Contato?"
         description={
-          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="perfil" />
+          <DeleteLinkedContactCatalogMessage
+            name={deleting?.nome}
+            entityLabel="perfil"
+            contactCount={deleting?.contactCount ?? 0}
+          />
         }
         destructive
         confirmLabel="Excluir"
@@ -4256,21 +4640,33 @@ function ContactProfilesManagerModal({
 function DeleteLinkedContactCatalogMessage({
   name,
   entityLabel,
+  contactCount,
 }: {
   name?: string | null;
   entityLabel: string;
+  contactCount: number;
 }) {
   const selectedName = name ?? `Sem ${entityLabel}`;
+  const ImpactIcon = entityLabel === "empresa" ? Building2 : UserRound;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       <p>
         Deseja realmente excluir o cadastro de {entityLabel}{" "}
         <strong className="font-semibold text-foreground">"{selectedName}"</strong>?
       </p>
-      <p className="text-xs italic text-muted-foreground">
-        Os Contatos vinculados serão desvinculados.
-      </p>
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 px-4 py-3 text-foreground">
+        <ImpactIcon aria-hidden="true" className="h-5 w-5 text-muted-foreground" />
+        <span className="flex-1 font-medium">Contatos vinculados</span>
+        <span className="font-semibold tabular-nums">{contactCount}</span>
+      </div>
+      <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-foreground">
+        <AlertCircle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+        <p>
+          Ao excluir est{entityLabel === "empresa" ? "a" : "e"} {entityLabel}, o vínculo com todos
+          os contatos será removido. Os contatos não serão excluídos.
+        </p>
+      </div>
     </div>
   );
 }
@@ -4466,7 +4862,7 @@ function TagMultiSelect({
       </button>
       {open && (
         <div
-          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(27rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(15rem,calc(100vh-8rem))]`}
+          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(27rem,calc(100vh-8rem))] w-full max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(15rem,calc(100vh-8rem))]`}
         >
           <div className="grid max-h-[22rem] min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:max-h-[11.5rem] sm:grid-cols-2">
             {tags.map((tag) => {
@@ -4586,14 +4982,34 @@ function CustomContactFieldInput({
   value,
   onChange,
   error,
+  readOnly = false,
 }: {
   field: ContactCustomField;
   value: string | boolean | undefined;
   onChange: (value: string | boolean) => void;
   error?: string | null;
+  readOnly?: boolean;
 }) {
   const format = customFieldFormat(field);
   if (format) {
+    if (format === "city")
+      return (
+        <CityAutocomplete
+          value={String(value ?? "")}
+          onChange={(cityId) => onChange(cityId)}
+          cityFieldLabel={
+            <>
+              <span>
+                {field.label}
+                {field.required && <span className="text-destructive"> *</span>}
+              </span>
+              {field.note && <InfoTooltip label={field.label}>{field.note}</InfoTooltip>}
+            </>
+          }
+          disabled={readOnly}
+          invalid={Boolean(error)}
+        />
+      );
     if (format === "phone")
       return (
         <CustomContactPhoneInput
@@ -4669,7 +5085,13 @@ function CustomContactFieldInput({
       );
     }
     if (variant === "html") {
-      return <HtmlTextEditor value={inputValue} onChange={(next) => onChange(next)} />;
+      return (
+        <HtmlTextEditor
+          value={inputValue}
+          onChange={(next) => onChange(next)}
+          readOnly={readOnly}
+        />
+      );
     }
     return (
       <Input type="text" value={inputValue} onChange={(event) => onChange(event.target.value)} />
@@ -4828,10 +5250,12 @@ function HtmlTextEditor({
   value,
   onChange,
   expanded = false,
+  readOnly = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   expanded?: boolean;
+  readOnly?: boolean;
 }) {
   const editorRef = React.useRef<HTMLDivElement>(null);
   const selectionRef = React.useRef<Range | null>(null);
@@ -4910,148 +5334,154 @@ function HtmlTextEditor({
 
   const editor = (
     <div className="w-full overflow-hidden rounded-lg border border-border bg-surface-1">
-      <div className="flex items-start justify-between gap-2 border-b border-border bg-card px-2 py-1.5">
-        <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
-          <ToolbarButton title="Desfazer" onClick={() => command("undo")}>
-            <Undo2 className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Refazer" onClick={() => command("redo")}>
-            <Redo2 className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarSelect
-            title="Tipo da fonte"
-            value={fontName}
-            className="w-32"
-            onMouseDown={saveSelection}
-            onChange={(next) => {
-              setFontName(next);
-              command("fontName", next);
-            }}
-          >
-            <option value="Arial">Sans Serif</option>
-            <option value="Times New Roman">Serif</option>
-            <option value="Courier New">Largura fixa</option>
-            <option value="Arial Black">Largo</option>
-            <option value="Arial Narrow">Estreito</option>
-            <option value="Comic Sans MS">Comic Sans MS</option>
-            <option value="Garamond">Garamond</option>
-            <option value="Georgia">Georgia</option>
-            <option value="Tahoma">Tahoma</option>
-            <option value="Trebuchet MS">Trebuchet MS</option>
-            <option value="Verdana">Verdana</option>
-          </ToolbarSelect>
-          <ToolbarDivider />
-          <label
-            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-foreground transition hover:bg-card"
-            title="Tamanho da fonte"
-          >
-            <Type className="h-4 w-4" />
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            <select
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
-              value={fontSize}
+      {!readOnly && (
+        <div className="flex items-start justify-between gap-2 border-b border-border bg-card px-2 py-1.5">
+          <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
+            <ToolbarButton title="Desfazer" onClick={() => command("undo")}>
+              <Undo2 className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Refazer" onClick={() => command("redo")}>
+              <Redo2 className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarDivider />
+            <ToolbarSelect
+              title="Tipo da fonte"
+              value={fontName}
+              className="w-32"
               onMouseDown={saveSelection}
-              onChange={(event) => {
-                setFontSize(event.target.value);
-                command("fontSize", event.target.value);
+              onChange={(next) => {
+                setFontName(next);
+                command("fontName", next);
               }}
-              aria-label="Tamanho da fonte"
             >
-              <option value="2">Pequeno</option>
-              <option value="3">Normal</option>
-              <option value="5">Grande</option>
-              <option value="7">Enorme</option>
-            </select>
-          </label>
-          <ToolbarDivider />
-          <ToolbarButton title="Negrito" onClick={() => command("bold")}>
-            <Bold className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Itálico" onClick={() => command("italic")}>
-            <Italic className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Sublinhado" onClick={() => command("underline")}>
-            <Underline className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Riscado" onClick={() => command("strikeThrough")}>
-            <Strikethrough className="h-4 w-4" />
-          </ToolbarButton>
-          <label
-            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
-            title="Cor do texto"
-          >
-            <span className="font-semibold">A</span>
-            <span className="h-1 w-4 rounded-sm" style={{ backgroundColor: fontColor }} />
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              type="color"
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              value={fontColor}
-              onMouseDown={saveSelection}
-              onChange={(event) => {
-                setFontColor(event.target.value);
-                command("foreColor", event.target.value);
-              }}
-            />
-          </label>
-          <ToolbarDivider />
-          <label
-            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
-            title="Alinhamento"
-          >
-            {alignmentIcon}
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            <select
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
-              value={alignmentCommand}
-              onMouseDown={saveSelection}
-              onChange={(event) => {
-                setAlignmentCommand(event.target.value);
-                command(event.target.value);
-              }}
-              aria-label="Alinhamento"
+              <option value="Arial">Sans Serif</option>
+              <option value="Times New Roman">Serif</option>
+              <option value="Courier New">Largura fixa</option>
+              <option value="Arial Black">Largo</option>
+              <option value="Arial Narrow">Estreito</option>
+              <option value="Comic Sans MS">Comic Sans MS</option>
+              <option value="Garamond">Garamond</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Tahoma">Tahoma</option>
+              <option value="Trebuchet MS">Trebuchet MS</option>
+              <option value="Verdana">Verdana</option>
+            </ToolbarSelect>
+            <ToolbarDivider />
+            <label
+              className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-foreground transition hover:bg-card"
+              title="Tamanho da fonte"
             >
-              <option value="justifyLeft">Esquerda</option>
-              <option value="justifyCenter">Centro</option>
-              <option value="justifyRight">Direita</option>
-              <option value="justifyFull">Justificado</option>
-            </select>
-          </label>
-          <ToolbarButton title="Lista numerada" onClick={() => command("insertOrderedList")}>
-            <ListOrdered className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Marcadores" onClick={() => command("insertUnorderedList")}>
-            <List className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Diminuir recuo" onClick={() => command("outdent")}>
-            <ListIndentDecrease className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Aumentar recuo" onClick={() => command("indent")}>
-            <ListIndentIncrease className="h-4 w-4" />
-          </ToolbarButton>
-          {!expanded && (
-            <>
-              <ToolbarDivider />
-              <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
-                <Expand className="h-4 w-4" />
-              </ToolbarButton>
-            </>
-          )}
+              <Type className="h-4 w-4" />
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              <select
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
+                value={fontSize}
+                onMouseDown={saveSelection}
+                onChange={(event) => {
+                  setFontSize(event.target.value);
+                  command("fontSize", event.target.value);
+                }}
+                aria-label="Tamanho da fonte"
+              >
+                <option value="2">Pequeno</option>
+                <option value="3">Normal</option>
+                <option value="5">Grande</option>
+                <option value="7">Enorme</option>
+              </select>
+            </label>
+            <ToolbarDivider />
+            <ToolbarButton title="Negrito" onClick={() => command("bold")}>
+              <Bold className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Itálico" onClick={() => command("italic")}>
+              <Italic className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Sublinhado" onClick={() => command("underline")}>
+              <Underline className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Riscado" onClick={() => command("strikeThrough")}>
+              <Strikethrough className="h-4 w-4" />
+            </ToolbarButton>
+            <label
+              className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
+              title="Cor do texto"
+            >
+              <span className="font-semibold">A</span>
+              <span className="h-1 w-4 rounded-sm" style={{ backgroundColor: fontColor }} />
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="color"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                value={fontColor}
+                onMouseDown={saveSelection}
+                onChange={(event) => {
+                  setFontColor(event.target.value);
+                  command("foreColor", event.target.value);
+                }}
+              />
+            </label>
+            <ToolbarDivider />
+            <label
+              className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
+              title="Alinhamento"
+            >
+              {alignmentIcon}
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              <select
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
+                value={alignmentCommand}
+                onMouseDown={saveSelection}
+                onChange={(event) => {
+                  setAlignmentCommand(event.target.value);
+                  command(event.target.value);
+                }}
+                aria-label="Alinhamento"
+              >
+                <option value="justifyLeft">Esquerda</option>
+                <option value="justifyCenter">Centro</option>
+                <option value="justifyRight">Direita</option>
+                <option value="justifyFull">Justificado</option>
+              </select>
+            </label>
+            <ToolbarButton title="Lista numerada" onClick={() => command("insertOrderedList")}>
+              <ListOrdered className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Marcadores" onClick={() => command("insertUnorderedList")}>
+              <List className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Diminuir recuo" onClick={() => command("outdent")}>
+              <ListIndentDecrease className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Aumentar recuo" onClick={() => command("indent")}>
+              <ListIndentIncrease className="h-4 w-4" />
+            </ToolbarButton>
+            {!expanded && (
+              <>
+                <ToolbarDivider />
+                <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
+                  <Expand className="h-4 w-4" />
+                </ToolbarButton>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <div
         ref={editorRef}
-        contentEditable
+        contentEditable={!readOnly}
         suppressContentEditableWarning
-        className={`w-full overflow-y-auto px-3 py-2 text-sm outline-none [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${
+        className={`w-full overflow-y-auto px-3 py-2 text-base outline-none sm:text-sm [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${
           expanded ? "h-[62vh]" : "h-44"
         }`}
         onBlur={saveSelection}
-        onInput={() => {
-          saveSelection();
-          sync();
-        }}
+        onInput={
+          readOnly
+            ? undefined
+            : () => {
+                saveSelection();
+                sync();
+              }
+        }
         onKeyUp={saveSelection}
         onMouseUp={saveSelection}
       />
@@ -5061,19 +5491,21 @@ function HtmlTextEditor({
   return (
     <>
       {editor}
-      <Modal
-        open={fullscreen}
-        onClose={() => setFullscreen(false)}
-        title="Editar Texto HTML"
-        size="xl"
-        footer={
-          <Button variant="primary" size="sm" onClick={() => setFullscreen(false)}>
-            Concluir
-          </Button>
-        }
-      >
-        <HtmlTextEditor value={value} onChange={onChange} expanded />
-      </Modal>
+      {!readOnly && (
+        <Modal
+          open={fullscreen}
+          onClose={() => setFullscreen(false)}
+          title="Editar Texto HTML"
+          size="xl"
+          footer={
+            <Button variant="primary" size="sm" onClick={() => setFullscreen(false)}>
+              Concluir
+            </Button>
+          }
+        >
+          <HtmlTextEditor value={value} onChange={onChange} expanded />
+        </Modal>
+      )}
     </>
   );
 }
@@ -5148,6 +5580,7 @@ function CustomDateInput({
   onChange: (value: string) => void;
 }) {
   const [draft, setDraft] = React.useState(() => formatDateForDisplay(value, variant));
+  const pickerRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dateInput) {
@@ -5156,33 +5589,81 @@ function CustomDateInput({
     setDraft(formatDateForDisplay(value, variant));
   }, [value, variant]);
 
+  const commitDate = (date: Date) => {
+    const parsed = dateDraftFromDate(date, variant);
+    setDraft(parsed.display);
+    onChange(parsed.iso);
+  };
+
   return (
-    <Input
-      type="text"
-      inputMode="numeric"
-      value={draft}
-      data-date-input="true"
-      onKeyDown={(event) => {
-        if (event.key.toLowerCase() !== "h") return;
-        event.preventDefault();
-        const parsed = dateDraftFromDate(new Date(), variant);
-        setDraft(parsed.display);
-        onChange(parsed.iso);
-      }}
-      onChange={(event) => {
-        setDraft(event.target.value);
-      }}
-      onBlur={() => {
-        const parsed = parseDateDraft(draft, variant);
-        if (!parsed) {
-          onChange(draft);
-          return;
-        }
-        setDraft(parsed.display);
-        onChange(parsed.iso);
-      }}
-    />
+    <div className="relative">
+      <Input
+        type="text"
+        inputMode="numeric"
+        placeholder={variant === "datetime" ? "dd/mm/aaaa hh:mm" : "dd/mm/aaaa"}
+        value={draft}
+        data-date-input="true"
+        className="pr-10"
+        onKeyDown={(event) => {
+          if (event.key.toLowerCase() !== "h") return;
+          event.preventDefault();
+          commitDate(new Date());
+        }}
+        onChange={(event) => {
+          setDraft(event.target.value);
+        }}
+        onBlur={() => {
+          const parsed = parseDateDraft(draft, variant);
+          if (!parsed) {
+            onChange(draft);
+            return;
+          }
+          setDraft(parsed.display);
+          onChange(parsed.iso);
+        }}
+      />
+      <input
+        ref={pickerRef}
+        type={variant === "datetime" ? "datetime-local" : "date"}
+        value={nativeDateInputValue(value, variant)}
+        onChange={(event) => {
+          if (!event.target.value) return;
+          const date = new Date(
+            variant === "date" ? `${event.target.value}T00:00:00` : event.target.value,
+          );
+          if (!Number.isNaN(date.getTime())) commitDate(date);
+        }}
+        className="pointer-events-none absolute h-px w-px opacity-0"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      <button
+        type="button"
+        className="absolute right-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+        aria-label={variant === "datetime" ? "Selecionar data e hora" : "Selecionar data"}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => {
+          const picker = pickerRef.current;
+          if (!picker) return;
+          if (typeof picker.showPicker === "function") picker.showPicker();
+          else picker.click();
+        }}
+      >
+        <CalendarDays className="h-4 w-4" />
+      </button>
+    </div>
   );
+}
+
+function nativeDateInputValue(value: string, variant: ContactDateVariant) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const base = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return variant === "datetime"
+    ? `${base}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+    : base;
 }
 
 function dateDraftFromDate(date: Date, variant: ContactDateVariant) {
@@ -5721,7 +6202,7 @@ function normalizeCountrySort(value: string) {
     .toLowerCase();
 }
 
-function CountryCodeSelect({
+export function CountryCodeSelect({
   value,
   onChange,
   compact = false,
@@ -6010,13 +6491,23 @@ function CustomerFormModal({
     setErrors({});
   }, [initial, open]);
 
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if ((form.nome?.trim().length ?? 0) >= 2) delete next.nome;
+      if (!form.email?.trim() || isValidEmail(form.email)) delete next.email;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [form.email, form.nome]);
+
   const save = async () => {
     const errs: Record<string, string> = {};
     if (!form.nome || form.nome.trim().length < 2) errs.nome = "Informe o nome.";
     if (form.email?.trim() && !isValidEmail(form.email)) errs.email = "E-mail inválido.";
     if (Object.keys(errs).length) {
       setErrors(errs);
-      toast.error("Preencha os campos obrigatórios.");
+      if (errs.nome) showRequiredFieldsToast(["Nome"]);
+      else toast.error("Revise os campos inválidos.");
       return;
     }
     void onSubmit({ ...form, nome: form.nome!.trim() });
@@ -6034,7 +6525,7 @@ function CustomerFormModal({
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancelar
             </Button>
-            <Button variant="primary" size="sm" onClick={save}>
+            <Button variant="primary" size="sm" className="save-action-button" onClick={save}>
               Salvar
             </Button>
           </div>
@@ -6047,10 +6538,9 @@ function CustomerFormModal({
             <Input
               value={form.nome ?? ""}
               onChange={(event) => setForm({ ...form, nome: event.target.value })}
+              aria-invalid={Boolean(errors.nome)}
+              className={requiredFieldClassName(Boolean(errors.nome))}
             />
-            {errors.nome && (
-              <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-            )}
           </Field>
           <Field label="Cor">
             <ColorField
@@ -6083,10 +6573,9 @@ function CustomerFormModal({
               setForm({ ...form, email: event.target.value.toLocaleLowerCase("en-US") })
             }
             placeholder="email@exemplo.com"
+            aria-invalid={Boolean(errors.email)}
+            className={requiredFieldClassName(Boolean(errors.email))}
           />
-          {errors.email && (
-            <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
-          )}
         </Field>
         <Field label="Notas">
           <Textarea
@@ -6207,6 +6696,7 @@ function canonicalContactInstanceIds(
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function contactPayload(data: {
+  active?: boolean;
   nome: string;
   telefone: string;
   countryCode?: string;
@@ -6221,6 +6711,7 @@ export function contactPayload(data: {
 }) {
   return {
     name: data.nome,
+    active: data.active ?? true,
     phone: formatPhoneForSubmit(data.telefone, data.countryCode),
     customerId: data.customer_id,
     email: data.email,

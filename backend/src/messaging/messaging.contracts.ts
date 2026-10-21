@@ -84,6 +84,7 @@ export type SendMessageCommand = {
 export type SendMessageResult = {
   accepted: boolean;
   providerMessageId?: string | null;
+  providerChatId?: string | null;
   providerTimestamp?: Date | null;
   providerStatus?: string | null;
 };
@@ -158,8 +159,10 @@ export type MessageEditEvent = {
   tenantId: string;
   connectionId: string;
   providerMessageId: string;
-  content: string;
+  content: string | null;
   occurredAt: Date;
+  providerInstanceName?: string | null;
+  remoteJid?: string | null;
 };
 export type MessageDeletionEvent = {
   tenantId: string;

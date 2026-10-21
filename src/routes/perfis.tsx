@@ -11,25 +11,43 @@ import {
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, ShieldCheck, Check, Copy, Info, Star } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  ShieldCheck,
+  Check,
+  Copy,
+  Info,
+  Star,
+  KeyRound,
+  Wifi,
+  Network,
+  Eye,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import {
   SectionHeader,
   Card,
+  Badge,
   Button,
   Field,
   Input,
   Textarea,
   SearchInput,
 } from "@/components/ui-kit";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { organizationApi, type ApiRole, type ApiUserMembership } from "@/lib/trixus-api";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/lib/session";
+import { showRequiredFieldsToast } from "@/lib/required-fields";
+import { reconcileRoleChatScopes } from "@/lib/role-chat-scopes";
 import { Switch } from "@/components/ui/switch";
 import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 import {
@@ -129,6 +147,16 @@ const PERMISSION_GROUPS: Array<{
         id: "chat.conversations.view_all_active",
         label: "Ver todas as conversas",
         description: "Permite visualizar conversas de outros atendentes.",
+      },
+      {
+        id: "leads.read",
+        label: "Ver leads",
+        description: "Permite visualizar a fila de leads.",
+      },
+      {
+        id: "chat.bulk_actions.execute",
+        label: "Executa ações em massa",
+        description: "Permite executar ações que afetam várias conversas.",
       },
     ],
   },
@@ -328,6 +356,24 @@ function roleColor(role: ApiRole) {
   return metadata.color ?? DEFAULT_ROLE_COLOR;
 }
 
+function roleScopeCounts(role: ApiRole) {
+  const metadata = (role.metadata ?? {}) as RoleMetadata;
+  const scopes = metadata.chatScopes ?? [];
+  const connectionIds = new Set([
+    ...(metadata.connectionIds ?? []),
+    ...scopes.map((scope) => scope.connectionId),
+  ]);
+  const departmentIds = new Set([
+    ...(metadata.departmentIds ?? []),
+    ...scopes.flatMap((scope) => scope.departmentIds),
+  ]);
+  return { connections: connectionIds.size, departments: departmentIds.size };
+}
+
+function permissionCatalogSize(groups: typeof PERMISSION_GROUPS) {
+  return new Set(groups.flatMap((group) => group.items.map((permission) => permission.id))).size;
+}
+
 function normalizeRoleName(value: string) {
   return value
     .normalize("NFD")
@@ -339,6 +385,30 @@ function normalizeRoleName(value: string) {
 
 function isAdministratorRole(role: ApiRole) {
   return role.key === "tenant_admin" || normalizeRoleName(role.name) === "administrador";
+}
+
+function administratorChatScopes(
+  connections: RoleScopeConnection[],
+  storedScopes: ChatScopeForm[],
+) {
+  return connections
+    .filter(
+      (connection) =>
+        connection.departments.length > 0 &&
+        (connection.status === "connected" || connection.status === "disconnected"),
+    )
+    .map((connection) => {
+      const departmentIds = connection.departments.map((department) => department.id);
+      const storedFavorite = storedScopes.find(
+        (scope) => scope.connectionId === connection.id,
+      )?.favoriteDepartmentId;
+      return {
+        connectionId: connection.id,
+        departmentIds,
+        favoriteDepartmentId:
+          storedFavorite && departmentIds.includes(storedFavorite) ? storedFavorite : null,
+      };
+    });
 }
 
 function duplicateRoleDraft(role: ApiRole, roles: ApiRole[]): ApiRole {
@@ -375,7 +445,8 @@ function defaultWorkSchedule(): WorkSchedule {
   return { noSchedule: true, days };
 }
 
-type PerfilFormData = {
+export type PerfilFormData = {
+  active: boolean;
   name: string;
   description: string;
   color: string;
@@ -440,6 +511,7 @@ function Page() {
   const canCreateRoles = grantedPermissions.includes("roles.create");
   const canUpdateRoles = grantedPermissions.includes("roles.update");
   const canDeleteRoles = grantedPermissions.includes("roles.delete");
+  const canViewRoles = grantedPermissions.includes("roles.read");
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["trixus", "roles"],
     queryFn: organizationApi.listRoles,
@@ -447,6 +519,8 @@ function Page() {
   const { data: scopeOptions } = useQuery({
     queryKey: ["trixus", "role-scope-options"],
     queryFn: organizationApi.roleScopeOptions,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
   const connections = scopeOptions?.connections ?? [];
   const { data: memberships = [] } = useQuery({
@@ -460,6 +534,7 @@ function Page() {
   }, [currentUser?.role, currentUser?.roleId, grantedPermissions, items]);
 
   const [editing, setEditing] = React.useState<ApiRole | null>(null);
+  const [viewing, setViewing] = React.useState<ApiRole | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiRole | null>(null);
   const [deleting, setDeleting] = React.useState<ApiRole | null>(null);
   const [query, setQuery] = React.useState("");
@@ -508,6 +583,7 @@ function Page() {
       };
       if (id) {
         return organizationApi.updateRole(id, {
+          active: data.active,
           name: data.name,
           description: data.description,
           permissionIds: data.permissionIds,
@@ -515,6 +591,7 @@ function Page() {
         });
       }
       return organizationApi.createRole({
+        active: data.active,
         name: data.name,
         description: data.description,
         permissionIds: data.permissionIds,
@@ -541,16 +618,6 @@ function Page() {
     onError: (error) => toast.error((error as Error).message),
   });
 
-  const remove = useMutation({
-    mutationFn: (id: string) => organizationApi.deleteRole(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["trixus", "roles"] });
-      toast.success("Perfil removido");
-      setDeleting(null);
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
-
   return (
     <AppShell>
       <PageContainer>
@@ -567,9 +634,16 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <Field label="Busca">
-            <SearchInput value={query} onChange={setQuery} placeholder="Buscar perfil..." />
-          </Field>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <Field label="Busca">
+              <SearchInput value={query} onChange={setQuery} placeholder="Buscar perfil..." />
+            </Field>
+            {query.trim() && (
+              <div className="flex items-end">
+                <ClearFiltersButton onClick={() => setQuery("")} />
+              </div>
+            )}
+          </div>
         </Card>
 
         {isLoading ? (
@@ -581,34 +655,81 @@ function Page() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map((p) => {
-              const memberCount = memberCountByRoleId[p.id] ?? 0;
               const color = roleColor(p);
               const isAdministrator = isAdministratorRole(p);
+              const scopeCounts = roleScopeCounts(p);
+              const connectionCount = isAdministrator
+                ? connections.length
+                : scopeCounts.connections;
+              const totalPermissions = permissionCatalogSize(permissionGroups);
+              const permissionCount = isAdministrator
+                ? totalPermissions
+                : p.permissionIds.filter((id) =>
+                    permissionGroups.some((group) =>
+                      group.items.some((permission) => permission.id === id),
+                    ),
+                  ).length;
 
               return (
                 <Card
                   key={p.id}
-                  className="min-h-[86px] p-4 transition hover:border-primary/35 hover:bg-surface-1"
+                  className="flex min-h-[166px] flex-col p-4 transition hover:border-primary/35 hover:bg-surface-1"
                 >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div
-                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
-                        style={{ backgroundColor: `${color}24`, color }}
-                      >
-                        <ShieldCheck className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold">{p.name}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {formatMemberCount(memberCount)}
-                        </p>
-                      </div>
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+                      style={{ backgroundColor: `${color}24`, color }}
+                    >
+                      <ShieldCheck className="h-5 w-5" />
                     </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">{p.name}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {p.description?.trim() || formatMemberCount(memberCountByRoleId[p.id] ?? 0)}
+                      </p>
+                    </div>
+                    <div className="ml-auto shrink-0 self-start">
+                      <Badge tone={p.active !== false ? "success" : "destructive"}>
+                        {p.active !== false ? "Ativo" : "Inativo"}
+                      </Badge>
+                    </div>
+                  </div>
 
-                    {!isAdministrator && (canCreateRoles || canUpdateRoles || canDeleteRoles) && (
-                      <div className="flex shrink-0 gap-1">
-                        {canCreateRoles && (
+                  <div className="mt-4 grid grid-cols-3 gap-2 border-y border-border py-3">
+                    <RoleMetric
+                      icon={KeyRound}
+                      value={`${num(permissionCount)}/${num(totalPermissions)}`}
+                      label="permissões"
+                    />
+                    <RoleMetric
+                      icon={Wifi}
+                      value={num(connectionCount)}
+                      label={connectionCount === 1 ? "instância" : "instâncias"}
+                    />
+                    <RoleMetric
+                      icon={Network}
+                      value={num(scopeCounts.departments)}
+                      label={scopeCounts.departments === 1 ? "departamento" : "departamentos"}
+                    />
+                  </div>
+
+                  <div className="mt-auto flex min-h-11 items-end justify-end pt-3">
+                    {(canViewRoles ||
+                      (!isAdministrator &&
+                        (canCreateRoles || canUpdateRoles || canDeleteRoles))) && (
+                      <div className="flex shrink-0 gap-1.5">
+                        {canViewRoles && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setViewing(p)}
+                            title="Visualizar perfil"
+                            aria-label={`Visualizar perfil ${p.name}`}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {!isAdministrator && canCreateRoles && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -620,7 +741,7 @@ function Page() {
                             <Copy className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {canUpdateRoles && (
+                        {!isAdministrator && canUpdateRoles && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -631,7 +752,7 @@ function Page() {
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {canDeleteRoles && (
+                        {!isAdministrator && canDeleteRoles && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -662,6 +783,17 @@ function Page() {
           onSubmit={(data) => save.mutate({ data })}
         />
         <PerfilForm
+          open={!!viewing}
+          roles={items}
+          connections={connections}
+          grantablePermissionIds={grantablePermissionIds}
+          permissionGroups={permissionGroups}
+          initial={viewing ?? undefined}
+          readOnly
+          onClose={() => setViewing(null)}
+          onSubmit={() => undefined}
+        />
+        <PerfilForm
           open={!!editing}
           roles={items}
           connections={connections}
@@ -687,26 +819,53 @@ function Page() {
           onClose={() => setDuplicating(null)}
           onSubmit={(data) => save.mutate({ data })}
         />
-        <ConfirmDialog
+        <DeletionConfirmDialog
           open={!!deleting}
-          title="Excluir Perfil?"
-          destructive
-          description={
-            <p>
-              Deseja realmente excluir o perfil{" "}
-              <strong className="font-semibold text-foreground">"{deleting?.name ?? ""}"</strong>?
-            </p>
-          }
-          confirmLabel="Excluir"
-          onClose={() => setDeleting(null)}
-          onConfirm={() => deleting && remove.mutate(deleting.id)}
+          resourceKey={`role:${deleting?.id ?? "none"}`}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          loadImpact={(signal) => {
+            if (!deleting) return Promise.reject(new Error("Perfil não selecionado."));
+            return organizationApi.roleDeletionPreview(deleting.id, signal);
+          }}
+          onConfirm={({ snapshotToken, signal }) => {
+            if (!deleting) return Promise.reject(new Error("Perfil não selecionado."));
+            return organizationApi.deleteRole(deleting.id, snapshotToken, signal);
+          }}
+          onDeleted={() => {
+            void qc.invalidateQueries({ queryKey: ["trixus", "roles"] });
+            toast.success("Perfil removido");
+            setDeleting(null);
+          }}
+          formatError={(error) => (error as Error).message}
         />
       </PageContainer>
     </AppShell>
   );
 }
 
-function PerfilForm({
+function RoleMetric({
+  icon: Icon,
+  value,
+  label,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  value: string;
+  label: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-2">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold leading-none">{value}</p>
+        <p className="mt-1 truncate text-[11px] text-muted-foreground">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+export function PerfilForm({
   open,
   onClose,
   onSubmit,
@@ -717,6 +876,7 @@ function PerfilForm({
   connections,
   grantablePermissionIds,
   permissionGroups,
+  readOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -728,8 +888,10 @@ function PerfilForm({
   connections: RoleScopeConnection[];
   grantablePermissionIds: string[];
   permissionGroups: typeof PERMISSION_GROUPS;
+  readOnly?: boolean;
 }) {
   const [form, setForm] = React.useState<PerfilFormData>({
+    active: true,
     name: "",
     description: "",
     color: DEFAULT_ROLE_COLOR,
@@ -742,6 +904,7 @@ function PerfilForm({
     workSchedule: defaultWorkSchedule(),
   });
   const [error, setError] = React.useState("");
+  const [nameRequired, setNameRequired] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<PerfilTab>("geral");
   const duplicateNameError = (name: string) => {
     const normalizedName = normalizeRoleName(name);
@@ -756,9 +919,33 @@ function PerfilForm({
   React.useEffect(() => {
     if (!open) return;
     const metadata = (initial?.metadata ?? {}) as RoleMetadata;
+    const storedChatScopes =
+      metadata.chatScopes ??
+      (metadata.connectionIds ?? []).map((connectionId) => ({
+        connectionId,
+        departmentIds: (metadata.departmentIds ?? []).filter((departmentId) =>
+          connections
+            .find((connection) => connection.id === connectionId)
+            ?.departments.some((department) => department.id === departmentId),
+        ),
+        favoriteDepartmentId: null,
+      }));
+    const chatScopes = reconcileRoleChatScopes(storedChatScopes, connections);
+    const isAdministrator = Boolean(initial && !clone && isAdministratorRole(initial));
+    const visibleChatScopes = isAdministrator
+      ? administratorChatScopes(connections, chatScopes)
+      : chatScopes;
+    const visiblePermissionIds = isAdministrator
+      ? [
+          ...new Set(
+            permissionGroups.flatMap((group) => group.items.map((permission) => permission.id)),
+          ),
+        ]
+      : initial?.permissionIds;
     setForm(
       initial
         ? {
+            active: isAdministrator || clone ? true : initial.active !== false,
             name: initial.name,
             description: initial.description ?? "",
             color: metadata.color ?? DEFAULT_ROLE_COLOR,
@@ -772,23 +959,14 @@ function PerfilForm({
                       group.items.some((permission) => permission.id === permissionId),
                     ),
                 )
-              : initial.permissionIds,
-            departmentIds: metadata.departmentIds ?? [],
-            connectionIds: metadata.connectionIds ?? [],
-            chatScopes:
-              metadata.chatScopes ??
-              (metadata.connectionIds ?? []).map((connectionId) => ({
-                connectionId,
-                departmentIds: (metadata.departmentIds ?? []).filter((departmentId) =>
-                  connections
-                    .find((connection) => connection.id === connectionId)
-                    ?.departments.some((department) => department.id === departmentId),
-                ),
-                favoriteDepartmentId: null,
-              })),
+              : (visiblePermissionIds ?? []),
+            departmentIds: [...new Set(visibleChatScopes.flatMap((scope) => scope.departmentIds))],
+            connectionIds: visibleChatScopes.map((scope) => scope.connectionId),
+            chatScopes: visibleChatScopes,
             workSchedule: normalizeWorkSchedule(metadata.workSchedule ?? defaultWorkSchedule()),
           }
         : {
+            active: true,
             name: "",
             description: "",
             color: DEFAULT_ROLE_COLOR,
@@ -804,18 +982,28 @@ function PerfilForm({
           },
     );
     setError("");
+    setNameRequired(false);
     setActiveTab(initialTab);
   }, [clone, connections, grantablePermissionIds, initial, initialTab, open, permissionGroups]);
 
   const submit = () => {
     if (!form.name || form.name.trim().length < 2) {
-      setError("Informe o nome.");
+      setError("");
+      setNameRequired(true);
+      setActiveTab("geral");
+      showRequiredFieldsToast(["Nome"]);
       return;
     }
     const duplicateError = duplicateNameError(form.name);
     if (duplicateError) {
       setError(duplicateError);
       setActiveTab("geral");
+      return;
+    }
+    const chatScopes = reconcileRoleChatScopes(form.chatScopes, connections);
+    if (chatScopes.some((scope) => scope.departmentIds.length === 0)) {
+      setActiveTab("visualizacao");
+      toast.error("Cada instância habilitada deve possuir pelo menos um departamento.");
       return;
     }
     const scheduleError = workScheduleError(form.workSchedule);
@@ -835,7 +1023,13 @@ function PerfilForm({
       toast.error(dependencyIssue);
       return;
     }
-    onSubmit({ ...form, permissionIds });
+    onSubmit({
+      ...form,
+      permissionIds,
+      chatScopes,
+      connectionIds: chatScopes.map((scope) => scope.connectionId),
+      departmentIds: [...new Set(chatScopes.flatMap((scope) => scope.departmentIds))],
+    });
   };
 
   const togglePermission = (
@@ -870,11 +1064,13 @@ function PerfilForm({
       open={open}
       onClose={onClose}
       title={
-        initial?.id && !clone
-          ? "Editar Perfil de Acesso"
-          : clone
-            ? "Duplicar Perfil de Acesso"
-            : "Criar Perfil de Acesso"
+        readOnly
+          ? "Visualizar Perfil de Acesso"
+          : initial?.id && !clone
+            ? "Editar Perfil de Acesso"
+            : clone
+              ? "Duplicar Perfil de Acesso"
+              : "Criar Perfil de Acesso"
       }
       size="xl"
       className="sm:max-w-[51rem]"
@@ -886,69 +1082,93 @@ function PerfilForm({
             updatedAt={clone ? undefined : initial?.updatedAt}
           />
           <div className="flex shrink-0 items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              Cancelar
+            <Button variant="ghost" size="sm" className="h-8 w-20 rounded-lg" onClick={onClose}>
+              {readOnly ? "Fechar" : "Cancelar"}
             </Button>
-            <Button variant="primary" size="sm" onClick={submit}>
-              Salvar
-            </Button>
+            {!readOnly && (
+              <Button variant="primary" size="sm" className="save-action-button" onClick={submit}>
+                Salvar
+              </Button>
+            )}
           </div>
         </div>
       }
     >
       <div className="space-y-5">
-        <PerfilTabs active={activeTab} onChange={setActiveTab} />
-        {activeTab === "geral" && (
-          <GeneralTab
-            form={form}
-            error={error}
-            onChange={(patch) => {
-              setForm((current) => ({ ...current, ...patch }));
-              if (patch.name !== undefined) setError(duplicateNameError(patch.name));
-            }}
-          />
-        )}
-
-        {activeTab === "acessos" && (
-          <div className="space-y-6">
-            <PermissionSettings
-              form={form}
-              permissionGroups={permissionGroups}
-              togglePermission={togglePermission}
-              togglePermissionGroup={togglePermissionGroup}
-              grantablePermissionIds={grantablePermissionIds}
+        <fieldset disabled={readOnly} className="contents">
+          <label className="flex min-h-7 items-center gap-2 text-sm">
+            <Switch
+              checked={form.active}
+              onCheckedChange={(active) => setForm((current) => ({ ...current, active }))}
+              aria-label="Ativo"
             />
-          </div>
-        )}
+            <span>Ativo</span>
+          </label>
+        </fieldset>
+        <PerfilTabs active={activeTab} onChange={setActiveTab} />
+        <fieldset disabled={readOnly} className="contents">
+          {activeTab === "geral" && (
+            <GeneralTab
+              form={form}
+              error={error}
+              nameRequired={nameRequired}
+              onChange={(patch) => {
+                setForm((current) => ({ ...current, ...patch }));
+                if (patch.name !== undefined) {
+                  setError(duplicateNameError(patch.name));
+                  if (patch.name.trim().length >= 2) setNameRequired(false);
+                }
+              }}
+            />
+          )}
 
-        {activeTab === "visualizacao" && (
-          <ScopeSettings
-            form={form}
-            connections={connections}
-            onChange={(chatScopes) => {
-              const connectionIds = chatScopes.map((scope) => scope.connectionId);
-              const departmentIds = [
-                ...new Set(chatScopes.flatMap((scope) => scope.departmentIds)),
-              ];
-              setForm((current) => ({
-                ...current,
-                chatScopes,
-                connectionIds,
-                departmentIds,
-              }));
-            }}
-          />
-        )}
+          {activeTab === "acessos" && (
+            <div className="space-y-6">
+              <PermissionSettings
+                form={form}
+                permissionGroups={permissionGroups}
+                togglePermission={togglePermission}
+                togglePermissionGroup={togglePermissionGroup}
+                grantablePermissionIds={grantablePermissionIds}
+              />
+            </div>
+          )}
 
-        {activeTab === "jornada" && (
-          <WorkScheduleEditor
-            value={form.workSchedule}
-            onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
-          />
-        )}
+          {activeTab === "visualizacao" && (
+            <ScopeSettings
+              form={form}
+              connections={connections}
+              onChange={(chatScopes) => {
+                const connectionIds = chatScopes.map((scope) => scope.connectionId);
+                const departmentIds = [
+                  ...new Set(chatScopes.flatMap((scope) => scope.departmentIds)),
+                ];
+                setForm((current) => ({
+                  ...current,
+                  chatScopes,
+                  connectionIds,
+                  departmentIds,
+                }));
+              }}
+            />
+          )}
+
+          {activeTab === "jornada" && (
+            <WorkScheduleEditor
+              value={form.workSchedule}
+              onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
+            />
+          )}
+        </fieldset>
       </div>
     </Modal>
   );
+}
+
+export function OnboardingPerfilForm(
+  props: Omit<React.ComponentProps<typeof PerfilForm>, "permissionGroups">,
+) {
+  return <PerfilForm {...props} permissionGroups={PERMISSION_GROUPS} />;
 }
 
 function PerfilTabs({
@@ -991,10 +1211,12 @@ function PerfilTabs({
 function GeneralTab({
   form,
   error,
+  nameRequired,
   onChange,
 }: {
   form: PerfilFormData;
   error: string;
+  nameRequired: boolean;
   onChange: (patch: Partial<PerfilFormData>) => void;
 }) {
   return (
@@ -1005,6 +1227,7 @@ function GeneralTab({
             value={form.name}
             onChange={(event) => onChange({ name: event.target.value })}
             placeholder="Ex: Atendente Senior"
+            aria-invalid={nameRequired || Boolean(error)}
           />
         </Field>
         <Field label="Cor">
@@ -1047,7 +1270,9 @@ function ScopeSettings({
 }) {
   const sortedConnections = sortByOptionLabel(
     connections.filter(
-      (connection) => connection.status === "connected" || connection.status === "disconnected",
+      (connection) =>
+        connection.departments.length > 0 &&
+        (connection.status === "connected" || connection.status === "disconnected"),
     ),
     (connection) => connection.name,
   );
@@ -1060,12 +1285,22 @@ function ScopeSettings({
       return;
     }
     if (scopeFor(connection.id)) return;
+    const firstDepartment = sortByOptionLabel(connection.departments, (item) => item.name)[0];
+    if (!firstDepartment) return;
     onChange([
       ...form.chatScopes,
-      { connectionId: connection.id, departmentIds: [], favoriteDepartmentId: null },
+      {
+        connectionId: connection.id,
+        departmentIds: [firstDepartment.id],
+        favoriteDepartmentId: null,
+      },
     ]);
   };
   const setDepartments = (connectionId: string, departmentIds: string[]) => {
+    if (departmentIds.length === 0) {
+      toast.error("Mantenha pelo menos um departamento habilitado para esta instância.");
+      return;
+    }
     onChange(
       form.chatScopes.map((scope) =>
         scope.connectionId === connectionId
@@ -1104,41 +1339,62 @@ function ScopeSettings({
         sortedConnections.map((connection) => {
           const scope = scopeFor(connection.id);
           const enabled = !!scope;
-          const departments = sortByOptionLabel(connection.departments, (item) => item.name);
+          const favoriteDepartmentId = scope?.favoriteDepartmentId ?? null;
+          const departments = sortByOptionLabel(connection.departments, (item) => item.name).sort(
+            (left, right) =>
+              Number(right.id === favoriteDepartmentId) - Number(left.id === favoriteDepartmentId),
+          );
           const allSelected =
             enabled &&
             departments.length > 0 &&
             departments.every((department) => scope.departmentIds.includes(department.id));
           return (
             <div key={connection.id} className="overflow-hidden rounded-xl border border-border">
-              <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 bg-primary/5 px-3 py-1.5">
-                <strong className="min-w-0 truncate">{connection.name}</strong>
-                <div className="flex flex-wrap items-center gap-3 text-sm">
-                  <label className="flex min-h-9 items-center gap-2">
-                    <span>Acesso à instância</span>
+              <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-1 bg-primary/5 py-1.5 pl-3 pr-[21px] sm:flex sm:flex-wrap sm:justify-between sm:gap-2">
+                <strong className="col-start-1 row-start-1 min-w-0 truncate">
+                  {connection.name}
+                </strong>
+                <div className="contents text-sm sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+                  <label className="contents sm:flex sm:min-h-9 sm:items-center sm:gap-2">
+                    <span className="col-start-2 row-start-1 whitespace-nowrap sm:col-auto sm:row-auto">
+                      Acesso à instância
+                    </span>
                     <Switch
+                      className="col-start-3 row-start-1 sm:col-auto sm:row-auto"
                       checked={enabled}
                       onCheckedChange={(checked) => setConnection(connection, checked)}
                     />
                   </label>
-                  <label className="flex min-h-9 items-center gap-2 border-l border-border pl-3">
-                    <span>Todos os departamentos</span>
+                  <label className="contents sm:flex sm:min-h-9 sm:items-center sm:gap-2 sm:border-l sm:border-border sm:pl-3">
+                    <span className="col-start-2 row-start-2 whitespace-nowrap sm:col-auto sm:row-auto">
+                      Todos os departamentos
+                    </span>
                     <Switch
+                      className="col-start-3 row-start-2 sm:col-auto sm:row-auto"
                       checked={allSelected}
                       disabled={!enabled || departments.length === 0}
                       onCheckedChange={(checked) =>
                         setDepartments(
                           connection.id,
-                          checked ? departments.map((department) => department.id) : [],
+                          checked
+                            ? departments.map((department) => department.id)
+                            : [
+                                favoriteDepartmentId &&
+                                departments.some(
+                                  (department) => department.id === favoriteDepartmentId,
+                                )
+                                  ? favoriteDepartmentId
+                                  : departments[0].id,
+                              ],
                         )
                       }
                     />
                   </label>
                 </div>
               </div>
-              <div className="space-y-1.5 p-2 sm:pl-6">
+              <div className="grid gap-1.5 p-2 sm:grid-cols-2 sm:pl-6">
                 {departments.length === 0 ? (
-                  <p className="py-3 text-sm text-muted-foreground">
+                  <p className="py-3 text-sm text-muted-foreground sm:col-span-2">
                     Nenhum departamento vinculado a esta instância.
                   </p>
                 ) : (
@@ -1148,7 +1404,7 @@ function ScopeSettings({
                     return (
                       <div
                         key={department.id}
-                        className={`flex min-h-11 items-center gap-2 rounded-lg border px-3 py-1 ${enabled ? "bg-background" : "bg-muted/40 text-muted-foreground"}`}
+                        className={`grid min-h-11 grid-cols-[minmax(0,1fr)_2.25rem_2.25rem] items-center gap-2 rounded-lg border px-3 py-1 ${enabled ? "bg-background" : "bg-muted/40 text-muted-foreground"}`}
                       >
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium" title={department.name}>
@@ -1185,7 +1441,10 @@ function ScopeSettings({
                         </button>
                         <Switch
                           checked={checked}
-                          disabled={!enabled}
+                          disabled={
+                            !enabled || (checked && (scope?.departmentIds.length ?? 0) === 1)
+                          }
+                          aria-label={`Liberar departamento ${department.name}`}
                           onCheckedChange={(nextChecked) =>
                             setDepartments(
                               connection.id,
@@ -1494,15 +1753,13 @@ export function WorkScheduleEditor({
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-3">
-        <button
+        <Switch
           id={enabledToggleId}
-          type="button"
-          role="switch"
-          aria-checked={enabled}
+          checked={enabled}
           aria-label="Habilitar Jornada"
-          onClick={() => {
-            onChange({ ...value, noSchedule: enabled });
-            if (!enabled) {
+          onCheckedChange={(checked) => {
+            onChange({ ...value, noSchedule: !checked });
+            if (checked) {
               const firstActiveDay = WEEK_DAYS.find((day) => value.days[day].active) ?? null;
               setSelectedDay(firstActiveDay);
               requestAnimationFrame(() => {
@@ -1511,12 +1768,7 @@ export function WorkScheduleEditor({
               });
             }
           }}
-          className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${enabled ? "bg-blue-600" : "bg-slate-300"}`}
-        >
-          <span
-            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${enabled ? "translate-x-6" : "translate-x-1"}`}
-          />
-        </button>
+        />
         <label htmlFor={enabledToggleId} className="cursor-pointer text-sm text-muted-foreground">
           Habilitar Jornada
         </label>

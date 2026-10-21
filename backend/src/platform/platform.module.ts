@@ -6,6 +6,7 @@ import { PrismaModule } from "../prisma/prisma.module";
 import { QueueModule } from "../queue/queue.module";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { StorageModule } from "../tickets/storage/storage.module";
+import { LocationsModule } from "../locations/locations.module";
 import { PlatformAuthGuard } from "./platform-auth.guard";
 import { PlatformAuditService } from "./platform-audit.service";
 import { PlatformController, TenantEntitlementsController } from "./platform.controller";
@@ -15,7 +16,15 @@ import { PlatformService } from "./platform.service";
 import { TenantFeatureGuard } from "./tenant-feature.guard";
 
 @Module({
-  imports: [AuthModule, EmailModule, PrismaModule, QueueModule, RealtimeModule, StorageModule],
+  imports: [
+    AuthModule,
+    EmailModule,
+    PrismaModule,
+    QueueModule,
+    RealtimeModule,
+    StorageModule,
+    LocationsModule,
+  ],
   controllers: [PlatformController, TenantEntitlementsController, ImpersonationHandoffController],
   providers: [
     CampaignDispatchQueue,

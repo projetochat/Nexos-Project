@@ -1,6 +1,7 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsIn,
   IsObject,
@@ -10,9 +11,13 @@ import {
   Length,
   MaxLength,
 } from "class-validator";
-import { CONTACT_COMPANY_ROLES } from "./create-contact.dto";
+import { CONTACT_COMPANY_ROLES, CUSTOMER_ACCESS_PROFILES } from "./create-contact.dto";
 
 export class UpdateContactDto {
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
   @IsOptional()
   @IsString()
   @Length(2, 120)
@@ -34,6 +39,18 @@ export class UpdateContactDto {
   @IsOptional()
   @IsUUID()
   customerId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  customerBranchId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  customerDepartmentId?: string | null;
+
+  @IsOptional()
+  @IsIn(CUSTOMER_ACCESS_PROFILES)
+  customerAccessProfile?: (typeof CUSTOMER_ACCESS_PROFILES)[number] | null;
 
   @IsOptional()
   @IsUUID()

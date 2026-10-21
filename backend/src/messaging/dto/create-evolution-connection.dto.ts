@@ -3,11 +3,19 @@ import {
   IsDateString,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from "class-validator";
 
 export class CreateEvolutionConnectionDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(120)
+  @Matches(/^[A-Za-z0-9._:-]+$/)
+  idempotencyKey?: string;
+
   @IsString()
   @MinLength(2)
   @MaxLength(80)

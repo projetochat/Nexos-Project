@@ -14,6 +14,106 @@ const current = {
 };
 
 describe("RolesController permission delegation", () => {
+  it("persists one onboarding favorite in the current Administrator scope without touching permissions", async () => {
+    const baseRole = {
+      id: "role-admin",
+      tenantId: "tenant-a",
+      key: "tenant_admin",
+      name: "Administrador",
+      description: null,
+      metadata: { preserved: true },
+      system: true,
+      active: true,
+      createdAt: new Date("2026-10-01T12:00:00.000Z"),
+      updatedAt: new Date("2026-10-01T12:00:00.000Z"),
+      permissions: [{ permissionId: "roles.update" }],
+    };
+    const update = vi.fn(async ({ data }) => ({
+      ...baseRole,
+      metadata: data.metadata,
+      updatedAt: new Date("2026-10-20T12:00:00.000Z"),
+    }));
+    const prisma = {
+      role: { findFirst: vi.fn().mockResolvedValue(baseRole), update },
+      department: { findFirst: vi.fn().mockResolvedValue({ id: "department-new" }) },
+      messagingConnection: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "connection-a",
+            departments: [{ departmentId: "department-old" }, { departmentId: "department-new" }],
+          },
+          {
+            id: "connection-b",
+            departments: [{ departmentId: "department-old" }],
+          },
+        ]),
+      },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await controller.setFavoriteDepartment("role-admin", { departmentId: "department-new" }, {
+      ...current,
+      roleId: "role-admin",
+      roleKey: "tenant_admin",
+      permissions: ["roles.update"],
+    } as never);
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0]?.[0]).toMatchObject({
+      where: { id: "role-admin" },
+      data: {
+        metadata: {
+          preserved: true,
+          onboardingFavoriteDepartmentId: "department-new",
+          connectionIds: ["connection-a", "connection-b"],
+          departmentIds: ["department-old", "department-new"],
+          chatScopes: [
+            {
+              connectionId: "connection-a",
+              departmentIds: ["department-old", "department-new"],
+              favoriteDepartmentId: "department-new",
+            },
+            {
+              connectionId: "connection-b",
+              departmentIds: ["department-old"],
+              favoriteDepartmentId: null,
+            },
+          ],
+        },
+      },
+      include: { permissions: true },
+    });
+    expect(update.mock.calls[0]?.[0]?.data).not.toHaveProperty("permissions");
+  });
+
+  it("does not use the favorite action to mutate another or non-Administrator profile", async () => {
+    const update = vi.fn();
+    const prisma = {
+      role: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "role-agent",
+          tenantId: "tenant-a",
+          key: "agent",
+          name: "Atendente",
+          metadata: {},
+          permissions: [],
+        }),
+        update,
+      },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await expect(
+      controller.setFavoriteDepartment("role-agent", { departmentId: "department-a" }, {
+        ...current,
+        roleId: "role-admin",
+        roleKey: "tenant_admin",
+        permissions: ["roles.update"],
+      } as never),
+    ).rejects.toThrow("próprio perfil Administrador");
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("rejects permissions from a tenant module that is disabled", async () => {
     const controller = new RolesController(
       {} as never,
@@ -87,7 +187,7 @@ describe("RolesController permission delegation", () => {
     ]);
   });
 
-  it("accepts stale legacy aliases and stores only their canonical replacements", async () => {
+  it("stores canonical permissions and refreshes affected users without revoking sessions", async () => {
     const role = {
       id: "role-a",
       tenantId: "tenant-a",
@@ -100,6 +200,7 @@ describe("RolesController permission delegation", () => {
       updatedAt: new Date("2026-10-01T12:00:00.000Z"),
       permissions: [
         { permissionId: "conversations.read" },
+        { permissionId: "contacts.additional_fields.read" },
         { permissionId: "chat.audio.send" },
         { permissionId: "chat.contacts.create" },
         { permissionId: "chat.contacts.edit" },
@@ -111,6 +212,7 @@ describe("RolesController permission delegation", () => {
       ],
     };
     const createMany = vi.fn();
+    const revokeSessions = vi.fn().mockResolvedValue({ count: 2 });
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
       permission: { upsert: vi.fn() },
@@ -123,6 +225,10 @@ describe("RolesController permission delegation", () => {
           ),
         })),
       },
+      tenantMembership: {
+        findMany: vi.fn().mockResolvedValue([{ id: "membership-a" }, { id: "membership-b" }]),
+      },
+      authSession: { updateMany: revokeSessions },
     };
     const prisma = {
       role: { findFirst: vi.fn().mockResolvedValue(role) },
@@ -180,6 +286,17 @@ describe("RolesController permission delegation", () => {
       "tickets.create",
       "conversations.assign",
     ]);
+    expect(revokeSessions).not.toHaveBeenCalled();
+    expect(realtime.publish).toHaveBeenCalledWith(
+      { membershipId: "membership-a" },
+      "authorization.updated",
+      { membershipId: "membership-a", reason: "role.updated" },
+    );
+    expect(realtime.publish).toHaveBeenCalledWith(
+      { membershipId: "membership-b" },
+      "authorization.updated",
+      { membershipId: "membership-b", reason: "role.updated" },
+    );
   });
 
   it("uses the assigned permissions, not the temporarily expanded runtime catalog", async () => {
@@ -267,6 +384,12 @@ describe("RolesController permission delegation", () => {
               },
             ],
           },
+          {
+            id: "connection-without-departments",
+            name: "WhatsApp sem departamento",
+            status: "CONNECTED",
+            departments: [],
+          },
         ]),
       },
       department: {
@@ -330,6 +453,49 @@ describe("RolesController permission delegation", () => {
         current as never,
       ),
     ).rejects.toThrow("O departamento favorito precisa estar liberado.");
+  });
+
+  it("rejects an enabled instance without an allowed department", async () => {
+    const controller = new RolesController({} as never, {} as never);
+
+    await expect(
+      controller.create(
+        {
+          name: "Escopo vazio",
+          permissionIds: ["contacts.read"],
+          metadata: {
+            chatScopes: [
+              {
+                connectionId: "connection-outside-scope",
+                departmentIds: [],
+                favoriteDepartmentId: null,
+              },
+            ],
+          },
+        },
+        current as never,
+      ),
+    ).rejects.toThrow("deve possuir pelo menos um departamento liberado");
+  });
+
+  it("rejects a legacy enabled instance without departments", async () => {
+    const prisma = {
+      messagingConnection: { count: vi.fn().mockResolvedValue(1) },
+      departmentConnection: { count: vi.fn() },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await expect(
+      controller.create(
+        {
+          name: "Escopo legado vazio",
+          permissionIds: ["contacts.read"],
+          metadata: { connectionIds: ["connection-a"], departmentIds: [] },
+        },
+        current as never,
+      ),
+    ).rejects.toThrow("deve possuir pelo menos um departamento liberado");
+    expect(prisma.departmentConnection.count).not.toHaveBeenCalled();
   });
 
   it("rejects a department that is not linked to the selected instance", async () => {

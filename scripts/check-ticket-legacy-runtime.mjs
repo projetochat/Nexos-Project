@@ -6,6 +6,7 @@ const chamados = readFileSync(resolve(root, "src/routes/chamados.tsx"), "utf8");
 const inbox = readFileSync(resolve(root, "src/routes/inbox.$conversationId.tsx"), "utf8");
 const api = readFileSync(resolve(root, "src/lib/trixus-api.ts"), "utf8");
 const editor = readFileSync(resolve(root, "src/components/ticket-rich-text-editor.tsx"), "utf8");
+const content = readFileSync(resolve(root, "src/components/ticket-rich-text-content.tsx"), "utf8");
 
 const forbidden = [
   { pattern: /@\/lib\/mvp/, label: "@/lib/mvp" },
@@ -23,14 +24,21 @@ const failures = forbidden.filter(({ pattern }) => pattern.test(chamados));
 if (/\.innerHTML|dangerouslySetInnerHTML|insertHTML/.test(editor)) {
   failures.push({ label: "raw HTML access in ticket editor" });
 }
+if (/\.innerHTML|dangerouslySetInnerHTML|insertHTML/.test(content)) {
+  failures.push({ label: "raw HTML access in ticket content" });
+}
 for (const boundary of [
   "writeTicketEditorHtml",
-  "readTicketEditorHtml",
-  "pasteTicketEditorText",
+  "normalizeTicketEditorHtml",
+  "ticketEditorClipboardHtml",
+  "insertTicketEditorHtml",
   "onPaste",
   "onDrop",
 ]) {
   if (!editor.includes(boundary)) failures.push({ label: `missing editor boundary: ${boundary}` });
+}
+if (!chamados.includes("TicketRichTextContent") || !content.includes("writeTicketEditorHtml")) {
+  failures.push({ label: "missing sanitized ticket content boundary" });
 }
 if (
   /attachments\/init|attachments\/[^"`']+\/complete|contentBase64|arrayBufferToBase64/.test(api)

@@ -23,15 +23,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   private assertHomologationDatabase() {
-    if (process.env.SEED_MODE !== "homologation") return;
+    if (process.env.TRIXUS_ENVIRONMENT !== "homologation") return;
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
-      throw new Error("SEED_MODE=homologation requires DATABASE_URL.");
+      throw new Error("TRIXUS_ENVIRONMENT=homologation requires DATABASE_URL.");
     }
     const databaseName = databaseNameFromUrl(databaseUrl);
     if (!databaseName || !isAllowedHomologationDatabase(databaseName)) {
       throw new Error(
-        `SEED_MODE=homologation requires an allowed homologation database, got ${databaseName ?? "unknown"}.`,
+        `TRIXUS_ENVIRONMENT=homologation requires an allowed homologation database, got ${databaseName ?? "unknown"}.`,
       );
     }
   }

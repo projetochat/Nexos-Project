@@ -21,18 +21,21 @@ describe("contratos visuais de clientes da plataforma", () => {
     expect(clientsSource).toContain('type="datetime-local"');
   });
 
-  it("oferece prospecção no filtro, formulário e badge", () => {
-    expect(clientsSource.match(/value="PROSPECTING"/g)).toHaveLength(2);
-    expect(clientsSource).toContain('["warning", "PROSPECÇÃO"]');
+  it("oferece Prospect no filtro, formulário e badge", () => {
+    expect(clientsSource).toContain('<option value="PROSPECTING">Prospect</option>');
+    expect(clientsSource).toContain('value: "PROSPECTING"');
+    expect(clientsSource).toContain('badgeLabel: "PROSPECT"');
+    expect(clientsSource).toContain('tone: "warning"');
   });
 });
 
 describe("contratos visuais de planos da plataforma", () => {
   it("organiza os campos principais e deixa o código automático", () => {
-    const statusPosition = plansSource.indexOf('label="Status *"');
-    const namePosition = plansSource.indexOf('label="Nome do plano *"');
-    const codePosition = plansSource.indexOf('label="Código"');
-    const trialPosition = plansSource.indexOf('label="Dias de trial"');
+    const formSource = plansSource.slice(plansSource.indexOf("function PlanForm"));
+    const statusPosition = formSource.indexOf('label="Status *"');
+    const namePosition = formSource.indexOf('label="Nome do plano *"');
+    const codePosition = formSource.indexOf('label="Código"');
+    const trialPosition = formSource.indexOf('label="Dias de trial"');
 
     expect(statusPosition).toBeGreaterThan(-1);
     expect(statusPosition).toBeLessThan(namePosition);

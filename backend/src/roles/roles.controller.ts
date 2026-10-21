@@ -22,8 +22,15 @@ import { PermissionsGuard } from "../auth/permissions.guard";
 import { Prisma } from "../generated/prisma";
 import { roleChatScopes } from "../auth/connection-access";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizeRegistrationText } from "../common/registration-case";
+import {
+  ConfirmDeletionDto,
+  type DeletionImpactPreview,
+  deletionSnapshot,
+} from "../common/deletion-impact";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
+import { SetFavoriteDepartmentDto } from "./dto/set-favorite-department.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
 
 @Controller()
@@ -99,23 +106,23 @@ export class RolesController {
         select: { id: true, name: true },
       }),
     ]);
+    const scopedConnections = connections.map((connection) => ({
+      id: connection.id,
+      name: connection.name,
+      status: connection.status.toLowerCase(),
+      departments: (connection.departments ?? [])
+        .map(({ department }) => department)
+        .filter(
+          (department) =>
+            current.roleKey === "tenant_admin" ||
+            editorScopes.some(
+              (scope) =>
+                scope.connectionId === connection.id && scope.departmentIds.includes(department.id),
+            ),
+        ),
+    }));
     return {
-      connections: connections.map((connection) => ({
-        id: connection.id,
-        name: connection.name,
-        status: connection.status.toLowerCase(),
-        departments: (connection.departments ?? [])
-          .map(({ department }) => department)
-          .filter(
-            (department) =>
-              current.roleKey === "tenant_admin" ||
-              editorScopes.some(
-                (scope) =>
-                  scope.connectionId === connection.id &&
-                  scope.departmentIds.includes(department.id),
-              ),
-          ),
-      })),
+      connections: scopedConnections.filter((connection) => connection.departments.length > 0),
       departments,
     };
   }
@@ -127,6 +134,12 @@ export class RolesController {
     return this.serialize(role);
   }
 
+  @Get("roles/:id/deletion-preview")
+  @RequirePermissions("roles.delete")
+  async deletionPreview(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.buildDeletionPreview(id, current.tenantId);
+  }
+
   @Post("roles")
   @RequirePermissions("roles.create")
   async create(@Body() dto: CreateRoleDto, @CurrentUser() current: AuthenticatedUser) {
@@ -135,7 +148,12 @@ export class RolesController {
     this.assertPermissionDependencies(permissionIds);
     this.assertCanGrantPermissions(permissionIds, current);
     await this.assertMetadataScope(dto.metadata, current);
-    const name = dto.name.trim();
+    const name = await normalizeRegistrationText(
+      this.prisma,
+      current.tenantId,
+      "accessProfiles",
+      dto.name,
+    );
     const key = (dto.key ?? name)
       .trim()
       .toLowerCase()
@@ -161,6 +179,7 @@ export class RolesController {
           key,
           name,
           description: dto.description?.trim() || null,
+          active: dto.active ?? true,
           metadata:
             dto.metadata === undefined ? undefined : JSON.parse(JSON.stringify(dto.metadata)),
           system: false,
@@ -182,9 +201,18 @@ export class RolesController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const existing = await this.findRoleOrThrow(id, current.tenantId);
+    const name =
+      dto.name === undefined
+        ? undefined
+        : await normalizeRegistrationText(
+            this.prisma,
+            current.tenantId,
+            "accessProfiles",
+            dto.name,
+          );
     this.assertAdministratorRoleProtected(existing);
     const permissionIds = dto.permissionIds ? normalizePermissionIds(dto.permissionIds) : undefined;
-    if (dto.name !== undefined && normalizeRoleName(dto.name) === "administrador") {
+    if (name !== undefined && normalizeRoleName(name) === "administrador") {
       throw new BadRequestException("O nome Administrador é reservado para gestão do sistema.");
     }
     if (permissionIds) {
@@ -199,15 +227,19 @@ export class RolesController {
       );
     }
     await this.assertMetadataScope(dto.metadata, current, existing.metadata);
-    const role = await this.prisma.$transaction(async (tx) => {
+    const authorizationChanged =
+      permissionIds !== undefined ||
+      dto.metadata !== undefined ||
+      (dto.active !== undefined && dto.active !== existing.active);
+    const { role, affectedMembershipIds } = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
       if (permissionIds) {
         await this.assertEnabledModulePermissions(permissionIds, current.tenantId);
       }
-      if (dto.name !== undefined) {
-        await this.ensureNameAvailable(tx, current.tenantId, dto.name.trim(), existing.id);
+      if (name !== undefined) {
+        await this.ensureNameAvailable(tx, current.tenantId, name, existing.id);
       }
       if (permissionIds) {
         await this.ensurePermissions(tx, permissionIds);
@@ -220,37 +252,212 @@ export class RolesController {
           skipDuplicates: true,
         });
       }
-      return tx.role.update({
+      const role = await tx.role.update({
         where: { id: existing.id },
         data: {
-          name: dto.name?.trim(),
+          name,
           description: dto.description === undefined ? undefined : dto.description.trim() || null,
+          active: dto.active,
           metadata:
             dto.metadata === undefined ? undefined : JSON.parse(JSON.stringify(dto.metadata)),
         },
         include: { permissions: true },
       });
+      if (!authorizationChanged) return { role, affectedMembershipIds: [] as string[] };
+      const affectedMemberships = await tx.tenantMembership.findMany({
+        where: { tenantId: current.tenantId, roleId: existing.id },
+        select: { id: true },
+      });
+      const affectedMembershipIds = affectedMemberships.map((membership) => membership.id);
+      return { role, affectedMembershipIds };
     });
+    for (const membershipId of affectedMembershipIds) {
+      this.realtime.publish({ membershipId }, "authorization.updated", {
+        membershipId,
+        reason: "role.updated",
+      });
+    }
     this.realtime.publish({ tenantId: current.tenantId }, "instance-access.updated", {
       roleId: role.id,
     });
     return this.serialize(role);
   }
 
+  @Patch("roles/:id/favorite-department")
+  @RequirePermissions("roles.update")
+  async setFavoriteDepartment(
+    @Param("id") id: string,
+    @Body() dto: SetFavoriteDepartmentDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const existing = await this.findRoleOrThrow(id, current.tenantId);
+    if (existing.id !== current.roleId || existing.key !== "tenant_admin") {
+      throw new ForbiddenException(
+        "O departamento favorito do onboarding só pode ser definido no próprio perfil Administrador.",
+      );
+    }
+    const department = await this.prisma.department.findFirst({
+      where: { id: dto.departmentId, tenantId: current.tenantId, active: true },
+      select: { id: true },
+    });
+    if (!department) throw new NotFoundException("Departamento não encontrado.");
+
+    const connections = await this.prisma.messagingConnection.findMany({
+      where: {
+        tenantId: current.tenantId,
+        providerType: "EVOLUTION",
+        archivedAt: null,
+      },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        departments: {
+          where: { department: { active: true } },
+          select: { departmentId: true },
+        },
+      },
+    });
+    const chatScopes = connections.flatMap((connection) => {
+      const departmentIds = [...new Set(connection.departments.map((item) => item.departmentId))];
+      if (departmentIds.length === 0) return [];
+      return [
+        {
+          connectionId: connection.id,
+          departmentIds,
+          favoriteDepartmentId: departmentIds.includes(department.id) ? department.id : null,
+        },
+      ];
+    });
+    if (!chatScopes.some((scope) => scope.favoriteDepartmentId === department.id)) {
+      throw new BadRequestException(
+        "O departamento favorito precisa estar vinculado a uma instância do Chat.",
+      );
+    }
+    const departmentIds = [...new Set(chatScopes.flatMap((scope) => scope.departmentIds))];
+    const metadata =
+      existing.metadata &&
+      typeof existing.metadata === "object" &&
+      !Array.isArray(existing.metadata)
+        ? existing.metadata
+        : {};
+    const role = await this.prisma.role.update({
+      where: { id: existing.id },
+      data: {
+        metadata: JSON.parse(
+          JSON.stringify({
+            ...metadata,
+            connectionIds: chatScopes.map((scope) => scope.connectionId),
+            departmentIds,
+            chatScopes,
+            onboardingFavoriteDepartmentId: department.id,
+          }),
+        ),
+      },
+      include: { permissions: true },
+    });
+    return this.serialize(role);
+  }
+
   @Delete("roles/:id")
   @RequirePermissions("roles.delete")
-  async remove(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    const role = await this.findRoleOrThrow(id, current.tenantId);
-    this.assertAdministratorRoleProtected(role);
-    const inUse = await this.prisma.tenantMembership.count({
-      where: { tenantId: current.tenantId, roleId: id },
-    });
-    if (inUse > 0)
-      throw new BadRequestException(
-        "Perfil de Acesso não pode ser excluído pois possui atendentes vinculados.",
+  async remove(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "roles" WHERE id = ${id} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
       );
-    await this.prisma.role.delete({ where: { id } });
-    return { ok: true };
+      const impact = await this.buildDeletionPreview(id, current.tenantId, tx);
+      if (impact.snapshotToken !== dto.snapshotToken) {
+        return {
+          status: "changed" as const,
+          impact,
+          message: "Os vínculos do perfil mudaram. Revise os dados antes de confirmar novamente.",
+        };
+      }
+      if (impact.blockedReason) throw new BadRequestException(impact.blockedReason);
+      await tx.userInvitation.deleteMany({ where: { tenantId: current.tenantId, roleId: id } });
+      await tx.role.delete({ where: { id } });
+      return { status: "deleted" as const };
+    });
+  }
+
+  private async buildDeletionPreview(
+    id: string,
+    tenantId: string,
+    db: Pick<PrismaService, "role" | "tenantMembership" | "userInvitation"> = this.prisma,
+  ): Promise<DeletionImpactPreview> {
+    const role = await db.role.findFirst({
+      where: { id, tenantId },
+      include: { permissions: true },
+    });
+    if (!role) throw new NotFoundException("Role não encontrada.");
+    this.assertAdministratorRoleProtected(role);
+    const [memberships, invitations] = await Promise.all([
+      db.tenantMembership.findMany({
+        where: { tenantId, roleId: id },
+        orderBy: { createdAt: "asc" },
+        take: 11,
+        select: { id: true, presentationName: true, user: { select: { name: true, email: true } } },
+      }),
+      db.userInvitation.findMany({
+        where: { tenantId, roleId: id },
+        orderBy: { createdAt: "asc" },
+        take: 11,
+        select: { id: true, email: true, status: true },
+      }),
+    ]);
+    const memberCount = await db.tenantMembership.count({ where: { tenantId, roleId: id } });
+    const invitationCount = await db.userInvitation.count({ where: { tenantId, roleId: id } });
+    const snapshotToken = deletionSnapshot({
+      id: role.id,
+      updatedAt: role.updatedAt,
+      memberCount,
+      membershipIds: memberships.map((item) => item.id),
+      invitationCount,
+      invitationIds: invitations.map((item) => item.id),
+    });
+    const blockedReason = memberCount
+      ? "Este perfil não pode ser excluído porque possui atendentes vinculados. O banco exige que todo atendente tenha um perfil de acesso."
+      : undefined;
+    return {
+      snapshotToken,
+      title: "Excluir Perfil?",
+      prompt: blockedReason
+        ? "Desvincule ou atribua outro perfil aos atendentes antes de excluir este registro."
+        : `Deseja realmente excluir o perfil "${role.name}"?`,
+      record: { name: role.name, identifiers: [] },
+      dependencies: [
+        {
+          id: "memberships",
+          label: "Atendentes vinculados",
+          count: memberCount,
+          operation: "unlink",
+          operationLabel: memberCount
+            ? "Bloqueiam a exclusão porque roleId é obrigatório no banco."
+            : "Nenhum atendente será afetado.",
+          items: memberships.slice(0, 10).map((item) => ({
+            id: item.id,
+            label: item.presentationName || item.user.name || item.user.email,
+            description: item.user.email,
+          })),
+          hasMore: memberCount > 10,
+        },
+      ],
+      consequences: [
+        {
+          id: "permissions",
+          text: memberCount
+            ? "Este perfil não pode ser excluído enquanto houver atendentes vinculados."
+            : "Ao excluir este perfil, o vínculo dos atendentes com este perfil será removido. Os atendentes não serão excluídos.",
+          irreversible: true,
+        },
+      ],
+      confirmation: { level: "standard", confirmLabel: "Excluir" },
+      blockedReason,
+    };
   }
 
   private async findRoleOrThrow(id: string, tenantId: string) {
@@ -349,6 +556,12 @@ export class RolesController {
       current,
     );
     await this.assertChatScopes(requestedMetadata.chatScopes, existing.chatScopes, current);
+    if (
+      requestedMetadata.chatScopes === undefined &&
+      requestedMetadata.connectionIds !== undefined
+    ) {
+      await this.assertLegacyConnectionDepartments(requestedMetadata, existing, current);
+    }
   }
 
   private async assertChatScopes(
@@ -389,6 +602,11 @@ export class RolesController {
     const requested = parse(requestedValue);
     if (requested.length !== requestedValue.length) {
       throw new BadRequestException("Visualização do atendimento inválida.");
+    }
+    if (requested.some((scope) => scope.departmentIds.length === 0)) {
+      throw new BadRequestException(
+        "Cada instância habilitada deve possuir pelo menos um departamento liberado.",
+      );
     }
     const connectionIds = requested.map((scope) => scope.connectionId);
     if (new Set(connectionIds).size !== connectionIds.length) {
@@ -441,6 +659,54 @@ export class RolesController {
       throw new ForbiddenException(
         "Você não pode alterar uma visualização fora do seu próprio escopo.",
       );
+    }
+  }
+
+  private async assertLegacyConnectionDepartments(
+    metadata: { connectionIds?: unknown; departmentIds?: unknown },
+    existingMetadata: { connectionIds?: unknown; departmentIds?: unknown },
+    current: AuthenticatedUser,
+  ) {
+    if (!Array.isArray(metadata.connectionIds)) return;
+    const connectionIds = [
+      ...new Set(metadata.connectionIds.filter((id): id is string => typeof id === "string")),
+    ];
+    if (connectionIds.length === 0) return;
+    const departmentIds = Array.isArray(metadata.departmentIds)
+      ? [...new Set(metadata.departmentIds.filter((id): id is string => typeof id === "string"))]
+      : [];
+    const existingConnectionIds = Array.isArray(existingMetadata.connectionIds)
+      ? new Set(existingMetadata.connectionIds.filter((id): id is string => typeof id === "string"))
+      : new Set<string>();
+    const existingDepartmentIds = Array.isArray(existingMetadata.departmentIds)
+      ? new Set(existingMetadata.departmentIds.filter((id): id is string => typeof id === "string"))
+      : new Set<string>();
+    const preservesLegacyScope =
+      existingConnectionIds.size === connectionIds.length &&
+      connectionIds.every((id) => existingConnectionIds.has(id)) &&
+      existingDepartmentIds.size === departmentIds.length &&
+      departmentIds.every((id) => existingDepartmentIds.has(id));
+    if (preservesLegacyScope) return;
+    if (departmentIds.length === 0) {
+      throw new BadRequestException(
+        "Cada instância habilitada deve possuir pelo menos um departamento liberado.",
+      );
+    }
+    for (const connectionId of connectionIds) {
+      const linked = await this.prisma.departmentConnection.count({
+        where: {
+          tenantId: current.tenantId,
+          connectionId,
+          departmentId: { in: departmentIds },
+          department: { active: true },
+          connection: { archivedAt: null },
+        },
+      });
+      if (linked === 0) {
+        throw new BadRequestException(
+          "Cada instância habilitada deve possuir pelo menos um departamento vinculado e liberado.",
+        );
+      }
     }
   }
 
@@ -557,6 +823,7 @@ export class RolesController {
     description: string | null;
     metadata: unknown;
     system: boolean;
+    active: boolean;
     createdAt: Date;
     updatedAt: Date;
     permissions: Array<{ permissionId: string }>;
@@ -569,6 +836,7 @@ export class RolesController {
       description: role.description,
       metadata: role.metadata,
       system: role.system,
+      active: role.active,
       createdAt: role.createdAt.toISOString(),
       updatedAt: role.updatedAt.toISOString(),
       permissionIds: normalizePermissionIds(
@@ -597,7 +865,9 @@ const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
     "chat.messages.edit",
     "chat.agent_name.show",
     "chat.conversations.view_all_active",
+    "chat.bulk_actions.execute",
   ],
+  "leads.read": [],
   "connections.read": ["connections.create", "connections.update", "connections.delete"],
   "groups.read": ["groups.create", "groups.update", "groups.leave"],
   "chat.tags.read": ["chat.tags.create", "chat.tags.update", "chat.tags.delete"],

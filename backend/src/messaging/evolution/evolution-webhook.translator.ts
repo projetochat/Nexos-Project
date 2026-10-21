@@ -39,8 +39,11 @@ export class EvolutionWebhookTranslator {
     if (event === "messages.upsert") {
       const deletion = this.translateDeletion(payload, connection);
       if (deletion.kind === "delete") return deletion;
+      const edit = this.translateEdit(payload, connection);
+      if (edit.kind === "edit") return edit;
       return this.translateInbound(payload, connection);
     }
+    if (event === "messages.edited") return this.translateEdit(payload, connection);
     if (event === "messages.delete") return this.translateDeletion(payload, connection);
     if (event === "messages.update") {
       const deletion = this.translateDeletion(payload, connection);
@@ -71,7 +74,9 @@ export class EvolutionWebhookTranslator {
         kind: "connection",
         instanceName: payload.instance,
         status: MessagingConnectionStatus.CONNECTING,
-        qrCodeBase64: readNestedString(payload.data, ["qrcode", "base64"]),
+        qrCodeBase64:
+          readNestedString(payload.data, ["qrcode", "base64"]) ??
+          readString(payload.data, "base64"),
       } as const;
     }
     return { kind: "ignored", reason: "UNSUPPORTED_EVENT" } as const;
@@ -258,15 +263,48 @@ export class EvolutionWebhookTranslator {
       readRecord(data, "message") ??
       readNestedRecord(data, ["update", "message"]) ??
       readRecord(data, "editedMessage");
-    const protocol = readRecord(envelope ?? {}, "protocolMessage");
+    const protocol =
+      readRecord(envelope ?? {}, "protocolMessage") ?? readRecord(data, "protocolMessage");
+    const protocolEditedMessage = readRecord(protocol ?? {}, "editedMessage");
+    const updateEditedMessage = readNestedRecord(data, ["update", "editedMessage"]);
+    const dataEditedMessage = readRecord(data, "editedMessage");
+    const envelopeEditedMessage = readRecord(envelope ?? {}, "editedMessage");
+    const secretEncryptedMessage =
+      readRecord(data, "secretEncryptedMessage") ??
+      readRecord(envelope ?? {}, "secretEncryptedMessage");
+    const secretTargetKey = readRecord(secretEncryptedMessage ?? {}, "targetMessageKey");
+    const secretTargetMessageId =
+      stringValue(secretTargetKey?.id) ?? stringValue(secretTargetKey?.ID);
+    if (
+      normalizeEvent(payload.event) !== "messages.edited" &&
+      !protocolEditedMessage &&
+      !updateEditedMessage &&
+      !dataEditedMessage &&
+      !envelopeEditedMessage &&
+      !secretTargetMessageId
+    ) {
+      return { kind: "ignored", reason: "NOT_EDITED_TEXT" };
+    }
     const protocolKey = readRecord(protocol ?? {}, "key");
+    const updateKey = readNestedRecord(data, ["update", "key"]);
     const providerMessageId =
-      stringValue(protocolKey?.id) ?? stringValue(key?.id) ?? readString(data, "id");
-    const rawMessage = readRecord(protocol ?? {}, "editedMessage") ?? envelope;
+      secretTargetMessageId ??
+      stringValue(protocolKey?.id) ??
+      stringValue(updateKey?.id) ??
+      stringValue(key?.id) ??
+      readString(data, "ID") ??
+      readString(data, "messageId") ??
+      readString(data, "id");
+    const rawMessage =
+      protocolEditedMessage ??
+      updateEditedMessage ??
+      dataEditedMessage ??
+      envelopeEditedMessage ??
+      envelope;
     const message = unwrapMessage(rawMessage);
     const content = extractMessageContent(message);
     const text = content.text ?? content.caption;
-    if (!providerMessageId || !text || content.type !== MessageType.TEXT) {
+    if (!providerMessageId || (text && content.type !== MessageType.TEXT)) {
       return { kind: "ignored", reason: "NOT_EDITED_TEXT" };
     }
     return {
@@ -275,8 +313,14 @@ export class EvolutionWebhookTranslator {
         tenantId: connection.tenantId,
         connectionId: connection.id,
         providerMessageId,
-        content: text,
+        content: text ?? null,
         occurredAt: timestamp(payload),
+        providerInstanceName: payload.instance,
+        remoteJid:
+          stringValue(key?.remoteJid) ??
+          stringValue(secretTargetKey?.remoteJid) ??
+          stringValue(secretTargetKey?.remoteJID) ??
+          null,
       },
     };
   }
@@ -438,6 +482,20 @@ function extractMessageContent(message: Record<string, unknown> | null): {
     };
   }
   return { type: MessageType.TEXT };
+}
+
+export function evolutionStoredMessageId(record: Record<string, unknown>) {
+  const data = readRecord(record, "data") ?? record;
+  const key = readRecord(data, "key") ?? readNestedRecord(data, ["message", "key"]);
+  return stringValue(key?.id) ?? stringValue(key?.ID) ?? readString(data, "id");
+}
+
+export function evolutionStoredText(record: Record<string, unknown>) {
+  const data = readRecord(record, "data") ?? record;
+  const message = readRecord(data, "message") ?? data;
+  const content = extractMessageContent(message);
+  if (content.type !== MessageType.TEXT) return null;
+  return content.text ?? content.caption ?? null;
 }
 
 function interactiveResponseText(interactive: Record<string, unknown>) {

@@ -9,23 +9,36 @@ import {
   Optional,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { hash } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { CampaignDispatchQueue } from "../campaigns/campaign-dispatch.queue";
 import { readPositiveInteger } from "../campaigns/campaign-config";
 import { AuthService } from "../auth/auth.service";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { TransactionalEmailService } from "../email/transactional-email.service";
-import { Prisma, SubscriptionStatus, TenantStatus } from "../generated/prisma";
+import {
+  MessageDirection,
+  MessageStatus,
+  Prisma,
+  SubscriptionStatus,
+  TenantStatus,
+} from "../generated/prisma";
+import {
+  messageTrafficByHour,
+  uniqueInboundContacts,
+  uniqueInboundConversations,
+} from "../operations/operations-metrics.service";
 import {
   evolutionConfigFromEnv,
   assertEvolutionConfigured,
 } from "../messaging/evolution/evolution.config";
 import { PrismaService } from "../prisma/prisma.service";
+import { LocationsService } from "../locations/locations.service";
 import { MessagingOutboundQueue } from "../queue/messaging-outbound.queue";
 import { RealtimeService } from "../realtime/realtime.service";
 import { FileStorageProvider } from "../tickets/storage/file-storage.provider";
 import { seedTenantRoles } from "./tenant-role-seed";
+import { initializeTenantOnboarding } from "../onboarding/onboarding.persistence";
 import { PlatformAuditService } from "./platform-audit.service";
 import {
   coerceFeatures,
@@ -44,6 +57,7 @@ import {
 } from "./platform-query";
 import type {
   CancelSubscriptionDto,
+  ChangePlatformPasswordDto,
   CreateInvoiceDto,
   CreatePlanDto,
   CreatePlatformClientDto,
@@ -52,6 +66,7 @@ import type {
   ExchangeImpersonationHandoffDto,
   InvoiceStatusDto,
   PlatformListQueryDto,
+  PlatformDashboardQueryDto,
   ReasonDto,
   StartImpersonationHandoffDto,
   StartImpersonationDto,
@@ -64,6 +79,7 @@ import type {
   UpdateTenantAdministratorCredentialsDto,
   UpdateTenantConfigurationDto,
   UpdateTenantDto,
+  UpdatePlatformDashboardConfigurationDto,
 } from "./platform.dto";
 
 const activeSubscriptionStatuses: SubscriptionStatus[] = [
@@ -74,12 +90,101 @@ const activeSubscriptionStatuses: SubscriptionStatus[] = [
 ];
 
 const PLATFORM_SETTINGS_KEY = "defaults";
+const PLATFORM_DASHBOARD_SETTINGS_KEY = "platform_dashboard_configuration";
+const PLATFORM_DASHBOARD_TIMEZONE = "America/Sao_Paulo";
 const DEFAULT_TENANT_ADMIN_PASSWORD = "Trixus@2026";
+const CAMPAIGN_MODULE_PERMISSION_IDS = [
+  "campaigns.read",
+  "campaigns.create",
+  "campaigns.update",
+  "campaigns.delete",
+] as const;
+const TICKET_MODULE_PERMISSION_IDS = [
+  "tickets.read",
+  "tickets.create",
+  "tickets.update",
+  "tickets.delete",
+  // Mantido no catálogo por compatibilidade de rollback; também deve ser
+  // revogado na tenant para não deixar um grant legado persistido.
+  "chat.tickets.create",
+] as const;
 const DEFAULT_PLATFORM_SETTINGS = {
   defaultTrialDays: 14,
   defaultSubscriptionPeriodDays: 30,
   defaultCurrency: "BRL",
 } as const;
+
+const DEFAULT_PLATFORM_DASHBOARD_CONFIGURATION = {
+  schemaVersion: 1,
+  components: [
+    dashboardComponent("kpis", "Indicadores", 0, "cards", 4, "records", "platformKpis"),
+    dashboardComponent("traffic", "Tráfego de mensagens", 1, "line", 2, "messages", "hour"),
+    dashboardComponent(
+      "clientVolumetry",
+      "Volumetria por cliente",
+      2,
+      "table",
+      2,
+      "records",
+      "clientVolumetry",
+    ),
+    dashboardComponent(
+      "volumeByClient",
+      "Volume de mensagens por cliente",
+      3,
+      "columns",
+      1,
+      "messages",
+      "clientVolume",
+    ),
+    dashboardComponent(
+      "percentageByClient",
+      "Mensagens por cliente",
+      4,
+      "donut",
+      1,
+      "messages",
+      "clientPercentage",
+      "percentage",
+    ),
+    dashboardComponent(
+      "subscriptions",
+      "Assinaturas por plano",
+      5,
+      "table",
+      1,
+      "records",
+      "subscriptions",
+    ),
+    dashboardComponent("operation", "Operação", 6, "cards", 1, "records", "operation"),
+  ],
+} as const;
+
+type ClientVolumetryCounts = {
+  instances: number;
+  contacts: number;
+  attendants: number;
+  accessProfiles: number;
+  departments: number;
+  tags: number;
+  quickReplies: number;
+  customFields: number;
+  schedules: number;
+  campaigns: number;
+};
+
+const emptyClientVolumetryCounts = (): ClientVolumetryCounts => ({
+  instances: 0,
+  contacts: 0,
+  attendants: 0,
+  accessProfiles: 0,
+  departments: 0,
+  tags: 0,
+  quickReplies: 0,
+  customFields: 0,
+  schedules: 0,
+  campaigns: 0,
+});
 
 const tenantTransitions: Record<TenantStatus, TenantStatus[]> = {
   PROVISIONING: ["TRIAL", "ACTIVE", "SUSPENDED"],
@@ -108,61 +213,559 @@ export class PlatformService {
     @Optional()
     @Inject(TransactionalEmailService)
     private readonly email?: TransactionalEmailService,
+    @Optional()
+    @Inject(LocationsService)
+    private readonly locations?: LocationsService,
   ) {}
 
-  async dashboard() {
-    const periodStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  async changeOwnPassword(dto: ChangePlatformPasswordDto, current: AuthenticatedUser) {
+    assertBcryptPasswordLength(dto.currentPassword);
+    assertBcryptPasswordLength(dto.newPassword);
+    assertBcryptPasswordLength(dto.confirmPassword);
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException("A confirmação da nova senha não confere.");
+    }
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
+    }
+
+    const changedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${current.userId}))`;
+      const user = await tx.user.findFirst({
+        where: { id: current.userId, status: "ACTIVE", platformRole: { not: "USER" } },
+        select: { id: true, passwordHash: true },
+      });
+      if (!user) {
+        throw new NotFoundException("Usuário Platform ativo não encontrado.");
+      }
+      if (!(await compare(dto.currentPassword, user.passwordHash))) {
+        throw new BadRequestException("Senha atual inválida.");
+      }
+
+      await tx.user.update({
+        where: { id: current.userId },
+        data: { passwordHash: await hash(dto.newPassword, 12) },
+      });
+      await tx.passwordResetToken.updateMany({
+        where: { userId: current.userId, usedAt: null },
+        data: { usedAt: changedAt },
+      });
+      const revokedSessions = await tx.authSession.updateMany({
+        where: { userId: current.userId, revokedAt: null },
+        data: { revokedAt: changedAt },
+      });
+      await tx.impersonationSession.updateMany({
+        where: { actorUserId: current.userId, status: "ACTIVE" },
+        data: { status: "STOPPED", stoppedAt: changedAt },
+      });
+      await tx.platformAuditLog.create({
+        data: {
+          actorUserId: current.userId,
+          actorPlatformRole: current.platformRole,
+          action: "platform_user.password_changed",
+          targetType: "platform_user",
+          targetId: current.userId,
+          metadataJson: { revokedSessionCount: revokedSessions.count },
+        },
+      });
+      return { ok: true as const, sessionsRevoked: revokedSessions.count };
+    });
+  }
+
+  async dashboard(query: PlatformDashboardQueryDto = {}) {
+    const range = platformDashboardRange(query, PLATFORM_DASHBOARD_TIMEZONE);
+    const [clients, tenants] = await Promise.all([
+      this.prisma.platformClient.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, tenantId: true },
+      }),
+      this.prisma.tenant.findMany({
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          subscriptions: {
+            where: { clientId: { not: null } },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 1,
+            select: { client: { select: { id: true, name: true } } },
+          },
+          platformClient: { select: { id: true, name: true } },
+        },
+      }),
+    ]);
+    const selectedClient = query.clientId
+      ? clients.find((client) => client.id === query.clientId)
+      : undefined;
+    const selectedTenant = query.tenantId
+      ? tenants.find((tenant) => tenant.id === query.tenantId)
+      : undefined;
+    const tenantClient = new Map(
+      tenants.map((tenant) => [
+        tenant.id,
+        tenant.subscriptions[0]?.client ?? tenant.platformClient,
+      ]),
+    );
+    if (query.clientId && !selectedClient) {
+      throw new BadRequestException("Cliente do dashboard inválido.");
+    }
+    if (query.tenantId && !selectedTenant) {
+      throw new BadRequestException("Tenant do dashboard inválida.");
+    }
+    if (
+      selectedClient &&
+      selectedTenant &&
+      tenantClient.get(selectedTenant.id)?.id !== selectedClient.id
+    ) {
+      throw new BadRequestException("Cliente e tenant selecionados não estão vinculados.");
+    }
+
+    const tenantIds = selectedTenant
+      ? [selectedTenant.id]
+      : selectedClient
+        ? tenants
+            .filter((tenant) => tenantClient.get(tenant.id)?.id === selectedClient.id)
+            .map((tenant) => tenant.id)
+        : tenants.map((tenant) => tenant.id);
+    const tenantWhere: Prisma.TenantWhereInput =
+      selectedTenant || selectedClient
+        ? { id: { in: tenantIds.length ? tenantIds : ["__platform_client_without_tenant__"] } }
+        : {};
+    const scopedTenantRelation =
+      selectedTenant || selectedClient
+        ? {
+            tenantId: { in: tenantIds.length ? tenantIds : ["__platform_client_without_tenant__"] },
+          }
+        : {};
+    const invoiceWhere: Prisma.InvoiceWhereInput =
+      selectedTenant || selectedClient
+        ? {
+            tenantId: { in: tenantIds.length ? tenantIds : ["__platform_client_without_tenant__"] },
+          }
+        : {};
+    const subscriptionWhere: Prisma.TenantSubscriptionWhereInput =
+      selectedTenant || selectedClient
+        ? {
+            tenantId: { in: tenantIds.length ? tenantIds : ["__platform_client_without_tenant__"] },
+          }
+        : {};
+    const messageWhere: Prisma.MessageWhereInput = {
+      ...scopedTenantRelation,
+      direction: { in: [MessageDirection.INBOUND, MessageDirection.OUTBOUND] },
+      type: { not: "SYSTEM" },
+      status: { not: MessageStatus.FAILED },
+      createdAt: { gte: range.start, lt: range.end },
+      conversation: { archivedAt: null },
+    };
+    const campaignWhere: Prisma.CampaignWhereInput = {
+      ...scopedTenantRelation,
+      archivedAt: null,
+      createdAt: { gte: range.start, lt: range.end },
+    };
+
     const [
       activeTenants,
       trialTenants,
       suspendedTenants,
       activeUsers,
-      activeConnections,
+      activeInstances,
       messagesThisPeriod,
       campaignsThisPeriod,
       openTickets,
       openInvoices,
       overdueInvoices,
       plans,
+      messages,
     ] = await this.prisma.$transaction([
-      this.prisma.tenant.count({ where: { status: "ACTIVE" } }),
-      this.prisma.tenant.count({ where: { status: "TRIAL" } }),
-      this.prisma.tenant.count({ where: { status: "SUSPENDED" } }),
+      this.prisma.tenant.count({ where: { ...tenantWhere, status: "ACTIVE" } }),
+      this.prisma.tenant.count({ where: { ...tenantWhere, status: "TRIAL" } }),
+      this.prisma.tenant.count({ where: { ...tenantWhere, status: "SUSPENDED" } }),
       this.prisma.tenantMembership.count({
-        where: { status: "ACTIVE", user: { status: "ACTIVE" } },
+        where: { ...scopedTenantRelation, status: "ACTIVE", user: { status: "ACTIVE" } },
       }),
-      this.prisma.messagingConnection.count({ where: { status: "CONNECTED" } }),
-      this.prisma.message.count({ where: { createdAt: { gte: periodStart } } }),
-      this.prisma.campaign.count({ where: { createdAt: { gte: periodStart } } }),
+      this.prisma.messagingConnection.count({
+        where: {
+          ...scopedTenantRelation,
+          archivedAt: null,
+          serviceEnabled: true,
+          status: { not: "REMOVED" },
+        },
+      }),
+      this.prisma.message.count({ where: messageWhere }),
+      this.prisma.campaign.count({ where: campaignWhere }),
       this.prisma.ticket.count({
-        where: { archivedAt: null, status: { notIn: ["FECHADO", "CANCELADO"] } },
+        where: {
+          ...scopedTenantRelation,
+          archivedAt: null,
+          status: { notIn: ["FECHADO", "CANCELADO"] },
+        },
       }),
-      this.prisma.invoice.count({ where: { status: "OPEN" } }),
-      this.prisma.invoice.count({ where: { status: "OVERDUE" } }),
+      this.prisma.invoice.count({ where: { ...invoiceWhere, status: "OPEN" } }),
+      this.prisma.invoice.count({ where: { ...invoiceWhere, status: "OVERDUE" } }),
       this.prisma.plan.findMany({
         where: { status: { not: "ARCHIVED" } },
-        include: { _count: { select: { subscriptions: true } } },
         orderBy: { name: "asc" },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          _count: { select: { subscriptions: { where: subscriptionWhere } } },
+        },
+      }),
+      this.prisma.message.findMany({
+        where: messageWhere,
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: {
+          createdAt: true,
+          direction: true,
+          type: true,
+          tenantId: true,
+          conversation: { select: { id: true, contactId: true } },
+        },
       }),
     ]);
+
+    const volumeByClient = new Map<
+      string,
+      { clientId: string | null; clientName: string; total: number }
+    >();
+    if (selectedTenant) {
+      const resolvedClient = tenantClient.get(selectedTenant.id);
+      const client = resolvedClient
+        ? { clientId: resolvedClient.id, clientName: resolvedClient.name }
+        : { clientId: null, clientName: "Sem cliente" };
+      volumeByClient.set(client.clientId ?? "__without_client__", { ...client, total: 0 });
+    } else if (selectedClient) {
+      volumeByClient.set(selectedClient.id, {
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+        total: 0,
+      });
+    } else {
+      for (const client of clients) {
+        volumeByClient.set(client.id, {
+          clientId: client.id,
+          clientName: client.name,
+          total: 0,
+        });
+      }
+      if (tenants.some((tenant) => !tenantClient.get(tenant.id))) {
+        volumeByClient.set("__without_client__", {
+          clientId: null,
+          clientName: "Sem cliente",
+          total: 0,
+        });
+      }
+    }
+    for (const message of messages) {
+      const resolvedClient = tenantClient.get(message.tenantId);
+      const client = resolvedClient
+        ? { clientId: resolvedClient.id, clientName: resolvedClient.name }
+        : { clientId: null, clientName: "Sem cliente" };
+      const key = client.clientId ?? "__without_client__";
+      const current = volumeByClient.get(key) ?? { ...client, total: 0 };
+      current.total += 1;
+      volumeByClient.set(key, current);
+    }
+    const messageVolumeByClient = [...volumeByClient.values()].sort(
+      (left, right) => right.total - left.total || left.clientName.localeCompare(right.clientName),
+    );
+    const percentageTotal = messageVolumeByClient.reduce((sum, item) => sum + item.total, 0);
+    const messagePercentageByClient = exactPercentages(messageVolumeByClient, percentageTotal);
+
+    const volumetryWhere = selectedTenant || selectedClient ? scopedTenantRelation : {};
+    const [
+      instancesByTenant,
+      contactsByTenant,
+      attendantsByTenant,
+      accessProfilesByTenant,
+      departmentsByTenant,
+      tagsByTenant,
+      quickRepliesByTenant,
+      customFieldsByTenant,
+      schedulesByTenant,
+      campaignsByTenant,
+    ] = await this.prisma.$transaction([
+      this.prisma.messagingConnection.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null, status: { not: "REMOVED" } },
+        _count: { _all: true },
+      }),
+      this.prisma.contact.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: {
+          ...volumetryWhere,
+          archivedAt: null,
+          NOT: { normalizedPhone: { startsWith: "group:" } },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.tenantMembership.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: {
+          ...volumetryWhere,
+          status: "ACTIVE",
+          user: { status: "ACTIVE" },
+          role: { active: true, key: { not: "customer_portal" } },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.role.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, active: true, key: { not: "customer_portal" } },
+        _count: { _all: true },
+      }),
+      this.prisma.department.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: volumetryWhere,
+        _count: { _all: true },
+      }),
+      this.prisma.tag.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null },
+        _count: { _all: true },
+      }),
+      this.prisma.quickReply.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null },
+        _count: { _all: true },
+      }),
+      this.prisma.contactCustomField.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null },
+        _count: { _all: true },
+      }),
+      this.prisma.schedule.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: volumetryWhere,
+        _count: { _all: true },
+      }),
+      this.prisma.campaign.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null },
+        _count: { _all: true },
+      }),
+    ]);
+    const countsByTenant = new Map<string, ClientVolumetryCounts>();
+    const applyCounts = (rows: unknown, metric: keyof ClientVolumetryCounts) => {
+      for (const row of rows as Array<{ tenantId: string; _count: { _all: number } }>) {
+        const counts = countsByTenant.get(row.tenantId) ?? emptyClientVolumetryCounts();
+        counts[metric] = row._count._all;
+        countsByTenant.set(row.tenantId, counts);
+      }
+    };
+    applyCounts(instancesByTenant, "instances");
+    applyCounts(contactsByTenant, "contacts");
+    applyCounts(attendantsByTenant, "attendants");
+    applyCounts(accessProfilesByTenant, "accessProfiles");
+    applyCounts(departmentsByTenant, "departments");
+    applyCounts(tagsByTenant, "tags");
+    applyCounts(quickRepliesByTenant, "quickReplies");
+    applyCounts(customFieldsByTenant, "customFields");
+    applyCounts(schedulesByTenant, "schedules");
+    applyCounts(campaignsByTenant, "campaigns");
+
+    const clientVolumetryRows = new Map<
+      string,
+      ClientVolumetryCounts & { clientId: string | null; clientName: string }
+    >();
+    if (selectedClient) {
+      clientVolumetryRows.set(selectedClient.id, {
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+        ...emptyClientVolumetryCounts(),
+      });
+    } else if (!selectedTenant) {
+      for (const client of clients) {
+        clientVolumetryRows.set(client.id, {
+          clientId: client.id,
+          clientName: client.name,
+          ...emptyClientVolumetryCounts(),
+        });
+      }
+    }
+    for (const tenant of tenants.filter((item) => tenantIds.includes(item.id))) {
+      const client = tenantClient.get(tenant.id);
+      const key = client?.id ?? "__without_client__";
+      const current = clientVolumetryRows.get(key) ?? {
+        clientId: client?.id ?? null,
+        clientName: client?.name ?? "Sem cliente",
+        ...emptyClientVolumetryCounts(),
+      };
+      const tenantCounts = countsByTenant.get(tenant.id) ?? emptyClientVolumetryCounts();
+      for (const metric of Object.keys(tenantCounts) as Array<keyof ClientVolumetryCounts>) {
+        current[metric] += tenantCounts[metric];
+      }
+      clientVolumetryRows.set(key, current);
+    }
+    const clientVolumetry = [...clientVolumetryRows.values()].sort((left, right) =>
+      left.clientName.localeCompare(right.clientName, "pt-BR"),
+    );
+    const clientVolumetryTotals = clientVolumetry.reduce<ClientVolumetryCounts>((totals, row) => {
+      for (const metric of Object.keys(totals) as Array<keyof ClientVolumetryCounts>) {
+        totals[metric] += row[metric];
+      }
+      return totals;
+    }, emptyClientVolumetryCounts());
+
     return {
-      activeTenants,
-      trialTenants,
-      suspendedTenants,
-      activeUsers,
-      activeConnections,
-      messagesThisPeriod,
-      campaignsThisPeriod,
-      openTickets,
-      openInvoices,
-      overdueInvoices,
+      range: {
+        start: range.start.toISOString(),
+        end: range.end.toISOString(),
+        timezone: PLATFORM_DASHBOARD_TIMEZONE,
+      },
+      filters: {
+        clients: clients.map((client) => ({
+          id: client.id,
+          name: client.name,
+          tenantId: client.tenantId,
+        })),
+        tenants: tenants.map((tenant) => ({
+          id: tenant.id,
+          name: tenant.name,
+          clientId: tenantClient.get(tenant.id)?.id ?? null,
+          clientName: tenantClient.get(tenant.id)?.name ?? "Sem cliente",
+        })),
+      },
+      kpis: {
+        activeTenants,
+        trialTenants,
+        suspendedTenants,
+        activeUsers,
+        activeInstances,
+        messagesThisPeriod,
+        campaignsThisPeriod,
+        openInvoices,
+      },
+      charts: {
+        messagesByHour: messageTrafficByHour(messages, PLATFORM_DASHBOARD_TIMEZONE),
+        messageContactsTotal: uniqueInboundContacts(messages),
+        messageAttendancesTotal: uniqueInboundConversations(messages),
+        messageVolumeByClient,
+        messagePercentageByClient,
+      },
       subscriptionsByPlan: plans.map((plan) => ({
         planId: plan.id,
         code: plan.code,
         name: plan.name,
         subscriptions: plan._count.subscriptions,
       })),
+      operation: { openTickets, openInvoices, overdueInvoices },
+      clientVolumetry: { rows: clientVolumetry, totals: clientVolumetryTotals },
+      semantics: {
+        filters:
+          "Cliente e tenant restringem todas as métricas; período restringe apenas métricas temporais.",
+        activeInstances: "archivedAt nulo, serviceEnabled true e status diferente de REMOVED.",
+        messages:
+          "INBOUND e OUTBOUND, exceto tipo SYSTEM, status FAILED e conversas arquivadas; America/Sao_Paulo.",
+        clientGrouping:
+          "Tenant sem cliente é agrupada como Sem cliente; cliente sem tenant tem volume zero.",
+        clientVolumetry:
+          "Cadastros vigentes são contados por tenant e consolidados por cliente; o período não restringe essas métricas.",
+      },
+      scope: { clientId: query.clientId ?? null, tenantId: query.tenantId ?? null, tenantIds },
+      // Compatibilidade com consumidores anteriores durante a migração do Dashboard Platform.
+      activeTenants,
+      trialTenants,
+      suspendedTenants,
+      activeUsers,
+      activeConnections: activeInstances,
+      messagesThisPeriod,
+      campaignsThisPeriod,
+      openTickets,
+      openInvoices,
+      overdueInvoices,
     };
+  }
+
+  async dashboardConfiguration(current: AuthenticatedUser) {
+    const row = await this.prisma.platformSetting.findUnique({
+      where: { key: PLATFORM_DASHBOARD_SETTINGS_KEY },
+      select: { value: true, updatedAt: true },
+    });
+    const stored = readStoredPlatformDashboardConfiguration(row?.value);
+    return {
+      configuration: mergePlatformDashboardNativeAdditions(
+        stored?.configuration ?? DEFAULT_PLATFORM_DASHBOARD_CONFIGURATION,
+      ),
+      version: stored?.version ?? 0,
+      updatedAt: row?.updatedAt ?? null,
+      canUpdate: current.platformPermissions?.includes("platform.settings.update") === true,
+    };
+  }
+
+  async updateDashboardConfiguration(
+    dto: UpdatePlatformDashboardConfigurationDto,
+    current: AuthenticatedUser,
+  ) {
+    const configuration = validatePlatformDashboardConfiguration(dto.configuration);
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${PLATFORM_DASHBOARD_SETTINGS_KEY}))`,
+      );
+      const existing = await tx.platformSetting.findUnique({
+        where: { key: PLATFORM_DASHBOARD_SETTINGS_KEY },
+        select: { value: true, updatedAt: true },
+      });
+      const stored = readStoredPlatformDashboardConfiguration(existing?.value);
+      const currentVersion = stored?.version ?? 0;
+      if (dto.version !== currentVersion) {
+        throw new ConflictException({
+          code: "PLATFORM_DASHBOARD_CONFIGURATION_CONFLICT",
+          message: "O Dashboard Platform foi alterado por outro usuário.",
+          current: {
+            version: currentVersion,
+            updatedAt: existing?.updatedAt ?? null,
+          },
+        });
+      }
+      const version = currentVersion + 1;
+      const value = { configuration, version } satisfies Record<string, unknown>;
+      const setting = existing
+        ? await tx.platformSetting.update({
+            where: { key: PLATFORM_DASHBOARD_SETTINGS_KEY },
+            data: {
+              value: value as Prisma.InputJsonValue,
+              updatedByUserId: current.userId,
+            },
+            select: { updatedAt: true },
+          })
+        : await tx.platformSetting.create({
+            data: {
+              key: PLATFORM_DASHBOARD_SETTINGS_KEY,
+              value: value as Prisma.InputJsonValue,
+              updatedByUserId: current.userId,
+            },
+            select: { updatedAt: true },
+          });
+      await tx.platformAuditLog.create({
+        data: {
+          actorUserId: current.userId,
+          actorPlatformRole: current.platformRole,
+          action: "platform.dashboard.configuration.updated",
+          targetType: "platform_dashboard_configuration",
+          targetId: PLATFORM_DASHBOARD_SETTINGS_KEY,
+          metadataJson: {
+            previousVersion: currentVersion,
+            version,
+            componentCount: configuration.components.length,
+          },
+        },
+      });
+      return { configuration, version, updatedAt: setting.updatedAt };
+    });
+    return { ...result, canUpdate: true };
   }
 
   async listClients(query: PlatformListQueryDto) {
@@ -205,26 +808,43 @@ export class PlatformService {
   }
 
   async createClient(dto: CreatePlatformClientDto, current: AuthenticatedUser) {
+    const status = dto.status ?? "ACTIVE";
+    const responsibleName =
+      typeof dto.responsibleName === "string" ? dto.responsibleName.trim() : "";
+    const responsibleEmail =
+      typeof dto.responsibleEmail === "string" ? dto.responsibleEmail.toLowerCase().trim() : "";
     const documentDigits =
       typeof dto.document === "string" ? dto.document.replace(/\D/g, "") : undefined;
     const document = documentDigits ? documentDigits : null;
-    if (dto.status !== "PROSPECTING" && document?.length !== 14) {
+    if (status !== "PROSPECTING" && document?.length !== 14) {
       throw new BadRequestException("Informe um CNPJ válido para o cliente.");
+    }
+    if (status !== "PROSPECTING" && !responsibleName) {
+      throw new BadRequestException("Informe o responsável pelo cliente.");
+    }
+    if (status !== "PROSPECTING" && !responsibleEmail) {
+      throw new BadRequestException("Informe o e-mail do responsável pelo cliente.");
+    }
+    if (status !== "PROSPECTING" && !isValidRequiredEmail(responsibleEmail)) {
+      throw new BadRequestException("Informe um e-mail válido para o responsável pelo cliente.");
     }
     if (document) {
       const existing = await this.prisma.platformClient.findUnique({ where: { document } });
       if (existing) throw new ConflictException("Já existe um cliente cadastrado com este CNPJ.");
     }
+    const location = dto.cityId ? await this.locationService().resolveCity(dto.cityId) : null;
     const client = await this.prisma.platformClient.create({
       data: {
         name: dto.name.trim(),
         document,
-        responsibleName: dto.responsibleName.trim(),
-        responsibleEmail: dto.responsibleEmail.toLowerCase().trim(),
-        city: dto.city.trim(),
-        state: dto.state.toUpperCase(),
+        responsibleName,
+        responsibleEmail,
+        cityId: location?.cityId,
+        city: location?.city ?? dto.city!.trim(),
+        state: location?.state ?? dto.state!.toUpperCase(),
+        country: location?.country ?? dto.country?.trim() ?? "Brasil",
         registeredAt: dto.registeredAt ? new Date(dto.registeredAt) : new Date(),
-        status: dto.status ?? "ACTIVE",
+        status,
         notes: nullable(dto.notes),
       },
     });
@@ -248,22 +868,47 @@ export class PlatformService {
           ? nullable(dto.document.replace(/\D/g, ""))
           : null;
     const nextStatus = dto.status ?? existing.status;
+    const nextResponsibleName =
+      dto.responsibleName === undefined
+        ? existing.responsibleName
+        : typeof dto.responsibleName === "string"
+          ? dto.responsibleName.trim()
+          : "";
+    const nextResponsibleEmail =
+      dto.responsibleEmail === undefined
+        ? existing.responsibleEmail
+        : typeof dto.responsibleEmail === "string"
+          ? dto.responsibleEmail.toLowerCase().trim()
+          : "";
     if (nextStatus !== "PROSPECTING" && document?.length !== 14) {
       throw new BadRequestException("Informe um CNPJ válido para o cliente.");
+    }
+    if (nextStatus !== "PROSPECTING" && !nextResponsibleName) {
+      throw new BadRequestException("Informe o responsável pelo cliente.");
+    }
+    if (nextStatus !== "PROSPECTING" && !nextResponsibleEmail) {
+      throw new BadRequestException("Informe o e-mail do responsável pelo cliente.");
+    }
+    if (nextStatus !== "PROSPECTING" && !isValidRequiredEmail(nextResponsibleEmail)) {
+      throw new BadRequestException("Informe um e-mail válido para o responsável pelo cliente.");
     }
     if (document && document !== existing.document) {
       const duplicate = await this.prisma.platformClient.findUnique({ where: { document } });
       if (duplicate) throw new ConflictException("Já existe um cliente cadastrado com este CNPJ.");
     }
+    const location =
+      typeof dto.cityId === "string" ? await this.locationService().resolveCity(dto.cityId) : null;
     const client = await this.prisma.platformClient.update({
       where: { id },
       data: {
         name: dto.name?.trim(),
         document: dto.document === undefined ? undefined : document,
-        responsibleName: dto.responsibleName?.trim(),
-        responsibleEmail: dto.responsibleEmail?.toLowerCase().trim(),
-        city: dto.city?.trim(),
-        state: dto.state?.toUpperCase(),
+        responsibleName: dto.responsibleName === undefined ? undefined : nextResponsibleName,
+        responsibleEmail: dto.responsibleEmail === undefined ? undefined : nextResponsibleEmail,
+        cityId: dto.cityId === undefined ? undefined : (location?.cityId ?? null),
+        city: location?.city ?? dto.city?.trim(),
+        state: location?.state ?? dto.state?.toUpperCase(),
+        country: location?.country ?? dto.country?.trim(),
         registeredAt: dto.registeredAt ? new Date(dto.registeredAt) : undefined,
         status: dto.status,
         notes: nullable(dto.notes),
@@ -277,6 +922,13 @@ export class PlatformService {
       tenantId: client.tenantId ?? undefined,
     });
     return client;
+  }
+
+  private locationService() {
+    if (!this.locations) {
+      throw new Error("LocationsService não está disponível.");
+    }
+    return this.locations;
   }
 
   async cancelClient(id: string, current: AuthenticatedUser) {
@@ -490,88 +1142,155 @@ export class PlatformService {
     const credentialsUpdatedAt = new Date();
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
-        const tenant = await tx.tenant.findUnique({
-          where: { id },
-          include: {
-            users: {
-              where: { status: "ACTIVE", role: { key: "tenant_admin" } },
-              include: {
-                user: {
-                  include: {
-                    memberships: { select: { tenantId: true, status: true } },
+      return await this.prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
+          const tenant = await tx.tenant.findUnique({
+            where: { id },
+            include: {
+              users: {
+                where: { status: "ACTIVE", role: { key: "tenant_admin" } },
+                include: {
+                  user: {
+                    include: {
+                      memberships: { select: { tenantId: true, status: true } },
+                    },
                   },
                 },
               },
             },
-          },
-        });
-        if (!tenant) throw new NotFoundException("Tenant não encontrado.");
-        if (tenant.status !== "ACTIVE") {
-          throw new BadRequestException(
-            "As credenciais do administrador só podem ser gerenciadas em uma Tenant ativa.",
-          );
-        }
-        if (tenant.users.length > 1) {
-          throw new ConflictException(
-            "A Tenant possui mais de um administrador ativo. Revise os vínculos antes de alterar as credenciais.",
-          );
-        }
-
-        if (tenant.users.length === 0) {
-          if (!passwordHash && this.tenantAdministratorInvitationEmailEnabled()) {
+          });
+          if (!tenant) throw new NotFoundException("Tenant não encontrado.");
+          if (tenant.status !== "ACTIVE") {
             throw new BadRequestException(
-              "Informe uma senha inicial ou utilize o fluxo de convite do administrador.",
+              "As credenciais do administrador só podem ser gerenciadas em uma Tenant ativa.",
             );
           }
+          if (tenant.users.length > 1) {
+            throw new ConflictException(
+              "A Tenant possui mais de um administrador ativo. Revise os vínculos antes de alterar as credenciais.",
+            );
+          }
+
+          if (tenant.users.length === 0) {
+            if (!passwordHash && this.tenantAdministratorInvitationEmailEnabled()) {
+              throw new BadRequestException(
+                "Informe uma senha inicial ou utilize o fluxo de convite do administrador.",
+              );
+            }
+            const emailOwner = await tx.user.findUnique({
+              where: { email: responsibleEmail },
+              select: { id: true },
+            });
+            if (emailOwner) {
+              throw new ConflictException(
+                "O e-mail informado já pertence a outro usuário e não pode ser assumido por esta Tenant.",
+              );
+            }
+            const administratorRole = await tx.role.findFirst({
+              where: { tenantId: id, key: "tenant_admin" },
+              select: { id: true },
+            });
+            if (!administratorRole) {
+              throw new ConflictException(
+                "O perfil de administrador da Tenant não foi encontrado.",
+              );
+            }
+            const initialPasswordHash =
+              passwordHash ?? (await hash(DEFAULT_TENANT_ADMIN_PASSWORD, 12));
+            const administratorUser = await tx.user.create({
+              data: {
+                name: responsibleName,
+                email: responsibleEmail,
+                passwordHash: initialPasswordHash,
+                status: "ACTIVE",
+              },
+            });
+            const membership = await tx.tenantMembership.create({
+              data: {
+                tenantId: id,
+                userId: administratorUser.id,
+                roleId: administratorRole.id,
+                presentationName: responsibleName,
+                status: "ACTIVE",
+              },
+            });
+            const revokedInvitations = await tx.userInvitation.updateMany({
+              where: { tenantId: id, status: "PENDING" },
+              data: { status: "REVOKED", revokedAt: credentialsUpdatedAt },
+            });
+            await tx.userInvitation.create({
+              data: {
+                tenantId: id,
+                email: responsibleEmail,
+                roleId: administratorRole.id,
+                tokenHash: hashPlatformToken(randomBytes(32).toString("base64url")),
+                expiresAt: new Date("9999-12-31T23:59:59.999Z"),
+              },
+            });
+            const updatedTenant = await tx.tenant.update({
+              where: { id },
+              data: {
+                responsibleName,
+                responsibleEmail,
+                technicalEmail: responsibleEmail,
+                authRevokedAt: credentialsUpdatedAt,
+              },
+            });
+            await tx.platformAuditLog.create({
+              data: {
+                actorUserId: current.userId,
+                actorPlatformRole: current.platformRole,
+                action: "tenant.administrator_credentials.provisioned",
+                targetType: "tenant_administrator",
+                targetId: administratorUser.id,
+                tenantId: id,
+                impersonationSessionId: current.impersonationSessionId,
+                metadataJson: {
+                  membershipId: membership.id,
+                  legacyInvitationConverted: true,
+                  revokedInvitationCount: revokedInvitations.count,
+                  passwordChangeRequired: true,
+                },
+              },
+            });
+            return {
+              ok: true,
+              responsibleName: updatedTenant.responsibleName,
+              responsibleEmail: updatedTenant.responsibleEmail,
+              credentialsUpdatedAt,
+            };
+          }
+
+          const administrator = tenant.users[0];
+          const hasAnotherTenant = administrator.user.memberships.some(
+            (membership) => membership.tenantId !== id && membership.status === "ACTIVE",
+          );
+          if (hasAnotherTenant) {
+            throw new ConflictException(
+              "O administrador está vinculado a outra empresa. Use o fluxo explícito de convite ou vínculo.",
+            );
+          }
+
           const emailOwner = await tx.user.findUnique({
             where: { email: responsibleEmail },
             select: { id: true },
           });
-          if (emailOwner) {
-            throw new ConflictException(
-              "O e-mail informado já pertence a outro usuário e não pode ser assumido por esta Tenant.",
-            );
+          if (emailOwner && emailOwner.id !== administrator.userId) {
+            throw new ConflictException("O e-mail informado já pertence a outro usuário.");
           }
-          const administratorRole = await tx.role.findFirst({
-            where: { tenantId: id, key: "tenant_admin" },
-            select: { id: true },
-          });
-          if (!administratorRole) {
-            throw new ConflictException("O perfil de administrador da Tenant não foi encontrado.");
-          }
-          const initialPasswordHash =
-            passwordHash ?? (await hash(DEFAULT_TENANT_ADMIN_PASSWORD, 12));
-          const administratorUser = await tx.user.create({
+
+          await tx.user.update({
+            where: { id: administrator.userId },
             data: {
               name: responsibleName,
               email: responsibleEmail,
-              passwordHash: initialPasswordHash,
-              status: "ACTIVE",
+              ...(passwordHash ? { passwordHash } : {}),
             },
           });
-          const membership = await tx.tenantMembership.create({
-            data: {
-              tenantId: id,
-              userId: administratorUser.id,
-              roleId: administratorRole.id,
-              presentationName: responsibleName,
-              status: "ACTIVE",
-            },
-          });
-          const revokedInvitations = await tx.userInvitation.updateMany({
-            where: { tenantId: id, status: "PENDING" },
-            data: { status: "REVOKED", revokedAt: credentialsUpdatedAt },
-          });
-          await tx.userInvitation.create({
-            data: {
-              tenantId: id,
-              email: responsibleEmail,
-              roleId: administratorRole.id,
-              tokenHash: hashPlatformToken(randomBytes(32).toString("base64url")),
-              expiresAt: new Date("9999-12-31T23:59:59.999Z"),
-            },
+          await tx.tenantMembership.update({
+            where: { id: administrator.id },
+            data: { presentationName: responsibleName },
           });
           const updatedTenant = await tx.tenant.update({
             where: { id },
@@ -579,108 +1298,46 @@ export class PlatformService {
               responsibleName,
               responsibleEmail,
               technicalEmail: responsibleEmail,
-              authRevokedAt: credentialsUpdatedAt,
+              ...(passwordHash ? { authRevokedAt: credentialsUpdatedAt } : {}),
             },
           });
+          if (passwordHash) {
+            await tx.passwordResetToken.updateMany({
+              where: { userId: administrator.userId, usedAt: null },
+              data: { usedAt: credentialsUpdatedAt },
+            });
+            await tx.authSession.updateMany({
+              where: { userId: administrator.userId, revokedAt: null },
+              data: { revokedAt: credentialsUpdatedAt },
+            });
+          }
           await tx.platformAuditLog.create({
             data: {
               actorUserId: current.userId,
               actorPlatformRole: current.platformRole,
-              action: "tenant.administrator_credentials.provisioned",
+              action: "tenant.administrator_credentials.updated",
               targetType: "tenant_administrator",
-              targetId: administratorUser.id,
+              targetId: administrator.userId,
               tenantId: id,
               impersonationSessionId: current.impersonationSessionId,
               metadataJson: {
-                membershipId: membership.id,
-                legacyInvitationConverted: true,
-                revokedInvitationCount: revokedInvitations.count,
-                passwordChangeRequired: true,
+                membershipId: administrator.id,
+                nameChanged: tenant.responsibleName !== responsibleName,
+                emailChanged: tenant.responsibleEmail !== responsibleEmail,
+                passwordChanged: Boolean(passwordHash),
               },
             },
           });
+
           return {
             ok: true,
             responsibleName: updatedTenant.responsibleName,
             responsibleEmail: updatedTenant.responsibleEmail,
             credentialsUpdatedAt,
           };
-        }
-
-        const administrator = tenant.users[0];
-        const hasAnotherTenant = administrator.user.memberships.some(
-          (membership) => membership.tenantId !== id && membership.status === "ACTIVE",
-        );
-        if (hasAnotherTenant) {
-          throw new ConflictException(
-            "O administrador está vinculado a outra empresa. Use o fluxo explícito de convite ou vínculo.",
-          );
-        }
-
-        const emailOwner = await tx.user.findUnique({
-          where: { email: responsibleEmail },
-          select: { id: true },
-        });
-        if (emailOwner && emailOwner.id !== administrator.userId) {
-          throw new ConflictException("O e-mail informado já pertence a outro usuário.");
-        }
-
-        await tx.user.update({
-          where: { id: administrator.userId },
-          data: {
-            name: responsibleName,
-            email: responsibleEmail,
-            ...(passwordHash ? { passwordHash } : {}),
-          },
-        });
-        await tx.tenantMembership.update({
-          where: { id: administrator.id },
-          data: { presentationName: responsibleName },
-        });
-        const updatedTenant = await tx.tenant.update({
-          where: { id },
-          data: {
-            responsibleName,
-            responsibleEmail,
-            technicalEmail: responsibleEmail,
-            ...(passwordHash ? { authRevokedAt: credentialsUpdatedAt } : {}),
-          },
-        });
-        if (passwordHash) {
-          await tx.passwordResetToken.updateMany({
-            where: { userId: administrator.userId, usedAt: null },
-            data: { usedAt: credentialsUpdatedAt },
-          });
-          await tx.authSession.updateMany({
-            where: { userId: administrator.userId, revokedAt: null },
-            data: { revokedAt: credentialsUpdatedAt },
-          });
-        }
-        await tx.platformAuditLog.create({
-          data: {
-            actorUserId: current.userId,
-            actorPlatformRole: current.platformRole,
-            action: "tenant.administrator_credentials.updated",
-            targetType: "tenant_administrator",
-            targetId: administrator.userId,
-            tenantId: id,
-            impersonationSessionId: current.impersonationSessionId,
-            metadataJson: {
-              membershipId: administrator.id,
-              nameChanged: tenant.responsibleName !== responsibleName,
-              emailChanged: tenant.responsibleEmail !== responsibleEmail,
-              passwordChanged: Boolean(passwordHash),
-            },
-          },
-        });
-
-        return {
-          ok: true,
-          responsibleName: updatedTenant.responsibleName,
-          responsibleEmail: updatedTenant.responsibleEmail,
-          credentialsUpdatedAt,
-        };
-      });
+        },
+        { maxWait: 10_000, timeout: 30_000 },
+      );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         throw new ConflictException("O e-mail informado já pertence a outro usuário.");
@@ -730,6 +1387,7 @@ export class PlatformService {
         },
       });
       const roles = await seedTenantRoles(tx, tenant.id);
+      await initializeTenantOnboarding(tx, tenant.id);
       let membership: { id: string } | null = null;
       if (dto.admin && administratorEmail && passwordHash) {
         const user = await tx.user.upsert({
@@ -860,12 +1518,8 @@ export class PlatformService {
     current: AuthenticatedUser,
   ) {
     const disabledPermissionIds = [
-      ...(dto.modules?.campaigns === false
-        ? ["campaigns.read", "campaigns.create", "campaigns.update", "campaigns.delete"]
-        : []),
-      ...(dto.modules?.tickets === false
-        ? ["tickets.read", "tickets.create", "tickets.update", "tickets.delete"]
-        : []),
+      ...(dto.modules?.campaigns === false ? CAMPAIGN_MODULE_PERMISSION_IDS : []),
+      ...(dto.modules?.tickets === false ? TICKET_MODULE_PERMISSION_IDS : []),
     ];
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "tenants" WHERE id = ${id} FOR UPDATE`);
@@ -1483,45 +2137,75 @@ export class PlatformService {
       throw new ConflictException("A assinatura não pode ser cancelada no estado atual.");
     }
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
+      const lockedSubscription = await tx.tenantSubscription.findUnique({ where: { id } });
+      if (!lockedSubscription) throw new NotFoundException("Assinatura não encontrada.");
+      if (lockedSubscription.status === "CANCELLED") {
+        throw new ConflictException("A assinatura já está cancelada.");
+      }
+      if (
+        ![
+          "AWAITING_FINANCE",
+          "FINANCE_RELEASED",
+          "ACTIVE",
+          "SUSPENDED",
+          "REGISTERING",
+          "TRIALING",
+        ].includes(lockedSubscription.status)
+      ) {
+        throw new ConflictException("A assinatura não pode ser cancelada no estado atual.");
+      }
       const cancelledAt = new Date();
       const reason = dto.reason?.trim() || "subscription.cancelled";
+      if (lockedSubscription.tenantId) {
+        const anotherActiveSubscription = await tx.tenantSubscription.findFirst({
+          where: {
+            tenantId: lockedSubscription.tenantId,
+            id: { not: id },
+            status: { not: "CANCELLED" },
+          },
+          select: { id: true },
+        });
+        if (anotherActiveSubscription) {
+          throw new ConflictException(
+            "A Tenant está vinculada a outra assinatura ativa e não pode ser excluída.",
+          );
+        }
+      }
       const subscription = await tx.tenantSubscription.update({
         where: { id },
-        data: { status: "CANCELLED", cancelledAt, cancelAtPeriodEnd: false },
+        data: {
+          tenantId: null,
+          status: "CANCELLED",
+          cancelledAt,
+          cancelAtPeriodEnd: false,
+        },
       });
-      if (existing.tenantId) {
-        await tx.tenant.update({
-          where: { id: existing.tenantId },
-          data: {
-            status: "TERMINATED",
-            terminatedAt: cancelledAt,
-            authRevokedAt: cancelledAt,
-            suspensionReason: reason,
-          },
-        });
-      }
       await tx.subscriptionHistory.create({
         data: {
           subscriptionId: id,
-          tenantId: existing.tenantId,
-          previousStatus: existing.status,
+          tenantId: lockedSubscription.tenantId,
+          previousStatus: lockedSubscription.status,
           nextStatus: "CANCELLED",
-          previousPlanId: existing.planId,
-          nextPlanId: existing.planId,
+          previousPlanId: lockedSubscription.planId,
+          nextPlanId: lockedSubscription.planId,
           reason,
           actorUserId: current.userId,
         },
       });
-      return subscription;
+      if (lockedSubscription.tenantId) {
+        await this.deleteTenantDatabase(tx, lockedSubscription.tenantId);
+      }
+      return { subscription, deletedTenantId: lockedSubscription.tenantId };
     });
     await this.audit.record({
       actor: current,
       action: "subscription.cancelled",
       targetType: "subscription",
       targetId: id,
-      tenantId: existing.tenantId ?? undefined,
+      metadata: updated.deletedTenantId ? { deletedTenantId: updated.deletedTenantId } : undefined,
     });
-    return updated;
+    return updated.subscription;
   }
 
   async generateSubscriptionFinance(id: string, current: AuthenticatedUser) {
@@ -1627,14 +2311,17 @@ export class PlatformService {
       });
       return this.subscriptionDetail(id);
     }
-    if (!existing.invoices.length) throw new ConflictException("Financeiro ainda não gerado.");
-    const invoice = existing.invoices[0];
-    if (existing.status !== "FINANCE_RELEASED" || !invoice.released) {
-      throw new ConflictException("A ativação exige uma fatura com financeiro liberado.");
+    const recreatingCancelledSubscription = existing.status === "CANCELLED";
+    if (!recreatingCancelledSubscription) {
+      if (!existing.invoices.length) throw new ConflictException("Financeiro ainda não gerado.");
+      const hasReleasedInvoice = existing.invoices.some((invoice) => invoice.released);
+      if (!hasReleasedInvoice || existing.status !== "FINANCE_RELEASED") {
+        throw new ConflictException("A ativação exige uma fatura com financeiro liberado.");
+      }
     }
     if (!existing.client)
       throw new BadRequestException("A assinatura não possui cliente vinculado.");
-    if (existing.tenantId)
+    if (existing.tenantId && !recreatingCancelledSubscription)
       throw new ConflictException("A assinatura já possui uma tenant vinculada.");
     const invitationEmailEnabled = this.tenantAdministratorInvitationEmailEnabled();
     if (invitationEmailEnabled) this.email?.assertInvitationDeliveryReady();
@@ -1660,11 +2347,15 @@ export class PlatformService {
           },
         });
         if (!lockedSubscription) throw new NotFoundException("Assinatura não encontrada.");
-        if (lockedSubscription.tenantId) {
+        const recreatingCancelled = lockedSubscription.status === "CANCELLED";
+        if (lockedSubscription.tenantId && !recreatingCancelled) {
           throw new ConflictException("A assinatura já possui uma tenant vinculada.");
         }
-        const lockedInvoice = lockedSubscription.invoices[0];
-        if (lockedSubscription.status !== "FINANCE_RELEASED" || !lockedInvoice?.released) {
+        if (
+          !recreatingCancelled &&
+          (!lockedSubscription.invoices.some((invoice) => invoice.released) ||
+            lockedSubscription.status !== "FINANCE_RELEASED")
+        ) {
           throw new ConflictException("A ativação exige uma fatura com financeiro liberado.");
         }
         const refreshedClient = lockedSubscription.client;
@@ -1675,6 +2366,26 @@ export class PlatformService {
           throw new ConflictException(
             "Não é possível ativar a assinatura de um cliente cancelado.",
           );
+        }
+        if (recreatingCancelled && lockedSubscription.tenantId) {
+          const anotherActiveSubscription = await tx.tenantSubscription.findFirst({
+            where: {
+              tenantId: lockedSubscription.tenantId,
+              id: { not: id },
+              status: { not: "CANCELLED" },
+            },
+            select: { id: true },
+          });
+          if (anotherActiveSubscription) {
+            throw new ConflictException(
+              "A Tenant está vinculada a outra assinatura ativa e não pode ser recriada.",
+            );
+          }
+          await tx.tenantSubscription.update({
+            where: { id },
+            data: { tenantId: null },
+          });
+          await this.deleteTenantDatabase(tx, lockedSubscription.tenantId);
         }
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${refreshedClient.id}))`;
         const limits = coerceLimits(lockedSubscription.limitsSnapshot);
@@ -1704,6 +2415,7 @@ export class PlatformService {
           },
         });
         const roles = await seedTenantRoles(tx, created.id);
+        await initializeTenantOnboarding(tx, created.id);
         const administratorEmail = refreshedClient.responsibleEmail.toLowerCase().trim();
         const existingAdministrator = await tx.user.findUnique({
           where: { email: administratorEmail },
@@ -1735,11 +2447,14 @@ export class PlatformService {
                 .filter((clientId): clientId is string => Boolean(clientId)),
             ),
           );
+          const reusableOrphanedAdministrator =
+            recreatingCancelled && existingAdministrator.memberships.length === 0;
           if (
             existingAdministrator.status !== "ACTIVE" ||
             existingAdministrator.platformRole !== "USER" ||
-            linkedClientIds.size === 0 ||
-            [...linkedClientIds].some((clientId) => clientId !== refreshedClient.id)
+            (!reusableOrphanedAdministrator &&
+              (linkedClientIds.size === 0 ||
+                [...linkedClientIds].some((clientId) => clientId !== refreshedClient.id)))
           ) {
             throw new ConflictException(
               "O e-mail do administrador pertence a outro acesso e não pode ser reutilizado.",
@@ -1798,7 +2513,17 @@ export class PlatformService {
         }
         await tx.tenantSubscription.update({
           where: { id },
-          data: { tenantId: created.id, status: "ACTIVE" },
+          data: {
+            tenantId: created.id,
+            status: "ACTIVE",
+            ...(recreatingCancelled
+              ? {
+                  cancelledAt: null,
+                  cancelAtPeriodEnd: false,
+                  suspensionReason: null,
+                }
+              : {}),
+          },
         });
         await tx.invoice.updateMany({
           where: { subscriptionId: id },
@@ -1812,7 +2537,9 @@ export class PlatformService {
             nextPlanId: lockedSubscription.planId,
             previousStatus: lockedSubscription.status,
             nextStatus: "ACTIVE",
-            reason: "subscription.activated",
+            reason: recreatingCancelled
+              ? "subscription.reactivated_from_cancellation"
+              : "subscription.activated",
             actorUserId: current.userId,
           },
         });
@@ -1837,13 +2564,16 @@ export class PlatformService {
     }
     await this.audit.record({
       actor: current,
-      action: "subscription.activated",
+      action: recreatingCancelledSubscription
+        ? "subscription.reactivated"
+        : "subscription.activated",
       targetType: "subscription",
       targetId: id,
       tenantId: tenant.id,
       metadata: {
         administratorProvisioning: tenant.administratorProvisioning,
         passwordChangeRequired: tenant.passwordChangeRequired,
+        ...(recreatingCancelledSubscription ? { recreatedFromCancellation: true } : {}),
       },
     });
     return this.subscriptionDetail(id);
@@ -2484,6 +3214,10 @@ export class PlatformService {
     return plan;
   }
 
+  private async deleteTenantDatabase(tx: Prisma.TransactionClient, tenantId: string) {
+    await tx.tenant.delete({ where: { id: tenantId } });
+  }
+
   private async assertDowngradeAllowed(tenantId: string | null, nextLimits: unknown) {
     if (!tenantId) return;
     const usage = await this.entitlements.getUsage(tenantId);
@@ -2616,6 +3350,10 @@ function nullable(value?: string | null) {
 function normalizeNullableEmail(value?: string | null) {
   if (value === undefined) return undefined;
   return value?.trim().toLocaleLowerCase("en-US") || null;
+}
+
+function isValidRequiredEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function assertBcryptPasswordLength(value: string) {
@@ -2868,4 +3606,293 @@ function jsonRecord(value: unknown): Record<string, boolean | number> {
     }
   }
   return result;
+}
+
+function dashboardComponent(
+  id: string,
+  title: string,
+  order: number,
+  visualization: string,
+  columns: number,
+  dataSource: string,
+  groupBy: string,
+  valueMode = "count",
+) {
+  return {
+    id,
+    title,
+    visible: true,
+    order,
+    visualization,
+    columns,
+    dataSource,
+    groupBy,
+    valueMode,
+  };
+}
+
+const PLATFORM_DASHBOARD_VISUALIZATIONS = new Set([
+  "columns",
+  "bars",
+  "line",
+  "pie",
+  "donut",
+  "gauge",
+  "table",
+  "cards",
+]);
+const PLATFORM_DASHBOARD_GROUPS = new Map([
+  ["platformKpis", "records"],
+  ["clientVolumetry", "records"],
+  ["hour", "messages"],
+  ["clientVolume", "messages"],
+  ["clientPercentage", "messages"],
+  ["subscriptions", "records"],
+  ["operation", "records"],
+]);
+
+function mergePlatformDashboardNativeAdditions(configuration: {
+  schemaVersion: number;
+  components: ReadonlyArray<{
+    id: string;
+    title: string;
+    visible: boolean;
+    order: number;
+    visualization: string;
+    columns: number;
+    dataSource: string;
+    groupBy: string;
+    valueMode: string;
+  }>;
+}) {
+  if (configuration.components.some((component) => component.id === "clientVolumetry")) {
+    return configuration;
+  }
+  const addition = DEFAULT_PLATFORM_DASHBOARD_CONFIGURATION.components.find(
+    (component) => component.id === "clientVolumetry",
+  );
+  if (!addition) return configuration;
+  const components = configuration.components.map((component) => ({ ...component }));
+  const trafficIndex = components.findIndex((component) => component.id === "traffic");
+  components.splice(trafficIndex >= 0 ? trafficIndex + 1 : Math.min(2, components.length), 0, {
+    ...addition,
+  });
+  return {
+    schemaVersion: 1,
+    components: components.map((component, order) => ({ ...component, order })),
+  };
+}
+
+function validatePlatformDashboardConfiguration(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new BadRequestException("Configuração do Dashboard Platform inválida.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.components)) {
+    throw new BadRequestException("Versão da configuração do Dashboard Platform inválida.");
+  }
+  if (candidate.components.length > 100) {
+    throw new BadRequestException("Quantidade de componentes do Dashboard Platform excedida.");
+  }
+  const ids = new Set<string>();
+  const components = candidate.components.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new BadRequestException("Componente do Dashboard Platform inválido.");
+    }
+    const component = item as Record<string, unknown>;
+    const id = typeof component.id === "string" ? component.id.trim() : "";
+    const title = typeof component.title === "string" ? component.title.trim() : "";
+    const groupBy = String(component.groupBy ?? "");
+    const dataSource = String(component.dataSource ?? "");
+    if (
+      !/^[a-zA-Z0-9_-]{1,80}$/.test(id) ||
+      ids.has(id) ||
+      !title ||
+      title.length > 120 ||
+      !Number.isInteger(component.order) ||
+      Number(component.order) < 0 ||
+      Number(component.order) >= 100 ||
+      typeof component.visible !== "boolean" ||
+      !PLATFORM_DASHBOARD_VISUALIZATIONS.has(String(component.visualization)) ||
+      ![1, 2, 3, 4].includes(Number(component.columns)) ||
+      PLATFORM_DASHBOARD_GROUPS.get(groupBy) !== dataSource ||
+      !["count", "percentage"].includes(String(component.valueMode))
+    ) {
+      throw new BadRequestException("Propriedades do componente do Dashboard Platform inválidas.");
+    }
+    ids.add(id);
+    return {
+      id,
+      title,
+      visible: component.visible,
+      order: Number(component.order),
+      visualization: String(component.visualization),
+      columns: Number(component.columns),
+      dataSource,
+      groupBy,
+      valueMode: String(component.valueMode),
+    };
+  });
+  return { schemaVersion: 1, components };
+}
+
+function readStoredPlatformDashboardConfiguration(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const stored = value as Record<string, unknown>;
+  if (!Number.isInteger(stored.version) || Number(stored.version) < 1) return null;
+  try {
+    return {
+      version: Number(stored.version),
+      configuration: validatePlatformDashboardConfiguration(stored.configuration),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function exactPercentages<T extends { total: number }>(items: T[], total: number) {
+  if (total <= 0) return items.map((item) => ({ ...item, percentage: 0 }));
+  const basisPoints = items.map((item, index) => {
+    const exact = (item.total / total) * 10_000;
+    const floored = Math.floor(exact);
+    return { index, floored, remainder: exact - floored };
+  });
+  let missing = 10_000 - basisPoints.reduce((sum, item) => sum + item.floored, 0);
+  for (const item of [...basisPoints].sort(
+    (left, right) => right.remainder - left.remainder || left.index - right.index,
+  )) {
+    if (missing <= 0) break;
+    basisPoints[item.index].floored += 1;
+    missing -= 1;
+  }
+  return items.map((item, index) => ({
+    ...item,
+    percentage: basisPoints[index].floored / 100,
+  }));
+}
+
+type PlatformDashboardPeriodQuery = Pick<PlatformDashboardQueryDto, "period" | "start" | "end">;
+type CalendarDate = { year: number; month: number; day: number };
+
+function platformDashboardRange(
+  query: PlatformDashboardPeriodQuery,
+  timezone: string,
+  now = new Date(),
+) {
+  const period = query.period ?? "month";
+  const today = calendarDateInTimezone(now, timezone);
+  const todayStart = startOfDayInTimezone(today, timezone);
+  if (period === "custom") {
+    if (!query.start || !query.end) {
+      throw new BadRequestException("Informe as datas inicial e final do período personalizado.");
+    }
+    const startDate = parseCalendarDate(query.start);
+    const endDate = parseCalendarDate(query.end);
+    const start = startOfDayInTimezone(startDate, timezone);
+    const end = startOfDayInTimezone(shiftCalendarDate(endDate, 1), timezone);
+    if (start >= end) throw new BadRequestException("Período personalizado inválido.");
+    return { start, end };
+  }
+  if (period === "yesterday") {
+    return { start: startOfDayInTimezone(shiftCalendarDate(today, -1), timezone), end: todayStart };
+  }
+  if (period === "week" || period === "previous_week") {
+    const weekday = new Date(Date.UTC(today.year, today.month - 1, today.day)).getUTCDay();
+    const currentStart = shiftCalendarDate(today, -weekday);
+    if (period === "week") {
+      return { start: startOfDayInTimezone(currentStart, timezone), end: now };
+    }
+    return {
+      start: startOfDayInTimezone(shiftCalendarDate(currentStart, -7), timezone),
+      end: startOfDayInTimezone(currentStart, timezone),
+    };
+  }
+  if (period === "month" || period === "previous_month") {
+    const currentStart = { ...today, day: 1 };
+    if (period === "month") {
+      return { start: startOfDayInTimezone(currentStart, timezone), end: now };
+    }
+    const previousStart = { ...shiftCalendarDate(currentStart, -1), day: 1 };
+    return {
+      start: startOfDayInTimezone(previousStart, timezone),
+      end: startOfDayInTimezone(currentStart, timezone),
+    };
+  }
+  if (period === "year" || period === "previous_year") {
+    const year = period === "year" ? today.year : today.year - 1;
+    return {
+      start: startOfDayInTimezone({ year, month: 1, day: 1 }, timezone),
+      end:
+        period === "year"
+          ? now
+          : startOfDayInTimezone({ year: today.year, month: 1, day: 1 }, timezone),
+    };
+  }
+  if (period === "7d" || period === "30d") {
+    return {
+      start: startOfDayInTimezone(shiftCalendarDate(today, -(period === "7d" ? 6 : 29)), timezone),
+      end: now,
+    };
+  }
+  return { start: todayStart, end: now };
+}
+
+function calendarDateInTimezone(date: Date, timezone: string): CalendarDate {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((item) => item.type === type)?.value);
+  return { year: part("year"), month: part("month"), day: part("day") };
+}
+
+function startOfDayInTimezone(date: CalendarDate, timezone: string) {
+  const utcMidnight = new Date(Date.UTC(date.year, date.month - 1, date.day));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(utcMidnight);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((item) => item.type === type)?.value);
+  const localizedAsUtc = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day"),
+    part("hour"),
+    part("minute"),
+    part("second"),
+  );
+  return new Date(utcMidnight.getTime() - (localizedAsUtc - utcMidnight.getTime()));
+}
+
+function parseCalendarDate(value: string): CalendarDate {
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    !Number.isInteger(year) ||
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new BadRequestException("Data do período inválida.");
+  }
+  return { year, month, day };
+}
+
+function shiftCalendarDate(date: CalendarDate, days: number): CalendarDate {
+  const shifted = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  };
 }

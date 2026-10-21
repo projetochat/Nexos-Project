@@ -1,4 +1,4 @@
-import { IsArray, IsOptional, IsString, MinLength } from "class-validator";
+import { IsArray, IsBoolean, IsOptional, IsString, MinLength } from "class-validator";
 
 export class UpdateRoleDto {
   @IsOptional()
@@ -17,4 +17,8 @@ export class UpdateRoleDto {
 
   @IsOptional()
   metadata?: unknown;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }

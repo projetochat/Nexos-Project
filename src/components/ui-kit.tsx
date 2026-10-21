@@ -4,7 +4,7 @@ import {
   shouldFillTodayFromShortcut,
   todayValueForInput,
 } from "@/lib/date-shortcuts";
-import { ChevronDown, Search, X } from "lucide-react";
+import { CalendarDays, ChevronDown, Search, X } from "lucide-react";
 
 /* ============================================================
    Trixus · UI Kit
@@ -23,7 +23,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-lg border border-border bg-card shadow-card sm:rounded-xl ${padding ? "p-4 sm:p-6" : ""} ${className}`}
+      className={`rounded-lg border border-border bg-card shadow-card sm:rounded-xl ${padding ? "p-4" : ""} ${className}`}
     >
       {children}
     </div>
@@ -42,14 +42,18 @@ export function InstanceFilterSelect({
   options,
   extraOptions = [],
   allLabel = "Todas",
+  showAllOption = true,
   className = "",
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   options: InstanceFilterOption[];
   extraOptions?: InstanceFilterOption[];
   allLabel?: string;
+  showAllOption?: boolean;
   className?: string;
+  invalid?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -77,7 +81,8 @@ export function InstanceFilterSelect({
         onClick={() => setOpen((current) => !current)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm text-foreground transition hover:border-primary/50 focus:border-primary focus:outline-none"
+        aria-invalid={invalid}
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border bg-surface-1 px-3 py-2 text-left text-sm text-foreground transition hover:border-primary/50 focus:border-primary focus:outline-none ${invalid ? "border-destructive hover:border-destructive focus:border-destructive" : "border-border"}`}
       >
         <span className="flex min-w-0 items-center gap-2">
           {selected && (
@@ -97,17 +102,19 @@ export function InstanceFilterSelect({
           role="listbox"
           className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-64 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-card"
         >
-          <button
-            type="button"
-            role="option"
-            aria-selected={!value}
-            onClick={() => choose("")}
-            className={`flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
-              !value ? "bg-surface-1 text-foreground" : "text-muted-foreground"
-            }`}
-          >
-            {allLabel}
-          </button>
+          {showAllOption && (
+            <button
+              type="button"
+              role="option"
+              aria-selected={!value}
+              onClick={() => choose("")}
+              className={`flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
+                !value ? "bg-surface-1 text-foreground" : "text-muted-foreground"
+              }`}
+            >
+              {allLabel}
+            </button>
+          )}
           {allOptions.map((option) => (
             <button
               key={option.value}
@@ -171,6 +178,27 @@ export function Button({
   );
 }
 
+export const closeButtonClassName =
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-2 p-0 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground focus:outline-none focus-visible:border-primary disabled:pointer-events-none disabled:opacity-50";
+
+export function CloseButton({
+  className = "",
+  type = "button",
+  "aria-label": ariaLabel = "Fechar",
+  ...rest
+}: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children">) {
+  return (
+    <button
+      type={type}
+      aria-label={ariaLabel}
+      className={`${closeButtonClassName} ${className}`}
+      {...rest}
+    >
+      <X aria-hidden="true" className="h-4 w-4" />
+    </button>
+  );
+}
+
 export type BadgeTone = "default" | "success" | "warning" | "info" | "destructive" | "brand";
 
 export function Badge({
@@ -202,28 +230,57 @@ export function Badge({
 
 export const Input = React.forwardRef<
   HTMLInputElement,
-  React.InputHTMLAttributes<HTMLInputElement>
->(({ className = "", type, onKeyDown, ...rest }, ref) => (
-  <input
-    ref={ref}
-    type={type}
-    className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
-    onKeyDown={(event) => {
-      if (
-        (type === "date" || type === "datetime-local") &&
-        shouldFillTodayFromShortcut(event.nativeEvent)
-      ) {
-        event.preventDefault();
-        setNativeInputValue(
-          event.currentTarget,
-          todayValueForInput(type, event.currentTarget.value),
-        );
-      }
-      onKeyDown?.(event);
-    }}
-    {...rest}
-  />
-));
+  React.InputHTMLAttributes<HTMLInputElement> & { "data-date-input"?: string }
+>(({ className = "", type, onKeyDown, placeholder, ...rest }, ref) => {
+  const isNativeDate = type === "date" || type === "datetime-local";
+  const showsCalendar = isNativeDate || Boolean(rest["data-date-input"]);
+  const resolvedPlaceholder =
+    placeholder ??
+    (type === "date" ? "dd/mm/aaaa" : type === "datetime-local" ? "dd/mm/aaaa hh:mm" : undefined);
+  const input = (
+    <input
+      ref={ref}
+      type={type}
+      placeholder={resolvedPlaceholder}
+      className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary aria-invalid:!border-destructive focus:aria-invalid:!border-destructive ${
+        showsCalendar
+          ? `pr-10 ${
+              isNativeDate
+                ? "[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:h-7 [&::-webkit-calendar-picker-indicator]:w-7 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
+                : ""
+            }`
+          : ""
+      } ${className}`}
+      onKeyDown={(event) => {
+        if (
+          (type === "date" || type === "datetime-local") &&
+          shouldFillTodayFromShortcut(event.nativeEvent)
+        ) {
+          event.preventDefault();
+          setNativeInputValue(
+            event.currentTarget,
+            todayValueForInput(type, event.currentTarget.value),
+          );
+        }
+        onKeyDown?.(event);
+      }}
+      {...rest}
+    />
+  );
+
+  if (!showsCalendar) return input;
+
+  return (
+    <span className="relative block min-w-0 w-full">
+      {input}
+      <CalendarDays
+        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+        strokeWidth={2}
+        aria-hidden="true"
+      />
+    </span>
+  );
+});
 
 Input.displayName = "Input";
 
@@ -270,7 +327,7 @@ export function Textarea({
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`min-h-24 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
+      className={`min-h-24 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary aria-invalid:!border-destructive focus:aria-invalid:!border-destructive ${className}`}
       {...rest}
     />
   );
@@ -284,7 +341,7 @@ export function Select({
   return (
     <span className="relative block w-full">
       <select
-        className={`min-h-10 w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition focus:border-primary ${className}`}
+        className={`min-h-10 w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition focus:border-primary aria-invalid:!border-destructive focus:aria-invalid:!border-destructive ${className}`}
         {...rest}
       >
         {children}

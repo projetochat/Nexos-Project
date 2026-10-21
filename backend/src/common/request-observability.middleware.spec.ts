@@ -11,16 +11,15 @@ describe("requestObservability", () => {
     response.statusCode = 200;
     response.setHeader = vi.fn();
     const next = vi.fn();
-    requestObservability(
-      {
-        header: vi.fn().mockReturnValue("request-123"),
-        method: "GET",
-        path: "/api/operations/dashboard",
-      } as never,
-      response as never,
-      next,
-    );
+    const request = {
+      headers: {} as Record<string, string>,
+      header: vi.fn().mockReturnValue("request-123"),
+      method: "GET",
+      path: "/api/operations/dashboard",
+    };
+    requestObservability(request as never, response as never, next);
     expect(response.setHeader).toHaveBeenCalledWith("x-request-id", "request-123");
+    expect(request.headers["x-request-id"]).toBe("request-123");
     expect(next).toHaveBeenCalledOnce();
     response.emit("finish");
   });
@@ -32,12 +31,15 @@ describe("requestObservability", () => {
     };
     response.statusCode = 200;
     response.setHeader = vi.fn();
-    requestObservability(
-      { header: vi.fn().mockReturnValue("bad\nlog"), method: "GET", path: "/api/health" } as never,
-      response as never,
-      vi.fn(),
-    );
+    const request = {
+      headers: {} as Record<string, string>,
+      header: vi.fn().mockReturnValue("bad\nlog"),
+      method: "GET",
+      path: "/api/health",
+    };
+    requestObservability(request as never, response as never, vi.fn());
     const generated = response.setHeader.mock.calls[0][1] as string;
     expect(generated).toMatch(/^[0-9a-f-]{36}$/);
+    expect(request.headers["x-request-id"]).toBe(generated);
   });
 });

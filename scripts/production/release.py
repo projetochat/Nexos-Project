@@ -242,7 +242,7 @@ def healthy_apps(compose, stabilization_seconds=30):
 
         frontend = command(['/usr/bin/curl', '--fail', '--silent', '--show-error',
                             '--max-time', '20', 'http://127.0.0.1:4173/'])
-        require(bool(re.search(r'<title[^>]*>\s*Trixus\s*</title>', frontend,
+        require(bool(re.search(r'<title[^>]*>\s*Trixus(?:\s*\|\s*App)?\s*</title>', frontend,
                                flags=re.IGNORECASE)),
                 'Frontend local nao confirmou identidade do Trixus')
 
@@ -336,7 +336,7 @@ def check_protected(protected):
                 'Servico de infraestrutura mudou: ' + name)
 
 
-def publish(config, old, protected, sha, release_dir):
+def publish(config, old, protected, sha, release_dir, recovery_marker):
     def stage(name):
         (release_dir / 'status.txt').write_text(name + '\n')
         try:
@@ -360,9 +360,56 @@ def publish(config, old, protected, sha, release_dir):
     (release_dir / 'previous-compose.json').write_text(compose_json(previous))
     current = compose_file(config, images, release_dir / 'compose.json')
     command(current + ['config', '--quiet'])
+
+    def migrate_command(container_name, *wrapper_args):
+        return current + ['run', '--rm', '--no-deps', '--pull', 'never',
+                          '--name', container_name, 'migrate',
+                          'bun', 'run', 'prisma:migrate:deploy', *wrapper_args]
+
+    def migration_preflight(container_name):
+        output = command(migrate_command(container_name, '--preflight-only'), timeout=600)
+        try:
+            result = json.loads(output)
+        except (TypeError, ValueError) as error:
+            raise CheckError('Resposta invalida do preflight de migracao') from error
+        require(result.get('code') == 'CONTACT_CUSTOM_FIELD_IDENTITY_PREFLIGHT_OK',
+                'Resposta inesperada do preflight de migracao')
+        require(isinstance(result.get('reconciliationRequired'), bool),
+                'Preflight sem decisao de reconciliacao')
+        return result['reconciliationRequired']
+
+    def create_recovery_marker():
+        require(not recovery_marker.exists(), 'Recuperacao anterior pendente')
+        recovery_marker.write_text(str(release_dir) + '\n')
+
+    def clear_recovery_marker():
+        if not recovery_marker.exists():
+            return
+        require(recovery_marker.read_text().strip() == str(release_dir),
+                'Marcador de recuperacao pertence a outra release')
+        recovery_marker.unlink()
+
+    def remove_owned_migration_container(name):
+        pending = subprocess.run(['/usr/bin/docker', 'inspect', name],
+                                 capture_output=True, timeout=30)
+        if pending.returncode != 0:
+            return
+        info = json.loads(pending.stdout)[0]
+        labels = info['Config']['Labels']
+        require(labels.get('com.docker.compose.project') == PROJECT and
+                labels.get('com.docker.compose.service') == 'migrate',
+                'Container de migracao inesperado: ' + name)
+        if info['State']['Running']:
+            command(['/usr/bin/docker', 'stop', '-t', '30', info['Id']])
+        else:
+            command(['/usr/bin/docker', 'rm', info['Id']])
+
     migration_started = False
     stop_attempted = False
     try:
+        stage('PREFLIGHT_MIGRACAO_SEM_INDISPONIBILIDADE')
+        reconciliation_required = migration_preflight('trixus-production-migrate-preflight')
+        create_recovery_marker()
         stage('PARANDO_APENAS_APLICACAO_TRIXUS')
         stop_attempted = True
         command(BASE + ['stop', '-t', '45', 'frontend', 'backend'])
@@ -383,12 +430,15 @@ def publish(config, old, protected, sha, release_dir):
                 checksums[path.name] = hashlib.file_digest(source, 'sha256').hexdigest()
         (release_dir / 'backup-checksums.json').write_text(json.dumps(checksums))
         check_protected(protected)
+        stage('REVALIDANDO_MIGRACAO_ANTES_DA_APLICACAO')
+        revalidated_reconciliation = migration_preflight('trixus-production-migrate-revalidate')
+        require(revalidated_reconciliation == reconciliation_required,
+                'Estado de reconciliacao mudou durante a manutencao')
         stage('MIGRACAO_INICIADA_SEM_ROLLBACK_AUTOMATICO')
         migration_started = True
         # Fixed command: no seed, reset, db push or remote-provided command.
-        command(current + ['run', '--rm', '--no-deps', '--pull', 'never',
-                '--name', 'trixus-production-migrate', 'migrate',
-                'bun', 'run', 'prisma:migrate:deploy'], timeout=600)
+        migration_args = ('--apply-reviewed-reconciliation',) if reconciliation_required else ()
+        command(migrate_command('trixus-production-migrate', *migration_args), timeout=600)
         stage('PUBLICANDO_APLICACAO_TRIXUS')
         command(current + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never',
                 '--wait', '--wait-timeout', '180', 'backend', 'frontend'], timeout=240)
@@ -396,21 +446,31 @@ def publish(config, old, protected, sha, release_dir):
         check_protected(protected)
         (STATE / 'current.txt').write_text(str(release_dir) + '\n')
         stage('DEPLOY_OK')
+        clear_recovery_marker()
     except Exception:
         if not migration_started and stop_attempted:
             command(BASE + ['start', 'backend', 'frontend'])
+            healthy_apps(BASE)
+            check_protected(protected)
+            try:
+                remove_owned_migration_container('trixus-production-migrate-preflight')
+                remove_owned_migration_container('trixus-production-migrate-revalidate')
+            except Exception:
+                stage('APLICACAO_ANTERIOR_SAUDAVEL_LIMPEZA_MANUAL_NECESSARIA')
+                raise
+            clear_recovery_marker()
             stage('FALHA_ANTES_DA_MIGRACAO_APLICACAO_ANTERIOR_REINICIADA')
+        elif not migration_started:
+            remove_owned_migration_container('trixus-production-migrate-preflight')
+            remove_owned_migration_container('trixus-production-migrate-revalidate')
+            clear_recovery_marker()
+            stage('PREFLIGHT_REPROVADO_SEM_INDISPONIBILIDADE')
         elif migration_started:
             # A failed migration may have partially changed the schema. Do not
             # automatically run old code or restore a database over new writes.
-            pending = subprocess.run(['/usr/bin/docker', 'inspect', 'trixus-production-migrate'],
-                                     capture_output=True, timeout=30)
-            if pending.returncode == 0:
-                info = json.loads(pending.stdout)[0]
-                if info['Config']['Labels'].get('com.docker.compose.project') == PROJECT:
-                    command(['/usr/bin/docker', 'stop', '-t', '30', info['Id']])
             command(current + ['stop', '-t', '30', 'frontend', 'backend'])
             stage('RECUPERACAO_MANUAL_NECESSARIA')
+            remove_owned_migration_container('trixus-production-migrate')
         raise
 
 
@@ -466,9 +526,8 @@ def main(args):
             require(shutil.disk_usage(STATE).free >= backup_size + 2 * GIB, 'Disco insuficiente para backup')
             release_dir = STATE / 'releases' / (time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + sha)
             release_dir.mkdir(mode=0o700)
-            (STATE / 'recovery-required').write_text(str(release_dir) + '\n')
-            publish(config, old, protected, sha, release_dir)
-            (STATE / 'recovery-required').unlink()
+            publish(config, old, protected, sha, release_dir,
+                    recovery_marker=STATE / 'recovery-required')
             # Cleanup is deliberately post-commit: never delete recovery data
             # while a deploy or migration is pending. A cleanup failure must
             # not turn an already confirmed deploy into a false rollback case.

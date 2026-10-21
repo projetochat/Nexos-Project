@@ -153,6 +153,7 @@ describe("AuthService session hydration", () => {
     const prisma = {
       user: { findUnique: vi.fn().mockResolvedValue(user) },
       userInvitation: { findFirst: vi.fn().mockResolvedValue({ id: "marker-1" }) },
+      tenantSubscription: { findFirst: vi.fn().mockResolvedValue(null) },
     };
     const jwt = { signAsync: vi.fn().mockResolvedValue("setup-token") };
     const config = { get: vi.fn().mockReturnValue("test-secret-with-at-least-32-characters") };
@@ -343,6 +344,188 @@ describe("AuthService session hydration", () => {
         create: expect.objectContaining({ presentationName: "Nome apenas no tenant B" }),
       }),
     );
+  });
+
+  it("previews a customer portal invitation without exposing its token hash", async () => {
+    const prisma = {
+      userInvitation: {
+        findFirst: vi.fn().mockResolvedValue({
+          email: "clara@cliente.test",
+          expiresAt: new Date("2026-10-23T12:00:00Z"),
+          tokenHash: "must-not-leak",
+          tenant: { id: "tenant-a", name: "Trixus", slug: "trixus" },
+          role: { key: "customer_portal", name: "Portal do cliente" },
+          contact: {
+            id: "contact-a",
+            name: "Clara",
+            customerAccessProfile: "COLLABORATOR",
+            customer: { id: "customer-a", name: "SDE" },
+            customerDepartment: { id: "customer-department-a", name: "Financeiro" },
+            customerBranch: { id: "branch-a", name: "Unidade01" },
+          },
+        }),
+      },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+
+    const result = await service.invitationPreview("plain-token");
+
+    expect(result).toEqual({
+      email: "clara@cliente.test",
+      expiresAt: new Date("2026-10-23T12:00:00Z"),
+      tenant: { id: "tenant-a", name: "Trixus", slug: "trixus" },
+      profile: "COLLABORATOR",
+      contact: {
+        id: "contact-a",
+        name: "Clara",
+        customer: { id: "customer-a", name: "SDE" },
+        department: { id: "customer-department-a", name: "Financeiro" },
+        branch: { id: "branch-a", name: "Unidade01" },
+      },
+    });
+    expect(result).not.toHaveProperty("tokenHash");
+  });
+
+  it("links an accepted portal invitation to the contact without changing global credentials", async () => {
+    const passwordHash = await hash("SenhaExistente@2026", 4);
+    const contactUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const tx = {
+      user: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "shared-user",
+          email: "clara@cliente.test",
+          name: "Nome global preservado",
+          passwordHash,
+          status: "ACTIVE",
+        }),
+        create: vi.fn(),
+      },
+      tenantMembership: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({ id: "portal-membership" }),
+      },
+      departmentMembership: { deleteMany: vi.fn(), createMany: vi.fn() },
+      contact: { updateMany: contactUpdateMany },
+      userInvitation: { update: vi.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      userInvitation: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "invite-portal",
+          email: "clara@cliente.test",
+          tenantId: "tenant-a",
+          roleId: "role-portal",
+          departmentIds: [],
+          contactId: "contact-a",
+          contact: { id: "contact-a", name: "Clara" },
+          tenant: { slug: "trixus" },
+          role: { id: "role-portal", key: "customer_portal" },
+        }),
+      },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    vi.spyOn(service, "loginTenant").mockResolvedValue({ accessToken: "access" } as never);
+
+    await service.acceptInvitation({ token: "invite-token", password: "SenhaExistente@2026" });
+
+    expect(contactUpdateMany).toHaveBeenCalledWith({
+      where: {
+        id: "contact-a",
+        tenantId: "tenant-a",
+        archivedAt: null,
+        active: true,
+      },
+      data: { portalMembershipId: "portal-membership", portalAccessActive: true },
+    });
+    expect(tx.user.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects previewing an invitation for an inactive contact", async () => {
+    const prisma = {
+      userInvitation: {
+        findFirst: vi.fn().mockResolvedValue({
+          contactId: "contact-a",
+          contact: { id: "contact-a", active: false, archivedAt: null },
+          tenant: { id: "tenant-a", name: "Trixus", slug: "trixus" },
+          role: { key: "customer_portal", name: "Portal do cliente" },
+        }),
+      },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+
+    await expect(service.invitationPreview("plain-token")).rejects.toThrow(
+      "Convite de contato não está mais ativo.",
+    );
+  });
+
+  it("rejects accepting an invitation for an inactive contact before changing membership", async () => {
+    const transaction = vi.fn();
+    const prisma = {
+      userInvitation: {
+        findFirst: vi.fn().mockResolvedValue({
+          contactId: "contact-a",
+          contact: { id: "contact-a", active: false, archivedAt: null },
+          tenant: { slug: "trixus" },
+          role: { key: "customer_portal" },
+        }),
+      },
+      $transaction: transaction,
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+
+    await expect(
+      service.acceptInvitation({ token: "invite-token", password: "SenhaValida@2026" }),
+    ).rejects.toThrow("Convite de contato não está mais ativo.");
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("aborts acceptance when the contact becomes inactive during the transaction", async () => {
+    const passwordHash = await hash("SenhaExistente@2026", 4);
+    const invitationUpdate = vi.fn();
+    const tx = {
+      user: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "shared-user",
+          email: "clara@cliente.test",
+          passwordHash,
+          status: "ACTIVE",
+        }),
+        create: vi.fn(),
+      },
+      tenantMembership: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({ id: "portal-membership" }),
+      },
+      departmentMembership: { deleteMany: vi.fn(), createMany: vi.fn() },
+      contact: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      userInvitation: { update: invitationUpdate },
+    };
+    const prisma = {
+      userInvitation: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "invite-portal",
+          email: "clara@cliente.test",
+          tenantId: "tenant-a",
+          roleId: "role-portal",
+          departmentIds: [],
+          contactId: "contact-a",
+          contact: { id: "contact-a", name: "Clara", active: true, archivedAt: null },
+          tenant: { slug: "trixus" },
+          role: { id: "role-portal", key: "customer_portal" },
+        }),
+      },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+
+    await expect(
+      service.acceptInvitation({ token: "invite-token", password: "SenhaExistente@2026" }),
+    ).rejects.toThrow("Convite de contato não está mais ativo.");
+    expect(tx.contact.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ active: true }) }),
+    );
+    expect(invitationUpdate).not.toHaveBeenCalled();
   });
 
   it("uses the tenant responsible name when an administrator accepts without typing a name", async () => {

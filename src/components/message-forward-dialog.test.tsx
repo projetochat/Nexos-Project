@@ -119,7 +119,7 @@ beforeEach(() => {
     total: contacts.length,
     totalPages: 1,
     page: 1,
-    pageSize: 10,
+    pageSize: 20,
   });
   mocks.contactOptions.mockResolvedValue({
     instances: [
@@ -142,15 +142,20 @@ afterEach(async () => {
 describe("message forwarding contact picker", () => {
   it("lists every contact, asks for an instance and creates a conversation when needed", async () => {
     const close = await mount();
-    expect(mocks.listContacts).toHaveBeenCalledWith({ q: undefined, page: 1, pageSize: 10 });
+    expect(mocks.listContacts).toHaveBeenCalledWith({ q: undefined, page: 1, pageSize: 20 });
     expect(document.body.textContent).toContain("Contato Único");
     expect(document.body.textContent).toContain("Contato Duplo");
+    expect(document.body.textContent).not.toContain("Anterior");
+    expect(document.body.textContent).not.toContain("Próxima");
+    expect(document.querySelectorAll("[data-forward-selection-indicator]")).toHaveLength(2);
+    expect(document.querySelector('[role="dialog"]')?.className).toContain("h-[min(44rem");
 
     await React.act(() => button("Contato Duplo").click());
     expect(document.body.textContent).toContain("Escolher Instância");
     expect(button("Encaminhar").disabled).toBe(true);
     await React.act(() => button("Instância B").click());
     expect(button("Encaminhar").disabled).toBe(false);
+    expect(document.querySelectorAll('[role="radio"][aria-checked="true"]')).toHaveLength(1);
 
     mocks.listConversations.mockResolvedValue({ items: [], total: 0, totalPages: 0 });
     mocks.createConversation.mockResolvedValue({ id: "created-conversation" });
@@ -197,5 +202,53 @@ describe("message forwarding contact picker", () => {
       "active-conversation",
       "copy-id",
     );
+  });
+
+  it("keeps a single scrollable list and loads the next page near its end", async () => {
+    mocks.listContacts.mockImplementation(({ page }: { page: number }) =>
+      Promise.resolve({
+        items:
+          page === 1
+            ? [contacts[0]]
+            : [
+                {
+                  ...contacts[1],
+                  id: "second-page",
+                  nome: "Contato da Segunda Página",
+                },
+              ],
+        total: 2,
+        totalPages: 2,
+        page,
+        pageSize: 20,
+      }),
+    );
+    await mount();
+
+    const list = document.querySelector('[role="radiogroup"]') as HTMLDivElement;
+    Object.defineProperties(list, {
+      scrollHeight: { configurable: true, value: 400 },
+      clientHeight: { configurable: true, value: 200 },
+      scrollTop: { configurable: true, value: 190 },
+    });
+    await React.act(() => list.dispatchEvent(new Event("scroll", { bubbles: true })));
+    await flush();
+
+    expect(mocks.listContacts).toHaveBeenCalledWith({ q: undefined, page: 2, pageSize: 20 });
+    expect(document.body.textContent).toContain("Contato da Segunda Página");
+  });
+
+  it("shows an empty state and keeps forwarding disabled without a selection", async () => {
+    mocks.listContacts.mockResolvedValue({
+      items: [],
+      total: 0,
+      totalPages: 0,
+      page: 1,
+      pageSize: 20,
+    });
+    await mount();
+
+    expect(document.body.textContent).toContain("Nenhum contato encontrado.");
+    expect(button("Encaminhar").disabled).toBe(true);
   });
 });

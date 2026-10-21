@@ -8,9 +8,12 @@ import { MessagingConnectionsService } from "./messaging-connections.service";
 const hours = () =>
   SERVICE_DAYS.map((day, index) => ({ day, active: index < 5, start: "08:00", end: "18:00" }));
 describe("instance service hours", () => {
-  it("accepts a daytime schedule and rejects equal, reversed or malformed hours", () => {
+  it("accepts daytime and overnight schedules and rejects equal or malformed hours", () => {
     expect(validateServiceHours(hours())).toEqual(hours());
-    for (const end of ["08:00", "07:59", "24:00", "8:00", "18:60", ""]) {
+    const overnight = hours();
+    overnight[0] = { ...overnight[0], start: "22:00", end: "02:00" };
+    expect(validateServiceHours(overnight)[0]).toMatchObject({ start: "22:00", end: "02:00" });
+    for (const end of ["08:00", "24:00", "8:00", "18:60", ""]) {
       const rows = hours();
       rows[0].end = end;
       expect(() => validateServiceHours(rows)).toThrow();
@@ -100,7 +103,7 @@ describe("instance service hours", () => {
     const invalid = hours();
     invalid[0].end = "08:00";
     await expect(service.update("instance", { serviceHours: invalid }, current)).rejects.toThrow(
-      "fim deve ser maior",
+      "devem ser diferentes",
     );
     expect(prisma.messagingConnection.update).toHaveBeenCalledTimes(2);
   });

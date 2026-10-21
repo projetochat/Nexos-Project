@@ -8,7 +8,8 @@ import {
   CreditCard,
   DollarSign,
   Eye,
-  Hourglass,
+  LayoutGrid,
+  List,
   MoreVertical,
   Pause,
   Play,
@@ -30,7 +31,10 @@ import {
 } from "@/components/ui-kit";
 import { Modal } from "@/components/modal";
 import { DashboardDateInput } from "@/components/dashboard-filters";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { GridPaginationFooter } from "@/components/grid-pagination-footer";
 import { Switch } from "@/components/ui/switch";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   formatPlatformCurrency,
   formatPlatformMoneyInput,
@@ -38,12 +42,14 @@ import {
   parsePlatformMoneyToCents,
 } from "@/lib/platform-field-formats";
 import {
+  apiErrorMessageWithRequestId,
   platformApi,
   type PlatformClient,
   type PlatformPlan,
   type PlatformSubscription,
   type PlatformSubscriptionDetail,
 } from "@/lib/trixus-api";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/admin/assinaturas")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
@@ -60,35 +66,61 @@ type FlowStatus =
   | "CANCELLED";
 type Period = "all" | "today" | "week" | "month" | "year" | "custom";
 
+const statusFilterOptions: Array<{ status: FlowStatus; label: string }> = [
+  { status: "TRIALING", label: "Trial" },
+  { status: "DRAFT", label: "Em cadastro" },
+  { status: "PENDING_FINANCE", label: "Aguardando financeiro" },
+  { status: "FINANCE_RELEASED", label: "Financeiro liberado" },
+  { status: "ACTIVE", label: "Ativo" },
+  { status: "SUSPENDED", label: "Suspensa" },
+  { status: "CANCELLED", label: "Canceladas" },
+];
+
 const statusCards: Array<{
-  status: FlowStatus;
+  key: string;
+  statuses: FlowStatus[];
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   color: string;
 }> = [
-  { status: "TRIALING", label: "Trial", icon: Timer, color: "text-warning bg-warning/10" },
-  { status: "DRAFT", label: "Em cadastro", icon: ClipboardList, color: "text-info bg-info/10" },
   {
-    status: "PENDING_FINANCE",
-    label: "Aguardando financeiro",
-    icon: Hourglass,
-    color: "text-primary bg-primary/10",
+    key: "trial",
+    statuses: ["TRIALING"],
+    label: "Trial",
+    icon: Timer,
+    color: "text-warning bg-warning/10",
   },
   {
-    status: "FINANCE_RELEASED",
+    key: "in-progress",
+    statuses: ["DRAFT", "PENDING_FINANCE"],
+    label: "Em andamento",
+    icon: ClipboardList,
+    color: "text-info bg-info/10",
+  },
+  {
+    key: "finance-released",
+    statuses: ["FINANCE_RELEASED"],
     label: "Financeiro liberado",
     icon: CreditCard,
     color: "text-success bg-success/10",
   },
-  { status: "ACTIVE", label: "Ativo", icon: CircleCheck, color: "text-success bg-success/10" },
   {
-    status: "SUSPENDED",
+    key: "active",
+    statuses: ["ACTIVE"],
+    label: "Ativo",
+    icon: CircleCheck,
+    color: "text-success bg-success/10",
+  },
+  {
+    key: "suspended",
+    statuses: ["SUSPENDED"],
     label: "Suspensa",
     icon: Pause,
     color: "text-destructive bg-destructive/10",
   },
   {
-    status: "CANCELLED",
+    key: "cancelled",
+    statuses: ["CANCELLED"],
     label: "Canceladas",
     icon: Ban,
     color: "text-destructive bg-destructive/10",
@@ -96,6 +128,9 @@ const statusCards: Array<{
 ];
 
 function AssinaturasAdmin() {
+  const isMobile = useIsMobile();
+  const [viewMode, setViewMode] = React.useState<"cards" | "list">("list");
+  const viewModeTouched = React.useRef(false);
   const [rows, setRows] = React.useState<PlatformSubscription[]>([]);
   const [plans, setPlans] = React.useState<PlatformPlan[]>([]);
   const [clients, setClients] = React.useState<PlatformClient[]>([]);
@@ -115,6 +150,16 @@ function AssinaturasAdmin() {
   const [period, setPeriod] = React.useState<Period>("all");
   const [start, setStart] = React.useState("");
   const [end, setEnd] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+
+  React.useEffect(() => {
+    if (isMobile) {
+      setViewMode("cards");
+      return;
+    }
+    if (!viewModeTouched.current) setViewMode("list");
+  }, [isMobile]);
 
   const load = React.useCallback(() => {
     setError(null);
@@ -146,10 +191,11 @@ function AssinaturasAdmin() {
     [clients],
   );
   const counts = React.useMemo(() => {
-    const map = new Map<FlowStatus, number>(statusCards.map((item) => [item.status, 0]));
+    const map = new Map(statusCards.map((item) => [item.key, 0]));
     rows.forEach((row) => {
       const normalized = normalizeSubscriptionStatus(row.status);
-      map.set(normalized, (map.get(normalized) ?? 0) + 1);
+      const card = statusCards.find((item) => item.statuses.includes(normalized));
+      if (card) map.set(card.key, (map.get(card.key) ?? 0) + 1);
     });
     return map;
   }, [rows]);
@@ -169,6 +215,29 @@ function AssinaturasAdmin() {
         ))
     );
   });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageSafe = Math.min(page, totalPages);
+  const visibleRows = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
+  const hasActiveFilters = Boolean(q || city || uf || status || period !== "all" || start || end);
+
+  function clearFilters() {
+    setQ("");
+    setCity("");
+    setUf("");
+    setStatus("");
+    setPeriod("all");
+    setStart("");
+    setEnd("");
+    setPage(1);
+  }
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [q, city, uf, status, period, start, end, pageSize]);
+
+  React.useEffect(() => {
+    if (page !== pageSafe) setPage(pageSafe);
+  }, [page, pageSafe]);
 
   async function immediate(row: PlatformSubscription, kind: "finance" | "activate") {
     const message = validateImmediateAction(normalizeSubscriptionStatus(row.status), kind);
@@ -183,52 +252,59 @@ function AssinaturasAdmin() {
     setBusyId(row.id);
     try {
       await handler(row.id);
-      toast.success(kind === "finance" ? "Financeiro gerado." : "Assinatura ativada.");
+      toast.success(
+        kind === "finance"
+          ? "Financeiro gerado."
+          : normalizeSubscriptionStatus(row.status) === "CANCELLED"
+            ? "Assinatura reativada com uma nova Tenant."
+            : normalizeSubscriptionStatus(row.status) === "SUSPENDED"
+              ? "Assinatura reativada."
+              : "Assinatura ativada.",
+      );
       load();
       return true;
     } catch (actionError) {
-      toast.error((actionError as Error).message);
+      toast.error(apiErrorMessageWithRequestId(actionError));
       return false;
     } finally {
       setBusyId(null);
     }
   }
 
+  const paginationFooter = (
+    <GridPaginationFooter
+      visible={visibleRows.length}
+      total={filtered.length}
+      page={pageSafe}
+      totalPages={totalPages}
+      pageSize={pageSize}
+      onPage={(nextPage) => setPage(nextPage)}
+      onPageSize={(nextPageSize) => setPageSize(nextPageSize)}
+      ariaLabelPrefix="assinaturas"
+    />
+  );
+
   return (
     <AdminContainer className="max-w-[112rem]">
       <SectionHeader
         title="Assinaturas"
         subtitle="Gerencie o ciclo das assinaturas, do cadastro à ativação."
+        subtitleClassName="hidden md:block"
         actions={
           <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
             <Plus className="h-3.5 w-3.5" /> Nova assinatura
           </Button>
         }
       />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-        {statusCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <Card key={card.status} className="p-3 sm:p-3">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${card.color}`}
-                >
-                  <Icon className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <div className="whitespace-nowrap text-[11px] font-medium leading-tight text-muted-foreground">
-                    {card.label}
-                  </div>
-                  <div className="text-xl font-semibold">{counts.get(card.status) ?? 0}</div>
-                </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-      <Card className="mt-4 p-4 sm:p-4">
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(220px,2.2fr)_1fr_.7fr_1.1fr_1fr_1fr_1fr]">
+      <Card className="p-4 sm:p-4">
+        <div
+          className={`grid grid-cols-2 gap-3 ${
+            hasActiveFilters
+              ? "xl:grid-cols-[minmax(220px,2.2fr)_1fr_.7fr_1.1fr_1fr_1fr_1fr_auto]"
+              : "xl:grid-cols-[minmax(220px,2.2fr)_1fr_.7fr_1.1fr_1fr_1fr_1fr]"
+          }`}
+          data-platform-filter-grid
+        >
           <Filter label="Busca" className="col-span-2 xl:col-span-1">
             <SearchInput
               value={q}
@@ -255,7 +331,7 @@ function AssinaturasAdmin() {
           <Filter label="Situação">
             <Select value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Todas</option>
-              {statusCards.map((item) => (
+              {statusFilterOptions.map((item) => (
                 <option key={item.status} value={item.status}>
                   {item.label}
                 </option>
@@ -276,6 +352,7 @@ function AssinaturasAdmin() {
             <DashboardDateInput
               value={period === "custom" ? start : dateValue(range.from)}
               readOnly={period !== "custom"}
+              mobilePlaceholder={period === "all" ? "dd/mm/aaaa" : undefined}
               onChange={setStart}
             />
           </Filter>
@@ -283,15 +360,108 @@ function AssinaturasAdmin() {
             <DashboardDateInput
               value={period === "custom" ? end : dateValue(range.to)}
               readOnly={period !== "custom"}
+              mobilePlaceholder={period === "all" ? "dd/mm/aaaa" : undefined}
               onChange={setEnd}
             />
           </Filter>
+          {hasActiveFilters && (
+            <div className="col-span-2 flex justify-end xl:col-span-1 xl:items-end">
+              <ClearFiltersButton onClick={clearFilters} />
+            </div>
+          )}
         </div>
       </Card>
-      <Card className="mt-4" padding={false}>
-        {error && <div className="m-4 text-sm text-destructive">{error}</div>}
-        <div>
-          <table className="w-full table-fixed text-xs xl:text-sm">
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {statusCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <Card key={card.key} className="flex min-h-24 flex-col p-3 sm:p-3">
+              <div className="w-full text-xs uppercase tracking-widest text-muted-foreground">
+                {card.label}
+              </div>
+              <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+                <div className="text-xl font-semibold">{counts.get(card.key) ?? 0}</div>
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${card.color}`}
+                >
+                  <Icon className="h-4 w-4" />
+                </span>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+      <div
+        className="mt-3 hidden justify-end gap-1 md:flex"
+        aria-label="Visualização das assinaturas"
+      >
+        <Button
+          type="button"
+          variant={viewMode === "cards" ? "primary" : "secondary"}
+          size="icon"
+          aria-label="Visualizar assinaturas em cards"
+          aria-pressed={viewMode === "cards"}
+          onClick={() => {
+            viewModeTouched.current = true;
+            setViewMode("cards");
+          }}
+        >
+          <LayoutGrid className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant={viewMode === "list" ? "primary" : "secondary"}
+          size="icon"
+          aria-label="Visualizar assinaturas em lista"
+          aria-pressed={viewMode === "list"}
+          onClick={() => {
+            viewModeTouched.current = true;
+            setViewMode("list");
+          }}
+        >
+          <List className="h-4 w-4" />
+        </Button>
+      </div>
+      {error && <div className="mt-4 text-sm text-destructive">{error}</div>}
+      <div
+        data-platform-card-shell
+        className={
+          viewMode === "cards"
+            ? "mt-4 md:overflow-hidden md:rounded-xl md:border md:border-border md:bg-card md:shadow-card"
+            : "hidden"
+        }
+      >
+        <div
+          data-platform-mobile-list
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:p-4 xl:grid-cols-3"
+        >
+          {visibleRows.map((row) => (
+            <SubscriptionMobileCard
+              key={row.id}
+              row={row}
+              plan={plansById.get(row.plan.id)}
+              client={getClient(row, clientsById)}
+              disabled={busyId === row.id}
+              onFinance={() => void immediate(row, "finance")}
+              onDetail={() => setDetailTarget(row)}
+              onActivate={() => setActivationTarget(row)}
+              onSuspend={() => setDialog({ kind: "suspend", row })}
+              onCancel={() => setDialog({ kind: "cancel", row })}
+            />
+          ))}
+          {!filtered.length && (
+            <div className="col-span-full py-10 text-center text-sm text-muted-foreground">
+              Nenhuma assinatura encontrada.
+            </div>
+          )}
+        </div>
+        <div className="hidden md:block" data-platform-card-pagination>
+          {paginationFooter}
+        </div>
+      </div>
+      <Card className={viewMode === "list" ? "mt-4 overflow-hidden" : "hidden"} padding={false}>
+        <div data-platform-desktop-table className="overflow-x-auto">
+          <table className="w-full min-w-[1100px] table-fixed text-xs xl:text-sm">
             <colgroup>
               <col className="w-[13%]" />
               <col className="w-[13%]" />
@@ -304,9 +474,9 @@ function AssinaturasAdmin() {
               <col className="w-[9%]" />
               <col className="w-[5%]" />
             </colgroup>
-            <thead className="bg-surface-1">
+            <thead className="bg-surface-2">
               <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <th className="px-3 py-3">Cliente</th>
+                <th className="px-4 py-3">Cliente</th>
                 <th className="px-2 py-3">Contato responsável</th>
                 <th className="px-2 py-3">Plano</th>
                 <th className="px-2 py-3">Tipo</th>
@@ -319,14 +489,14 @@ function AssinaturasAdmin() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => {
+              {visibleRows.map((row) => {
                 const plan = plansById.get(row.plan.id);
                 const client = getClient(row, clientsById);
                 const gross = row.monthlyValueCents ?? plan?.priceCents ?? 0;
                 const discount = row.discountCents ?? 0;
                 return (
                   <tr key={row.id} className="border-b border-border/60 hover:bg-surface-1">
-                    <td className="truncate px-3 py-3 font-medium" title={client.name}>
+                    <td className="truncate px-4 py-3 font-medium" title={client.name}>
                       {client.name}
                     </td>
                     <td
@@ -378,9 +548,7 @@ function AssinaturasAdmin() {
             </div>
           )}
         </div>
-        <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
-          Mostrando {filtered.length} de {rows.length} registros
-        </div>
+        {paginationFooter}
       </Card>
       <CreateForm
         open={creating}
@@ -414,6 +582,177 @@ function AssinaturasAdmin() {
   );
 }
 
+function SubscriptionMobileCard({
+  row,
+  plan,
+  client,
+  disabled,
+  onFinance,
+  onDetail,
+  onActivate,
+  onSuspend,
+  onCancel,
+}: {
+  row: PlatformSubscription;
+  plan?: PlatformPlan;
+  client: { name: string; responsibleName: string };
+  disabled: boolean;
+  onFinance: () => void;
+  onDetail: () => void;
+  onActivate: () => void;
+  onSuspend: () => void;
+  onCancel: () => void;
+}) {
+  const gross = row.monthlyValueCents ?? plan?.priceCents ?? 0;
+  const discount = row.discountCents ?? 0;
+  return (
+    <article className="rounded-xl border border-border bg-surface-1 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate font-semibold">{client.name}</h2>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{client.responsibleName}</p>
+        </div>
+        <StatusBadge status={row.status} />
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-border/70 py-3 text-sm">
+        <MobileSubscriptionDetail label="Plano" value={row.plan.name} />
+        <MobileSubscriptionDetail
+          label="Tipo"
+          value={plan?.billingPeriod === "YEARLY" ? "Anual" : "Mensal"}
+        />
+        <MobileSubscriptionDetail label="Valor bruto" value={formatPlatformCurrency(gross)} />
+        <MobileSubscriptionDetail label="Desconto" value={formatPlatformCurrency(discount)} />
+        <MobileSubscriptionDetail
+          label="Valor líquido"
+          value={formatPlatformCurrency(Math.max(0, gross - discount))}
+        />
+        <MobileSubscriptionDetail
+          label="Início"
+          value={formatSubscriptionDate(row.startsAt ?? row.currentPeriodStart)}
+        />
+      </dl>
+      <div className="mt-3 flex justify-end">
+        <SubscriptionCardActions
+          status={normalizeSubscriptionStatus(row.status)}
+          disabled={disabled}
+          onFinance={onFinance}
+          onDetail={onDetail}
+          onActivate={onActivate}
+          onSuspend={onSuspend}
+          onCancel={onCancel}
+        />
+      </div>
+    </article>
+  );
+}
+
+function SubscriptionCardActions({
+  status,
+  disabled,
+  onDetail,
+  onFinance,
+  onActivate,
+  onSuspend,
+  onCancel,
+}: {
+  status: FlowStatus;
+  disabled: boolean;
+  onDetail: () => void;
+  onFinance: () => void;
+  onActivate: () => void;
+  onSuspend: () => void;
+  onCancel: () => void;
+}) {
+  const canGenerateFinance = status === "DRAFT" || status === "TRIALING";
+  const canActivate = ["FINANCE_RELEASED", "SUSPENDED", "CANCELLED"].includes(status);
+  const canSuspend = status === "ACTIVE";
+  const canCancel = status !== "CANCELLED";
+  const activateLabel =
+    status === "SUSPENDED" || status === "CANCELLED" ? "Reativar assinatura" : "Ativar assinatura";
+
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1" aria-label="Ações da assinatura">
+      <CardActionIcon
+        icon={Eye}
+        label="Detalhar"
+        tone="primary"
+        disabled={disabled}
+        onClick={onDetail}
+      />
+      <CardActionIcon
+        icon={DollarSign}
+        label="Gerar financeiro"
+        tone="success"
+        disabled={disabled || !canGenerateFinance}
+        onClick={onFinance}
+      />
+      <CardActionIcon
+        icon={Play}
+        label={activateLabel}
+        tone="primary"
+        disabled={disabled || !canActivate}
+        onClick={onActivate}
+      />
+      <CardActionIcon
+        icon={Pause}
+        label="Suspender assinatura"
+        tone="destructive"
+        disabled={disabled || !canSuspend}
+        onClick={onSuspend}
+      />
+      <CardActionIcon
+        icon={Ban}
+        label="Cancelar assinatura"
+        tone="destructive"
+        disabled={disabled || !canCancel}
+        onClick={onCancel}
+      />
+    </div>
+  );
+}
+
+function CardActionIcon({
+  icon: Icon,
+  label,
+  tone,
+  disabled,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  tone: "primary" | "success" | "destructive";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const toneClass = {
+    primary: "action-hover-primary",
+    success: "action-hover-success",
+    destructive: "action-hover-destructive",
+  }[tone];
+
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface-1 text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-50 ${toneClass}`}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
+}
+
+function MobileSubscriptionDetail({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate font-medium">{value}</dd>
+    </div>
+  );
+}
+
 function CreateForm({
   open,
   plans,
@@ -444,9 +783,11 @@ function CreateForm({
   const [endsAt, setEndsAt] = React.useState("");
   const [indefinite, setIndefinite] = React.useState(true);
   const [notes, setNotes] = React.useState("");
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [saving, setSaving] = React.useState(false);
   React.useEffect(() => {
     if (!open) return;
+    setErrors({});
     const plan = activePlans[0];
     setClientId(eligibleClients[0]?.id ?? "");
     setPlanId(plan?.id ?? "");
@@ -462,19 +803,53 @@ function CreateForm({
   const grossCents = parsePlatformMoneyToCents(gross);
   const discountCents = coupon ? parsePlatformMoneyToCents(discount) : 0;
   const net = Math.max(0, grossCents - discountCents);
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if (client) delete next.clientId;
+      if (client?.responsibleName.trim()) delete next.responsibleName;
+      if (client?.responsibleEmail.trim()) delete next.responsibleEmail;
+      if (planId) delete next.planId;
+      if (startsAt) delete next.startsAt;
+      if (indefinite || endsAt) delete next.endsAt;
+      if (grossCents > 0) delete next.gross;
+      if (!coupon || discountCents > 0) delete next.discount;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [client, coupon, discountCents, endsAt, grossCents, indefinite, planId, startsAt]);
   async function save() {
-    if (
-      !client ||
-      !planId ||
-      !startsAt ||
-      !client.responsibleName.trim() ||
-      !client.responsibleEmail.trim()
-    )
-      return void toast.error(
-        "Informe cliente, contato responsável, e-mail, plano e início do período.",
+    const nextErrors: Record<string, boolean> = {
+      ...(!client ? { clientId: true } : {}),
+      ...(!client?.responsibleName.trim() ? { responsibleName: true } : {}),
+      ...(!client?.responsibleEmail.trim() ? { responsibleEmail: true } : {}),
+      ...(!planId ? { planId: true } : {}),
+      ...(!startsAt ? { startsAt: true } : {}),
+      ...(!indefinite && !endsAt ? { endsAt: true } : {}),
+    };
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors);
+      showRequiredFieldsToast(
+        [
+          ["clientId", "Cliente"],
+          ["responsibleName", "Contato responsável"],
+          ["responsibleEmail", "E-mail do responsável"],
+          ["planId", "Plano"],
+          ["startsAt", "Início do período"],
+          ["endsAt", "Fim do período"],
+        ]
+          .filter(([key]) => nextErrors[key])
+          .map(([, label]) => label),
       );
-    if (grossCents <= 0) return void toast.error("Informe um valor mensal válido.");
-    if (coupon && discountCents <= 0) return void toast.error("Informe o valor de desconto.");
+      return;
+    }
+    if (grossCents <= 0) {
+      setErrors({ gross: true });
+      return void toast.error("Informe um valor mensal válido.");
+    }
+    if (coupon && discountCents <= 0) {
+      setErrors({ discount: true });
+      return void toast.error("Informe o valor de desconto.");
+    }
     if (discountCents > grossCents)
       return void toast.error("O desconto não pode ser maior que o valor mensal.");
     if (!indefinite && !endsAt)
@@ -508,10 +883,15 @@ function CreateForm({
       size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="primary" disabled={saving} onClick={() => void save()}>
+          <Button
+            variant="primary"
+            className="save-action-button"
+            disabled={saving}
+            onClick={() => void save()}
+          >
             {saving ? "Salvando..." : "Salvar"}
           </Button>
         </>
@@ -527,7 +907,12 @@ function CreateForm({
         </div>
         <div className="sm:col-span-4">
           <Field label="Cliente *">
-            <Select value={clientId} onChange={(e) => setClientId(e.target.value)}>
+            <Select
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              className={requiredFieldClassName(Boolean(errors.clientId))}
+              aria-invalid={Boolean(errors.clientId)}
+            >
               {!eligibleClients.length && <option value="">Nenhum cliente disponível</option>}
               {eligibleClients.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -539,18 +924,30 @@ function CreateForm({
         </div>
         <div className="sm:col-span-3">
           <Field label="Contato responsável *">
-            <Input disabled value={client?.responsibleName ?? ""} />
+            <Input
+              disabled
+              value={client?.responsibleName ?? ""}
+              className={requiredFieldClassName(Boolean(errors.responsibleName))}
+              aria-invalid={Boolean(errors.responsibleName)}
+            />
           </Field>
         </div>
         <div className="sm:col-span-3">
           <Field label="E-mail do responsável *">
-            <Input disabled value={client?.responsibleEmail ?? ""} />
+            <Input
+              disabled
+              value={client?.responsibleEmail ?? ""}
+              className={requiredFieldClassName(Boolean(errors.responsibleEmail))}
+              aria-invalid={Boolean(errors.responsibleEmail)}
+            />
           </Field>
         </div>
         <div className="sm:col-span-3">
           <Field label="Plano *">
             <Select
               value={planId}
+              className={requiredFieldClassName(Boolean(errors.planId))}
+              aria-invalid={Boolean(errors.planId)}
               onChange={(e) => {
                 const id = e.target.value;
                 setPlanId(id);
@@ -569,7 +966,7 @@ function CreateForm({
         </div>
         <div className="sm:col-span-3">
           <Field label="Valor mensal (bruto) *">
-            <Money value={gross} onChange={setGross} />
+            <Money value={gross} onChange={setGross} invalid={Boolean(errors.gross)} />
           </Field>
         </div>
         <div className="sm:col-span-2">
@@ -579,7 +976,12 @@ function CreateForm({
         </div>
         <div className="sm:col-span-2">
           <Field label={`Valor de desconto${coupon ? " *" : ""}`}>
-            <Money value={coupon ? discount : "0,00"} disabled={!coupon} onChange={setDiscount} />
+            <Money
+              value={coupon ? discount : "0,00"}
+              disabled={!coupon}
+              onChange={setDiscount}
+              invalid={Boolean(errors.discount)}
+            />
           </Field>
         </div>
         <div className="sm:col-span-2">
@@ -589,12 +991,22 @@ function CreateForm({
         </div>
         <div className="sm:col-span-2">
           <Field label="Início do período *">
-            <DashboardDateInput value={startsAt} readOnly={false} onChange={setStartsAt} />
+            <div
+              aria-invalid={Boolean(errors.startsAt)}
+              className={`rounded-lg border ${errors.startsAt ? `${requiredFieldClassName(true)} [&_input]:!border-transparent` : "border-transparent"}`}
+            >
+              <DashboardDateInput value={startsAt} readOnly={false} onChange={setStartsAt} />
+            </div>
           </Field>
         </div>
         <div className="sm:col-span-2">
           <Field label="Fim do período">
-            <DashboardDateInput value={endsAt} readOnly={indefinite} onChange={setEndsAt} />
+            <div
+              aria-invalid={Boolean(errors.endsAt)}
+              className={`rounded-lg border ${errors.endsAt ? `${requiredFieldClassName(true)} [&_input]:!border-transparent` : "border-transparent"}`}
+            >
+              <DashboardDateInput value={endsAt} readOnly={indefinite} onChange={setEndsAt} />
+            </div>
           </Field>
         </div>
         <div className="sm:col-span-2">
@@ -645,7 +1057,7 @@ function Actions({
   const buttonRef = React.useRef<HTMLButtonElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const canGenerateFinance = status === "DRAFT" || status === "TRIALING";
-  const canActivate = status === "FINANCE_RELEASED" || status === "SUSPENDED";
+  const canActivate = ["FINANCE_RELEASED", "SUSPENDED", "CANCELLED"].includes(status);
   const canSuspend = status === "ACTIVE";
   const canCancel = status !== "CANCELLED";
 
@@ -713,7 +1125,11 @@ function Actions({
       />
       <ActionButton
         icon={Play}
-        label={status === "SUSPENDED" ? "Reativar assinatura" : "Ativar assinatura"}
+        label={
+          status === "SUSPENDED" || status === "CANCELLED"
+            ? "Reativar assinatura"
+            : "Ativar assinatura"
+        }
         tone="primary"
         disabled={disabled || !canActivate}
         onClick={onActivate}
@@ -803,8 +1219,15 @@ function ActionDialog({
   onSaved: () => void;
 }) {
   const [reason, setReason] = React.useState("");
+  const [reasonError, setReasonError] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
-  React.useEffect(() => setReason(""), [value]);
+  React.useEffect(() => {
+    setReason("");
+    setReasonError(false);
+  }, [value]);
+  React.useEffect(() => {
+    if (reason.trim()) setReasonError(false);
+  }, [reason]);
   if (!value) return null;
   const current = value;
   const status = normalizeSubscriptionStatus(current.row.status);
@@ -816,7 +1239,11 @@ function ActionDialog({
           ? "O registro já se encontra suspenso e não pode ser suspenso novamente."
           : "A suspensão só é permitida para uma assinatura ativa.",
       );
-    if (suspend && !reason.trim()) return void toast.error("Informe o motivo da suspensão.");
+    if (suspend && !reason.trim()) {
+      setReasonError(true);
+      showRequiredFieldsToast(["Motivo da suspensão"]);
+      return;
+    }
     if (!suspend && status === "CANCELLED")
       return void toast.error(
         "O registro já se encontra cancelado e não pode ser cancelado novamente.",
@@ -870,12 +1297,19 @@ function ActionDialog({
     >
       {suspend ? (
         <Field label="Motivo da suspensão *">
-          <Textarea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} />
+          <Textarea
+            rows={4}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className={requiredFieldClassName(reasonError)}
+            aria-invalid={reasonError}
+          />
         </Field>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Confirma o cancelamento desta assinatura? Quando houver Tenant vinculada, ela será
-          encerrada e seus dados serão preservados para consulta e auditoria.
+          Confirma o cancelamento desta assinatura? A Tenant vinculada e todos os seus dados serão
+          excluídos definitivamente. A assinatura, o cliente, o financeiro e o histórico do Platform
+          serão preservados.
         </p>
       )}
     </Modal>
@@ -892,7 +1326,10 @@ function ActivationConfirmModal({
   onConfirm: (row: PlatformSubscription) => Promise<boolean>;
 }) {
   const [saving, setSaving] = React.useState(false);
-  const reactivating = value ? normalizeSubscriptionStatus(value.status) === "SUSPENDED" : false;
+  const status = value ? normalizeSubscriptionStatus(value.status) : null;
+  const reactivatingSuspended = status === "SUSPENDED";
+  const recreatingCancelled = status === "CANCELLED";
+  const reactivating = reactivatingSuspended || recreatingCancelled;
 
   const confirm = async () => {
     if (!value) return;
@@ -931,7 +1368,9 @@ function ActivationConfirmModal({
           </div>
           <p className="text-muted-foreground">
             {reactivating
-              ? "A Tenant existente e o acesso dos usuários serão restabelecidos."
+              ? recreatingCancelled
+                ? "Uma nova Tenant será criada e configurada do zero. Os dados da Tenant excluída não serão recuperados."
+                : "A Tenant existente e o acesso dos usuários serão restabelecidos."
               : "A Tenant será criada e configurada conforme o plano. O convite para definição da senha será enviado ao e-mail do responsável."}
           </p>
         </div>
@@ -1058,7 +1497,9 @@ function SubscriptionDetailModal({
               value={
                 detail.tenant
                   ? `${detail.tenant.slug} · ${detail.tenant.status}`
-                  : "Ainda não criada"
+                  : normalizeSubscriptionStatus(detail.status) === "CANCELLED"
+                    ? "Excluída após cancelamento"
+                    : "Ainda não criada"
               }
             />
             <DetailValue label="Início" value={formatOptionalDateTime(detail.startsAt)} />
@@ -1262,10 +1703,10 @@ function StatusBadge({ status }: { status: string }) {
       : toneClasses[selected.tone];
   return (
     <span
-      className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 ${statusClass}`}
+      className={`inline-flex max-w-full items-center gap-1 whitespace-normal rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 ${statusClass}`}
     >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-80" />
-      <span>{selected.label}</span>
+      <span className="min-w-0 text-center leading-tight">{selected.label}</span>
     </span>
   );
 }
@@ -1296,14 +1737,19 @@ function ToggleLine({ value, onChange }: { value: boolean; onChange: (value: boo
 function Money({
   value,
   disabled = false,
+  invalid = false,
   onChange,
 }: {
   value: string;
   disabled?: boolean;
+  invalid?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex overflow-hidden rounded-lg border border-border bg-surface-1">
+    <div
+      aria-invalid={invalid}
+      className={`flex overflow-hidden rounded-lg border border-border bg-surface-1 ${requiredFieldClassName(invalid)}`}
+    >
       <span className="flex items-center border-r border-border px-3 text-sm text-muted-foreground">
         R$
       </span>
@@ -1341,7 +1787,7 @@ function normalizeSubscriptionStatus(status: string): FlowStatus {
 function validateImmediateAction(status: FlowStatus, action: "finance" | "activate") {
   if (action === "finance")
     return status === "DRAFT" || status === "TRIALING" ? null : "Financeiro já gerado.";
-  if (status === "SUSPENDED") return null;
+  if (status === "SUSPENDED" || status === "CANCELLED") return null;
   if (status === "DRAFT" || status === "TRIALING") return "Financeiro ainda não gerado.";
   if (status === "PENDING_FINANCE")
     return "Assinatura não pode ser ativada porque o financeiro ainda não está liberado.";

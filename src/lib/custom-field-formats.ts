@@ -6,6 +6,7 @@ export const CUSTOM_FIELD_FORMATS = [
   { value: "cep", label: "CEP" },
   { value: "phone", label: "Telefone" },
   { value: "email", label: "E-mail" },
+  { value: "city", label: "Cidade" },
 ] as const;
 export type CustomFieldFormat = (typeof CUSTOM_FIELD_FORMATS)[number]["value"];
 
@@ -25,7 +26,8 @@ export function customFieldFormat(field: {
 }
 
 export function formatCustomField(value: string, format: CustomFieldFormat) {
-  if (format === "email") return value.trim();
+  if (format === "city") return value.trim();
+  if (format === "email") return value.trim().toLowerCase();
   if (format === "phone")
     return value.trim().startsWith("+") ? value.trim() : maskBrazilPhone(value);
   const digits = onlyDigits(value);

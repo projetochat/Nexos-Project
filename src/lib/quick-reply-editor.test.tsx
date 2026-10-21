@@ -20,7 +20,6 @@ const initial = {
   texto: "Primeira",
   departmentId: null,
   messages: [{ text: "Primeira" }, { text: "Segunda" }],
-  intervalSeconds: 3,
   close_on_send: true,
 } as ApiQuickReply;
 let root: Root;
@@ -33,6 +32,36 @@ const button = (text: string) =>
 const texts = () => [...document.querySelectorAll("textarea")].map((element) => element.value);
 
 describe("quick reply editor", () => {
+  it("keeps letters and numbers in the shortcut and removes unsupported characters", async () => {
+    await act(async () =>
+      root.render(
+        <QuickReplyEditor
+          open
+          initial={initial}
+          existingReplies={[]}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      ),
+    );
+    const shortcut = document.querySelector('input[maxlength="40"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        shortcut,
+        "Status 2026!",
+      );
+      shortcut.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(shortcut.value).toBe("status2026");
+    expect(document.body.textContent).toContain("Somente letras, números e hífen");
+    await click(button("Salvar"));
+    expect(api.update).toHaveBeenCalledWith(
+      "reply",
+      expect.objectContaining({ shortcut: "status2026" }),
+    );
+  });
+
   it("caps the sequence at ten and re-enables adding after removal", async () => {
     await act(async () =>
       root.render(
@@ -66,7 +95,14 @@ describe("quick reply editor", () => {
         />,
       ),
     );
-    expect(document.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+    expect(
+      document
+        .querySelector('[role="switch"][aria-label="Encerrar conversa"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("false");
+    const activeSwitch = document.querySelector('[role="switch"][aria-label="Ativo"]');
+    const closeSwitch = document.querySelector('[role="switch"][aria-label="Encerrar conversa"]');
+    expect(closeSwitch?.className).toBe(activeSwitch?.className);
     expect(document.querySelector('[aria-label="Tipo de mídia"]')).not.toBeNull();
     expect(document.querySelector('[aria-label="Abrir opções de anexo"]')).toBeNull();
     await click(button("Adicionar mensagem"));
@@ -186,7 +222,6 @@ describe("quick reply editor", () => {
       "reply",
       expect.objectContaining({
         messages: [{ text: "Primeira" }, { text: "Segunda" }],
-        intervalSeconds: 0,
         closeOnSend: true,
       }),
     );
@@ -210,7 +245,6 @@ describe("quick reply editor", () => {
       expect.objectContaining({
         shortcut: "teste-copia",
         messages: initial.messages,
-        intervalSeconds: 0,
       }),
     );
     expect(api.update).not.toHaveBeenCalled();

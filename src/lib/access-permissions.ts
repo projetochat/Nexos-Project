@@ -1,7 +1,7 @@
 import type { Role } from "@/lib/session";
 
-// Espelho do catálogo público retornado pelo backend. O Administrador do tenant
-// nunca depende do conteúdo persistido da sessão para manter o acesso total.
+// Espelho do catálogo público retornado pelo backend. A lista recebida na sessão
+// já considera os módulos ativos da tenant.
 export const TENANT_ADMIN_PERMISSIONS = [
   "dashboard.read",
   "dashboard.create",
@@ -25,6 +25,7 @@ export const TENANT_ADMIN_PERMISSIONS = [
   "contacts.delete",
   "contacts.additional_fields.read",
   "conversations.read",
+  "leads.read",
   "conversations.assign",
   "messages.send",
   "connections.read",
@@ -74,11 +75,12 @@ export const TENANT_ADMIN_PERMISSIONS = [
   "settings.manage",
   "chat.agent_name.show",
   "chat.conversations.view_all_active",
+  "chat.bulk_actions.execute",
 ] as const;
 
 export function effectiveSessionPermissions(
   role: Role,
   permissions: readonly string[] | undefined,
 ): string[] {
-  return role === "admin" ? [...TENANT_ADMIN_PERMISSIONS] : [...(permissions ?? [])];
+  return [...(permissions ?? [])];
 }

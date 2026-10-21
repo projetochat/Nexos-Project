@@ -42,7 +42,7 @@ describe("Trixus API organization and RBAC", () => {
   }
 
   beforeAll(async () => {
-    process.env.SEED_MODE = "test";
+    process.env.TRIXUS_ENVIRONMENT = "staging";
     const testDatabaseUrl = normalizeLocalPostgresUrl(
       process.env.TRIXUS_TEST_DATABASE_URL ??
         "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus_1200?schema=public",
@@ -954,7 +954,10 @@ describe("Trixus API organization and RBAC", () => {
       .post("/api/crm/customers")
       .set("Authorization", `Bearer ${agentToken}`)
       .send({ name: customerName })
-      .expect(403);
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.nome).toBe(customerName);
+      });
   });
 
   it("creates, searches, updates and archives CRM contacts", async () => {
@@ -1035,9 +1038,15 @@ describe("Trixus API organization and RBAC", () => {
         expect(body.customer_id).toBeNull();
       });
 
+    const deletionImpact = await request(app.getHttpServer())
+      .get(`/api/crm/contacts/${contactId}/deletion-impact`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
     await request(app.getHttpServer())
       .delete(`/api/crm/contacts/${contactId}`)
       .set("Authorization", `Bearer ${token}`)
+      .send({ snapshotToken: deletionImpact.body.snapshotToken })
       .expect(200);
     await request(app.getHttpServer())
       .get(`/api/crm/contacts/${contactId}`)
@@ -1055,8 +1064,8 @@ describe("Trixus API organization and RBAC", () => {
       })
       .expect(201)
       .expect(({ body }) => {
-        expect(body.id).toBe(contactId);
-        expect(body.lifecycle).toBe("restored");
+        expect(body.id).not.toBe(contactId);
+        expect(body.lifecycle).toBe("created");
         expect(body.nome).toBe(`Contato Restaurado ${suffix}`);
       });
   });
@@ -2147,17 +2156,19 @@ describe("Trixus API organization and RBAC", () => {
       pushName: "Webhook Cliente Reconexao",
     };
 
-    for (const connection of [firstConnection, reconnectedConnection]) {
-      await request(app.getHttpServer())
-        .post("/api/webhooks/evolution")
-        .set("Authorization", `Bearer ${token}`)
-        .send({
-          event: "messages.upsert",
-          instance: connection.externalReference,
-          data: baseData,
-        })
-        .expect(200);
-    }
+    await Promise.all(
+      [firstConnection, reconnectedConnection].map((connection) =>
+        request(app.getHttpServer())
+          .post("/api/webhooks/evolution")
+          .set("Authorization", `Bearer ${token}`)
+          .send({
+            event: "messages.upsert",
+            instance: connection.externalReference,
+            data: baseData,
+          })
+          .expect(200),
+      ),
+    );
 
     const messages = await prisma.message.findMany({
       where: { tenantId: tenant.id, externalMessageId },
@@ -2340,10 +2351,11 @@ describe("Trixus API organization and RBAC", () => {
     await request(app.getHttpServer())
       .delete(`/api/messaging/connections/${orbitConnection.id}`)
       .set("Authorization", `Bearer ${acmeToken}`)
+      .send({ confirmation: "REMOVER" })
       .expect(404);
   });
 
-  it("archives messaging connections with historical relations and keeps delete idempotent", async () => {
+  it("physically deletes messaging connections and their linked operational data", async () => {
     const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
@@ -2404,39 +2416,34 @@ describe("Trixus API organization and RBAC", () => {
       await request(app.getHttpServer())
         .delete(`/api/messaging/connections/${connection.id}`)
         .set("Authorization", `Bearer ${agentToken}`)
+        .send({ confirmation: "REMOVER" })
         .expect(403);
 
       await request(app.getHttpServer())
         .delete(`/api/messaging/connections/${connection.id}`)
         .set("Authorization", `Bearer ${adminToken}`)
+        .send({ confirmation: "REMOVER" })
         .expect(200)
         .expect(({ body }) => {
           expect(body).toMatchObject({
             id: connection.id,
-            removed: true,
-            archived: true,
-            status: "removed",
+            deleted: true,
             providerInstanceExisted: true,
             idempotent: false,
+            deletedConversationCount: 1,
+            deletedMessageCount: 1,
+            deletedCampaignCount: 1,
           });
         });
 
       await expect(
-        prisma.messagingConnection.findUniqueOrThrow({ where: { id: connection.id } }),
-      ).resolves.toMatchObject({
-        status: MessagingConnectionStatus.REMOVED,
-        archivedAt: expect.any(Date),
-        externalReference: null,
-      });
+        prisma.messagingConnection.findUnique({ where: { id: connection.id } }),
+      ).resolves.toBeNull();
       await expect(
-        prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } }),
-      ).resolves.toMatchObject({ connectionId: connection.id });
-      await expect(
-        prisma.message.findUniqueOrThrow({ where: { id: message.id } }),
-      ).resolves.toMatchObject({ connectionId: connection.id });
-      await expect(
-        prisma.campaign.findUniqueOrThrow({ where: { id: campaign.id } }),
-      ).resolves.toMatchObject({ connectionId: connection.id });
+        prisma.conversation.findUnique({ where: { id: conversation.id } }),
+      ).resolves.toBeNull();
+      await expect(prisma.message.findUnique({ where: { id: message.id } })).resolves.toBeNull();
+      await expect(prisma.campaign.findUnique({ where: { id: campaign.id } })).resolves.toBeNull();
 
       await request(app.getHttpServer())
         .post("/api/campaigns")
@@ -2455,10 +2462,8 @@ describe("Trixus API organization and RBAC", () => {
       await request(app.getHttpServer())
         .delete(`/api/messaging/connections/${connection.id}`)
         .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200)
-        .expect(({ body }) => {
-          expect(body.idempotent).toBe(true);
-        });
+        .send({ confirmation: "REMOVER" })
+        .expect(404);
       await request(app.getHttpServer())
         .get("/api/messaging/connections")
         .set("Authorization", `Bearer ${adminToken}`)
@@ -2540,9 +2545,15 @@ describe("Trixus API organization and RBAC", () => {
         expect(body.some((tag: { id: string }) => tag.id === created.body.id)).toBe(false);
       });
 
+    const tagDeletionPreview = await request(app.getHttpServer())
+      .get(`/api/tags/${created.body.id}/deletion-preview`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+
     await request(app.getHttpServer())
       .delete(`/api/tags/${created.body.id}`)
       .set("Authorization", `Bearer ${adminToken}`)
+      .send({ snapshotToken: tagDeletionPreview.body.snapshotToken })
       .expect(200);
 
     await request(app.getHttpServer())
@@ -2581,7 +2592,10 @@ describe("Trixus API organization and RBAC", () => {
     await request(app.getHttpServer())
       .get("/api/quick-replies?q=Sprint%2010")
       .set("Authorization", `Bearer ${agentToken}`)
-      .expect(403);
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.some((reply: { id: string }) => reply.id === created.body.id)).toBe(true);
+      });
 
     const agentCreated = await request(app.getHttpServer())
       .post("/api/quick-replies")
@@ -2616,14 +2630,24 @@ describe("Trixus API organization and RBAC", () => {
         expect(body.some((reply: { id: string }) => reply.id === created.body.id)).toBe(false);
       });
 
+    const agentReplyDeletionPreview = await request(app.getHttpServer())
+      .get(`/api/quick-replies/${agentCreated.body.id}/deletion-preview`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
     await request(app.getHttpServer())
       .delete(`/api/quick-replies/${agentCreated.body.id}`)
       .set("Authorization", `Bearer ${adminToken}`)
+      .send({ snapshotToken: agentReplyDeletionPreview.body.snapshotToken })
       .expect(200);
 
+    const replyDeletionPreview = await request(app.getHttpServer())
+      .get(`/api/quick-replies/${created.body.id}/deletion-preview`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
     await request(app.getHttpServer())
       .delete(`/api/quick-replies/${created.body.id}`)
       .set("Authorization", `Bearer ${adminToken}`)
+      .send({ snapshotToken: replyDeletionPreview.body.snapshotToken })
       .expect(200);
 
     await request(app.getHttpServer())
@@ -2822,7 +2846,7 @@ describe("Trixus API organization and RBAC", () => {
     await request(app.getHttpServer())
       .patch(`/api/tickets/${created.body.id}/status`)
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ status: "EM_ANDAMENTO" })
+      .send({ status: "EM_EXECUCAO" })
       .expect(200);
 
     const comment = await request(app.getHttpServer())
@@ -3289,9 +3313,14 @@ describe("Trixus API organization and RBAC", () => {
       })
       .expect(403);
 
+    const automationDeletionPreview = await request(app.getHttpServer())
+      .get(`/api/automations/${assign.body.id}/deletion-preview`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
     await request(app.getHttpServer())
       .delete(`/api/automations/${assign.body.id}`)
       .set("Authorization", `Bearer ${adminToken}`)
+      .send({ snapshotToken: automationDeletionPreview.body.snapshotToken })
       .expect(200);
 
     await request(app.getHttpServer())

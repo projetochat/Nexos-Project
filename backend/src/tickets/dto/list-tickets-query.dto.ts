@@ -1,11 +1,12 @@
 import { IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, Min } from "class-validator";
 import { Transform, Type } from "class-transformer";
-import { TicketPriority, TicketStatus } from "../../generated/prisma";
+import { TicketCategory, TicketPriority, TicketStatus } from "../../generated/prisma";
 
 export class ListTicketsQueryDto {
   @IsOptional() @IsString() search?: string;
   @IsOptional() @IsIn(Object.values(TicketStatus)) status?: TicketStatus;
   @IsOptional() @IsIn(Object.values(TicketPriority)) priority?: TicketPriority;
+  @IsOptional() @IsIn(Object.values(TicketCategory)) category?: TicketCategory;
   @IsOptional() @IsString() departmentId?: string;
   @IsOptional() @IsString() assignedMembershipId?: string;
   @IsOptional() @IsString() requesterContactId?: string;

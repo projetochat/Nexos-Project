@@ -101,6 +101,21 @@ export class MessagingHistoryImportService implements OnModuleInit, OnModuleDest
           { importGroupsEnabled: true, importGroupsStartDate: { not: null } },
         ],
       },
+      // Select only the data consumed by the history scheduler. Besides making
+      // the bootstrap query cheaper, this prevents an unrelated optional
+      // connection field from taking the entire API down while an environment
+      // is between application deployment and its schema migration.
+      select: {
+        id: true,
+        tenantId: true,
+        externalReference: true,
+        status: true,
+        serviceEnabled: true,
+        importHistoryEnabled: true,
+        importHistoryStartDate: true,
+        importGroupsEnabled: true,
+        importGroupsStartDate: true,
+      },
     });
     for (const connection of eligibleConnections) {
       await this.enqueueForConnection(connection);

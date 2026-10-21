@@ -182,7 +182,7 @@ describe("PlatformService health", () => {
     });
   });
 
-  it("cancels a subscription by terminating and preserving its tenant", async () => {
+  it("cancels a subscription by deleting its tenant and preserving the platform record", async () => {
     const existing = {
       id: "subscription-1",
       tenantId: "tenant-1",
@@ -190,10 +190,15 @@ describe("PlatformService health", () => {
       status: "ACTIVE",
       tenant: { id: "tenant-1" },
     };
-    const updated = { ...existing, status: "CANCELLED" };
+    const updated = { ...existing, tenantId: null, status: "CANCELLED" };
     const tx = {
-      tenantSubscription: { update: vi.fn().mockResolvedValue(updated) },
-      tenant: { update: vi.fn().mockResolvedValue({ id: "tenant-1", status: "TERMINATED" }) },
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      tenantSubscription: {
+        findUnique: vi.fn().mockResolvedValue(existing),
+        findFirst: vi.fn().mockResolvedValue(null),
+        update: vi.fn().mockResolvedValue(updated),
+      },
+      tenant: { delete: vi.fn().mockResolvedValue({ id: "tenant-1" }) },
       subscriptionHistory: { create: vi.fn().mockResolvedValue({}) },
     };
     const prisma = {
@@ -207,13 +212,11 @@ describe("PlatformService health", () => {
       service.cancelSubscription("subscription-1", { reason: "Contrato encerrado" }, actor()),
     ).resolves.toEqual(updated);
 
-    expect(tx.tenant.update).toHaveBeenCalledWith({
-      where: { id: "tenant-1" },
-      data: expect.objectContaining({
-        status: "TERMINATED",
-        suspensionReason: "Contrato encerrado",
-      }),
+    expect(tx.tenantSubscription.update).toHaveBeenCalledWith({
+      where: { id: "subscription-1" },
+      data: expect.objectContaining({ tenantId: null, status: "CANCELLED" }),
     });
+    expect(tx.tenant.delete).toHaveBeenCalledWith({ where: { id: "tenant-1" } });
     expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         tenantId: "tenant-1",
@@ -222,8 +225,12 @@ describe("PlatformService health", () => {
       }),
     });
     expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: "tenant-1", action: "subscription.cancelled" }),
+      expect.objectContaining({
+        action: "subscription.cancelled",
+        metadata: { deletedTenantId: "tenant-1" },
+      }),
     );
+    expect(audit.record.mock.calls[0]?.[0]).not.toHaveProperty("tenantId");
   });
 
   it("reactivates a suspended subscription using the existing tenant", async () => {
@@ -268,13 +275,16 @@ describe("PlatformService health", () => {
     );
   });
 
-  it("creates the tenant administrator with a temporary password without sending e-mail", async () => {
+  it("reactivates a cancelled subscription by provisioning a new tenant from zero", async () => {
     const existing = {
       id: "subscription-1",
       tenantId: null,
       clientId: "client-1",
       planId: "plan-1",
-      status: "FINANCE_RELEASED",
+      status: "CANCELLED",
+      cancelledAt: new Date("2026-10-08T12:00:00.000Z"),
+      cancelAtPeriodEnd: false,
+      suspensionReason: null,
       limitsSnapshot: { maxUsers: 3, maxConnections: 1 },
       client: {
         id: "client-1",
@@ -285,7 +295,7 @@ describe("PlatformService health", () => {
         status: "ACTIVE",
       },
       plan: { id: "plan-1" },
-      invoices: [{ id: "invoice-1", released: true }],
+      invoices: [],
     };
     const createdTenant = { id: "tenant-1", name: "Empresa Teste", slug: "empresa-teste" };
     const tx = {
@@ -366,6 +376,29 @@ describe("PlatformService health", () => {
     expect(email.sendTenantAdministratorInvitation).not.toHaveBeenCalled();
     expect(tx.platformClient.findUnique).not.toHaveBeenCalled();
     expect(tx.platformClient.update).not.toHaveBeenCalled();
+    expect(tx.tenantSubscription.update).toHaveBeenCalledWith({
+      where: { id: "subscription-1" },
+      data: expect.objectContaining({
+        tenantId: "tenant-1",
+        status: "ACTIVE",
+        cancelledAt: null,
+        cancelAtPeriodEnd: false,
+      }),
+    });
+    expect(tx.subscriptionHistory.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        previousStatus: "CANCELLED",
+        nextStatus: "ACTIVE",
+        reason: "subscription.reactivated_from_cancellation",
+      }),
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "subscription.reactivated",
+        tenantId: "tenant-1",
+        metadata: expect.objectContaining({ recreatedFromCancellation: true }),
+      }),
+    );
   });
 
   it("creates a distinct tenant for another subscription and links the existing administrator", async () => {
@@ -526,14 +559,14 @@ describe("PlatformService health", () => {
       {
         responsibleName: "  Novo Responsável  ",
         responsibleEmail: "NOVO@example.com",
-        newPassword: "senha-segura",
+        newPassword: "ci-only-password",
       },
       actor(),
     );
 
     const userData = userUpdate.mock.calls[0]?.[0].data;
     expect(userData).toMatchObject({ name: "Novo Responsável", email: "novo@example.com" });
-    await expect(compare("senha-segura", userData.passwordHash)).resolves.toBe(true);
+    await expect(compare("ci-only-password", userData.passwordHash)).resolves.toBe(true);
     expect(membershipUpdate).toHaveBeenCalledWith({
       where: { id: "membership-1" },
       data: { presentationName: "Novo Responsável" },
@@ -560,7 +593,11 @@ describe("PlatformService health", () => {
         responsibleEmail: "novo@example.com",
       }),
     );
-    expect(JSON.stringify(result)).not.toContain("senha-segura");
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 10_000,
+      timeout: 30_000,
+    });
+    expect(JSON.stringify(result)).not.toContain("ci-only-password");
     expect(JSON.stringify(result)).not.toContain("passwordHash");
   });
 
@@ -679,14 +716,14 @@ describe("PlatformService health", () => {
         {
           responsibleName: "Natã Rabelo",
           responsibleEmail: "nata.rabelo@gmail.com",
-          newPassword: "SenhaInicial@2026",
+          newPassword: "ci-only-password",
         },
         actor(),
       ),
     ).resolves.toMatchObject({ ok: true, responsibleEmail: "nata.rabelo@gmail.com" });
 
     const createdUser = tx.user.create.mock.calls[0]?.[0].data;
-    await expect(compare("SenhaInicial@2026", createdUser.passwordHash)).resolves.toBe(true);
+    await expect(compare("ci-only-password", createdUser.passwordHash)).resolves.toBe(true);
     expect(tx.tenantMembership.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         tenantId: "tenant-1",
@@ -824,8 +861,6 @@ describe("PlatformService health", () => {
       service.createClient(
         {
           name: "Cliente em prospecção",
-          responsibleName: "Responsável",
-          responsibleEmail: "responsavel@example.com",
           city: "Goiânia",
           state: "GO",
           status: "PROSPECTING",
@@ -837,9 +872,75 @@ describe("PlatformService health", () => {
     expect(prisma.platformClient.findUnique).not.toHaveBeenCalled();
     expect(prisma.platformClient.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ document: null, status: "PROSPECTING" }),
+        data: expect.objectContaining({
+          document: null,
+          responsibleName: "",
+          responsibleEmail: "",
+          status: "PROSPECTING",
+        }),
       }),
     );
+  });
+
+  it("requires responsible contact data when creating a non-prospect client", async () => {
+    const prisma = { platformClient: { findUnique: vi.fn(), create: vi.fn() } };
+    const service = platformService(prisma, { record: vi.fn() });
+
+    await expect(
+      service.createClient(
+        {
+          name: "Cliente ativo",
+          document: "00000000000000",
+          city: "Goiânia",
+          state: "GO",
+          status: "ACTIVE",
+        },
+        actor(),
+      ),
+    ).rejects.toThrow("Informe o responsável pelo cliente.");
+    expect(prisma.platformClient.create).not.toHaveBeenCalled();
+  });
+
+  it("blocks changing a prospect to active while responsible contact data is missing", async () => {
+    const prisma = {
+      platformClient: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "client-1",
+          document: "00000000000000",
+          responsibleName: "",
+          responsibleEmail: "",
+          status: "PROSPECTING",
+        }),
+        update: vi.fn(),
+      },
+    };
+    const service = platformService(prisma, { record: vi.fn() });
+
+    await expect(service.updateClient("client-1", { status: "ACTIVE" }, actor())).rejects.toThrow(
+      "Informe o responsável pelo cliente.",
+    );
+    expect(prisma.platformClient.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks changing a prospect to active with an invalid responsible e-mail", async () => {
+    const prisma = {
+      platformClient: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "client-1",
+          document: "00000000000000",
+          responsibleName: "Responsável",
+          responsibleEmail: "invalido",
+          status: "PROSPECTING",
+        }),
+        update: vi.fn(),
+      },
+    };
+    const service = platformService(prisma, { record: vi.fn() });
+
+    await expect(service.updateClient("client-1", { status: "ACTIVE" }, actor())).rejects.toThrow(
+      "Informe um e-mail válido para o responsável pelo cliente.",
+    );
+    expect(prisma.platformClient.update).not.toHaveBeenCalled();
   });
 
   it("keeps CNPJ required for clients outside prospecting", async () => {

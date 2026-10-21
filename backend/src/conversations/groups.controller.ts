@@ -1,12 +1,8 @@
 import {
-  connectionIdAccess,
-  conversationChatScopeAccess,
-  departmentIdAccess,
-} from "../auth/connection-access";
-import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Inject,
   Logger,
@@ -23,6 +19,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
+import { connectionIdAccess, conversationChatScopeAccess } from "../auth/connection-access";
 import {
   ConversationStatus,
   ConversationType,
@@ -33,7 +30,10 @@ import {
 import { EvolutionClient } from "../messaging/evolution/evolution.client";
 import { MessagingProviderError } from "../messaging/messaging.contracts";
 import { PrismaService } from "../prisma/prisma.service";
+import { lockActiveDepartmentForConversation } from "../departments/department-conversation-lock";
 import { GroupsSyncService } from "./groups-sync.service";
+import { ConfirmDeletionDto } from "../common/deletion-impact";
+import { ConversationPurgeService } from "./conversation-purge.service";
 
 class ListGroupsQueryDto {
   @IsOptional()
@@ -199,6 +199,7 @@ export class GroupsController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(EvolutionClient) private readonly evolution: EvolutionClient,
     @Inject(GroupsSyncService) private readonly groupsSync: GroupsSyncService,
+    @Inject(ConversationPurgeService) private readonly conversationPurge: ConversationPurgeService,
   ) {}
 
   @Get()
@@ -269,10 +270,10 @@ export class GroupsController {
       where: {
         tenantId: current.tenantId,
         archivedAt: null,
+        ...connectionIdAccess(current),
         status: {
           in: [MessagingConnectionStatus.CONNECTED, MessagingConnectionStatus.DISCONNECTED],
         },
-        ...connectionIdAccess(current),
       },
       orderBy: { name: "asc" },
       select: {
@@ -314,13 +315,11 @@ export class GroupsController {
     if (dto.participantContactIds.length < 1) {
       throw new BadRequestException("Selecione ao menos um participante.");
     }
-    if (current.roleKey !== "tenant_admin" && !current.connectionIds?.includes(dto.connectionId))
-      throw new BadRequestException("Instância não permitida pelo perfil.");
     const connection = await this.prisma.messagingConnection.findFirst({
       where: {
-        id: dto.connectionId,
         tenantId: current.tenantId,
         archivedAt: null,
+        AND: [{ id: dto.connectionId }, connectionIdAccess(current)],
         providerType: MessagingProviderType.EVOLUTION,
         status: MessagingConnectionStatus.CONNECTED,
       },
@@ -387,6 +386,26 @@ export class GroupsController {
           conversationType: ConversationType.GROUP,
         },
       });
+      let conversationDepartmentId = existingConversation?.departmentId ?? null;
+      if (
+        !conversationDepartmentId ||
+        !(await lockActiveDepartmentForConversation(tx, {
+          tenantId: current.tenantId,
+          departmentId: conversationDepartmentId,
+          connectionId: connection.id,
+        }))
+      ) {
+        conversationDepartmentId = (await lockActiveDepartmentForConversation(tx, {
+          tenantId: current.tenantId,
+          departmentId,
+          connectionId: connection.id,
+        }))
+          ? departmentId
+          : null;
+      }
+      if (!conversationDepartmentId) {
+        throw new BadRequestException("Selecione um departamento permitido no Chat.");
+      }
       const conversation = existingConversation
         ? await tx.conversation.update({
             where: { tenantId_id: { tenantId: current.tenantId, id: existingConversation.id } },
@@ -400,7 +419,7 @@ export class GroupsController {
               },
               isGroup: true,
               conversationType: ConversationType.GROUP,
-              departmentId: existingConversation.departmentId ?? departmentId,
+              departmentId: conversationDepartmentId,
               archivedAt: null,
             },
             include: groupInclude,
@@ -449,6 +468,47 @@ export class GroupsController {
             displayName: participant.name,
           },
         });
+      }
+
+      const ownerExternalId = connection.ownerExternalId?.trim() || null;
+      const ownerPhone = onlyDigits(connection.ownerPhoneNormalized ?? "") || null;
+      if (ownerExternalId || ownerPhone) {
+        const existingOwner = await tx.conversationParticipant.findFirst({
+          where: {
+            tenantId: current.tenantId,
+            conversationId: conversation.id,
+            OR: [
+              ...(ownerExternalId
+                ? [{ externalParticipantId: ownerExternalId }, { lid: ownerExternalId }]
+                : []),
+              ...(ownerPhone ? [{ phone: ownerPhone }, { externalParticipantId: ownerPhone }] : []),
+            ],
+          },
+        });
+        const ownerData = {
+          externalParticipantId: ownerExternalId ?? ownerPhone!,
+          phone: ownerPhone,
+          lid: ownerExternalId?.toLowerCase().includes("@lid") ? ownerExternalId : null,
+          displayName: connection.name,
+          isAdmin: true,
+          isSuperAdmin: true,
+          active: true,
+          lastSeenAt: new Date(),
+        };
+        if (existingOwner) {
+          await tx.conversationParticipant.update({
+            where: { id: existingOwner.id },
+            data: ownerData,
+          });
+        } else {
+          await tx.conversationParticipant.create({
+            data: {
+              tenantId: current.tenantId,
+              conversationId: conversation.id,
+              ...ownerData,
+            },
+          });
+        }
       }
 
       return tx.conversation.findUniqueOrThrow({
@@ -544,6 +604,7 @@ export class GroupsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const group = await this.resolveManagedGroup(id, current);
+    assertCanManageGroupParticipants(group);
     if (dto.action === "add") {
       const contactIds = [...new Set(dto.participantContactIds ?? [])];
       if (!contactIds.length) throw new BadRequestException("Selecione ao menos um contato.");
@@ -552,6 +613,7 @@ export class GroupsController {
           tenantId: current.tenantId,
           id: { in: contactIds },
           archivedAt: null,
+          active: true,
           NOT: { normalizedPhone: { startsWith: "group:" } },
         },
         select: { id: true, name: true, phone: true, normalizedPhone: true },
@@ -624,6 +686,7 @@ export class GroupsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const group = await this.resolveManagedGroup(id, current);
+    assertCanManageGroupParticipants(group);
     const participantIds = [...new Set(dto.participantIds)];
     if (!participantIds.length) {
       throw new BadRequestException("Selecione ao menos um participante.");
@@ -645,46 +708,55 @@ export class GroupsController {
     return this.reloadGroup(group.id, current);
   }
 
+  @Get(":id/deletion-impact")
+  @RequirePermissions("groups.leave")
+  async deletionImpact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    const group = await this.resolveManagedGroup(id, current);
+    return this.conversationPurge.conversationImpact(group.id, current.tenantId);
+  }
+
   @Post(":id/leave")
   @RequirePermissions("groups.leave")
-  async leave(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+  async leave(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
     const group = await this.resolveManagedGroup(id, current);
-    await this.evolution.leaveGroup({
-      instanceName: group.connection!.externalReference!,
-      groupJid: group.externalChatId!,
-    });
-    const now = new Date();
-    await this.prisma.conversation.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: group.id } },
-      data: { archivedAt: now, status: ConversationStatus.FECHADA, closedAt: now },
-    });
-    return { id: group.id, left: true };
+    const impact = await this.conversationPurge.conversationImpact(group.id, current.tenantId);
+    if (dto.snapshotToken !== impact.snapshotToken) {
+      return {
+        status: "changed" as const,
+        impact,
+        message: "Os vínculos mudaram desde a última verificação. Revise antes de confirmar.",
+      };
+    }
+    try {
+      await this.evolution.leaveGroup({
+        instanceName: group.connection!.externalReference!,
+        groupJid: group.externalChatId!,
+      });
+    } catch (error) {
+      if (!isEvolutionGroupAlreadyAbsent(error)) throw error;
+    }
+    return this.conversationPurge.purgeConversation(group.id, dto.snapshotToken, current.tenantId);
   }
 
   @Post("sync")
   @RequirePermissions("groups.update")
   async sync(@Body() dto: SyncGroupsDto | undefined, @CurrentUser() current: AuthenticatedUser) {
-    if (current.roleKey === "tenant_admin")
-      return this.groupsSync.sync({ tenantId: current.tenantId, connectionId: dto?.connectionId });
-    const ids = current.connectionIds ?? [];
-    if (dto?.connectionId && !ids.includes(dto.connectionId))
-      throw new BadRequestException("Instância não permitida pelo perfil.");
-    const results = await Promise.all(
-      (dto?.connectionId ? [dto.connectionId] : ids).map((connectionId) =>
-        this.groupsSync.sync({
-          tenantId: current.tenantId,
-          connectionId,
-          departmentIds: current.chatDepartmentIds ?? [],
-        }),
-      ),
-    );
-    return results.reduce(
-      (total, result) => ({
-        synced: total.synced + result.synced,
-        participants: total.participants + result.participants,
-      }),
-      { synced: 0, participants: 0 },
-    );
+    if (
+      current.roleKey !== "tenant_admin" &&
+      dto?.connectionId &&
+      !(current.connectionIds ?? []).includes(dto.connectionId)
+    ) {
+      throw new ForbiddenException("Instância não permitida para este perfil de acesso.");
+    }
+    return this.groupsSync.sync({
+      tenantId: current.tenantId,
+      connectionId: dto?.connectionId,
+      ...(current.roleKey === "tenant_admin" ? {} : { connectionIds: current.connectionIds ?? [] }),
+    });
   }
 
   private async resolveManagedGroup(id: string, current: AuthenticatedUser) {
@@ -709,28 +781,18 @@ export class GroupsController {
   }
 
   private async resolveGroupDepartmentId(connectionId: string, current: AuthenticatedUser) {
-    const scope = current.chatScopes?.find((item) => item.connectionId === connectionId);
-    const preferredDepartmentId = scope?.favoriteDepartmentId ?? null;
-    if (preferredDepartmentId) {
-      const preferred = await this.prisma.department.findFirst({
-        where: {
-          AND: [{ id: preferredDepartmentId }, departmentIdAccess(current)],
-          tenantId: current.tenantId,
-          active: true,
-          connections: { some: { connectionId } },
-        },
-        select: { id: true },
-      });
-      if (preferred) return preferred.id;
-      throw new BadRequestException(
-        "O departamento principal não está disponível para este perfil no Chat.",
-      );
-    }
+    const allowedDepartmentIds =
+      current.roleKey === "tenant_admin"
+        ? null
+        : ((current.chatScopes ?? []).find((scope) => scope.connectionId === connectionId)
+            ?.departmentIds ??
+          current.chatDepartmentIds ??
+          []);
     const department = await this.prisma.department.findFirst({
       where: {
         tenantId: current.tenantId,
         active: true,
-        ...departmentIdAccess(current),
+        ...(allowedDepartmentIds ? { id: { in: allowedDepartmentIds } } : {}),
         connections: { some: { connectionId } },
       },
       orderBy: { createdAt: "asc" },
@@ -761,6 +823,7 @@ export class GroupsController {
 function serializeGroup(group: GroupConversation) {
   const name = group.groupName || group.contact.name || "Grupo WhatsApp";
   const activeParticipants = group.participants.filter((participant) => participant.active);
+  const canManageParticipants = groupCanManageParticipants(group);
   return {
     id: group.id,
     tenantId: group.tenantId,
@@ -772,6 +835,7 @@ function serializeGroup(group: GroupConversation) {
     createdAt: groupCreatedAt(group),
     updatedAt: group.updatedAt,
     participantsCount: activeParticipants.length,
+    canManageParticipants,
     connection: group.connection
       ? {
           id: group.connection.id,
@@ -788,12 +852,50 @@ function serializeGroup(group: GroupConversation) {
       externalParticipantId: participant.externalParticipantId,
       isAdmin: participant.isAdmin,
       isSuperAdmin: participant.isSuperAdmin,
+      isCurrentInstance: participantMatchesConnection(participant, group.connection),
       active: participant.active,
       lastSeenAt: participant.lastSeenAt,
     })),
     lastMessagePreview: group.lastMessagePreview,
     lastMessageAt: group.lastMessageAt,
   };
+}
+
+function assertCanManageGroupParticipants(group: GroupConversation) {
+  if (groupCanManageParticipants(group)) return;
+  throw new ForbiddenException(
+    "A instância conectada não possui privilégio para gerenciar participantes deste grupo.",
+  );
+}
+
+function groupCanManageParticipants(group: GroupConversation) {
+  return group.participants.some(
+    (participant) =>
+      participant.active &&
+      participantMatchesConnection(participant, group.connection) &&
+      (participant.isAdmin || participant.isSuperAdmin),
+  );
+}
+
+function participantMatchesConnection(
+  participant: GroupConversation["participants"][number],
+  connection: GroupConversation["connection"],
+) {
+  if (!connection) return false;
+  const ownerExternalId = connection.ownerExternalId?.trim().toLowerCase();
+  const participantIds = [participant.externalParticipantId, participant.lid]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.trim().toLowerCase());
+  if (ownerExternalId && participantIds.includes(ownerExternalId)) return true;
+  const ownerPhone = onlyDigits(connection.ownerPhoneNormalized ?? "");
+  if (!ownerPhone) return false;
+  const participantPhone = onlyDigits(
+    participant.phone ??
+      (participant.externalParticipantId.toLowerCase().includes("@lid")
+        ? ""
+        : participant.externalParticipantId),
+  );
+  return participantPhone === ownerPhone;
 }
 
 function serializeGroupSummary(group: GroupConversationSummary) {
@@ -851,6 +953,14 @@ async function retryNewGroupMetadataUpdate(operation: () => Promise<unknown>) {
 
 function shouldRetryNewGroupMetadataUpdate(error: unknown) {
   return error instanceof MessagingProviderError && (error.retryable || error.httpStatus === 404);
+}
+
+function isEvolutionGroupAlreadyAbsent(error: unknown) {
+  return (
+    error instanceof MessagingProviderError &&
+    (error.httpStatus === 404 ||
+      /not found|not participant|already left|não encontrado/i.test(error.message))
+  );
 }
 
 function validateGroupImageDataUrl(value: string | undefined) {

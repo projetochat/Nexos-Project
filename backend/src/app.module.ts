@@ -9,8 +9,10 @@ import { CrmModule } from "./crm/crm.module";
 import { DepartmentsModule } from "./departments/departments.module";
 import { HealthModule } from "./health/health.module";
 import { LeadsModule } from "./leads/leads.module";
+import { LocationsModule } from "./locations/locations.module";
 import { MessagingModule } from "./messaging/messaging.module";
 import { NotificationsModule } from "./notifications/notifications.module";
+import { OnboardingModule } from "./onboarding/onboarding.module";
 import { OperationsModule } from "./operations/operations.module";
 import { PlatformModule } from "./platform/platform.module";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -36,7 +38,9 @@ import { validateEnvironment } from "./config/environment";
     RolesModule,
     CrmModule,
     LeadsModule,
+    LocationsModule,
     NotificationsModule,
+    OnboardingModule,
     AutomationsModule,
     OperationsModule,
     QuickRepliesModule,

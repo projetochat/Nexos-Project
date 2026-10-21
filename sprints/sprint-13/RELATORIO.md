@@ -1,5 +1,9 @@
 # SPRINT 13 - RELATORIO FINAL
 
+> **HISTORICO — NAO EXECUTAR:** comandos Prisma deste relatorio registram um
+> ensaio antigo. Migracoes atuais usam exclusivamente o wrapper documentado em
+> `docs/PRODUCTION-AUTOMATION.md`.
+
 ## 1. Status
 
 Status: READY.
@@ -285,7 +289,7 @@ Warnings conhecidos do frontend:
 
 Ambiente:
 
-- `DATABASE_URL=postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public`
+- `DATABASE_URL=postgresql://trixus:change-me@localhost:5432/trixus_0801?schema=public`
 - `REDIS_URL=redis://localhost:6379`
 
 Resultados:
@@ -591,13 +595,13 @@ Credenciais platform:
 - Comando oficial de redefinicao local:
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0802?schema=public"
 $env:TRIXUS_PLATFORM_ADMIN_EMAIL="<email-admin>"
-$env:TRIXUS_PLATFORM_ADMIN_PASSWORD="<senha-temporaria>"
+$env:TRIXUS_PLATFORM_ADMIN_PASSWORD="change-me"
 $env:TRIXUS_PLATFORM_SUPPORT_EMAIL="<email-support>"
-$env:TRIXUS_PLATFORM_SUPPORT_PASSWORD="<senha-temporaria>"
+$env:TRIXUS_PLATFORM_SUPPORT_PASSWORD="change-me"
 $env:TRIXUS_PLATFORM_READONLY_EMAIL="<email-readonly>"
-$env:TRIXUS_PLATFORM_READONLY_PASSWORD="<senha-temporaria>"
+$env:TRIXUS_PLATFORM_READONLY_PASSWORD="change-me"
 bun run backend:prisma:seed
 ```
 
@@ -742,7 +746,7 @@ HTTP fisico na porta 3001 com usuario real `platform@trixus.app` (`platformRole=
 Observacao fisica:
 
 - `platform@trixus.app` existe em `trixus_0802` como `platformRole=ADMIN` e `status=ACTIVE`.
-- Login com senha padrao `demo1234` retornou 401, coerente com credenciais fisicas redefinidas por seed via ambiente no rework anterior.
+- Login com senha padrao `[redigida]` retornou 401, coerente com credenciais fisicas redefinidas por seed via ambiente no rework anterior.
 - O teste HTTP protegido usou token platform assinado para o usuario real, sem imprimir segredo, senha, hash ou JWT.
 - Dashboard retornou tenants reais; tenants retornou `Homologacao Trixus`; plans retornou `Professional`; subscriptions retornou assinatura real; invoices/audit retornaram empty state canonico.
 - Validacao visual no navegador permanece pendente do Product Owner, mas a causa dos `Internal server error` das telas reais foi removida na API.

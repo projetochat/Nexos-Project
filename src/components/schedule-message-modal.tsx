@@ -1,8 +1,9 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, Pencil, Trash2 } from "lucide-react";
-import { Button, Field } from "./ui-kit";
-import { ConfirmDialog, Modal } from "./modal";
+import { DeletionConfirmDialog } from "./deletion-confirm-dialog";
+import { Button, Field, Input } from "./ui-kit";
+import { Modal } from "./modal";
 import { GreetingMessageEditor } from "./greeting-message-editor";
 import { schedulesApi, type QuickReplyAttachment } from "@/lib/trixus-api";
 import { scheduleWritePayload, type ApiSchedule } from "@/lib/schedule-types";
@@ -12,6 +13,7 @@ import {
   mergeMessageVariables,
 } from "@/lib/message-variable-options";
 import { onRealtimeEvent } from "@/lib/realtime/client";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export function ScheduleMessageModal({
   open,
@@ -19,7 +21,7 @@ export function ScheduleMessageModal({
   conversationId,
   initialContent,
   identifier,
-  customFieldLabels = [],
+  customFields = [],
   onSaved,
 }: {
   open: boolean;
@@ -27,7 +29,7 @@ export function ScheduleMessageModal({
   conversationId: string;
   initialContent: string;
   identifier: string;
-  customFieldLabels?: string[];
+  customFields?: Array<{ label: string; variableKey: string }>;
   onSaved?: (mode: "create" | "edit") => void | Promise<void>;
 }) {
   const queryClient = useQueryClient();
@@ -38,6 +40,10 @@ export function ScheduleMessageModal({
   const [removing, setRemoving] = React.useState<ApiSchedule | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  const [requiredErrors, setRequiredErrors] = React.useState({
+    message: false,
+    scheduleAt: false,
+  });
 
   const schedules = useQuery({
     queryKey: ["trixus", "schedules", "conversation", conversationId],
@@ -61,12 +67,8 @@ export function ScheduleMessageModal({
   }, [open, queryClient]);
 
   const variables = React.useMemo(
-    () =>
-      mergeMessageVariables(
-        CONNECTION_MESSAGE_VARIABLES,
-        customFieldLabels.map((label) => ({ label })),
-      ),
-    [customFieldLabels],
+    () => mergeMessageVariables(CONNECTION_MESSAGE_VARIABLES, customFields),
+    [customFields],
   );
 
   React.useEffect(() => {
@@ -77,6 +79,7 @@ export function ScheduleMessageModal({
     setAttachment(null);
     setScheduleAt("");
     setError("");
+    setRequiredErrors({ message: false, scheduleAt: false });
   }, [initialContent, open]);
 
   const resetForm = React.useCallback(() => {
@@ -85,6 +88,7 @@ export function ScheduleMessageModal({
     setAttachment(null);
     setScheduleAt("");
     setError("");
+    setRequiredErrors({ message: false, scheduleAt: false });
   }, [initialContent]);
 
   const refresh = async () => {
@@ -93,8 +97,16 @@ export function ScheduleMessageModal({
 
   const save = async () => {
     const trimmedContent = content.trim();
-    if ((!trimmedContent && !attachment) || !scheduleAt) {
-      setError("Informe a mensagem ou um anexo, além da data e do horário.");
+    const nextRequiredErrors = {
+      message: !trimmedContent && !attachment,
+      scheduleAt: !scheduleAt,
+    };
+    if (nextRequiredErrors.message || nextRequiredErrors.scheduleAt) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast([
+        ...(nextRequiredErrors.message ? ["Mensagem ou anexo"] : []),
+        ...(nextRequiredErrors.scheduleAt ? ["Data e horário"] : []),
+      ]);
       return;
     }
     if (trimmedContent.length > 1000) {
@@ -179,25 +191,31 @@ export function ScheduleMessageModal({
                 attachment={attachment}
                 variables={variables}
                 disabled={busy}
-                invalid={content.trim().length > 1000}
+                invalid={requiredErrors.message || content.trim().length > 1000}
                 placeholder="Escreva a mensagem"
                 showEmoji
                 attachmentLayout="segmented"
                 onChange={(nextContent, nextAttachment) => {
                   setContent(nextContent);
                   setAttachment(nextAttachment);
+                  if (nextContent.trim() || nextAttachment)
+                    setRequiredErrors((current) => ({ ...current, message: false }));
                   setError("");
                 }}
               />
             </Field>
             <Field label="Data e horário *">
               <div className="min-w-0 max-w-full overflow-hidden">
-                <input
+                <Input
                   type="datetime-local"
                   value={scheduleAt}
-                  onChange={(event) => setScheduleAt(event.target.value)}
-                  className="block w-full min-w-0 max-w-full rounded-lg border border-border bg-card p-2.5 text-sm"
-                  required
+                  onChange={(event) => {
+                    setScheduleAt(event.target.value);
+                    if (event.target.value)
+                      setRequiredErrors((current) => ({ ...current, scheduleAt: false }));
+                  }}
+                  aria-invalid={requiredErrors.scheduleAt}
+                  className={`block w-full min-w-0 max-w-full bg-card ${requiredFieldClassName(requiredErrors.scheduleAt)}`}
                 />
               </div>
             </Field>
@@ -213,6 +231,7 @@ export function ScheduleMessageModal({
               <Button
                 type="button"
                 variant="ghost"
+                size="sm"
                 onClick={editing ? resetForm : close}
                 disabled={busy}
               >
@@ -221,6 +240,7 @@ export function ScheduleMessageModal({
               <Button
                 type="submit"
                 variant="primary"
+                className={editing ? "save-action-button" : undefined}
                 disabled={busy || (!content.trim() && !attachment) || !scheduleAt}
               >
                 {busy ? "Salvando..." : editing ? "Salvar alterações" : "Agendar"}
@@ -321,31 +341,31 @@ export function ScheduleMessageModal({
           </section>
         </div>
       </Modal>
-      <ConfirmDialog
+      <DeletionConfirmDialog
         open={!!removing}
-        onClose={() => !busy && setRemoving(null)}
-        title="Excluir mensagem agendada?"
-        description="Deseja realmente excluir esta mensagem agendada?"
+        resourceKey={`conversation-schedule:${removing?.id ?? "none"}`}
+        variant="compact"
+        compactDescription="Deseja realmente excluir esta mensagem agendada?"
         confirmLabel="Excluir"
-        destructive
-        onConfirm={() => {
-          if (!removing) return;
-          setBusy(true);
-          setError("");
-          void schedulesApi
-            .remove(removing.id)
-            .then(async () => {
-              setRemoving(null);
-              if (editing?.id === removing.id) resetForm();
-              await refresh();
-            })
-            .catch((cause) =>
-              setError(
-                cause instanceof Error ? cause.message : "Não foi possível excluir o agendamento.",
-              ),
-            )
-            .finally(() => setBusy(false));
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setRemoving(null);
         }}
+        loadImpact={(signal) => {
+          if (!removing) return Promise.reject(new Error("Agendamento não selecionado."));
+          return schedulesApi.deletionImpact(removing.id, signal);
+        }}
+        onConfirm={({ snapshotToken, signal }) => {
+          if (!removing) return Promise.reject(new Error("Agendamento não selecionado."));
+          return schedulesApi.remove(removing.id, snapshotToken, signal);
+        }}
+        onDeleted={() => {
+          if (editing?.id === removing?.id) resetForm();
+          setRemoving(null);
+          void refresh();
+        }}
+        formatError={(cause) =>
+          cause instanceof Error ? cause.message : "Não foi possível excluir o agendamento."
+        }
       />
     </>
   );

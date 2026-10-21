@@ -16,6 +16,7 @@ import { TimezoneSelect } from "@/components/timezone-select";
 import { organizationApi, type ApiCompanyProfile } from "@/lib/trixus-api";
 import { useSession } from "@/lib/session";
 import { waitForMinimumDuration } from "@/lib/minimum-duration";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/configuracoes/empresa")({
   component: EmpresaSettings,
@@ -45,6 +46,12 @@ function EmpresaSettings() {
   const [showCurrentPassword, setShowCurrentPassword] = React.useState(false);
   const [showNewPassword, setShowNewPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
+  const [requiredErrors, setRequiredErrors] = React.useState({
+    presentationName: false,
+    newPassword: false,
+    confirmPassword: false,
+    currentPassword: false,
+  });
   const [pendingCredentialChange, setPendingCredentialChange] = React.useState<
     { kind: "form" } | { kind: "avatar"; avatarUrl: string | null } | null
   >(null);
@@ -80,6 +87,7 @@ function EmpresaSettings() {
 
   const requestAvatarSave = async (avatarUrl: string | null) => {
     setCurrentPassword("");
+    setRequiredErrors((current) => ({ ...current, currentPassword: false }));
     setShowCurrentPassword(false);
     setPendingCredentialChange({ kind: "avatar", avatarUrl });
     setPasswordConfirmationOpen(true);
@@ -94,12 +102,26 @@ function EmpresaSettings() {
   const requestCredentialSave = () => {
     const trimmedPresentationName = presentationName.trim();
     const isChangingPassword = Boolean(newPassword || confirmPassword);
-    if (!trimmedPresentationName) return toast.error("Informe o nome de apresentação.");
+    const nextRequiredErrors = {
+      presentationName: !trimmedPresentationName,
+      newPassword: isChangingPassword && !newPassword,
+      confirmPassword: isChangingPassword && !confirmPassword,
+      currentPassword: false,
+    };
+    if (
+      nextRequiredErrors.presentationName ||
+      nextRequiredErrors.newPassword ||
+      nextRequiredErrors.confirmPassword
+    ) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast([
+        ...(nextRequiredErrors.presentationName ? ["Nome do atendente"] : []),
+        ...(nextRequiredErrors.newPassword ? ["Nova senha"] : []),
+        ...(nextRequiredErrors.confirmPassword ? ["Confirmar nova senha"] : []),
+      ]);
+      return;
+    }
     if (isChangingPassword) {
-      if (!newPassword || !confirmPassword) {
-        toast.error("Preencha os campos da nova senha.");
-        return;
-      }
       if (newPassword.length < 6) {
         toast.error("A nova senha deve ter ao menos 6 caracteres.");
         return;
@@ -120,7 +142,11 @@ function EmpresaSettings() {
     const trimmedPresentationName = presentationName.trim();
     const isFormSave = pendingCredentialChange.kind === "form";
     const isChangingPassword = isFormSave && Boolean(newPassword || confirmPassword);
-    if (!currentPassword) return toast.error("Informe a senha atual.");
+    if (!currentPassword) {
+      setRequiredErrors((current) => ({ ...current, currentPassword: true }));
+      showRequiredFieldsToast(["Senha atual"]);
+      return;
+    }
     if (isChangingPassword && newPassword === currentPassword) {
       toast.error(passwordReuseError);
       return;
@@ -215,6 +241,7 @@ function EmpresaSettings() {
           <div className="mt-4 flex justify-end border-t border-border pt-4">
             <Button
               variant="primary"
+              className="save-action-button"
               onClick={() => updateCompany.mutate()}
               disabled={
                 isLoadingCompany || updateCompany.isPending || companyTimezone === company.timezone
@@ -335,9 +362,18 @@ function EmpresaSettings() {
                 <Field label="Nome do atendente *">
                   <Input
                     value={presentationName}
-                    onChange={(event) => setPresentationName(event.target.value)}
+                    onChange={(event) => {
+                      setPresentationName(event.target.value);
+                      if (event.target.value.trim())
+                        setRequiredErrors((current) => ({
+                          ...current,
+                          presentationName: false,
+                        }));
+                    }}
                     disabled={isLoadingCompany || savingPassword}
                     maxLength={120}
+                    aria-invalid={requiredErrors.presentationName}
+                    className={requiredFieldClassName(requiredErrors.presentationName)}
                   />
                 </Field>
                 <Field label="E-mail de acesso *">
@@ -357,10 +393,15 @@ function EmpresaSettings() {
                 <Field label="Nova senha *">
                   <PasswordInput
                     value={newPassword}
-                    onChange={setNewPassword}
+                    onChange={(value) => {
+                      setNewPassword(value);
+                      if (value)
+                        setRequiredErrors((current) => ({ ...current, newPassword: false }));
+                    }}
                     visible={showNewPassword}
                     onToggle={() => setShowNewPassword((current) => !current)}
                     autoComplete="new-password"
+                    invalid={requiredErrors.newPassword}
                   />
                 </Field>
                 <Field
@@ -369,11 +410,15 @@ function EmpresaSettings() {
                 >
                   <PasswordInput
                     value={confirmPassword}
-                    onChange={setConfirmPassword}
+                    onChange={(value) => {
+                      setConfirmPassword(value);
+                      if (value)
+                        setRequiredErrors((current) => ({ ...current, confirmPassword: false }));
+                    }}
                     visible={showConfirmPassword}
                     onToggle={() => setShowConfirmPassword((current) => !current)}
                     autoComplete="new-password"
-                    invalid={passwordsDoNotMatch}
+                    invalid={requiredErrors.confirmPassword || passwordsDoNotMatch}
                   />
                 </Field>
               </div>
@@ -384,6 +429,7 @@ function EmpresaSettings() {
             <Button
               variant="primary"
               size="lg"
+              className="save-action-button"
               onClick={requestCredentialSave}
               disabled={savingPassword}
             >
@@ -424,6 +470,7 @@ function EmpresaSettings() {
                 <>
                   <Button
                     variant="ghost"
+                    size="sm"
                     onClick={() => {
                       setPasswordConfirmationOpen(false);
                       setPendingCredentialChange(null);
@@ -462,12 +509,15 @@ function EmpresaSettings() {
                   value={currentPassword}
                   onChange={(value) => {
                     setCurrentPassword(value);
+                    if (value)
+                      setRequiredErrors((current) => ({ ...current, currentPassword: false }));
                     if (!value) setShowCurrentPassword(false);
                   }}
                   visible={showCurrentPassword}
                   canToggle={Boolean(currentPassword)}
                   onToggle={() => setShowCurrentPassword((value) => !value)}
                   autoComplete="current-password"
+                  invalid={requiredErrors.currentPassword}
                 />
               </Field>
             )}
@@ -503,7 +553,7 @@ function PasswordInput({
         onChange={(event) => onChange(event.target.value)}
         autoComplete={autoComplete}
         aria-invalid={invalid}
-        className={`pr-10 ${invalid ? "!border-destructive" : ""}`}
+        className={`pr-10 ${requiredFieldClassName(invalid)}`}
       />
       {canToggle && (
         <button

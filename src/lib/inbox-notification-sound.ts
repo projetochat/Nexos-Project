@@ -28,7 +28,13 @@ export function setInboxNotificationQueues(userId: string, queues: QueueId[]) {
 
 export function shouldNotifyInboxUpdate(event: RealtimeEnvelope, userId?: string | null) {
   if (!isInboundConversationUpdate(event) || !inboxNotificationSoundEnabled(userId)) return false;
-  const queue = (event.data as { notificationQueue?: QueueId | null }).notificationQueue;
+  const data = event.data as {
+    notificationQueue?: QueueId | null;
+    tagNotification?: boolean;
+    reason?: string;
+  };
+  if (data.reason === "inbound.created" && data.tagNotification === true) return true;
+  const queue = data.notificationQueue;
   const selected = inboxNotificationQueues(userId);
   // Older servers do not include the queue; only allow their alerts when all are selected.
   return queue === undefined

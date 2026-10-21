@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { hydrateSession, useSession } from "@/lib/session";
 import { invalidateConversationQueries } from "./invalidate-conversation";
+import { clearAuthorizationCache } from "@/lib/conversation-query-authorization";
 import {
   shouldNotifyInboxUpdate,
   playInboxNotificationSound,
@@ -18,6 +19,24 @@ import {
   unsubscribeConversation,
 } from "./client";
 
+let authorizationRefresh: Promise<void> | null = null;
+
+function refreshAuthorization(queryClient: ReturnType<typeof useQueryClient>) {
+  if (authorizationRefresh) return authorizationRefresh;
+  disconnectRealtime();
+  authorizationRefresh = clearAuthorizationCache(queryClient)
+    .then(() => hydrateSession({ preserveUserOnTransientError: true }))
+    .then(async () => {
+      await queryClient.cancelQueries();
+      await queryClient.resetQueries();
+    })
+    .finally(() => {
+      authorizationRefresh = null;
+      if (useSession.getState().user) void connectRealtime();
+    });
+  return authorizationRefresh;
+}
+
 export function useRealtimeStatus() {
   return React.useSyncExternalStore(subscribeRealtime, realtimeSnapshot, realtimeSnapshot);
 }
@@ -28,10 +47,28 @@ export function useInstanceAccessUpdates(connect = true) {
   React.useEffect(() => {
     if (user && connect) void connectRealtime();
     return onRealtimeEvent((event) => {
-      if (event.event !== "instance-access.updated") return;
-      void hydrateSession().finally(() => {
-        void queryClient.cancelQueries().then(() => queryClient.resetQueries());
-      });
+      if (event.event === "authorization.updated") {
+        void refreshAuthorization(queryClient);
+        return;
+      }
+      if (event.event === "instance-access.updated") {
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "chat-departments"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "chat-messaging-connections"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
+        return;
+      }
+      if (event.event === "contact.updated" || event.event === "contact.tags.updated") {
+        const data = event.data as { contactId?: string };
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "contacts"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+        void queryClient.invalidateQueries({ queryKey: ["operations", "history"] });
+        if (data.contactId) {
+          void queryClient.invalidateQueries({
+            queryKey: ["trixus", "contact_protocols", data.contactId],
+          });
+        }
+      }
     });
   }, [connect, queryClient, user]);
 }
@@ -85,20 +122,13 @@ export function useRealtimeInbox(conversationId?: string | null) {
         const data = event.data as { conversationId?: string };
         void invalidateConversationQueries(queryClient, data.conversationId);
       }
+      if (event.event === "schedule.updated") {
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      }
       if (event.event === "connection.status.updated") {
         void queryClient.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
         void queryClient.invalidateQueries({ queryKey: ["trixus", "chat-messaging-connections"] });
         void queryClient.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
-      }
-      if (event.event === "contact.updated" || event.event === "contact.tags.updated") {
-        const data = event.data as { contactId?: string };
-        if (data.contactId) {
-          void queryClient.invalidateQueries({ queryKey: ["trixus", "contacts", data.contactId] });
-          void queryClient.invalidateQueries({
-            queryKey: ["trixus", "contact_protocols", data.contactId],
-          });
-          void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-        }
       }
     });
   }, [queryClient, user?.id]);

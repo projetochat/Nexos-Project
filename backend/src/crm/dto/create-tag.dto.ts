@@ -1,4 +1,4 @@
-import { IsOptional, IsString, Length, Matches, MaxLength } from "class-validator";
+import { IsBoolean, IsOptional, IsString, Length, Matches, MaxLength } from "class-validator";
 
 export class CreateTagDto {
   @IsString()
@@ -7,7 +7,20 @@ export class CreateTagDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(240)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(20)
   @Matches(/^#[0-9a-fA-F]{6}$/)
   color?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyOnNewConversation?: boolean;
 }

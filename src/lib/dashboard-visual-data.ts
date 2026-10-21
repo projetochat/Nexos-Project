@@ -18,6 +18,7 @@ export function normalizeDashboardData(
   columns: DashboardColumnCount,
   visualization: DashboardVisualization,
   preserveOrder = false,
+  preserveAllItems = false,
 ) {
   const maxItems = visualization === "table" ? 7 : { 1: 7, 2: 12, 3: 16, 4: 20 }[columns];
   const valid = data.filter((item) => Number.isFinite(item.total));
@@ -30,7 +31,7 @@ export function normalizeDashboardData(
         );
   const total = ordered.reduce((sum, item) => sum + Math.max(0, item.total), 0);
   const visible =
-    visualization === "line" || ordered.length <= maxItems
+    preserveAllItems || visualization === "line" || ordered.length <= maxItems
       ? ordered
       : visualization === "table"
         ? ordered.slice(0, maxItems)
