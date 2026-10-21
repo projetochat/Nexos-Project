@@ -37,6 +37,7 @@ import {
 } from "../common/deletion-impact";
 import { AutomationActionType, AutomationRuleStatus, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizeRegistrationText } from "../common/registration-case";
 
 class ListAutomationRulesQueryDto {
   @IsOptional()
@@ -171,10 +172,16 @@ export class AutomationsController {
     if (actionType === AutomationActionType.BOT_REPLY && !dto.responseText?.trim()) {
       throw new BadRequestException("Resposta do bot obrigatoria para regra de bot.");
     }
+    const name = await normalizeRegistrationText(
+      this.prisma,
+      current.tenantId,
+      "automations",
+      dto.name,
+    );
     const rule = await this.prisma.automationRule.create({
       data: {
         tenantId: current.tenantId,
-        name: dto.name.trim(),
+        name,
         matchText: normalizeMatch(dto.matchText),
         responseText: dto.responseText?.trim(),
         actionType,
@@ -194,10 +201,13 @@ export class AutomationsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.assertDepartment(dto.departmentId, current.tenantId);
+    const name = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "automations", dto.name)
+      : undefined;
     const rule = await this.prisma.automationRule.update({
       where: { tenantId_id: { tenantId: current.tenantId, id } },
       data: {
-        name: dto.name?.trim(),
+        name,
         matchText: dto.matchText ? normalizeMatch(dto.matchText) : undefined,
         responseText: dto.responseText?.trim(),
         actionType: dto.actionType,

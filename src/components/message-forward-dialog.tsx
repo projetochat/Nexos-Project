@@ -138,7 +138,7 @@ export function MessageForwardDialog({
         className="h-[min(44rem,calc(100dvh-1rem))] sm:h-[min(44rem,calc(100dvh-2rem))]"
         footer={
           <>
-            <Button variant="secondary" disabled={busy} onClick={onClose}>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
               Cancelar
             </Button>
             <Button
@@ -256,7 +256,7 @@ export function MessageForwardDialog({
         }
         size="sm"
         footer={
-          <Button variant="secondary" onClick={() => setConnectionChoice(null)}>
+          <Button variant="ghost" size="sm" onClick={() => setConnectionChoice(null)}>
             Cancelar
           </Button>
         }

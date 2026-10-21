@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { validate } from "class-validator";
 import { DepartmentsController } from "./departments.controller";
 import { UpdateDepartmentDto } from "./dto/update-department.dto";
+import { CreateDepartmentDto } from "./dto/create-department.dto";
 
 describe("DepartmentsController", () => {
   it("returns department connection options using the public lowercase contract", async () => {
@@ -248,6 +249,20 @@ describe("DepartmentsController", () => {
     await expect(validate(dto)).resolves.toEqual([]);
   });
 
+  it("validates inactivity timeout limits without requiring the setting when disabled", async () => {
+    const disabled = new CreateDepartmentDto();
+    disabled.name = "Suporte";
+    disabled.connectionIds = [];
+    disabled.inactivityClosureEnabled = false;
+    const invalid = new UpdateDepartmentDto();
+    invalid.inactivityTimeoutMinutes = 0;
+
+    await expect(validate(disabled)).resolves.toEqual([]);
+    await expect(validate(invalid)).resolves.toEqual([
+      expect.objectContaining({ property: "inactivityTimeoutMinutes" }),
+    ]);
+  });
+
   it("lists only profile departments through the Chat catalog", async () => {
     const prisma = { department: { findMany: vi.fn().mockResolvedValue([]) } };
     const controller = new DepartmentsController(prisma as never, {} as never);
@@ -272,6 +287,79 @@ describe("DepartmentsController", () => {
         },
       },
     });
+  });
+
+  it("marks the administrator favorite while keeping every active tenant department visible", async () => {
+    const timestamp = new Date("2026-10-20T12:00:00.000Z");
+    const prisma = {
+      department: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "department-a",
+            tenantId: "tenant-a",
+            name: "Atendimento",
+            description: null,
+            color: "#3B82F6",
+            icon: "headset",
+            active: true,
+            inactivityClosureEnabled: false,
+            inactivityTimeoutMinutes: null,
+            inactivityClosureMessage: null,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            connections: [{ connectionId: "connection-a" }],
+          },
+          {
+            id: "department-b",
+            tenantId: "tenant-a",
+            name: "Comercial",
+            description: null,
+            color: "#10B981",
+            icon: "shopping-cart",
+            active: true,
+            inactivityClosureEnabled: false,
+            inactivityTimeoutMinutes: null,
+            inactivityClosureMessage: null,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            connections: [{ connectionId: "connection-b" }],
+          },
+        ]),
+      },
+    };
+    const controller = new DepartmentsController(prisma as never, {} as never);
+
+    const result = await controller.listChatScope({
+      tenantId: "tenant-a",
+      roleKey: "tenant_admin",
+      connectionIds: null,
+      chatDepartmentIds: null,
+      chatScopes: [
+        {
+          connectionId: "connection-a",
+          departmentIds: ["department-a"],
+          favoriteDepartmentId: "department-a",
+        },
+      ],
+    } as never);
+
+    expect(prisma.department.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId: "tenant-a", active: true },
+      }),
+    );
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: "department-a",
+        connectionIds: ["connection-a"],
+        favoriteConnectionIds: ["connection-a"],
+      }),
+      expect.objectContaining({
+        id: "department-b",
+        connectionIds: ["connection-b"],
+        favoriteConnectionIds: [],
+      }),
+    ]);
   });
 
   it("creates departments without applying the removed plan limit", async () => {
@@ -322,6 +410,9 @@ describe("DepartmentsController", () => {
         color: "#3B82F6",
         icon: "department",
         active: true,
+        inactivityClosureEnabled: false,
+        inactivityTimeoutMinutes: null,
+        inactivityClosureMessage: null,
         connections: { create: [] },
       },
       include: { connections: { select: { connectionId: true } } },
@@ -380,6 +471,9 @@ describe("DepartmentsController", () => {
         color: "#10B981",
         icon: "department",
         active: true,
+        inactivityClosureEnabled: false,
+        inactivityTimeoutMinutes: null,
+        inactivityClosureMessage: null,
         connections: { create: [] },
       },
       include: { connections: { select: { connectionId: true } } },

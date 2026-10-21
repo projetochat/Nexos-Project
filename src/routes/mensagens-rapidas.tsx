@@ -1,15 +1,17 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { MessageAttachmentMenu } from "@/components/message-attachment-menu";
 import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { MessageVariablesMenu } from "@/components/message-variables-menu";
 import {
   Button,
+  Badge,
   Card,
   EmptyState,
   Field,
@@ -55,11 +57,15 @@ function QuickRepliesPage() {
   const perms = useChatPerms();
   const canCreateCatalog = perms.pode_criar_respostas_rapidas;
   const canUpdateCatalog = perms.pode_gerenciar_respostas_rapidas;
+  const canReadCatalog = useSession((state) =>
+    state.user?.permissions?.includes("chat.quick_replies.read"),
+  );
   const canDeleteCatalog = useSession((state) =>
     state.user?.permissions?.includes("chat.quick_replies.delete"),
   );
   const editor = useDisclosure();
   const [editing, setEditing] = React.useState<ApiQuickReply | null>(null);
+  const [viewing, setViewing] = React.useState<ApiQuickReply | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiQuickReply | null>(null);
   const [confirming, setConfirming] = React.useState<ApiQuickReply | null>(null);
   const [query, setQuery] = React.useState("");
@@ -86,22 +92,32 @@ function QuickRepliesPage() {
   const openNew = () => {
     setEditing(null);
     setDuplicating(null);
+    setViewing(null);
     editor.show();
   };
   const openEdit = (reply: ApiQuickReply) => {
     setEditing(reply);
     setDuplicating(null);
+    setViewing(null);
     editor.show();
   };
   const openDuplicate = (reply: ApiQuickReply) => {
     setDuplicating(reply);
     setEditing(null);
+    setViewing(null);
+    editor.show();
+  };
+  const openView = (reply: ApiQuickReply) => {
+    setViewing(reply);
+    setEditing(null);
+    setDuplicating(null);
     editor.show();
   };
   const closeEditor = () => {
     editor.hide();
     setEditing(null);
     setDuplicating(null);
+    setViewing(null);
   };
 
   return (
@@ -141,42 +157,65 @@ function QuickRepliesPage() {
         ) : (
           <>
             <Card className="mb-4 p-4">
-              <Field label="Busca">
-                <SearchInput
-                  value={query}
-                  onChange={setQuery}
-                  placeholder="Buscar atalho ou texto..."
-                />
-              </Field>
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Field label="Busca">
+                  <SearchInput
+                    value={query}
+                    onChange={setQuery}
+                    placeholder="Buscar atalho ou texto..."
+                  />
+                </Field>
+                {query.trim() && (
+                  <div className="flex items-end">
+                    <ClearFiltersButton onClick={() => setQuery("")} />
+                  </div>
+                )}
+              </div>
             </Card>
-            <div className="grid auto-rows-[9.5rem] gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {filtered.map((reply) => (
                 <Card
                   key={reply.id}
-                  className="relative h-full overflow-hidden transition hover:border-primary/35 hover:bg-surface-1"
+                  className="flex min-h-[166px] flex-col p-4 transition hover:border-primary/35 hover:bg-surface-1"
                 >
-                  <div
-                    className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${canCreateCatalog || canUpdateCatalog || canDeleteCatalog ? "pr-32" : ""}`}
-                  >
-                    <p className="font-mono text-sm text-primary">
-                      /{reply.atalho.replace(/^\//, "")}
-                    </p>
-                    <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-foreground/90">
-                      {previewQuickReplyText(reply.texto)}
-                    </p>
-                    {(reply.messages?.length ?? 0) > 1 && (
-                      <span className="text-xs text-primary">
-                        {reply.messages!.length} mensagens
-                      </span>
-                    )}
-                    {reply.close_on_send && (
-                      <p className="mt-auto truncate pt-2 text-[10px] uppercase tracking-widest text-muted-foreground">
-                        Encerra conversa
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">/{reply.atalho.replace(/^\//, "")}</p>
+                      <p className="mt-0.5 line-clamp-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                        {previewQuickReplyText(reply.texto)}
                       </p>
-                    )}
+                    </div>
+                    <div className="ml-auto shrink-0 self-start">
+                      <Badge tone={reply.active !== false ? "success" : "destructive"}>
+                        {reply.active !== false ? "Ativo" : "Inativo"}
+                      </Badge>
+                    </div>
                   </div>
-                  {(canCreateCatalog || canUpdateCatalog || canDeleteCatalog) && (
-                    <div className="absolute right-4 top-4 flex gap-1 sm:right-6 sm:top-6">
+
+                  {((reply.messages?.length ?? 0) > 1 || reply.close_on_send) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      {(reply.messages?.length ?? 0) > 1 && (
+                        <span className="text-primary">{reply.messages!.length} mensagens</span>
+                      )}
+                      {reply.close_on_send && (
+                        <span className="uppercase tracking-widest">Encerra conversa</span>
+                      )}
+                    </div>
+                  )}
+
+                  {(canReadCatalog || canCreateCatalog || canUpdateCatalog || canDeleteCatalog) && (
+                    <div className="mt-auto flex min-h-11 items-end justify-end gap-1.5 border-t border-border pt-3">
+                      {canReadCatalog && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Visualizar"
+                          aria-label="Visualizar"
+                          onClick={() => openView(reply)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      )}
                       {canCreateCatalog && (
                         <Button
                           variant="ghost"
@@ -224,12 +263,13 @@ function QuickRepliesPage() {
           </>
         )}
 
-        {(editing ? canUpdateCatalog : canCreateCatalog) && (
+        {(viewing || (editing ? canUpdateCatalog : canCreateCatalog)) && (
           <QuickReplyEditor
             open={editor.open}
             onClose={closeEditor}
-            initial={editing ?? duplicating}
+            initial={viewing ?? editing ?? duplicating}
             clone={!!duplicating}
+            readOnly={!!viewing}
             existingReplies={items}
             onSaved={() => {
               refresh();
@@ -271,6 +311,7 @@ export function QuickReplyEditor({
   onClose,
   initial,
   clone = false,
+  readOnly = false,
   existingReplies,
   onSaved,
 }: {
@@ -278,6 +319,7 @@ export function QuickReplyEditor({
   onClose: () => void;
   initial: ApiQuickReply | null;
   clone?: boolean;
+  readOnly?: boolean;
   existingReplies: ApiQuickReply[];
   onSaved: () => void;
 }) {
@@ -360,6 +402,7 @@ export function QuickReplyEditor({
   }, [clone, open, initial]);
 
   const save = async () => {
+    if (readOnly) return;
     if (messages.length > 10) return toast.error("Número máximo de mensagens atingido");
     const shortcut = sanitizeQuickReplyShortcut(atalho);
     const content = messages
@@ -389,7 +432,6 @@ export function QuickReplyEditor({
           shortcut,
           content,
           messages,
-          intervalSeconds: 0,
           departmentId: initial.departmentId,
           closeOnSend,
           active,
@@ -404,7 +446,6 @@ export function QuickReplyEditor({
           shortcut,
           content,
           messages,
-          intervalSeconds: 0,
           departmentId: null,
           closeOnSend,
           active,
@@ -414,7 +455,7 @@ export function QuickReplyEditor({
           attachmentDataUrl: attachment?.dataUrl ?? null,
         });
       }
-      assertQuickReplySaved(saved, messages, 0);
+      assertQuickReplySaved(saved, messages);
       toast.success("Salvo");
       onSaved();
     } catch (error) {
@@ -429,11 +470,13 @@ export function QuickReplyEditor({
       open={open}
       onClose={onClose}
       title={
-        clone
-          ? "Duplicar Mensagem Rápida"
-          : initial
-            ? "Editar Mensagem Rápida"
-            : "Nova Mensagem Rápida"
+        readOnly
+          ? "Visualizar Mensagem Rápida"
+          : clone
+            ? "Duplicar Mensagem Rápida"
+            : initial
+              ? "Editar Mensagem Rápida"
+              : "Nova Mensagem Rápida"
       }
       description="Atalhos curtos aceleram respostas."
       size="lg"
@@ -446,15 +489,23 @@ export function QuickReplyEditor({
             />
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
+            {readOnly ? "Fechar" : "Cancelar"}
           </Button>
-          <Button variant="primary" size="sm" onClick={save} disabled={busy}>
-            {busy ? "Salvando..." : "Salvar"}
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="primary"
+              size="sm"
+              className="save-action-button"
+              onClick={save}
+              disabled={busy}
+            >
+              {busy ? "Salvando..." : "Salvar"}
+            </Button>
+          )}
         </>
       }
     >
-      <div className="space-y-3">
+      <fieldset disabled={readOnly} className="min-w-0 space-y-3 disabled:opacity-80">
         <label className="flex min-h-7 items-center gap-2 text-sm">
           <Switch checked={active} onCheckedChange={setActive} aria-label="Ativo" />
           <span>Ativo</span>
@@ -595,19 +646,12 @@ export function QuickReplyEditor({
           ))}
           <div className="space-y-3">
             <label className="flex cursor-pointer items-center gap-3 text-sm text-muted-foreground">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={closeOnSend}
+              <Switch
+                checked={closeOnSend}
+                onCheckedChange={setCloseOnSend}
                 aria-label="Encerrar conversa"
                 disabled={busy}
-                onClick={() => setCloseOnSend((current) => !current)}
-                className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 ${closeOnSend ? "bg-blue-600" : "bg-slate-300"}`}
-              >
-                <span
-                  className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${closeOnSend ? "translate-x-6" : "translate-x-1"}`}
-                />
-              </button>
+              />
               <span>Encerrar conversa</span>
             </label>
             <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -622,7 +666,7 @@ export function QuickReplyEditor({
             </div>
           </div>
         </div>
-      </div>
+      </fieldset>
     </Modal>
   );
 }

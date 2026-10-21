@@ -22,7 +22,10 @@ import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { ListMessagesQueryDto } from "./dto/list-messages-query.dto";
 import { SendMessageDto } from "./dto/send-message.dto";
-import { MessagingOutboundService } from "../messaging/messaging-outbound.service";
+import {
+  contactCardPreview,
+  MessagingOutboundService,
+} from "../messaging/messaging-outbound.service";
 import { MessagingMediaStorageService } from "../messaging/media/messaging-media-storage.service";
 import { EvolutionClient } from "../messaging/evolution/evolution.client";
 import { outboundMessageOrigin } from "../messaging/message-origin";
@@ -217,6 +220,7 @@ export class MessagesService {
       },
     });
     if (!message) throw new NotFoundException("Mensagem não encontrada ou não pode ser apagada.");
+    if (isDeleted(message.interactiveData)) return this.get(conversationId, messageId, current);
     const context = await this.prisma.conversation.findFirst({
       where: { id: conversationId, tenantId: current.tenantId },
       include: { connection: true },
@@ -225,20 +229,21 @@ export class MessagesService {
       throw new BadRequestException("O atendimento desta instância está desativado.");
     }
     const providerChatId = message.providerChatId ?? context?.externalChatId;
-    if (
-      this.evolution &&
-      message.providerMessageId &&
-      context?.connection?.externalReference &&
-      providerChatId
-    ) {
-      await withMessagingServiceEnabled(this.prisma, current.tenantId, context.connection.id, () =>
-        this.evolution!.deleteMessage({
-          instanceName: context.connection!.externalReference!,
-          remoteJid: providerChatId,
-          messageId: message.providerMessageId!,
-        }),
+    if (!this.evolution) {
+      throw new BadRequestException("A exclusão para todos não está disponível nesta instância.");
+    }
+    if (!message.providerMessageId || !context?.connection?.externalReference || !providerChatId) {
+      throw new BadRequestException(
+        "Não foi possível identificar a mensagem original no WhatsApp. Nada foi apagado.",
       );
     }
+    await withMessagingServiceEnabled(this.prisma, current.tenantId, context.connection.id, () =>
+      this.evolution!.deleteMessage({
+        instanceName: context.connection!.externalReference!,
+        remoteJid: providerChatId,
+        messageId: message.providerMessageId!,
+      }),
+    );
     await this.prisma.message.update({
       where: { tenantId_id: { tenantId: current.tenantId, id: messageId } },
       data: {
@@ -265,11 +270,36 @@ export class MessagesService {
         mediaStorageKey: true,
         mediaMimeType: true,
         mediaFileName: true,
+        createdAt: true,
       },
     });
     if (!message?.mediaStorageKey) throw new NotFoundException("Mídia não encontrada.");
+    const body = await this.mediaStorage.readObject(message.mediaStorageKey);
+    const preview = contactCardPreview(
+      message.mediaMimeType ?? "",
+      message.mediaFileName ?? "",
+      body,
+    );
+    if (preview) {
+      const repaired = await this.prisma.conversation.updateMany({
+        where: {
+          tenantId: current.tenantId,
+          id: conversationId,
+          lastMessageAt: message.createdAt,
+          NOT: { lastMessagePreview: preview },
+        },
+        data: { lastMessagePreview: preview },
+      });
+      if (repaired.count > 0) {
+        this.realtime?.publishConversationUpdated({
+          tenantId: current.tenantId,
+          conversationId,
+          reason: "contact_card.preview_repaired",
+        });
+      }
+    }
     return {
-      body: await this.mediaStorage.readObject(message.mediaStorageKey),
+      body,
       mimeType: message.mediaMimeType ?? "application/octet-stream",
       fileName: message.mediaFileName ?? "media",
     };

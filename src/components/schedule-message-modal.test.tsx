@@ -264,7 +264,15 @@ it("revalidates the deletion impact and submits its snapshot token", async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="Excluir agendamento"]')!.click();
     });
     await vi.waitFor(() => expect(api.deletionImpact).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(document.body.textContent).toContain("Confira o impacto"));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(
+        "Deseja realmente excluir esta mensagem agendada?",
+      ),
+    );
+    const confirmationDialog = document.querySelector('[role="alertdialog"]');
+    expect(confirmationDialog?.className).toContain("max-w-sm");
+    expect(confirmationDialog?.className).not.toContain("max-w-xl");
+    expect(document.body.textContent).not.toContain("Confira o impacto");
 
     const confirm = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "Excluir",

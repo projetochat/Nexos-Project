@@ -742,6 +742,11 @@ export class CampaignsService {
     }
     if (campaign.status !== CampaignStatus.RUNNING)
       return { skipped: true, status: campaign.status };
+    if (recipient.contact.active === false) {
+      await this.skipRecipient(recipient.id, CampaignRecipientSkipReason.BLOCKED);
+      await this.incrementCampaign(campaign.id, { skippedCount: 1, blockedCount: 1 });
+      return { skipped: true, reason: CampaignRecipientSkipReason.BLOCKED };
+    }
     const preference = recipient.contact.messagingPreferences.find(
       (item) => item.channel === "WHATSAPP",
     );
@@ -1235,8 +1240,14 @@ export class CampaignsService {
     let invalidPhoneCount = 0;
     let optedOutCount = 0;
     let duplicateCount = 0;
+    let blockedCount = 0;
 
     for (const contact of contacts) {
+      if (contact.active === false) {
+        blockedCount += 1;
+        skipped.push({ contact, reason: CampaignRecipientSkipReason.BLOCKED });
+        continue;
+      }
       const normalized = safeNormalize(contact.normalizedPhone || contact.phone);
       if (!normalized) {
         invalidPhoneCount += 1;
@@ -1274,7 +1285,7 @@ export class CampaignsService {
       invalidPhoneCount,
       optedOutCount,
       duplicateCount,
-      blockedCount: 0,
+      blockedCount,
       recipients,
       skipped,
     };
@@ -1594,7 +1605,12 @@ export class CampaignsService {
 
   private async incrementCampaign(
     id: string,
-    data: Partial<Record<"sentCount" | "failedCount" | "skippedCount" | "optedOutCount", number>>,
+    data: Partial<
+      Record<
+        "sentCount" | "failedCount" | "skippedCount" | "optedOutCount" | "blockedCount",
+        number
+      >
+    >,
   ) {
     await this.prisma.campaign.update({
       where: { id },

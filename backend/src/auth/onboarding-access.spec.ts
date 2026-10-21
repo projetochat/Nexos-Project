@@ -18,6 +18,7 @@ describe("pending onboarding route boundary", () => {
     expect(isOnboardingAdministratorRequest("GET", "/messaging/connections/id/qr")).toBe(true);
     expect(isOnboardingAdministratorRequest("POST", "/departments")).toBe(true);
     expect(isOnboardingAdministratorRequest("PATCH", "/roles/id")).toBe(true);
+    expect(isOnboardingAdministratorRequest("PATCH", "/roles/id/favorite-department")).toBe(true);
     expect(isOnboardingAdministratorRequest("POST", "/quick-replies")).toBe(true);
     expect(isOnboardingAdministratorRequest("POST", "/tags")).toBe(true);
     expect(isOnboardingAdministratorRequest("DELETE", "/messaging/connections/id")).toBe(true);

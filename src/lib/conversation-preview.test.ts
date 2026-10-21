@@ -32,6 +32,14 @@ describe("conversation preview", () => {
     });
   });
 
+  it("shows a shared contact with its name instead of the vCard document name", () => {
+    expect(conversationPreview("[contato] Ialle - Prima", "document")).toEqual({
+      kind: "contact",
+      segments: [{ text: "Ialle - Prima", bold: true }],
+      duration: null,
+    });
+  });
+
   it("formats durations without a leading minute zero", () => {
     expect(formatPreviewDuration(65_000)).toBe("1:05");
   });

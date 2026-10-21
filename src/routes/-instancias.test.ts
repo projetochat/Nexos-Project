@@ -27,6 +27,7 @@ describe("instancias removal UX", () => {
   it("requires the exact confirmation and explains the permanent deletion scope", () => {
     const source = readFileSync(new URL("./instancias.tsx", import.meta.url), "utf8");
     expect(source).toContain('confirmation !== "REMOVER"');
+    expect(source).toContain("setConfirmation(event.target.value.toUpperCase())");
     expect(source).toContain('Digite "REMOVER" para confirmar');
     expect(source).not.toContain("removeConversationHistory");
     expect(source).toContain("serão excluídos permanentemente");
@@ -35,6 +36,13 @@ describe("instancias removal UX", () => {
     expect(source).toContain("Esta ação não");
     expect(source).toContain("pode ser desfeita");
     expect(source).toContain("Excluir permanentemente");
+    expect(source).toContain("trash-action h-8 rounded-lg sm:min-w-20");
+    expect(source).toContain('className="h-8 rounded-lg sm:min-w-20"');
+    expect(source).toContain("<AlertTriangle");
+    expect(source).toContain("text-sm text-foreground");
+    expect(source).toContain('className="mt-1 text-muted-foreground"');
+    expect(source).toContain("const closeDestructiveFlow = () =>");
+    expect(source.match(/onClose=\{closeDestructiveFlow\}/g)).toHaveLength(2);
   });
 
   it("shows a specific message for in-use connection conflicts", () => {

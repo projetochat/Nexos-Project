@@ -1,4 +1,4 @@
-import { ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CrmController } from "./crm.controller";
@@ -10,7 +10,14 @@ const current = (tenantId: string) =>
   }) as unknown as AuthenticatedUser;
 
 function controllerWith(prisma: unknown) {
-  return new CrmController(prisma as never, {} as never, {} as never, {} as never, {} as never);
+  return new CrmController(
+    prisma as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
 }
 
 function createdField(data: Record<string, unknown>) {
@@ -151,6 +158,66 @@ describe("contact custom field identity at CRUD boundaries", () => {
       }),
     );
     expect(result.variableKey).toBe("codigo");
+  });
+
+  it("trims editable text fields without changing the persisted technical key", async () => {
+    const existing = createdField({
+      tenantId: "a",
+      label: "Código",
+      normalizedName: "código",
+      variableKey: "codigo",
+      type: "TEXT",
+      required: false,
+      mask: null,
+      note: null,
+      tabName: "Dados Adicionais",
+      groupName: "",
+      options: [],
+      position: 0,
+    });
+    const update = vi.fn(async ({ data }) => ({
+      ...existing,
+      ...Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
+    }));
+    const findFirst = vi.fn().mockResolvedValueOnce(existing).mockResolvedValueOnce(null);
+    const controller = controllerWith({ contactCustomField: { findFirst, update } });
+
+    await controller.updateContactCustomField(
+      existing.id,
+      {
+        label: "  Código interno  ",
+        type: "text",
+        tabName: "  Dados complementares  ",
+        groupName: "  Financeiro  ",
+        note: "  Disponível no cadastro do contato.  ",
+      },
+      current("a"),
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          label: "Código interno",
+          tabName: "Dados complementares",
+          groupName: "Financeiro",
+          note: "Disponível no cadastro do contato.",
+          variableKey: undefined,
+        }),
+      }),
+    );
+  });
+
+  it("rejects an explicitly informed tab containing only spaces", async () => {
+    const controller = controllerWith({
+      contactCustomField: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
+    });
+
+    await expect(
+      controller.createContactCustomField(
+        { label: "Código", type: "text", tabName: "   " },
+        current("a"),
+      ),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it("blocks an edited label that collides after Unicode normalization before writing", async () => {

@@ -425,7 +425,7 @@ export class MessagingInboundService {
           : [];
       const automaticReplyAt = (this.messageClock ?? SYSTEM_MESSAGE_CLOCK).now();
       const automaticReply =
-        historical || options.suppressAutomaticReply
+        historical || options.suppressAutomaticReply || contact.active === false
           ? null
           : selectAutomaticReply({
               createdConversation,
@@ -480,6 +480,20 @@ export class MessagingInboundService {
               : null,
           }
         : null;
+      const tagNotification =
+        createdConversation && !event.fromMe
+          ? (await tx.contactTag.count({
+              where: {
+                tenantId: event.tenantId,
+                contactId: contact.id,
+                tag: {
+                  active: true,
+                  archivedAt: null,
+                  notifyOnNewConversation: true,
+                },
+              },
+            })) > 0
+          : false;
       return {
         message,
         duplicate: false,
@@ -493,6 +507,7 @@ export class MessagingInboundService {
           assignedMembershipId: updatedConversation.assignedMembershipId,
           leadStatus: lead?.status ?? updatedConversation.lead?.status,
         }),
+        tagNotification,
         notifications,
         unreadCount: updatedConversation.unreadCount,
         clearsPendingResponse,
@@ -553,6 +568,7 @@ export class MessagingInboundService {
             ? "inbound.created"
             : "inbound.updated",
         notificationQueue: result.notificationQueue,
+        tagNotification: result.createdConversation && result.tagNotification,
       });
       if (profilePictureUpdated && result.contactId) {
         this.realtime?.publishContactUpdated({

@@ -42,6 +42,7 @@ import {
   Prisma,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizeRegistrationText } from "../common/registration-case";
 import {
   ConfirmDeletionDto,
   type DeletionImpactPreview,
@@ -315,11 +316,17 @@ export class CrmController {
   @Post("customers")
   @RequirePermissions("contacts.create")
   async createCustomer(@Body() dto: CreateCustomerDto, @CurrentUser() current: AuthenticatedUser) {
-    await this.assertCustomerNameAvailable(dto.name, current.tenantId);
+    const name = await normalizeRegistrationText(
+      this.prisma,
+      current.tenantId,
+      "contactCompanies",
+      dto.name,
+    );
+    await this.assertCustomerNameAvailable(name, current.tenantId);
     const customer = await this.prisma.customer.create({
       data: {
         tenantId: current.tenantId,
-        name: dto.name.trim(),
+        name,
         personType: dto.personType,
         status: dto.status,
         email: normalizeNullableEmail(dto.email),
@@ -353,11 +360,14 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findCustomerOrThrow(id, current.tenantId);
-    if (dto.name) await this.assertCustomerNameAvailable(dto.name, current.tenantId, id);
+    const name = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "contactCompanies", dto.name)
+      : undefined;
+    if (name) await this.assertCustomerNameAvailable(name, current.tenantId, id);
     const customer = await this.prisma.customer.update({
       where: { id },
       data: {
-        name: dto.name?.trim(),
+        name,
         personType: dto.personType,
         status: dto.status,
         email: normalizeEmailUpdate(dto.email),
@@ -752,6 +762,7 @@ export class CrmController {
     const where: Prisma.ContactWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
+      active: true,
       NOT: { normalizedPhone: { startsWith: "group:" } },
       ...(q
         ? {
@@ -786,6 +797,84 @@ export class CrmController {
       page,
       pageSize,
     );
+  }
+
+  @Get("message-contact-picker")
+  @RequirePermissions("messages.send")
+  async listContactsForMessagePicker(
+    @Query() query: ListContactsQueryDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 100));
+    const q = query.q?.trim();
+    const digits = q?.replace(/\D/g, "") ?? "";
+    const accentInsensitiveContactIds = q
+      ? await this.findContactsByAccentInsensitiveText(current.tenantId, q)
+      : [];
+    const where: Prisma.ContactWhereInput = {
+      tenantId: current.tenantId,
+      archivedAt: null,
+      active: true,
+      NOT: { normalizedPhone: { startsWith: "group:" } },
+      ...(q
+        ? {
+            OR: [
+              { id: { in: accentInsensitiveContactIds } },
+              { name: { contains: q, mode: "insensitive" } },
+              { phone: { contains: q, mode: "insensitive" } },
+              ...(digits ? [{ normalizedPhone: { contains: digits } }] : []),
+            ],
+          }
+        : {}),
+    };
+    const priorityInstance = query.priorityInstance?.trim();
+    const [items, total, instance] = await this.prisma.$transaction([
+      this.prisma.contact.findMany({
+        where,
+        select: { id: true, name: true, phone: true, normalizedPhone: true, avatarUrl: true },
+        orderBy: { name: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.contact.count({ where }),
+      this.prisma.messagingConnection.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          archivedAt: null,
+          status: { in: ["CONNECTED", "DISCONNECTED"] },
+          OR: priorityInstance
+            ? [
+                { id: priorityInstance },
+                { externalReference: priorityInstance },
+                { name: priorityInstance },
+              ]
+            : [{ id: "__no-priority-instance__" }],
+        },
+        select: { id: true, name: true, ownerPhoneNormalized: true },
+      }),
+    ]);
+    return {
+      ...paginated(
+        items.map((contact) => ({
+          id: contact.id,
+          nome: contact.name,
+          telefone: contact.phone,
+          normalizedPhone: contact.normalizedPhone,
+          avatar_url: contact.avatarUrl,
+        })),
+        total,
+        page,
+        pageSize,
+      ),
+      instance: instance
+        ? {
+            id: instance.id,
+            name: instance.name,
+            ownerPhone: instance.ownerPhoneNormalized,
+          }
+        : null,
+    };
   }
 
   @Get("contacts/options")
@@ -1496,7 +1585,14 @@ export class CrmController {
     @Body() dto: ContactCatalogDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    const name = dto.name?.trim();
+    const name = dto.name
+      ? await normalizeRegistrationText(
+          this.prisma,
+          current.tenantId,
+          "contactDepartments",
+          dto.name,
+        )
+      : "";
     if (!name) throw new BadRequestException("Informe o nome.");
     await this.assertContactCatalogNameAvailable("department", name, current.tenantId);
     const normalizedName = normalizeCatalogName(name);
@@ -1542,13 +1638,21 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.assertContactCatalog("department", id, current.tenantId);
-    if (dto.name)
-      await this.assertContactCatalogNameAvailable("department", dto.name, current.tenantId, id);
+    const name = dto.name
+      ? await normalizeRegistrationText(
+          this.prisma,
+          current.tenantId,
+          "contactDepartments",
+          dto.name,
+        )
+      : undefined;
+    if (name)
+      await this.assertContactCatalogNameAvailable("department", name, current.tenantId, id);
     const item = await this.prisma.contactDepartment.update({
       where: { id },
       data: {
-        name: dto.name?.trim(),
-        normalizedName: dto.name ? normalizeCatalogName(dto.name) : undefined,
+        name,
+        normalizedName: name ? normalizeCatalogName(name) : undefined,
         description: nullableUpdate(dto.description),
         color: dto.color,
       },
@@ -1593,7 +1697,9 @@ export class CrmController {
     @Body() dto: ContactCatalogDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    const name = dto.name?.trim();
+    const name = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "contactProfiles", dto.name)
+      : "";
     if (!name) throw new BadRequestException("Informe o nome.");
     await this.assertContactCatalogNameAvailable("profile", name, current.tenantId);
     const normalizedName = normalizeCatalogName(name);
@@ -1639,13 +1745,15 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.assertContactCatalog("profile", id, current.tenantId);
-    if (dto.name)
-      await this.assertContactCatalogNameAvailable("profile", dto.name, current.tenantId, id);
+    const name = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "contactProfiles", dto.name)
+      : undefined;
+    if (name) await this.assertContactCatalogNameAvailable("profile", name, current.tenantId, id);
     const item = await this.prisma.contactProfile.update({
       where: { id },
       data: {
-        name: dto.name?.trim(),
-        normalizedName: dto.name ? normalizeCatalogName(dto.name) : undefined,
+        name,
+        normalizedName: name ? normalizeCatalogName(name) : undefined,
         description: nullableUpdate(dto.description),
         color: dto.color,
       },
@@ -1675,10 +1783,20 @@ export class CrmController {
   async createContact(@Body() dto: CreateContactDto, @CurrentUser() current: AuthenticatedUser) {
     this.assertCanWriteContactAdditionalFields(dto.customFields, current);
     await this.entitlements.assertTenantOperational(current.tenantId);
-    await this.entitlements.assertWithinLimit(
+    if (!dto.linkExistingToCustomer) {
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxContacts",
+        await this.prisma.contact.count({
+          where: { tenantId: current.tenantId, archivedAt: null },
+        }),
+      );
+    }
+    const contactName = await normalizeRegistrationText(
+      this.prisma,
       current.tenantId,
-      "maxContacts",
-      await this.prisma.contact.count({ where: { tenantId: current.tenantId, archivedAt: null } }),
+      "contacts",
+      dto.name,
     );
     const links = await this.resolveContactLinks(dto, current.tenantId);
     const normalizedPhone = groupContactIdentityFromPhone(dto.phone) ?? normalizePhone(dto.phone);
@@ -1688,6 +1806,57 @@ export class CrmController {
       include: contactInclude,
     });
     if (existing?.archivedAt === null) {
+      if (dto.linkExistingToCustomer && links.customerId) {
+        if (!current.permissions?.includes("contacts.update")) {
+          throw new ForbiddenException("Permissão insuficiente para vincular o contato existente.");
+        }
+        const requiresCustomerTransfer = Boolean(
+          existing.customerId && existing.customerId !== links.customerId,
+        );
+        if (
+          requiresCustomerTransfer &&
+          (!dto.confirmCustomerTransfer || dto.expectedCustomerId !== existing.customerId)
+        ) {
+          await this.throwContactCustomerTransferRequired(
+            existing,
+            links.customerId,
+            current.tenantId,
+          );
+        }
+        const linked = await this.prisma.contact.updateMany({
+          where: {
+            id: existing.id,
+            tenantId: current.tenantId,
+            archivedAt: null,
+            customerId: existing.customerId,
+          },
+          data: {
+            customerId: links.customerId,
+            customerBranchId: links.customerBranchId,
+            customerDepartmentId: links.customerDepartmentId,
+            customerAccessProfile: dto.customerAccessProfile ?? null,
+            active: dto.active,
+          },
+        });
+        if (linked.count !== 1) {
+          throw new ConflictException({
+            code: "CONTACT_CUSTOMER_LINK_CHANGED",
+            message: "O vínculo deste contato foi alterado. Revise os dados e tente novamente.",
+          });
+        }
+        const contact = await this.prisma.contact.findFirstOrThrow({
+          where: { id: existing.id, tenantId: current.tenantId, archivedAt: null },
+          include: contactInclude,
+        });
+        this.realtime.publishContactUpdated({
+          tenantId: current.tenantId,
+          contactId: contact.id,
+        });
+        return this.serializeContact(contact, {
+          lifecycle: "linked",
+          additionalFieldsViewer: current,
+        });
+      }
       if (links.instanceIds.length) {
         const nextInstanceIds = [...new Set([...existing.instanceIds, ...links.instanceIds])];
         const shouldUpdateInstances = nextInstanceIds.length !== existing.instanceIds.length;
@@ -1710,6 +1879,15 @@ export class CrmController {
         message: "Já existe um contato ativo com este telefone.",
       });
     }
+    if (dto.linkExistingToCustomer) {
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxContacts",
+        await this.prisma.contact.count({
+          where: { tenantId: current.tenantId, archivedAt: null },
+        }),
+      );
+    }
     if (existing?.archivedAt) {
       const contact = await this.prisma.$transaction(async (tx) => {
         await tx.contactTag.deleteMany({
@@ -1728,7 +1906,7 @@ export class CrmController {
         return tx.contact.update({
           where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
           data: {
-            name: dto.name.trim(),
+            name: contactName,
             phone: dto.phone.trim(),
             normalizedPhone,
             email: normalizeNullableEmail(dto.email),
@@ -1744,6 +1922,7 @@ export class CrmController {
             companyRole: dto.companyRole ?? null,
             instance: links.instance,
             instanceIds: links.instanceIds,
+            active: dto.active ?? true,
             archivedAt: null,
           },
           include: contactInclude,
@@ -1759,7 +1938,7 @@ export class CrmController {
         const created = await tx.contact.create({
           data: {
             tenantId: current.tenantId,
-            name: dto.name.trim(),
+            name: contactName,
             phone: dto.phone.trim(),
             normalizedPhone,
             email: normalizeNullableEmail(dto.email),
@@ -1775,6 +1954,7 @@ export class CrmController {
             companyRole: dto.companyRole ?? null,
             instance: links.instance,
             instanceIds: links.instanceIds,
+            active: dto.active ?? true,
             tags: links.tagIds.length
               ? {
                   createMany: {
@@ -1806,6 +1986,9 @@ export class CrmController {
   ) {
     this.assertCanWriteContactAdditionalFields(dto.customFields, current);
     const currentContact = await this.findContactOrThrow(id, current.tenantId);
+    const contactName = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "contacts", dto.name)
+      : undefined;
     if (
       dto.customerId !== undefined &&
       dto.customerId !== currentContact.customerId &&
@@ -1839,6 +2022,37 @@ export class CrmController {
     const links = await this.resolveContactLinks(dto, current.tenantId, currentContact.customerId);
     try {
       const contact = await this.prisma.$transaction(async (tx) => {
+        if (dto.active === false && currentContact.active) {
+          const revokedAt = new Date();
+          await tx.userInvitation.updateMany({
+            where: {
+              tenantId: current.tenantId,
+              contactId: id,
+              status: "PENDING",
+            },
+            data: { status: "REVOKED", revokedAt },
+          });
+          if (currentContact.portalMembershipId) {
+            const disabledMembership = await tx.tenantMembership.updateMany({
+              where: {
+                id: currentContact.portalMembershipId,
+                tenantId: current.tenantId,
+                role: { key: "customer_portal" },
+              },
+              data: { status: "DISABLED" },
+            });
+            if (disabledMembership.count) {
+              await tx.authSession.updateMany({
+                where: {
+                  tenantId: current.tenantId,
+                  membershipId: currentContact.portalMembershipId,
+                  revokedAt: null,
+                },
+                data: { revokedAt },
+              });
+            }
+          }
+        }
         if (dto.tagIds) {
           await tx.contactTag.deleteMany({ where: { contactId: id, tenantId: current.tenantId } });
           if (links.tagIds.length) {
@@ -1857,7 +2071,7 @@ export class CrmController {
         return tx.contact.update({
           where: { id },
           data: {
-            name: dto.name?.trim(),
+            name: contactName,
             phone:
               dto.phone === undefined
                 ? undefined
@@ -1904,6 +2118,8 @@ export class CrmController {
                 ? undefined
                 : links.instance,
             instanceIds: dto.instanceIds === undefined ? undefined : links.instanceIds,
+            active: dto.active,
+            portalAccessActive: dto.active === false ? false : undefined,
           },
           include: contactInclude,
         });
@@ -2071,6 +2287,36 @@ export class CrmController {
     });
     if (!contact) throw new NotFoundException("Contato não encontrado.");
     return contact;
+  }
+
+  private async throwContactCustomerTransferRequired(
+    existing: {
+      id: string;
+      name: string;
+      customerId: string | null;
+      customer?: { id: string; name: string } | null;
+    },
+    targetCustomerId: string,
+    tenantId: string,
+  ): Promise<never> {
+    const targetCustomer = await this.prisma.customer.findFirst({
+      where: { id: targetCustomerId, tenantId, archivedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!targetCustomer) {
+      throw new BadRequestException("Cliente inexistente para este tenant.");
+    }
+    throw new ConflictException({
+      code: "CONTACT_CUSTOMER_TRANSFER_REQUIRED",
+      message: "Este contato já está vinculado a outro cliente.",
+      details: {
+        contact: { id: existing.id, name: existing.name },
+        currentCustomer: existing.customer
+          ? { id: existing.customer.id, name: existing.customer.name }
+          : { id: existing.customerId, name: "Cliente atual" },
+        targetCustomer,
+      },
+    });
   }
 
   private async resolveContactLinks(
@@ -2497,14 +2743,23 @@ export class CrmController {
       : partial
         ? undefined
         : ContactCustomFieldType.TEXT;
-    const options =
-      type === ContactCustomFieldType.LIST
-        ? unique((dto.options ?? []).map((item) => item.trim()).filter(Boolean))
-        : [];
+    const rawOptions = type === ContactCustomFieldType.LIST ? (dto.options ?? []) : [];
+    const normalizedOptions = rawOptions.map((item) => item.trim());
+    if (type === ContactCustomFieldType.LIST && normalizedOptions.some((item) => !item)) {
+      throw new BadRequestException("Preencha ou remova as opcoes vazias da lista.");
+    }
+    const options = type === ContactCustomFieldType.LIST ? unique(normalizedOptions) : [];
+    if (type === ContactCustomFieldType.LIST && options.length !== normalizedOptions.length) {
+      throw new BadRequestException("Nao e permitido repetir opcoes da lista.");
+    }
     if (type === ContactCustomFieldType.LIST && options.length === 0) {
       throw new BadRequestException("Informe ao menos uma opcao para a lista.");
     }
-    const tabName = cleanNullable(dto.tabName) ?? (partial ? undefined : "Dados Adicionais");
+    const tabName =
+      dto.tabName === undefined ? (partial ? undefined : "Dados Adicionais") : dto.tabName.trim();
+    if (dto.tabName !== undefined && !tabName) {
+      throw new BadRequestException("Informe a aba do campo.");
+    }
     const groupName =
       dto.groupName === undefined ? (partial ? undefined : "") : dto.groupName.trim();
     if (tabName?.toLowerCase() === "geral") {
@@ -2739,7 +2994,7 @@ export class CrmController {
   private serializeContact(
     contact: Prisma.ContactGetPayload<{ include: typeof contactInclude }>,
     meta?: {
-      lifecycle?: "created" | "restored";
+      lifecycle?: "created" | "restored" | "linked";
       additionalFieldsViewer?: Pick<AuthenticatedUser, "roleKey" | "permissions">;
     },
   ) {
@@ -2764,6 +3019,7 @@ export class CrmController {
       customerDepartmentId: contact.customerDepartmentId,
       customerDepartment: contact.customerDepartment,
       customerAccessProfile: contact.customerAccessProfile,
+      active: contact.active,
       email: contact.email,
       departamento: contact.departmentName,
       departmentId: contact.departmentId,

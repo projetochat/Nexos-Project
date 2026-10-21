@@ -39,3 +39,26 @@ it("keeps the department icon selector compact and opens the icon grid in a popo
   await act(async () => root.unmount());
   host.remove();
 });
+
+it("does not offer the icon list when the selector is read only", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const changed = vi.fn();
+
+  await act(async () =>
+    root.render(<DepartmentIconSelect value="shopping-cart" onChange={changed} disabled />),
+  );
+
+  const trigger = document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Ícone atual: Comercial"]',
+  )!;
+  expect(trigger.disabled).toBe(true);
+
+  await act(async () => trigger.click());
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  expect(changed).not.toHaveBeenCalled();
+
+  await act(async () => root.unmount());
+  host.remove();
+});

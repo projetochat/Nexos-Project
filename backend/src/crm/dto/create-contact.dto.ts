@@ -1,6 +1,7 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsIn,
   IsObject,
@@ -22,6 +23,22 @@ export class CreateContactDto {
   @IsString()
   @MaxLength(30)
   phone!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  linkExistingToCustomer?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  confirmCustomerTransfer?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  expectedCustomerId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 
   @IsOptional()
   @IsEmail()

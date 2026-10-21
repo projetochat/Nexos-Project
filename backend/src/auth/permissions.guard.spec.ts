@@ -2,6 +2,67 @@ import { describe, expect, it, vi } from "vitest";
 import { PermissionsGuard } from "./permissions.guard";
 
 describe("profile permission enforcement", () => {
+  it("keeps administrator access unrestricted while loading the Wizard favorite", async () => {
+    const prisma = {
+      tenantMembership: {
+        findFirst: vi.fn().mockResolvedValue({
+          roleId: "role-admin",
+          tenantId: "tenant-a",
+          tenant: { featureOverrides: null },
+          role: {
+            key: "tenant_admin",
+            metadata: {
+              chatScopes: [
+                {
+                  connectionId: "connection-a",
+                  departmentIds: ["department-a"],
+                  favoriteDepartmentId: "department-a",
+                },
+              ],
+            },
+            permissions: [{ permissionId: "messages.send" }],
+          },
+        }),
+      },
+      tenantSubscription: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const guard = new PermissionsGuard(
+      {
+        getAllAndOverride: (key: string) => (key === "permissions" ? ["messages.send"] : undefined),
+      } as never,
+      prisma as never,
+    );
+    const request = {
+      originalUrl: "/api/conversations",
+      params: {},
+      user: {
+        userId: "user-a",
+        tenantId: "tenant-a",
+        membershipId: "member-a",
+        surface: "tenant",
+      },
+    };
+    const context = {
+      getHandler() {},
+      getClass() {},
+      switchToHttp: () => ({ getRequest: () => request }),
+    };
+
+    await expect(guard.canActivate(context as never)).resolves.toBe(true);
+    expect(request.user).toMatchObject({
+      roleKey: "tenant_admin",
+      connectionIds: null,
+      chatDepartmentIds: null,
+      chatScopes: [
+        {
+          connectionId: "connection-a",
+          departmentIds: ["department-a"],
+          favoriteDepartmentId: "department-a",
+        },
+      ],
+    });
+  });
+
   it("reloads selected instances and the assigned permission set", async () => {
     const membership = {
       roleId: "role-a",

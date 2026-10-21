@@ -122,6 +122,43 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("deletes a message only through the confirmed Evolution v2.3.7 contract", async () => {
+    const key = { id: "MSG1", remoteJid: "5511999990000@s.whatsapp.net", fromMe: true };
+    const fetchMock = vi.fn().mockResolvedValue(response({ key }));
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().deleteMessage({
+        instanceName: "instance-a",
+        messageId: key.id,
+        remoteJid: key.remoteJid,
+      }),
+    ).resolves.toMatchObject({ key });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://evolution.local/chat/deleteMessageForEveryone/instance-a",
+      expect.objectContaining({
+        method: "DELETE",
+        body: JSON.stringify({ remoteJid: key.remoteJid, fromMe: true, id: key.id }),
+      }),
+    );
+  });
+
+  it("rejects an ambiguous deletion response without calling a legacy fallback", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ success: true }));
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().deleteMessage({
+        instanceName: "instance-a",
+        messageId: "MSG1",
+        remoteJid: "5511999990000@s.whatsapp.net",
+      }),
+    ).rejects.toMatchObject({ code: MessagingErrorCode.INVALID_PROVIDER_PAYLOAD });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("registers per-instance webhook with jwt_key and event filters", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response({ ok: true }));
     globalThis.fetch = fetchMock;

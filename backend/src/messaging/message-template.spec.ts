@@ -26,6 +26,37 @@ describe("resolveMessageTemplate", () => {
     );
   });
 
+  it("formats phone variables at send time and restores the ninth mobile digit", () => {
+    expect(
+      resolveMessageTemplate("{{telefone}} / {{whatsapp}}", { phone: "+55 62 8114-7652" }),
+    ).toBe("+55 62 98114-7652 / +55 62 98114-7652");
+    expect(resolveMessageTemplate("{{telefone}}", { phone: "556281147652" })).toBe(
+      "+55 62 98114-7652",
+    );
+    expect(resolveMessageTemplate("{{telefone}}", { phone: "5562981147652" })).toBe(
+      "+55 62 98114-7652",
+    );
+    expect(resolveMessageTemplate("{{telefone}}", { phone: "556232341234" })).toBe(
+      "+55 62 3234-1234",
+    );
+  });
+
+  it("applies the phone format to additional-field variables", () => {
+    expect(
+      resolveMessageTemplate("{{telefone_secundario}}", {
+        customFieldValues: [
+          {
+            label: "Telefone secundário",
+            variableKey: "telefone_secundario",
+            type: "TEXT",
+            mask: '{"custom":{"format":"phone"}}',
+            value: "556281147652",
+          },
+        ],
+      }),
+    ).toBe("+55 62 98114-7652");
+  });
+
   it("isolates simultaneous instances in different time zones", () => {
     const now = new Date("2026-09-17T15:30:00Z");
     expect(resolveMessageTemplate("{{saudacao}}", { now, timezone: "America/Sao_Paulo" })).toBe(

@@ -8,7 +8,21 @@ describe("regras administrativas dos planos", () => {
     expect(source).not.toContain("const [typeFilter");
     expect(source).not.toContain('<Field label="Tipo">');
     expect(source).not.toContain("TYPE_LABELS");
+    expect(source).toContain("grid-cols-[minmax(0,1fr)_minmax(7rem,0.65fr)]");
     expect(source).toContain("sm:grid-cols-[minmax(0,1fr)_220px]");
+    expect(source).toContain("sm:grid-cols-[minmax(0,1fr)_220px_auto]");
+    expect(source).toContain("data-platform-filter-grid");
+    expect(source).toContain('className="col-span-2 flex justify-end sm:col-span-1 sm:items-end"');
+  });
+
+  it("mantém os filtros lado a lado e padroniza as ações dos cards à direita", () => {
+    expect(source).toContain(
+      'className="mt-auto flex justify-end gap-1.5 border-t border-border pt-4"',
+    );
+    expect(source).toContain("aria-label={`Ações do plano ${plan.name}`}");
+    expect(source.match(/size="icon"/g)).toHaveLength(7);
+    expect(source).not.toContain("max-sm:!w-full max-sm:!px-0");
+    expect(source).not.toContain('<span className="hidden sm:inline">Visualizar</span>');
   });
 
   it("mantém todos os status disponíveis no filtro mesmo sem registros", () => {
@@ -70,5 +84,14 @@ describe("regras administrativas dos planos", () => {
     expect(source).toContain("`${initial.name} - Cópia`");
     expect(source).toContain("if (initial && !forceCreate)");
     expect(source).toContain('className="action-hover-success"');
+  });
+
+  it("oferece ação de visualizar e modal somente leitura", () => {
+    expect(source).toContain("const [viewing, setViewing] = React.useState<PlatformPlan | null>");
+    expect(source).toContain("title={`Visualizar plano ${plan.name}`}");
+    expect(source).toContain("aria-label={`Visualizar plano ${plan.name}`}");
+    expect(source).toContain("onClick={() => setViewing(plan)}");
+    expect(source).toContain('title="Visualizar Plano"');
+    expect(source).toContain("<PlanView plan={viewing} onClose={() => setViewing(null)} />");
   });
 });

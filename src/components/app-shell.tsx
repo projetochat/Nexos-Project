@@ -32,7 +32,7 @@ import {
   User,
   CalendarClock,
 } from "lucide-react";
-import { LogoMark, Avatar, Badge } from "./ui-kit";
+import { LogoMark, Avatar, Badge, CloseButton } from "./ui-kit";
 import { OfflineBanner, TopProgress } from "./feedback";
 import { useTheme } from "./theme-context";
 import {
@@ -824,14 +824,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
             <LogoMark size={36} />
             <span className="text-sm font-semibold tracking-tight">Trixus</span>
           </Link>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-            aria-label="Fechar menu"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <CloseButton onClick={onClose} aria-label="Fechar menu" />
         </div>
         <nav className="sidebar-scroll min-h-0 flex-1 overflow-y-auto px-3 py-3">
           <div className="space-y-3">

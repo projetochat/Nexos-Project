@@ -7,7 +7,7 @@ describe("EvolutionMessagingProvider", () => {
   it("maps canonical text commands to Evolution sendText", async () => {
     const client = {
       sendText: vi.fn().mockResolvedValue({
-        key: { id: "EVMSG1" },
+        key: { id: "EVMSG1", remoteJid: "5511999990000@s.whatsapp.net" },
         messageTimestamp: 1_709_550_600,
         status: "SENT",
       }),
@@ -32,6 +32,7 @@ describe("EvolutionMessagingProvider", () => {
     expect(result).toMatchObject({
       accepted: true,
       providerMessageId: "EVMSG1",
+      providerChatId: "5511999990000@s.whatsapp.net",
       providerStatus: "SENT",
     });
   });

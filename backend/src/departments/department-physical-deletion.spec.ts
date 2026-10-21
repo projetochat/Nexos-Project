@@ -33,9 +33,9 @@ function deletionClient() {
       deleteMany: vi.fn(),
     },
     departmentConnection: {
-      findMany: vi.fn().mockResolvedValue([
-        { connectionId: "connection-a", connection: { name: "WhatsApp" } },
-      ]),
+      findMany: vi
+        .fn()
+        .mockResolvedValue([{ connectionId: "connection-a", connection: { name: "WhatsApp" } }]),
       deleteMany: vi.fn(),
     },
     contact: empty(),
@@ -75,6 +75,7 @@ function deletionClient() {
             ],
             connectionIds: ["connection-a", "connection-b"],
             departmentIds: ["department-a", "department-b"],
+            onboardingFavoriteDepartmentId: "department-a",
           },
           updatedAt: new Date("2026-10-08T12:00:00Z"),
         },
@@ -105,7 +106,12 @@ function deletionClient() {
 describe("department physical deletion", () => {
   it("previews preserved records with a single confirmation action", async () => {
     const { prisma } = deletionClient();
-    const controller = new DepartmentsController(prisma as never, {} as never, undefined, undefined);
+    const controller = new DepartmentsController(
+      prisma as never,
+      {} as never,
+      undefined,
+      undefined,
+    );
 
     const impact = await controller.deletionPreview("department-a", current);
 
@@ -119,7 +125,12 @@ describe("department physical deletion", () => {
 
   it("unlinks every supported dependency and sanitizes role and invitation scopes", async () => {
     const { prisma, tx } = deletionClient();
-    const controller = new DepartmentsController(prisma as never, {} as never, undefined, undefined);
+    const controller = new DepartmentsController(
+      prisma as never,
+      {} as never,
+      undefined,
+      undefined,
+    );
     const impact = await controller.deletionPreview("department-a", current);
 
     await expect(
@@ -145,6 +156,7 @@ describe("department physical deletion", () => {
           ],
           connectionIds: ["connection-a"],
           departmentIds: ["department-b"],
+          onboardingFavoriteDepartmentId: null,
         },
       },
     });
@@ -157,7 +169,12 @@ describe("department physical deletion", () => {
 
   it("does not mutate data when the snapshot is stale", async () => {
     const { prisma, tx } = deletionClient();
-    const controller = new DepartmentsController(prisma as never, {} as never, undefined, undefined);
+    const controller = new DepartmentsController(
+      prisma as never,
+      {} as never,
+      undefined,
+      undefined,
+    );
 
     const result = await controller.remove(
       "department-a",
@@ -199,7 +216,10 @@ describe("department physical deletion", () => {
       ),
       "utf8",
     );
-    const frontend = readFileSync(resolve(__dirname, "../../../src/routes/departamentos.tsx"), "utf8");
+    const frontend = readFileSync(
+      resolve(__dirname, "../../../src/routes/departamentos.tsx"),
+      "utf8",
+    );
 
     expect(schema).toMatch(/model Ticket[\s\S]*departmentId\s+String\?/);
     expect(schema).toMatch(

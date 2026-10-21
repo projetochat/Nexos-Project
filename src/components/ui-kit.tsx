@@ -23,7 +23,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-lg border border-border bg-card shadow-card sm:rounded-xl ${padding ? "p-4 sm:p-6" : ""} ${className}`}
+      className={`rounded-lg border border-border bg-card shadow-card sm:rounded-xl ${padding ? "p-4" : ""} ${className}`}
     >
       {children}
     </div>
@@ -42,6 +42,7 @@ export function InstanceFilterSelect({
   options,
   extraOptions = [],
   allLabel = "Todas",
+  showAllOption = true,
   className = "",
 }: {
   value: string;
@@ -49,6 +50,7 @@ export function InstanceFilterSelect({
   options: InstanceFilterOption[];
   extraOptions?: InstanceFilterOption[];
   allLabel?: string;
+  showAllOption?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -97,17 +99,19 @@ export function InstanceFilterSelect({
           role="listbox"
           className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-64 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-card"
         >
-          <button
-            type="button"
-            role="option"
-            aria-selected={!value}
-            onClick={() => choose("")}
-            className={`flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
-              !value ? "bg-surface-1 text-foreground" : "text-muted-foreground"
-            }`}
-          >
-            {allLabel}
-          </button>
+          {showAllOption && (
+            <button
+              type="button"
+              role="option"
+              aria-selected={!value}
+              onClick={() => choose("")}
+              className={`flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
+                !value ? "bg-surface-1 text-foreground" : "text-muted-foreground"
+              }`}
+            >
+              {allLabel}
+            </button>
+          )}
           {allOptions.map((option) => (
             <button
               key={option.value}
@@ -171,6 +175,27 @@ export function Button({
   );
 }
 
+export const closeButtonClassName =
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-2 p-0 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground focus:outline-none focus-visible:border-primary disabled:pointer-events-none disabled:opacity-50";
+
+export function CloseButton({
+  className = "",
+  type = "button",
+  "aria-label": ariaLabel = "Fechar",
+  ...rest
+}: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children">) {
+  return (
+    <button
+      type={type}
+      aria-label={ariaLabel}
+      className={`${closeButtonClassName} ${className}`}
+      {...rest}
+    >
+      <X aria-hidden="true" className="h-4 w-4" />
+    </button>
+  );
+}
+
 export type BadgeTone = "default" | "success" | "warning" | "info" | "destructive" | "brand";
 
 export function Badge({
@@ -203,13 +228,17 @@ export function Badge({
 export const Input = React.forwardRef<
   HTMLInputElement,
   React.InputHTMLAttributes<HTMLInputElement> & { "data-date-input"?: string }
->(({ className = "", type, onKeyDown, ...rest }, ref) => {
+>(({ className = "", type, onKeyDown, placeholder, ...rest }, ref) => {
   const isNativeDate = type === "date" || type === "datetime-local";
   const showsCalendar = isNativeDate || Boolean(rest["data-date-input"]);
+  const resolvedPlaceholder =
+    placeholder ??
+    (type === "date" ? "dd/mm/aaaa" : type === "datetime-local" ? "dd/mm/aaaa hh:mm" : undefined);
   const input = (
     <input
       ref={ref}
       type={type}
+      placeholder={resolvedPlaceholder}
       className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${
         showsCalendar
           ? `pr-10 ${

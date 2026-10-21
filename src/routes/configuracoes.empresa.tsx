@@ -215,6 +215,7 @@ function EmpresaSettings() {
           <div className="mt-4 flex justify-end border-t border-border pt-4">
             <Button
               variant="primary"
+              className="save-action-button"
               onClick={() => updateCompany.mutate()}
               disabled={
                 isLoadingCompany || updateCompany.isPending || companyTimezone === company.timezone
@@ -384,6 +385,7 @@ function EmpresaSettings() {
             <Button
               variant="primary"
               size="lg"
+              className="save-action-button"
               onClick={requestCredentialSave}
               disabled={savingPassword}
             >
@@ -424,6 +426,7 @@ function EmpresaSettings() {
                 <>
                   <Button
                     variant="ghost"
+                    size="sm"
                     onClick={() => {
                       setPasswordConfirmationOpen(false);
                       setPendingCredentialChange(null);

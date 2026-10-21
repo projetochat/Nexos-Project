@@ -305,6 +305,9 @@ export class ConversationPurgeService {
     const activeConversationCount = state.conversations.conversations.filter(
       (conversation) => conversation.status !== "FECHADA",
     ).length;
+    const closedConversationCount = state.conversations.conversations.filter(
+      (conversation) => conversation.status === "FECHADA",
+    ).length;
     return {
       snapshotToken: deletionSnapshot({
         contact: [state.contact.id, state.contact.updatedAt],
@@ -339,7 +342,7 @@ export class ConversationPurgeService {
         {
           id: "conversation-history",
           label: "Históricos de conversas",
-          count: state.conversations.conversations.length,
+          count: closedConversationCount,
           operation: "delete",
           operationLabel: "Serão apagadas permanentemente",
         },

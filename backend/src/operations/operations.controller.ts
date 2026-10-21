@@ -50,6 +50,10 @@ class OperationalQueryDto {
   q?: string;
 
   @IsOptional()
+  @IsIn(["all", "contacts", "groups"])
+  conversationType?: "all" | "contacts" | "groups";
+
+  @IsOptional()
   @IsString()
   departmentId?: string;
 

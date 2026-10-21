@@ -281,12 +281,13 @@ function AutomationForm({
         <Textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} />
       </Field>
       <div className="mt-3 flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={onCancel}>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancelar
         </Button>
         <Button
           variant="primary"
           size="sm"
+          className="save-action-button"
           disabled={busy}
           onClick={async () => {
             if (!name.trim() || !matchText.trim()) {

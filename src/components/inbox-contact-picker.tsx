@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
-import { crmApi, type ApiContact, type ApiContactInstanceOption } from "@/lib/trixus-api";
+import { crmApi, type ApiContact } from "@/lib/trixus-api";
 import { contactCardFile } from "@/lib/contact-card";
 import { formatBrazilPhoneWithDdi, onlyDigits } from "@/lib/input-masks";
 import { Modal } from "./modal";
@@ -30,7 +30,7 @@ export function InboxContactPicker({
     queryKey: ["trixus", "contacts", "share", search.trim(), priorityInstances],
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
-      crmApi.listContacts({
+      crmApi.listContactsForMessagePicker({
         q: search.trim() || undefined,
         priorityInstance: priorityInstances.find(Boolean),
         page: pageParam,
@@ -39,13 +39,9 @@ export function InboxContactPicker({
     getNextPageParam: (lastPage) =>
       lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
   });
-  const optionsQuery = useQuery({
-    queryKey: ["trixus", "contacts", "options", "share"],
-    queryFn: crmApi.contactOptions,
-  });
   const currentInstance = useMemo(
-    () => resolveCurrentInstance(optionsQuery.data?.instances ?? [], priorityInstances),
-    [optionsQuery.data?.instances, priorityInstances],
+    () => contactsQuery.data?.pages[0]?.instance ?? null,
+    [contactsQuery.data?.pages],
   );
   const instancePhone = currentInstance?.ownerPhone?.trim() ?? "";
   const instancePhoneDigits = onlyDigits(instancePhone);
@@ -70,16 +66,9 @@ export function InboxContactPicker({
     );
   };
   const confirmSelection = () => {
-    if (!currentInstance || !instancePhone) return;
-    const instanceContact: ShareableContact = {
-      id: `instance:${currentInstance.id}`,
-      nome: currentInstance.name,
-      telefone: instancePhone,
-      normalizedPhone: instancePhone,
-      avatar_url: null,
-    };
+    if (!selectedContacts.length) return;
     onSelect(
-      [instanceContact, ...selectedContacts].map((contact) => ({
+      selectedContacts.map((contact) => ({
         file: contactCardFile(contact),
         contact: {
           nome: contact.nome,
@@ -91,26 +80,26 @@ export function InboxContactPicker({
     );
   };
 
-  const loading = contactsQuery.isLoading || optionsQuery.isLoading;
-  const error = contactsQuery.error || optionsQuery.error;
+  const loading = contactsQuery.isLoading;
+  const error = contactsQuery.error;
 
   return (
     <Modal
       open
       onClose={onClose}
-      title="Compartilhar Contato"
+      title="Compartilhar contato"
       className="h-[min(46rem,calc(100dvh-1rem))] sm:h-[min(46rem,calc(100dvh-2rem))]"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
           <Button
             variant="primary"
-            disabled={!currentInstance || !instancePhone}
+            disabled={selectedContacts.length === 0}
             onClick={confirmSelection}
           >
-            Encaminhar
+            Adicionar
           </Button>
         </>
       }
@@ -136,9 +125,18 @@ export function InboxContactPicker({
                 normalizedPhone: instancePhone,
                 avatar_url: null,
               }}
-              selected
-              fixed
-              onToggle={() => {}}
+              selected={selectedContacts.some(
+                (contact) => contact.id === `instance:${currentInstance.id}`,
+              )}
+              onToggle={() =>
+                toggleContact({
+                  id: `instance:${currentInstance.id}`,
+                  nome: currentInstance.name,
+                  telefone: instancePhone,
+                  normalizedPhone: instancePhone,
+                  avatar_url: null,
+                })
+              }
             />
           ) : !loading ? (
             <p role="alert" className="py-3 text-sm text-destructive">
@@ -176,12 +174,7 @@ export function InboxContactPicker({
             ) : error ? (
               <div role="alert">
                 <p className="py-2 text-sm">Não foi possível carregar os contatos.</p>
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    void Promise.all([contactsQuery.refetch(), optionsQuery.refetch()])
-                  }
-                >
+                <Button variant="secondary" onClick={() => void contactsQuery.refetch()}>
                   Tentar novamente
                 </Button>
               </div>
@@ -212,22 +205,20 @@ export function InboxContactPicker({
 function ContactSelectionRow({
   contact,
   selected,
-  fixed = false,
   onToggle,
 }: {
   contact: ShareableContact;
   selected: boolean;
-  fixed?: boolean;
   onToggle: () => void;
 }) {
   return (
     <button
       type="button"
-      disabled={fixed || !contact.telefone}
+      disabled={!contact.telefone}
       aria-pressed={selected}
       aria-label={`${selected ? "Remover" : "Selecionar"} ${contact.nome}`}
       onClick={onToggle}
-      className="flex w-full items-center gap-3 rounded-lg p-3 text-left transition hover:bg-surface-2 disabled:cursor-default disabled:opacity-100"
+      className="flex w-full items-center gap-3 rounded-lg p-3 text-left transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
     >
       <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={34} />
       <span className="min-w-0 flex-1">
@@ -247,20 +238,5 @@ function ContactSelectionRow({
         {selected && <Check className="h-4 w-4" />}
       </span>
     </button>
-  );
-}
-
-function resolveCurrentInstance(
-  instances: ApiContactInstanceOption[],
-  priorityInstances: string[],
-) {
-  return instances.find((instance) =>
-    priorityInstances.some(
-      (priority) =>
-        priority === instance.id ||
-        priority === instance.value ||
-        priority === instance.externalReference ||
-        priority === instance.name,
-    ),
   );
 }

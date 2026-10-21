@@ -7,15 +7,17 @@ import {
   ChevronRight,
   Copy,
   Eye,
-  Grid2X2,
+  FilterX,
+  LayoutGrid,
   List,
   Mail,
   MapPin,
   Pencil,
   Phone,
   Plus,
-  RotateCcw,
   Search,
+  SendHorizontal,
+  ShieldCheck,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -27,19 +29,28 @@ import {
   Card,
   Field,
   Input,
+  InstanceFilterSelect,
   SearchInput,
   SectionHeader,
   Select,
   Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
-import { fmtDate } from "@/lib/format";
-import { isValidEmail, maskBrazilPhone, maskCnpj, onlyDigits } from "@/lib/input-masks";
+import { Switch } from "@/components/ui/switch";
+import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  formatPhoneForDisplay,
+  isValidEmail,
+  maskBrazilPhone,
+  maskCnpj,
+  onlyDigits,
+} from "@/lib/input-masks";
 import { formatPhoneForSubmit, splitPhoneByCountry } from "@/lib/phone-country";
 import { CountryCodeSelect } from "@/routes/contatos";
 import {
   crmApi,
   ticketApi,
+  TrixusApiError,
   type ApiContact,
   type ApiCustomer,
   type ApiCustomerBranch,
@@ -96,11 +107,21 @@ type CustomerForm = {
   country: string;
 };
 
-const STATUS_OPTIONS: Array<{ value: CustomerStatus; label: string }> = [
-  { value: "ACTIVE", label: "Ativo" },
-  { value: "PROSPECT", label: "Prospecção" },
-  { value: "SUSPENDED", label: "Suspenso" },
-  { value: "CANCELLED", label: "Cancelado" },
+const STATUS_OPTIONS: Array<{
+  value: CustomerStatus;
+  label: string;
+  tone: "success" | "info" | "warning" | "destructive";
+  color: string;
+}> = [
+  { value: "ACTIVE", label: "Ativo", tone: "success", color: "var(--color-success)" },
+  { value: "PROSPECT", label: "Prospecção", tone: "info", color: "var(--color-info)" },
+  { value: "SUSPENDED", label: "Suspenso", tone: "warning", color: "var(--color-warning)" },
+  {
+    value: "CANCELLED",
+    label: "Cancelado",
+    tone: "destructive",
+    color: "var(--color-destructive)",
+  },
 ];
 
 const STATES = [
@@ -158,10 +179,12 @@ const EMPTY_FORM: CustomerForm = {
 
 function ClientesPage() {
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const [query, setQuery] = React.useState("");
   const [personType, setPersonType] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [viewMode, setViewMode] = React.useState<ViewMode>("list");
+  const viewModeTouched = React.useRef(false);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(25);
   const [editing, setEditing] = React.useState<TicketCustomer | null>(null);
@@ -193,6 +216,13 @@ function ClientesPage() {
 
   React.useEffect(() => setPage(1), [query, personType, status, pageSize]);
   React.useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages]);
+  React.useEffect(() => {
+    if (isMobile) {
+      setViewMode("cards");
+      return;
+    }
+    if (!viewModeTouched.current) setViewMode("list");
+  }, [isMobile]);
 
   const remove = useMutation({
     mutationFn: (id: string) => crmApi.deleteCustomer(id),
@@ -226,6 +256,7 @@ function ClientesPage() {
     setPersonType("");
     setStatus("");
   };
+  const hasFilters = Boolean(query.trim() || personType || status);
 
   return (
     <AppShell>
@@ -234,8 +265,8 @@ function ClientesPage() {
           title="Clientes"
           subtitle={`${items.length} ${items.length === 1 ? "cliente cadastrado" : "clientes cadastrados"}.`}
           actions={
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" /> Novo cliente
+            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+              <Plus className="h-3.5 w-3.5" /> Novo cliente
             </Button>
           }
         />
@@ -265,40 +296,52 @@ function ClientesPage() {
                 ))}
               </Select>
             </Field>
-            <Button
-              variant="outline"
-              size="icon"
-              className="self-end"
-              onClick={resetFilters}
-              aria-label="Limpar filtros"
-              title="Limpar filtros"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
+            {hasFilters && (
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="min-h-10 w-10 px-0"
+                  onClick={resetFilters}
+                  aria-label="Limpar filtros"
+                  title="Limpar filtros"
+                >
+                  <FilterX className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         </Card>
-        <div className="mb-3 flex justify-end gap-2">
+        <div
+          className="mb-3 hidden items-center justify-end gap-1 md:flex"
+          aria-label="Visualização de clientes"
+        >
           <Button
-            variant="outline"
+            type="button"
+            variant={viewMode === "cards" ? "primary" : "secondary"}
             size="icon"
-            aria-label="Ordenar clientes"
-            title="Ordenar clientes"
+            onClick={() => {
+              viewModeTouched.current = true;
+              setViewMode("cards");
+            }}
+            aria-label="Visualizar clientes em cards"
+            aria-pressed={viewMode === "cards"}
+            title="Cards"
           >
-            <span className="font-mono text-base">⇅</span>
+            <LayoutGrid className="h-4 w-4" />
           </Button>
           <Button
-            variant={viewMode === "cards" ? "primary" : "outline"}
+            type="button"
+            variant={viewMode === "list" ? "primary" : "secondary"}
             size="icon"
-            onClick={() => setViewMode("cards")}
-            aria-label="Visualização em cards"
-          >
-            <Grid2X2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === "list" ? "primary" : "outline"}
-            size="icon"
-            onClick={() => setViewMode("list")}
-            aria-label="Visualização em lista"
+            onClick={() => {
+              viewModeTouched.current = true;
+              setViewMode("list");
+            }}
+            aria-label="Visualizar clientes em lista"
+            aria-pressed={viewMode === "list"}
+            title="Lista"
           >
             <List className="h-4 w-4" />
           </Button>
@@ -334,10 +377,10 @@ function ClientesPage() {
           </div>
         ) : (
           <>
-            <div className="hidden overflow-hidden rounded-xl border border-border bg-card shadow-card md:block">
+            <Card padding={false} className="hidden overflow-hidden p-0 md:block">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1120px] text-sm">
-                  <thead className="bg-surface-1">
+                  <thead className="bg-surface-2">
                     <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       <th className="px-4 py-3">Cliente</th>
                       <th className="px-3 py-3">CPF / CNPJ</th>
@@ -369,12 +412,12 @@ function ClientesPage() {
                         <td className="px-3 py-3">
                           {customerPersonType(customer) === "LEGAL" ? "Jurídica" : "Física"}
                         </td>
-                        <td className="px-3 py-3">{customer.telefone || "-"}</td>
+                        <td className="px-3 py-3">
+                          {customer.telefone ? formatPhoneForDisplay(customer.telefone) : "-"}
+                        </td>
                         <td className="px-3 py-3">{customerLocation(customer)}</td>
                         <td className="px-3 py-3">
-                          {customer.createdAt
-                            ? fmtDate(new Date(customer.createdAt).getTime())
-                            : "-"}
+                          {formatCustomerRegistrationDate(customer.createdAt)}
                         </td>
                         <td className="px-3 py-3">
                           <CustomerStatusBadge status={customerStatus(customer)} />
@@ -401,7 +444,7 @@ function ClientesPage() {
                 onPage={setPage}
                 onPageSize={setPageSize}
               />
-            </div>
+            </Card>
             <div className="grid gap-3 md:hidden">
               {visibleItems.map((customer) => (
                 <CustomerCard
@@ -416,10 +459,8 @@ function ClientesPage() {
             </div>
           </>
         )}
-        {items.length > 0 && (viewMode === "cards" || visibleItems.length > 0) && (
-          <div
-            className={`overflow-hidden rounded-xl border border-border ${viewMode === "list" ? "md:hidden" : "mt-3"}`}
-          >
+        {items.length > 0 && viewMode === "cards" && (
+          <div className="mt-3 hidden overflow-hidden rounded-xl border border-border md:block">
             <Pagination
               total={items.length}
               visible={visibleItems.length}
@@ -449,7 +490,17 @@ function ClientesPage() {
       <ConfirmDialog
         open={!!deleting}
         title="Excluir cliente?"
-        description={`O cliente ${deleting?.nome ?? "selecionado"} será removido. Os contatos vinculados serão preservados sem empresa.`}
+        description={
+          <>
+            Deseja realmente excluir o cliente{" "}
+            <strong className="font-semibold text-foreground">
+              {`"${deleting?.nome ?? "selecionado"}"`}
+            </strong>
+            ?
+            <br />
+            Os contatos vinculados serão preservados sem empresa.
+          </>
+        }
         confirmLabel="Excluir"
         destructive
         onClose={() => setDeleting(null)}
@@ -489,18 +540,21 @@ function CustomerCard({
             <UserRound className="h-4 w-4" /> {customer.contato_responsavel || "Sem responsável"}
           </p>
           <p className="flex items-center gap-2">
-            <Phone className="h-4 w-4" /> {customer.telefone || "Sem telefone"}
-          </p>
-          <p className="flex items-center gap-2">
-            <Mail className="h-4 w-4" />{" "}
-            <span className="truncate">{customer.email || "Sem e-mail"}</span>
+            <Phone className="h-4 w-4" />{" "}
+            {customer.telefone ? formatPhoneForDisplay(customer.telefone) : "Sem telefone"}
           </p>
         </div>
-        <p className="mt-2 flex items-center justify-end gap-1 text-xs text-muted-foreground">
-          <MapPin className="h-3.5 w-3.5" /> {customerLocation(customer)}
-        </p>
+        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <p className="flex min-w-0 items-center gap-2">
+            <Mail className="h-4 w-4 shrink-0" />
+            <span className="truncate">{customer.email || "Sem e-mail"}</span>
+          </p>
+          <p className="flex shrink-0 items-center gap-1">
+            <MapPin className="h-3.5 w-3.5" /> {customerLocation(customer)}
+          </p>
+        </div>
       </div>
-      <div className="border-t border-border px-3 py-2">
+      <div className="mx-4 border-t border-border py-2">
         <CustomerActions
           onView={onView}
           onDuplicate={onDuplicate}
@@ -538,21 +592,31 @@ function Action({
   label,
   onClick,
   danger,
+  success,
+  disabled = false,
 }: {
   icon: React.ReactElement<{ className?: string }>;
   label: string;
   onClick: () => void;
   danger?: boolean;
+  success?: boolean;
+  disabled?: boolean;
 }) {
+  const defaultHoverClass = danger
+    ? "hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+    : "hover:border-primary/40 hover:text-primary";
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-label={label}
       title={label}
-      className={`flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-1 transition hover:border-primary/40 hover:text-primary ${danger ? "hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive" : ""}`}
+      className={`flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-1 transition disabled:cursor-not-allowed disabled:opacity-50 ${success ? "action-hover-success" : defaultHoverClass}`}
     >
-      {React.cloneElement(icon, { className: "h-4 w-4" })}
+      {React.cloneElement(icon, {
+        className: `h-4 w-4 ${icon.props.className ?? ""}`.trim(),
+      })}
     </button>
   );
 }
@@ -577,18 +641,14 @@ function Pagination({
   return (
     <div
       data-customers-list-footer
-      className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3"
+      className="flex items-center justify-between gap-2 border-t border-border bg-surface-2 px-3 py-1.5 text-xs text-muted-foreground sm:px-4"
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="shrink-0 leading-tight sm:leading-normal">
-          <span className="block sm:inline">Mostrando</span>
-          <span className="block sm:inline">
-            {" "}
-            {visible} de {total}
-          </span>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="shrink-0">
+          Mostrando {visible} de {total}
         </span>
         <Select
-          className="h-8 w-20 text-xs sm:w-24"
+          className="!h-6 !min-h-6 !w-16 !rounded-md !px-2 !py-0 !pr-6 text-xs"
           value={String(pageSize)}
           onChange={(event) => onPageSize(Number(event.target.value))}
           aria-label="Itens por página"
@@ -600,11 +660,11 @@ function Pagination({
           ))}
         </Select>
       </div>
-      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+      <div className="flex shrink-0 items-center gap-1">
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0"
+          className="!h-7 !min-h-7 !w-7 !p-0"
           disabled={page <= 1}
           onClick={() => onPage(page - 1)}
           aria-label="Página anterior"
@@ -617,7 +677,7 @@ function Pagination({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0"
+          className="!h-7 !min-h-7 !w-7 !p-0"
           disabled={page >= totalPages}
           onClick={() => onPage(page + 1)}
           aria-label="Próxima página"
@@ -699,15 +759,15 @@ function CustomerFormModal({
       onClose={onClose}
       title={initial ? "Editar Cliente" : "Novo Cliente"}
       size="xl"
-      className="sm:max-w-4xl"
+      className="sm:max-w-[45rem]"
       footer={
         <div className="flex w-full items-center justify-between gap-3">
           <Audit customer={initial} />
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="ghost" size="sm" onClick={onClose}>
               Cancelar
             </Button>
-            <Button onClick={() => void save()} disabled={saving}>
+            <Button className="save-action-button" onClick={() => void save()} disabled={saving}>
               {saving ? "Salvando..." : "Salvar"}
             </Button>
           </div>
@@ -769,6 +829,16 @@ function GeneralForm({
   const company = form.personType === "LEGAL";
   const set = <K extends keyof CustomerForm>(key: K, value: CustomerForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
+  const setAddressWithoutNumber = (addressWithoutNumber: boolean) =>
+    setForm((current) => ({
+      ...current,
+      addressWithoutNumber,
+      addressNumber: addressWithoutNumber
+        ? "SN"
+        : current.addressNumber.trim().toUpperCase() === "SN"
+          ? ""
+          : current.addressNumber,
+    }));
   const [loadingPostalCode, setLoadingPostalCode] = React.useState(false);
   const lookupPostalCode = async () => {
     const postalCode = onlyDigits(form.zipCode);
@@ -848,13 +918,16 @@ function GeneralForm({
         </Field>
       )}
       <Field label={company ? "Telefone do responsável *" : "Telefone *"}>
-        <div className="flex gap-2">
+        <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
           <CountryCodeSelect
             value={form.countryCode}
             onChange={(value) => set("countryCode", value)}
             compact
+            embedded
           />
           <Input
+            type="tel"
+            inputMode="tel"
             value={form.countryCode === "55" ? maskBrazilPhone(form.phone) : form.phone}
             onChange={(event) =>
               set(
@@ -864,6 +937,8 @@ function GeneralForm({
                   : onlyDigits(event.target.value).slice(0, 15),
               )
             }
+            placeholder={form.countryCode === "55" ? "(00) 00000-0000" : undefined}
+            className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
           />
         </div>
       </Field>
@@ -872,6 +947,7 @@ function GeneralForm({
           type="email"
           value={form.email}
           onChange={(event) => set("email", event.target.value.toLocaleLowerCase("en-US"))}
+          placeholder="email@exemplo.com"
         />
       </Field>
       <div className="sm:col-span-2">
@@ -889,11 +965,10 @@ function GeneralForm({
           <h3 className="font-semibold">Endereço</h3>
           <label className="flex items-center gap-2 text-xs text-primary">
             <span>Adicionar endereço completo</span>
-            <input
-              type="checkbox"
+            <Switch
               checked={form.fullAddress}
-              onChange={(event) => set("fullAddress", event.target.checked)}
-              className="h-5 w-9 accent-primary"
+              onCheckedChange={(fullAddress) => set("fullAddress", fullAddress)}
+              aria-label="Adicionar endereço completo"
             />
           </label>
         </div>
@@ -926,23 +1001,27 @@ function GeneralForm({
                 placeholder="Rua, Avenida, etc..."
               />
             </Field>
-            <Field label="Número *" error={errors.addressNumber}>
-              <div className="flex gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+              <Field label="Número *" error={errors.addressNumber}>
                 <Input
                   value={form.addressNumber}
                   disabled={form.addressWithoutNumber}
                   onChange={(event) => set("addressNumber", event.target.value)}
                 />
-                <label className="flex shrink-0 items-center gap-1 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={form.addressWithoutNumber}
-                    onChange={(event) => set("addressWithoutNumber", event.target.checked)}
-                  />{" "}
+              </Field>
+              <div className="shrink-0">
+                <span className="relative top-2 mb-1.5 block text-center text-xs font-medium text-muted-foreground">
                   S/N
-                </label>
+                </span>
+                <div className="flex min-h-10 items-center justify-center">
+                  <Switch
+                    checked={form.addressWithoutNumber}
+                    onCheckedChange={setAddressWithoutNumber}
+                    aria-label="Endereço sem número"
+                  />
+                </div>
               </div>
-            </Field>
+            </div>
             <Field label="Complemento">
               <Input
                 value={form.addressComplement}
@@ -989,6 +1068,41 @@ const CUSTOMER_ACCESS_PROFILES = [
 
 type CustomerAccessProfile = (typeof CUSTOMER_ACCESS_PROFILES)[number]["value"];
 
+type CustomerContactPayload = {
+  name: string;
+  active: boolean;
+  phone: string;
+  email: string;
+  customerId: string;
+  customerBranchId: string | null;
+  customerDepartmentId: string | null;
+  customerAccessProfile: CustomerAccessProfile;
+};
+
+type ContactCustomerTransferDetails = {
+  contact: { id: string; name: string };
+  currentCustomer: { id: string; name: string };
+  targetCustomer: { id: string; name: string };
+};
+
+function contactCustomerTransferDetails(error: unknown) {
+  if (!(error instanceof TrixusApiError) || error.code !== "CONTACT_CUSTOMER_TRANSFER_REQUIRED") {
+    return null;
+  }
+  const details = error.details as Partial<ContactCustomerTransferDetails> | undefined;
+  if (
+    !details?.contact?.id ||
+    !details.contact.name ||
+    !details.currentCustomer?.id ||
+    !details.currentCustomer.name ||
+    !details.targetCustomer?.id ||
+    !details.targetCustomer.name
+  ) {
+    return null;
+  }
+  return details as ContactCustomerTransferDetails;
+}
+
 function customerAccessProfileLabel(value: ApiContact["customerAccessProfile"]) {
   return CUSTOMER_ACCESS_PROFILES.find((item) => item.value === value)?.label ?? "Colaborador";
 }
@@ -1007,9 +1121,28 @@ function ContactsTab({
   loading: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [editing, setEditing] = React.useState<ApiContact | null | undefined>();
+  const [formState, setFormState] = React.useState<
+    { initial: ApiContact | null; mode: "create" | "edit" | "duplicate" } | undefined
+  >();
+  const [unlinking, setUnlinking] = React.useState<ApiContact | null>(null);
+  const [resendingContactId, setResendingContactId] = React.useState<string | null>(null);
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["tickets", "customer-contacts", customer?.id] });
+  const resendInvite = async (contact: ApiContact) => {
+    setResendingContactId(contact.id);
+    try {
+      const invitation = await ticketApi.inviteCustomerContact(contact.id);
+      if (invitation.status === "active") {
+        toast.info("O acesso deste contato já está ativo.");
+      } else {
+        toast.success("Convite reenviado.");
+      }
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setResendingContactId(null);
+    }
+  };
   return (
     <>
       <RelationshipSection
@@ -1017,47 +1150,79 @@ function ContactsTab({
         count={contacts.length}
         actionLabel="Novo"
         disabled={!customer}
-        onAdd={() => setEditing(null)}
+        onAdd={() => setFormState({ initial: null, mode: "create" })}
       >
         {loading ? (
           <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : contacts.length ? (
           <div className="overflow-hidden rounded-xl border border-border">
-            <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_7rem_4rem] bg-surface-1 px-3 py-2 text-xs font-semibold text-muted-foreground lg:grid">
+            <div className="hidden grid-cols-[minmax(0,1.35fr)_minmax(0,1.15fr)_5.5rem_10rem] gap-x-3 bg-surface-1 px-3 py-2 text-xs uppercase tracking-widest text-muted-foreground lg:grid">
               <span>Nome</span>
-              <span>WhatsApp</span>
-              <span>Perfil</span>
-              <span>Departamento · Filial</span>
+              <span>Departamento</span>
               <span>Situação</span>
-              <span>Ações</span>
+              <span className="text-center">Ações</span>
             </div>
             {contacts.map((contact) => (
               <div
                 key={contact.id}
-                className="grid gap-2 border-t border-border px-3 py-3 first:border-t-0 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_7rem_4rem] lg:items-center"
+                className="grid gap-2 border-t border-border px-3 py-3 first:border-t-0 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1.15fr)_5.5rem_10rem] lg:items-center lg:gap-x-3"
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium">{contact.nome}</p>
-                  <p className="truncate text-xs text-muted-foreground lg:hidden">
-                    {contact.email ?? "Sem e-mail"}
-                  </p>
+                  <div className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
+                    <p className="flex min-w-0 items-center gap-1">
+                      <ShieldCheck className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {customerAccessProfileLabel(contact.customerAccessProfile)}
+                      </span>
+                    </p>
+                    <p className="flex min-w-0 items-center gap-1">
+                      <Phone className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{contact.telefone}</span>
+                    </p>
+                    <p className="flex min-w-0 items-center gap-1">
+                      <Mail className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{contact.email ?? "Sem e-mail"}</span>
+                    </p>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">{contact.telefone}</p>
-                <p className="text-sm text-muted-foreground">
-                  {customerAccessProfileLabel(contact.customerAccessProfile)}
-                </p>
                 <p className="text-sm text-muted-foreground">
                   {contact.customerDepartment?.name ?? "Sem departamento"} ·{" "}
                   {contact.customerBranch?.name ?? "Sem filial"}
                 </p>
                 <div className="justify-self-start">
-                  <Badge tone="success">Ativo</Badge>
+                  <Badge tone={contact.active === false ? "destructive" : "success"}>
+                    {contact.active === false ? "Inativo" : "Ativo"}
+                  </Badge>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex justify-center gap-1">
+                  <Action
+                    icon={<SendHorizontal />}
+                    label={`Reenviar convite para ${contact.nome}`}
+                    success
+                    disabled={resendingContactId !== null}
+                    onClick={() => void resendInvite(contact)}
+                  />
+                  <Action
+                    icon={<Copy />}
+                    label={`Duplicar contato ${contact.nome}`}
+                    onClick={() =>
+                      setFormState({
+                        initial: { ...contact, nome: `${contact.nome} - Cópia` },
+                        mode: "duplicate",
+                      })
+                    }
+                  />
                   <Action
                     icon={<Pencil />}
                     label={`Editar contato ${contact.nome}`}
-                    onClick={() => setEditing(contact)}
+                    onClick={() => setFormState({ initial: contact, mode: "edit" })}
+                  />
+                  <Action
+                    icon={<Trash2 />}
+                    label={`Desvincular contato ${contact.nome}`}
+                    danger
+                    onClick={() => setUnlinking(contact)}
                   />
                 </div>
               </div>
@@ -1077,12 +1242,40 @@ function ContactsTab({
         customer={customer}
         branches={branches}
         departments={departments}
-        initial={editing ?? null}
-        open={editing !== undefined}
-        onClose={() => setEditing(undefined)}
+        initial={formState?.initial ?? null}
+        forceCreate={formState?.mode === "duplicate"}
+        open={formState !== undefined}
+        onClose={() => setFormState(undefined)}
         onSaved={async () => {
           await refresh();
-          setEditing(undefined);
+          setFormState(undefined);
+        }}
+      />
+      <ConfirmDialog
+        open={!!unlinking}
+        title="Remover contato?"
+        description={
+          <>
+            O contato{" "}
+            <strong className="font-semibold text-foreground">
+              {`"${unlinking?.nome ?? "selecionado"}"`}
+            </strong>{" "}
+            será removido deste cliente, mas continuará disponível no cadastro de contatos.
+          </>
+        }
+        confirmLabel="Remover"
+        destructive
+        onClose={() => setUnlinking(null)}
+        onConfirm={() => {
+          if (!unlinking) return;
+          void crmApi
+            .updateContact(unlinking.id, { customerId: null })
+            .then(refresh)
+            .then(() => {
+              setUnlinking(null);
+              toast.success("Contato desvinculado do cliente.");
+            })
+            .catch((error: Error) => toast.error(error.message));
         }}
       />
     </>
@@ -1094,6 +1287,7 @@ function ContactFormModal({
   branches,
   departments,
   initial,
+  forceCreate = false,
   open,
   onClose,
   onSaved,
@@ -1102,26 +1296,77 @@ function ContactFormModal({
   branches: ApiCustomerBranch[];
   departments: ApiCustomerDepartment[];
   initial: ApiContact | null;
+  forceCreate?: boolean;
   open: boolean;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
   const [name, setName] = React.useState("");
+  const [active, setActive] = React.useState(true);
+  const [countryCode, setCountryCode] = React.useState("55");
   const [phone, setPhone] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [profile, setProfile] = React.useState<CustomerAccessProfile>("COLLABORATOR");
   const [branchId, setBranchId] = React.useState("");
   const [departmentId, setDepartmentId] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const [pendingTransfer, setPendingTransfer] = React.useState<{
+    details: ContactCustomerTransferDetails;
+    payload: CustomerContactPayload;
+    sendAccess: boolean;
+  } | null>(null);
+  const isEditing = Boolean(initial) && !forceCreate;
   React.useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setPendingTransfer(null);
+      return;
+    }
+    const parsedPhone = splitPhoneByCountry(initial?.telefone ?? "");
     setName(initial?.nome ?? "");
-    setPhone(initial?.telefone ?? "");
+    setActive(initial?.active ?? true);
+    setCountryCode(parsedPhone.countryCode);
+    setPhone(parsedPhone.localPhone);
     setEmail(initial?.email ?? "");
     setProfile(initial?.customerAccessProfile ?? "COLLABORATOR");
     setBranchId(initial?.customerBranchId ?? "");
     setDepartmentId(initial?.customerDepartmentId ?? "");
   }, [initial, open]);
+
+  const completeSave = async (saved: ApiContact, sendAccess: boolean) => {
+    if (sendAccess) {
+      try {
+        await ticketApi.inviteCustomerContact(saved.id);
+      } catch (error) {
+        toast.error(`Contato salvo, mas o convite não foi enviado: ${(error as Error).message}`);
+        await onSaved();
+        return;
+      }
+    }
+    toast.success(
+      sendAccess
+        ? saved.lifecycle === "linked"
+          ? "Contato existente vinculado e acesso processado."
+          : "Contato salvo e convite enviado."
+        : isEditing
+          ? "Contato atualizado."
+          : "Contato cadastrado.",
+    );
+    await onSaved();
+  };
+
+  const createContact = async (
+    payload: CustomerContactPayload,
+    sendAccess: boolean,
+    transfer?: { expectedCustomerId: string },
+  ) => {
+    const saved = await crmApi.createContact({
+      ...payload,
+      linkExistingToCustomer: true,
+      confirmCustomerTransfer: Boolean(transfer),
+      expectedCustomerId: transfer?.expectedCustomerId,
+    });
+    await completeSave(saved, sendAccess);
+  };
 
   const save = async (sendAccess: boolean) => {
     if (!customer) return;
@@ -1129,133 +1374,223 @@ function ContactFormModal({
     if (onlyDigits(phone).length < 10) return toast.error("Informe um WhatsApp válido.");
     if (!email.trim() || !isValidEmail(email.trim()))
       return toast.error("Informe um e-mail válido.");
+    const payload: CustomerContactPayload = {
+      name: name.trim(),
+      active,
+      phone: formatPhoneForSubmit(phone, countryCode),
+      email: email.trim().toLocaleLowerCase("en-US"),
+      customerId: customer.id,
+      customerBranchId: branchId || null,
+      customerDepartmentId: departmentId || null,
+      customerAccessProfile: profile,
+    };
     setSaving(true);
     try {
-      const payload = {
-        name: name.trim(),
-        phone: phone.trim(),
-        email: email.trim().toLocaleLowerCase("en-US"),
-        customerId: customer.id,
-        customerBranchId: branchId || null,
-        customerDepartmentId: departmentId || null,
-        customerAccessProfile: profile,
-      };
-      const saved = initial
-        ? await crmApi.updateContact(initial.id, payload)
-        : await crmApi.createContact(payload);
-      if (sendAccess) {
-        try {
-          await ticketApi.inviteCustomerContact(saved.id);
-        } catch (error) {
-          toast.error(`Contato salvo, mas o convite não foi enviado: ${(error as Error).message}`);
-          await onSaved();
-          return;
-        }
+      if (isEditing && initial) {
+        await completeSave(await crmApi.updateContact(initial.id, payload), sendAccess);
+      } else {
+        await createContact(payload, sendAccess);
       }
-      toast.success(
-        sendAccess
-          ? "Contato salvo e convite enviado."
-          : initial
-            ? "Contato atualizado."
-            : "Contato cadastrado.",
-      );
-      await onSaved();
     } catch (error) {
+      const details = contactCustomerTransferDetails(error);
+      if (details) {
+        setPendingTransfer({ details, payload, sendAccess });
+        return;
+      }
       toast.error((error as Error).message);
     } finally {
       setSaving(false);
     }
   };
 
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={initial ? "Editar Contato" : "Novo Contato"}
-      size="md"
-      layerClassName="z-[260]"
-      footer={
-        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="ghost" onClick={onClose} disabled={saving}>
-            Cancelar
-          </Button>
-          {initial ? (
-            <Button onClick={() => void save(false)} disabled={saving}>
-              {saving ? "Salvando..." : "Salvar"}
-            </Button>
-          ) : (
-            <Button onClick={() => void save(true)} disabled={saving}>
-              {saving ? "Salvando..." : "Salvar e enviar acesso"}
-            </Button>
-          )}
-        </div>
+  const confirmTransfer = async () => {
+    if (!pendingTransfer) return;
+    setSaving(true);
+    try {
+      await createContact(pendingTransfer.payload, pendingTransfer.sendAccess, {
+        expectedCustomerId: pendingTransfer.details.currentCustomer.id,
+      });
+    } catch (error) {
+      const details = contactCustomerTransferDetails(error);
+      if (details) {
+        setPendingTransfer((current) => (current ? { ...current, details } : current));
+        toast.info("O vínculo do contato mudou. Revise a confirmação atualizada.");
+      } else {
+        toast.error((error as Error).message);
       }
-    >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex items-end justify-between gap-3 sm:col-span-2">
-          <div>
-            <p className="text-xs text-muted-foreground">Situação</p>
-            <Badge tone="success">Ativo</Badge>
+      throw error;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const close = () => {
+    setPendingTransfer(null);
+    onClose();
+  };
+
+  const activeStateChanged = isEditing && initial?.active !== active;
+  const saveLabel = activeStateChanged
+    ? active
+      ? "Reativar contato"
+      : "Desativar contato"
+    : isEditing
+      ? "Salvar alterações"
+      : active
+        ? "Salvar e enviar acesso"
+        : "Salvar contato";
+  const savingLabel = activeStateChanged
+    ? active
+      ? "Reativando…"
+      : "Desativando…"
+    : active && !isEditing
+      ? "Salvando e enviando…"
+      : "Salvando…";
+
+  return (
+    <>
+      <Modal
+        open={open}
+        onClose={close}
+        title={isEditing ? "Editar Contato" : "Novo Contato"}
+        size="md"
+        className="sm:max-w-[33.6rem]"
+        layerClassName="z-[260]"
+        footer={
+          <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" size="sm" onClick={close} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button
+              className="save-action-button"
+              onClick={() => void save(!isEditing && active)}
+              disabled={saving}
+            >
+              {saving ? savingLabel : saveLabel}
+            </Button>
           </div>
-          <p className="text-right text-xs text-muted-foreground">
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <Switch
+              id="customer-contact-active"
+              checked={active}
+              onCheckedChange={setActive}
+              aria-label={active ? "Contato ativo" : "Contato inativo"}
+            />
+            <label htmlFor="customer-contact-active" className="text-sm text-foreground">
+              {active ? "Ativo" : "Inativo"}
+            </label>
+          </div>
+          <Field label="Nome *">
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </Field>
+          <Field label="WhatsApp *">
+            <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
+              <CountryCodeSelect
+                value={countryCode}
+                onChange={(value) => setCountryCode(value)}
+                compact
+                embedded
+              />
+              <Input
+                type="tel"
+                inputMode="tel"
+                value={countryCode === "55" ? maskBrazilPhone(phone) : phone}
+                onChange={(event) =>
+                  setPhone(
+                    countryCode === "55"
+                      ? event.target.value
+                      : onlyDigits(event.target.value).slice(0, 15),
+                  )
+                }
+                placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
+                className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
+              />
+            </div>
+          </Field>
+          <Field label="E-mail *">
+            <Input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value.toLocaleLowerCase("en-US"))}
+              placeholder="email@exemplo.com"
+            />
+          </Field>
+          <Field label="Perfil *">
+            <Select
+              value={profile}
+              onChange={(event) => setProfile(event.target.value as CustomerAccessProfile)}
+            >
+              {CUSTOMER_ACCESS_PROFILES.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Filial">
+            <Select value={branchId} onChange={(event) => setBranchId(event.target.value)}>
+              <option value="">Todas / não definida</option>
+              {branches
+                .filter((branch) => branch.status === "ACTIVE" || branch.id === branchId)
+                .map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+          <Field label="Departamento">
+            <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
+              <option value="">Todos / não definido</option>
+              {departments
+                .filter((department) => department.active || department.id === departmentId)
+                .map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+          <p className="text-xs text-muted-foreground sm:col-span-2">
             O convite permite ao contato ativar o acesso ao portal do cliente.
           </p>
         </div>
-        <Field label="Nome *">
-          <Input value={name} onChange={(event) => setName(event.target.value)} />
-        </Field>
-        <Field label="WhatsApp *">
-          <Input
-            value={maskBrazilPhone(phone)}
-            onChange={(event) => setPhone(event.target.value)}
-            placeholder="(00) 00000-0000"
-          />
-        </Field>
-        <Field label="E-mail *">
-          <Input
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value.toLocaleLowerCase("en-US"))}
-          />
-        </Field>
-        <Field label="Perfil *">
-          <Select
-            value={profile}
-            onChange={(event) => setProfile(event.target.value as CustomerAccessProfile)}
-          >
-            {CUSTOMER_ACCESS_PROFILES.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Filial">
-          <Select value={branchId} onChange={(event) => setBranchId(event.target.value)}>
-            <option value="">Todas / não definida</option>
-            {branches
-              .filter((branch) => branch.status === "ACTIVE" || branch.id === branchId)
-              .map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-          </Select>
-        </Field>
-        <Field label="Departamento">
-          <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
-            <option value="">Todos / não definido</option>
-            {departments
-              .filter((department) => department.active || department.id === departmentId)
-              .map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.name}
-                </option>
-              ))}
-          </Select>
-        </Field>
-      </div>
-    </Modal>
+      </Modal>
+      <ConfirmDialog
+        open={!!pendingTransfer}
+        title="Transferir contato?"
+        description={
+          pendingTransfer ? (
+            <>
+              O contato{" "}
+              <strong className="font-semibold text-foreground">
+                {`"${pendingTransfer.details.contact.name}"`}
+              </strong>{" "}
+              já está vinculado ao cliente{" "}
+              <strong className="font-semibold text-foreground">
+                {`"${pendingTransfer.details.currentCustomer.name}"`}
+              </strong>
+              . Deseja transferi-lo para{" "}
+              <strong className="font-semibold text-foreground">
+                {`"${pendingTransfer.details.targetCustomer.name}"`}
+              </strong>
+              ?
+            </>
+          ) : null
+        }
+        confirmLabel="Transferir contato"
+        cancelLabel="Cancelar"
+        pendingLabel="Transferindo…"
+        destructive
+        accent="primary"
+        layerClassName="z-[280]"
+        onClose={() => setPendingTransfer(null)}
+        onConfirm={confirmTransfer}
+      />
+    </>
   );
 }
 function BranchesTab({
@@ -1269,23 +1604,13 @@ function BranchesTab({
 }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = React.useState<ApiCustomerBranch | null | undefined>();
+  const [forceCreate, setForceCreate] = React.useState(false);
   const [deleting, setDeleting] = React.useState<ApiCustomerBranch | null>(null);
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["tickets", "customer-branches", customer?.id] });
-  const duplicate = async (item: ApiCustomerBranch) => {
-    if (!customer) return;
-    try {
-      await crmApi.createCustomerBranch(customer.id, {
-        name: `${item.name} - Cópia`,
-        city: item.city,
-        state: item.state,
-        status: item.status,
-      });
-      await refresh();
-      toast.success("Filial duplicada.");
-    } catch (error) {
-      toast.error((error as Error).message);
-    }
+  const duplicate = (item: ApiCustomerBranch) => {
+    setForceCreate(true);
+    setEditing({ ...item, name: `${item.name} - Cópia` });
   };
   return (
     <>
@@ -1294,48 +1619,48 @@ function BranchesTab({
         count={items.length}
         actionLabel="Nova"
         disabled={!customer}
-        onAdd={() => setEditing(null)}
+        onAdd={() => {
+          setForceCreate(false);
+          setEditing(null);
+        }}
       >
         {loading && customer ? (
           <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : items.length ? (
           <div className="overflow-hidden rounded-xl border border-border">
-            <div className="hidden grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_5rem_7rem_8rem] bg-surface-1 px-3 py-2 text-xs font-semibold text-muted-foreground sm:grid">
+            <div className="hidden grid-cols-[minmax(0,1fr)_7rem_8rem] bg-surface-1 px-3 py-2 text-xs uppercase tracking-widest text-muted-foreground sm:grid">
               <span>Filial</span>
-              <span>Cidade</span>
-              <span>UF</span>
               <span>Situação</span>
-              <span>Ações</span>
+              <span className="text-center">Ações</span>
             </div>
             {items.map((item) => (
               <div
                 key={item.id}
-                className="grid gap-2 border-t border-border px-3 py-3 first:border-t-0 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_5rem_7rem_8rem] sm:items-center"
+                className="grid gap-2 border-t border-border px-3 py-3 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_7rem_8rem] sm:items-center"
               >
-                <p className="font-medium">{item.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  <span className="sm:hidden">Cidade: </span>
-                  {item.city || "-"}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  <span className="sm:hidden">UF: </span>
-                  {item.state || "-"}
-                </p>
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{item.name}</p>
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                    <MapPin className="h-3 w-3 shrink-0" />
+                    <span className="truncate">
+                      {[item.city, item.state].filter(Boolean).join(" - ") || "-"}
+                    </span>
+                  </p>
+                </div>
                 <div className="justify-self-start">
                   <Badge tone={item.status === "ACTIVE" ? "success" : "destructive"}>
                     {item.status === "ACTIVE" ? "Ativa" : "Inativa"}
                   </Badge>
                 </div>
-                <div className="flex gap-1">
-                  <Action
-                    icon={<Copy />}
-                    label="Duplicar filial"
-                    onClick={() => void duplicate(item)}
-                  />
+                <div className="flex justify-center gap-1">
+                  <Action icon={<Copy />} label="Duplicar filial" onClick={() => duplicate(item)} />
                   <Action
                     icon={<Pencil />}
                     label="Editar filial"
-                    onClick={() => setEditing(item)}
+                    onClick={() => {
+                      setForceCreate(false);
+                      setEditing(item);
+                    }}
                   />
                   <Action
                     icon={<Trash2 />}
@@ -1358,17 +1683,30 @@ function BranchesTab({
       <BranchFormModal
         customer={customer}
         initial={editing ?? null}
+        forceCreate={forceCreate}
         open={editing !== undefined}
-        onClose={() => setEditing(undefined)}
+        onClose={() => {
+          setEditing(undefined);
+          setForceCreate(false);
+        }}
         onSaved={async () => {
           await refresh();
           setEditing(undefined);
+          setForceCreate(false);
         }}
       />
       <ConfirmDialog
         open={!!deleting}
         title="Excluir filial?"
-        description={`A filial ${deleting?.name ?? "selecionada"} será excluída.`}
+        description={
+          <>
+            Deseja realmente excluir a filial{" "}
+            <strong className="font-semibold text-foreground">
+              {`"${deleting?.name ?? "selecionada"}"`}
+            </strong>
+            ?
+          </>
+        }
         destructive
         confirmLabel="Excluir"
         onClose={() => setDeleting(null)}
@@ -1388,12 +1726,14 @@ function BranchesTab({
 function BranchFormModal({
   customer,
   initial,
+  forceCreate = false,
   open,
   onClose,
   onSaved,
 }: {
   customer: TicketCustomer | null;
   initial: ApiCustomerBranch | null;
+  forceCreate?: boolean;
   open: boolean;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
@@ -1402,6 +1742,7 @@ function BranchFormModal({
   const [city, setCity] = React.useState("");
   const [state, setState] = React.useState("");
   const [status, setStatus] = React.useState<"ACTIVE" | "INACTIVE">("ACTIVE");
+  const isEditing = Boolean(initial) && !forceCreate;
   React.useEffect(() => {
     if (open) {
       setName(initial?.name ?? "");
@@ -1419,9 +1760,9 @@ function BranchFormModal({
         state: state || null,
         status,
       };
-      if (initial) await crmApi.updateCustomerBranch(customer.id, initial.id, payload);
+      if (isEditing && initial) await crmApi.updateCustomerBranch(customer.id, initial.id, payload);
       else await crmApi.createCustomerBranch(customer.id, payload);
-      toast.success(initial ? "Filial atualizada." : "Filial cadastrada.");
+      toast.success(isEditing ? "Filial atualizada." : "Filial cadastrada.");
       await onSaved();
     } catch (error) {
       toast.error((error as Error).message);
@@ -1431,19 +1772,32 @@ function BranchFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Editar Filial" : "Nova Filial"}
+      title={isEditing ? "Editar Filial" : "Nova Filial"}
       size="sm"
       layerClassName="z-[260]"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={() => void save()}>Salvar</Button>
+          <Button className="save-action-button" onClick={() => void save()}>
+            Salvar
+          </Button>
         </>
       }
     >
       <div className="grid gap-4">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="customer-branch-active"
+            checked={status === "ACTIVE"}
+            onCheckedChange={(checked) => setStatus(checked ? "ACTIVE" : "INACTIVE")}
+            aria-label={status === "ACTIVE" ? "Filial ativa" : "Filial inativa"}
+          />
+          <label htmlFor="customer-branch-active" className="text-sm text-foreground">
+            {status === "ACTIVE" ? "Ativa" : "Inativa"}
+          </label>
+        </div>
         <Field label="Nome da filial *">
           <Input value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
@@ -1460,15 +1814,6 @@ function BranchFormModal({
             </Select>
           </Field>
         </div>
-        <Field label="Situação">
-          <Select
-            value={status}
-            onChange={(event) => setStatus(event.target.value as "ACTIVE" | "INACTIVE")}
-          >
-            <option value="ACTIVE">Ativa</option>
-            <option value="INACTIVE">Inativa</option>
-          </Select>
-        </Field>
       </div>
     </Modal>
   );
@@ -1486,22 +1831,13 @@ function DepartmentsTab({
 }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = React.useState<ApiCustomerDepartment | null | undefined>();
+  const [forceCreate, setForceCreate] = React.useState(false);
   const [deleting, setDeleting] = React.useState<ApiCustomerDepartment | null>(null);
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["tickets", "customer-departments", customer?.id] });
-  const duplicate = async (item: ApiCustomerDepartment) => {
-    if (!customer) return;
-    try {
-      await crmApi.createCustomerDepartment(customer.id, {
-        name: `${item.name} - Cópia`,
-        managerContactId: item.managerContactId,
-        active: item.active,
-      });
-      await refresh();
-      toast.success("Departamento duplicado.");
-    } catch (error) {
-      toast.error((error as Error).message);
-    }
+  const duplicate = (item: ApiCustomerDepartment) => {
+    setForceCreate(true);
+    setEditing({ ...item, name: `${item.name} - Cópia` });
   };
   return (
     <>
@@ -1510,17 +1846,20 @@ function DepartmentsTab({
         count={items.length}
         actionLabel="Novo"
         disabled={!customer}
-        onAdd={() => setEditing(null)}
+        onAdd={() => {
+          setForceCreate(false);
+          setEditing(null);
+        }}
       >
         {loading && customer ? (
           <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : items.length ? (
           <div className="overflow-hidden rounded-xl border border-border">
-            <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_8rem] bg-surface-1 px-3 py-2 text-xs font-semibold text-muted-foreground sm:grid">
+            <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_8rem] bg-surface-1 px-3 py-2 text-xs uppercase tracking-widest text-muted-foreground sm:grid">
               <span>Departamento</span>
               <span>Gestor</span>
               <span>Situação</span>
-              <span>Ações</span>
+              <span className="text-center">Ações</span>
             </div>
             {items.map((item) => (
               <div
@@ -1537,16 +1876,19 @@ function DepartmentsTab({
                     {item.active ? "Ativo" : "Inativo"}
                   </Badge>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex justify-center gap-1">
                   <Action
                     icon={<Copy />}
                     label="Duplicar departamento"
-                    onClick={() => void duplicate(item)}
+                    onClick={() => duplicate(item)}
                   />
                   <Action
                     icon={<Pencil />}
                     label="Editar departamento"
-                    onClick={() => setEditing(item)}
+                    onClick={() => {
+                      setForceCreate(false);
+                      setEditing(item);
+                    }}
                   />
                   <Action
                     icon={<Trash2 />}
@@ -1572,17 +1914,30 @@ function DepartmentsTab({
         customer={customer}
         contacts={contacts}
         initial={editing ?? null}
+        forceCreate={forceCreate}
         open={editing !== undefined}
-        onClose={() => setEditing(undefined)}
+        onClose={() => {
+          setEditing(undefined);
+          setForceCreate(false);
+        }}
         onSaved={async () => {
           await refresh();
           setEditing(undefined);
+          setForceCreate(false);
         }}
       />
       <ConfirmDialog
         open={!!deleting}
         title="Excluir departamento?"
-        description={`O departamento ${deleting?.name ?? "selecionado"} será excluído.`}
+        description={
+          <>
+            Deseja realmente excluir o departamento{" "}
+            <strong className="font-semibold text-foreground">
+              {`"${deleting?.name ?? "selecionado"}"`}
+            </strong>
+            ?
+          </>
+        }
         destructive
         confirmLabel="Excluir"
         onClose={() => setDeleting(null)}
@@ -1603,6 +1958,7 @@ function DepartmentFormModal({
   customer,
   contacts,
   initial,
+  forceCreate = false,
   open,
   onClose,
   onSaved,
@@ -1610,6 +1966,7 @@ function DepartmentFormModal({
   customer: TicketCustomer | null;
   contacts: ApiContact[];
   initial: ApiCustomerDepartment | null;
+  forceCreate?: boolean;
   open: boolean;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
@@ -1617,6 +1974,7 @@ function DepartmentFormModal({
   const [name, setName] = React.useState("");
   const [managerContactId, setManagerContactId] = React.useState("");
   const [active, setActive] = React.useState(true);
+  const isEditing = Boolean(initial) && !forceCreate;
   React.useEffect(() => {
     if (open) {
       setName(initial?.name ?? "");
@@ -1629,9 +1987,10 @@ function DepartmentFormModal({
     if (!managerContactId) return toast.error("Selecione o gestor do departamento.");
     try {
       const payload = { name: name.trim(), managerContactId, active };
-      if (initial) await crmApi.updateCustomerDepartment(customer.id, initial.id, payload);
+      if (isEditing && initial)
+        await crmApi.updateCustomerDepartment(customer.id, initial.id, payload);
       else await crmApi.createCustomerDepartment(customer.id, payload);
-      toast.success(initial ? "Departamento atualizado." : "Departamento cadastrado.");
+      toast.success(isEditing ? "Departamento atualizado." : "Departamento cadastrado.");
       await onSaved();
     } catch (error) {
       toast.error((error as Error).message);
@@ -1641,19 +2000,32 @@ function DepartmentFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Editar Departamento" : "Novo Departamento"}
+      title={isEditing ? "Editar Departamento" : "Novo Departamento"}
       size="sm"
       layerClassName="z-[260]"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={() => void save()}>Salvar</Button>
+          <Button className="save-action-button" onClick={() => void save()}>
+            Salvar
+          </Button>
         </>
       }
     >
       <div className="grid gap-4">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="customer-department-active"
+            checked={active}
+            onCheckedChange={setActive}
+            aria-label={active ? "Departamento ativo" : "Departamento inativo"}
+          />
+          <label htmlFor="customer-department-active" className="cursor-pointer text-sm">
+            {active ? "Ativo" : "Inativo"}
+          </label>
+        </div>
         <Field label="Departamento *">
           <Input value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
@@ -1668,15 +2040,6 @@ function DepartmentFormModal({
                 {contact.nome}
               </option>
             ))}
-          </Select>
-        </Field>
-        <Field label="Situação">
-          <Select
-            value={active ? "ACTIVE" : "INACTIVE"}
-            onChange={(event) => setActive(event.target.value === "ACTIVE")}
-          >
-            <option value="ACTIVE">Ativo</option>
-            <option value="INACTIVE">Inativo</option>
           </Select>
         </Field>
       </div>
@@ -1748,7 +2111,7 @@ function CustomerViewModal({
     ["Tipo de pessoa", customerPersonType(customer) === "LEGAL" ? "Jurídica" : "Física"],
     ["Nome do cliente", customer.nome],
     [customerPersonType(customer) === "LEGAL" ? "CNPJ" : "CPF", customerDocument(customer)],
-    ["Telefone", customer.telefone || "-"],
+    ["Telefone", customer.telefone ? formatPhoneForDisplay(customer.telefone) : "-"],
     ["E-mail", customer.email || "-"],
     ["Observações", customer.notas || "-"],
   ];
@@ -1810,24 +2173,18 @@ function StatusSelect({
   onChange: (value: CustomerStatus) => void;
 }) {
   return (
-    <Select value={value} onChange={(event) => onChange(event.target.value as CustomerStatus)}>
-      {STATUS_OPTIONS.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </Select>
+    <InstanceFilterSelect
+      value={value}
+      onChange={(nextValue) => onChange(nextValue as CustomerStatus)}
+      options={STATUS_OPTIONS}
+      showAllOption={false}
+      allLabel="Selecione"
+    />
   );
 }
 function CustomerStatusBadge({ status }: { status: CustomerStatus }) {
-  const config = {
-    ACTIVE: ["Ativo", "success"],
-    PROSPECT: ["Prospecção", "info"],
-    SUSPENDED: ["Suspenso", "warning"],
-    CANCELLED: ["Cancelado", "destructive"],
-  } as const;
-  const [label, tone] = config[status];
-  return <Badge tone={tone}>{label}</Badge>;
+  const option = STATUS_OPTIONS.find((item) => item.value === status) ?? STATUS_OPTIONS[3];
+  return <Badge tone={option.tone}>{option.label}</Badge>;
 }
 function customerStatus(customer: TicketCustomer): CustomerStatus {
   return customer.status ?? "ACTIVE";
@@ -1846,6 +2203,16 @@ function customerLocation(customer: TicketCustomer) {
   return customer.city && customer.state
     ? `${customer.city} - ${customer.state}`
     : customer.city || customer.state || "-";
+}
+function formatCustomerRegistrationDate(value: string | null | undefined) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 }
 function maskDocument(value: string, type: PersonType) {
   const digits = onlyDigits(value);
@@ -1879,7 +2246,7 @@ function formFromCustomer(customer: TicketCustomer): CustomerForm {
     fullAddress: customer.addressFullEnabled ?? !!(customer.postalCode || customer.street),
     zipCode: customer.postalCode ?? "",
     address: customer.street ?? "",
-    addressNumber: customer.addressNumber ?? "",
+    addressNumber: customer.addressWithoutNumber ? "SN" : (customer.addressNumber ?? ""),
     addressWithoutNumber: customer.addressWithoutNumber ?? false,
     addressComplement: customer.complement ?? "",
     neighborhood: customer.neighborhood ?? "",

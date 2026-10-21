@@ -136,7 +136,26 @@ describe("DeletionConfirmDialog", () => {
   it("focuses Cancelar instead of the destructive action", async () => {
     await renderDialog();
     await React.act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-    expect(document.activeElement?.textContent).toBe("Cancelar");
+    const close = document.querySelector<HTMLButtonElement>('button[aria-label="Fechar"]')!;
+    expect(close.className).toContain("h-8");
+    expect(close.className).toContain("w-8");
+    expect(close.className).toContain("rounded-lg");
+    expect(close.className).toContain("p-0");
+    expect(close.className).toContain("border-border");
+    expect(close.className).toContain("bg-surface-2");
+    expect(close.className).toContain("hover:bg-surface-3");
+    const cancel = findButton("Cancelar")!;
+    const confirm = findButton("Excluir")!;
+    for (const action of [cancel, confirm]) {
+      expect(action.className).toContain("h-8");
+      expect(action.className).toContain("rounded-lg");
+      expect(action.className).toContain("sm:min-w-20");
+    }
+    expect(cancel.className).toContain("bg-surface-2");
+    expect(confirm.className).toContain("bg-destructive");
+    expect(document.activeElement).toBe(cancel);
+    expect(cancel.className).toContain("hover:bg-surface-3");
+    expect(cancel.className).not.toContain("hover:bg-accent");
   });
 
   it("keeps cancellation focused and available while dependencies are still loading", async () => {

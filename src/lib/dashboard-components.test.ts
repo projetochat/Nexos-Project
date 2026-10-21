@@ -21,6 +21,7 @@ describe("dashboard component preferences", () => {
       })),
     ).toEqual([
       { id: "messages", visible: true, visualization: "line", columns: 2 },
+      { id: "ticketRequesterRanking", visible: true, visualization: "bars", columns: 2 },
       { id: "tag", visible: true, visualization: "columns", columns: 2 },
       { id: "distribution", visible: true, visualization: "donut", columns: 1 },
       { id: "agent", visible: true, visualization: "columns", columns: 1 },
@@ -50,8 +51,21 @@ describe("dashboard component preferences", () => {
     expect(migrated).toHaveLength(DEFAULT_DASHBOARD_COMPONENTS.length);
   });
 
-  it("preserves an intentionally empty version 2 dashboard", () => {
-    expect(parseDashboardPreferences({ version: 2, components: [] })).toEqual([]);
+  it("adds the new native ranking to a saved version 2 dashboard without replacing preferences", () => {
+    const saved = {
+      ...DEFAULT_DASHBOARD_COMPONENTS.find((item) => item.id === "messages")!,
+      title: "Meu tráfego",
+      visible: false,
+      columns: 4 as const,
+    };
+
+    const migrated = parseDashboardPreferences({ version: 2, components: [saved] });
+
+    expect(migrated).toEqual([
+      saved,
+      DEFAULT_DASHBOARD_COMPONENTS.find((item) => item.id === "ticketRequesterRanking"),
+    ]);
+    expect(parseDashboardPreferences({ version: 2, components: migrated })).toEqual(migrated);
   });
 
   it("starts a new component with an empty mandatory title", () => {
@@ -67,16 +81,23 @@ describe("dashboard component preferences", () => {
   });
 
   it("reorders component instances without mutating the source", () => {
-    const source = DEFAULT_DASHBOARD_COMPONENTS.slice(0, 4);
+    const source = DEFAULT_DASHBOARD_COMPONENTS.slice(0, 5);
     const reordered = reorderDashboardComponents(source, "distribution", "counters");
 
     expect(reordered.map((item) => item.id)).toEqual([
       "distribution",
       "counters",
       "messages",
+      "ticketRequesterRanking",
       "tag",
     ]);
-    expect(source.map((item) => item.id)).toEqual(["counters", "messages", "tag", "distribution"]);
+    expect(source.map((item) => item.id)).toEqual([
+      "counters",
+      "messages",
+      "ticketRequesterRanking",
+      "tag",
+      "distribution",
+    ]);
   });
 
   it("restores native settings and order without deleting custom components", () => {
@@ -110,6 +131,14 @@ describe("dashboard component preferences", () => {
       value: "custom:field-1",
       label: "Origem do atendimento",
       section: "custom",
+    });
+  });
+
+  it("offers the ticket requester ranking as a native record grouping", () => {
+    expect(dashboardGroupingOptions("records")).toContainEqual({
+      value: "ticketRequesterContact",
+      label: "Contatos que abriram chamados",
+      section: "native",
     });
   });
 

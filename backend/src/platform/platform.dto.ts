@@ -435,6 +435,26 @@ export class UpdateTenantAdministratorCredentialsDto {
   newPassword?: string;
 }
 
+export class ChangePlatformPasswordDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(72)
+  @IsByteLength(0, 72, { message: "A senha atual deve possuir no máximo 72 bytes." })
+  currentPassword!: string;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(72)
+  @IsByteLength(0, 72, { message: "A nova senha deve possuir no máximo 72 bytes." })
+  newPassword!: string;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(72)
+  @IsByteLength(0, 72, { message: "A confirmação deve possuir no máximo 72 bytes." })
+  confirmPassword!: string;
+}
+
 export class UpdatePlatformSettingsDto {
   @Type(() => Number)
   @IsInt()

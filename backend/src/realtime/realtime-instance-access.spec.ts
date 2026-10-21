@@ -19,9 +19,10 @@ describe("realtime instance access", () => {
       conversation: {
         findFirst: vi.fn().mockImplementation(async ({ where }) => {
           const serialized = JSON.stringify(where);
+          const identity = Array.isArray(where.AND) ? where.AND[0] : where;
           return serialized.includes('"connectionId":{"in":["vocical"]}') &&
-            where.id === "vocical-chat"
-            ? { id: where.id }
+            identity.id === "vocical-chat"
+            ? { id: identity.id }
             : null;
         }),
       },
@@ -67,11 +68,12 @@ describe("realtime instance access", () => {
       conversation: {
         findFirst: vi
           .fn()
-          .mockImplementation(async ({ where }) =>
-            JSON.stringify(where).includes('"connectionId":{"in":["vocical"]}')
-              ? { id: where.id }
-              : null,
-          ),
+          .mockImplementation(async ({ where }) => {
+            const identity = Array.isArray(where.AND) ? where.AND[0] : where;
+            return JSON.stringify(where).includes('"connectionId":{"in":["vocical"]}')
+              ? { id: identity.id }
+              : null;
+          }),
       },
     };
     const service = new RealtimeService({} as never, prisma as never);

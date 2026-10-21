@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { X, AlertTriangle } from "lucide-react";
-import { Button } from "./ui-kit";
+import { AlertTriangle } from "lucide-react";
+import { Button, CloseButton } from "./ui-kit";
 
 export function Modal({
   open,
@@ -103,15 +103,7 @@ export function Modal({
               <p className="mt-0.5 truncate text-xs text-muted-foreground">{description}</p>
             )}
           </div>
-          {dismissible && (
-            <button
-              onClick={onClose}
-              aria-label="Fechar"
-              className="rounded-md border border-border bg-surface-2 p-1.5 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+          {dismissible && <CloseButton onClick={onClose} />}
         </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {children}
@@ -133,6 +125,7 @@ export function ConfirmDialog({
   description,
   confirmLabel = "Confirmar",
   cancelLabel = "Cancelar",
+  pendingLabel,
   destructive,
   accent,
   layerClassName,
@@ -144,6 +137,7 @@ export function ConfirmDialog({
   description?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
+  pendingLabel?: string;
   destructive?: boolean;
   accent?: "destructive" | "primary";
   layerClassName?: string;
@@ -151,6 +145,7 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   const [submitting, setSubmitting] = React.useState(false);
+  const deleteAction = /^excluir\b/i.test(confirmLabel.trim());
 
   const confirm = async () => {
     if (submitting) return;
@@ -178,7 +173,13 @@ export function ConfirmDialog({
       }
       footer={
         <>
-          <Button variant="ghost" size="sm" disabled={submitting} onClick={onClose}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={deleteAction ? "h-8 rounded-lg sm:min-w-20" : undefined}
+            disabled={submitting}
+            onClick={onClose}
+          >
             {cancelLabel}
           </Button>
           <Button
@@ -187,10 +188,12 @@ export function ConfirmDialog({
             autoFocus={destructive || /excluir|remover/i.test(confirmLabel)}
             data-confirm-action
             disabled={submitting}
-            className="focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card"
+            className={`${deleteAction ? "h-8 rounded-lg sm:min-w-20 " : ""}focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card`}
             onClick={() => void confirm()}
           >
-            {submitting ? "Excluindo…" : confirmLabel}
+            {submitting
+              ? (pendingLabel ?? (deleteAction ? "Excluindo…" : "Processando…"))
+              : confirmLabel}
           </Button>
         </>
       }

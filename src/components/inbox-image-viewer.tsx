@@ -18,7 +18,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { conversationApi, messageApi, type ApiMessage } from "@/lib/trixus-api";
-import { Button, SearchInput } from "@/components/ui-kit";
+import { Button, CloseButton, SearchInput } from "@/components/ui-kit";
 import { copyMessageToClipboard } from "@/lib/message-clipboard";
 
 const initialView = { zoom: 1, x: 0, y: 0, rotation: 0, flipX: 1, flipY: 1 };
@@ -318,7 +318,9 @@ export function InboxImageViewer({
                   setView((v) => ({ ...v, rotation: v.rotation + 90 })),
                 )}
               </div>
-              <div className="ml-auto sm:ml-0">{action("Fechar", X, onClose, busy)}</div>
+              <div className="ml-auto sm:ml-0">
+                <CloseButton onClick={onClose} disabled={busy} />
+              </div>
             </div>
           </div>
           {error && (
@@ -414,7 +416,12 @@ export function InboxImageViewer({
                 </Button>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" disabled={busy} onClick={() => setForwarding(false)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => setForwarding(false)}
+                >
                   Cancelar
                 </Button>
                 <Button disabled={!target || busy} onClick={() => void forward()}>

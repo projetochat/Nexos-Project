@@ -1,8 +1,9 @@
-import { IsIn, IsOptional, IsString, MinLength } from "class-validator";
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class TicketResponseDto {
   @IsString()
   @MinLength(1)
+  @MaxLength(15_000_000)
   bodyHtml!: string;
 }
 
@@ -33,6 +34,7 @@ export class DecideTicketApprovalDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
+  @MaxLength(15_000_000)
   bodyHtml?: string;
 }
 
@@ -44,5 +46,6 @@ export class ValidateTicketSolutionDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
+  @MaxLength(15_000_000)
   bodyHtml?: string;
 }

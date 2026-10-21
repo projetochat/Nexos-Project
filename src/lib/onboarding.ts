@@ -43,8 +43,13 @@ export function onboardingStepAfterRefresh(
 export function shouldPollOnboardingConnection(connection?: ApiMessagingConnection) {
   return (
     !!connection &&
-    (connection.status !== "connected" || !(connection.ownerPhoneMasked || connection.ownerPhone))
+    (!isOnboardingConnectionConnected(connection.status) ||
+      !(connection.ownerPhoneMasked || connection.ownerPhone))
   );
+}
+
+export function isOnboardingConnectionConnected(status: string | null | undefined) {
+  return status?.trim().toLocaleLowerCase("en-US") === "connected";
 }
 
 export function hasActiveDepartmentConnection(
@@ -80,6 +85,64 @@ export function onboardingRoleColorClass(role: Pick<ApiRole, "key" | "name">) {
   if (role.key === "supervisor" || role.name.trim().toLocaleLowerCase("pt-BR") === "supervisor")
     return "text-blue-600";
   return "text-emerald-600";
+}
+
+export function onboardingAdministratorRole(roles: ApiRole[]) {
+  return roles.find(
+    (role) =>
+      role.key === "tenant_admin" ||
+      role.name.trim().toLocaleLowerCase("pt-BR") === "administrador",
+  );
+}
+
+export function onboardingFavoriteDepartmentId(roles: ApiRole[]) {
+  const metadata = onboardingAdministratorRole(roles)?.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const favorite = (metadata as { onboardingFavoriteDepartmentId?: unknown })
+    .onboardingFavoriteDepartmentId;
+  return typeof favorite === "string" && favorite ? favorite : null;
+}
+
+export function buildOnboardingRoleScopeMetadata(
+  connections: Array<{
+    id: string;
+    departments: Array<{ id: string }>;
+  }>,
+  favoriteDepartmentId: string | null,
+) {
+  const chatScopes = connections.flatMap((connection) => {
+    const departmentIds = [...new Set(connection.departments.map((department) => department.id))];
+    if (departmentIds.length === 0) return [];
+    return [
+      {
+        connectionId: connection.id,
+        departmentIds,
+        favoriteDepartmentId:
+          favoriteDepartmentId && departmentIds.includes(favoriteDepartmentId)
+            ? favoriteDepartmentId
+            : null,
+      },
+    ];
+  });
+  return {
+    onboardingDefaultsVersion: 1,
+    connectionIds: chatScopes.map((scope) => scope.connectionId),
+    departmentIds: [...new Set(chatScopes.flatMap((scope) => scope.departmentIds))],
+    chatScopes,
+  };
+}
+
+export function onboardingScopeNeedsSync(
+  metadata: unknown,
+  expected: ReturnType<typeof buildOnboardingRoleScopeMetadata>,
+) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return true;
+  const current = metadata as Record<string, unknown>;
+  return (
+    JSON.stringify(current.connectionIds) !== JSON.stringify(expected.connectionIds) ||
+    JSON.stringify(current.departmentIds) !== JSON.stringify(expected.departmentIds) ||
+    JSON.stringify(current.chatScopes) !== JSON.stringify(expected.chatScopes)
+  );
 }
 
 export function buildOnboardingAttendantPayload(form: {

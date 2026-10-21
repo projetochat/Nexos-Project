@@ -9,6 +9,7 @@ import { Copy, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "@/components/modal";
 import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   Button,
@@ -30,6 +31,7 @@ import {
 } from "@/lib/message-variables";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { Switch } from "@/components/ui/switch";
 
 export const Route = createFileRoute("/configuracoes/campos-contato")({
   component: ContactFieldsSettings,
@@ -92,6 +94,16 @@ function ContactFieldsSettings() {
   const [requiredFilter, setRequiredFilter] = React.useState("");
   const [tabFilter, setTabFilter] = React.useState("");
   const [groupFilter, setGroupFilter] = React.useState("");
+  const hasFilters = Boolean(
+    query.trim() || typeFilter || requiredFilter || tabFilter || groupFilter,
+  );
+  const clearFilters = () => {
+    setQuery("");
+    setTypeFilter("");
+    setRequiredFilter("");
+    setTabFilter("");
+    setGroupFilter("");
+  };
   const [draggingFieldId, setDraggingFieldId] = React.useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = React.useState<string | null>(null);
   const create = useDisclosure();
@@ -127,10 +139,7 @@ function ContactFieldsSettings() {
       note: data.note.trim() || null,
       options:
         data.type === "list"
-          ? data.optionsText
-              .split(/\r?\n|,/)
-              .map((item) => item.trim())
-              .filter(Boolean)
+          ? listOptionsFromText(data.optionsText).map((item) => item.trim())
           : [],
     };
     const duplicate = fields.find(
@@ -243,7 +252,7 @@ function ContactFieldsSettings() {
         }
       />
       <div className="mb-4 rounded-lg border border-border bg-card p-4">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(12rem,1.25fr)_minmax(9rem,0.8fr)_minmax(8rem,0.65fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)]">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(12rem,1.25fr)_minmax(9rem,0.8fr)_minmax(8rem,0.65fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)_auto]">
           <div className="col-span-2 lg:col-span-1">
             <Field label="Busca">
               <SearchInput
@@ -294,6 +303,11 @@ function ContactFieldsSettings() {
               ))}
             </Select>
           </Field>
+          {hasFilters && (
+            <div className="flex items-end">
+              <ClearFiltersButton onClick={clearFilters} />
+            </div>
+          )}
         </div>
       </div>
       <div className="mt-4 space-y-3 md:hidden">
@@ -556,6 +570,7 @@ function ContactFieldFormModal({
   const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
   const [labelError, setLabelError] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const [draggingOptionIndex, setDraggingOptionIndex] = React.useState<number | null>(null);
   const duplicateLabelError = (label: string) => {
     const normalizedLabel = normalizeFieldName(label);
     if (!normalizedLabel) return "";
@@ -580,6 +595,7 @@ function ContactFieldFormModal({
     setForm(initial ? fieldToForm(initial, clone) : emptyFieldForm());
     setLabelError("");
     setSaving(false);
+    setDraggingOptionIndex(null);
   }, [clone, initial, open]);
 
   const save = async () => {
@@ -605,9 +621,17 @@ function ContactFieldFormModal({
       toast.error("Este agrupamento é reservado para os campos padrão do contato.");
       return;
     }
-    if (form.type === "list" && !form.optionsText.trim()) {
-      toast.error("Informe as opções da lista.");
-      return;
+    if (form.type === "list") {
+      const options = listOptionsFromText(form.optionsText);
+      if (options.some((option) => !option.trim())) {
+        toast.error("Preencha ou remova as opções vazias da lista.");
+        return;
+      }
+      const normalized = options.map((option) => option.trim().toLocaleLowerCase("pt-BR"));
+      if (new Set(normalized).size !== normalized.length) {
+        toast.error("Não é permitido repetir opções da lista.");
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -620,6 +644,9 @@ function ContactFieldFormModal({
 
   const technicalKey =
     initial && !clone ? initial.variableKey : previewCustomFieldVariableKey(form.label);
+  const listOptions = listOptionsFromText(form.optionsText);
+  const setListOptions = (options: string[]) =>
+    setForm((current) => ({ ...current, optionsText: options.join("\n") }));
 
   return (
     <Modal
@@ -633,7 +660,13 @@ function ContactFieldFormModal({
           <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button variant="primary" size="sm" onClick={() => void save()} disabled={saving}>
+          <Button
+            variant="primary"
+            size="sm"
+            className="save-action-button"
+            onClick={() => void save()}
+            disabled={saving}
+          >
             Salvar
           </Button>
         </>
@@ -653,7 +686,7 @@ function ContactFieldFormModal({
         <Field label="Variável técnica">
           <Input value={technicalKey ? `{{${technicalKey}}}` : ""} readOnly />
         </Field>
-        <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-3">
           <Field label="Tipo *">
             <Select
               value={form.type}
@@ -676,11 +709,11 @@ function ContactFieldFormModal({
               <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
                 Obrigatório
               </span>
-              <span className="flex h-10 items-center justify-center rounded-lg border border-border bg-surface-1">
-                <input
-                  type="checkbox"
+              <span className="flex h-10 items-center justify-start">
+                <Switch
                   checked={form.required}
-                  onChange={(event) => setForm({ ...form, required: event.target.checked })}
+                  onCheckedChange={(required) => setForm({ ...form, required })}
+                  aria-label="Obrigatório"
                 />
               </span>
             </label>
@@ -786,14 +819,77 @@ function ContactFieldFormModal({
                 <option value="multi">Lista Múltipla</option>
               </Select>
             </Field>
-            <Field label="Opções da lista *">
-              <Textarea
-                rows={4}
-                value={form.optionsText}
-                onChange={(event) => setForm({ ...form, optionsText: event.target.value })}
-                placeholder="Uma opção por linha"
-              />
-            </Field>
+            <div className="space-y-2">
+              <div className="grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-center gap-2">
+                <span className="col-span-2 text-xs font-medium text-muted-foreground">
+                  Opções da lista *
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="action-hover-primary justify-self-center"
+                  aria-label="Adicionar opção da lista"
+                  title="Adicionar opção"
+                  onClick={() => setListOptions([...listOptions, ""])}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {listOptions.map((option, index) => (
+                  <div
+                    key={index}
+                    className="grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-center gap-2"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (draggingOptionIndex === null || draggingOptionIndex === index) return;
+                      const reordered = [...listOptions];
+                      const [moved] = reordered.splice(draggingOptionIndex, 1);
+                      reordered.splice(index, 0, moved);
+                      setListOptions(reordered);
+                      setDraggingOptionIndex(null);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      draggable
+                      className="flex h-10 cursor-grab items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-2 active:cursor-grabbing"
+                      aria-label={`Reordenar opção ${index + 1}`}
+                      title="Arraste para reordenar"
+                      onDragStart={() => setDraggingOptionIndex(index)}
+                      onDragEnd={() => setDraggingOptionIndex(null)}
+                    >
+                      <GripVertical className="h-5 w-5" />
+                    </button>
+                    <Input
+                      value={option}
+                      aria-label={`Opção ${index + 1}`}
+                      onChange={(event) => {
+                        const next = [...listOptions];
+                        next[index] = event.target.value;
+                        setListOptions(next);
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="trash-action justify-self-center"
+                      aria-label={`Excluir opção ${index + 1}`}
+                      title="Excluir opção"
+                      onClick={() => {
+                        const next = listOptions.filter((_, optionIndex) => optionIndex !== index);
+                        setListOptions(next.length ? next : [""]);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
         <div className="grid gap-3 md:grid-cols-2">
@@ -849,6 +945,11 @@ function emptyFieldForm(): FieldForm {
     note: "",
     optionsText: "",
   };
+}
+
+export function listOptionsFromText(value: string) {
+  const options = value.split(/\r?\n/);
+  return options.length ? options : [""];
 }
 
 function fieldToForm(field: ApiContactCustomField, clone = false): FieldForm {

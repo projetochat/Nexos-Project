@@ -8,7 +8,11 @@ import {
   MessagingProviderType,
 } from "../generated/prisma";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
-import { MessagingOutboundService, OutboundDispatchError } from "./messaging-outbound.service";
+import {
+  contactCardPreview,
+  MessagingOutboundService,
+  OutboundDispatchError,
+} from "./messaging-outbound.service";
 import { OUTBOUND_PROVIDER_OUTCOME_UNKNOWN } from "../queue/messaging-outbound.queue";
 
 const current = {
@@ -21,6 +25,88 @@ const current = {
 };
 
 describe("MessagingOutboundService", () => {
+  it("uses the last shared contact name in a vCard conversation preview", () => {
+    const body = Buffer.from(
+      "BEGIN:VCARD\r\nFN:Primeiro contato\r\nEND:VCARD\r\nBEGIN:VCARD\r\nFN:Ialle - Prima\r\nEND:VCARD",
+    );
+
+    expect(contactCardPreview("text/vcard", "contato.vcf", body)).toBe("[contato] Ialle - Prima");
+  });
+
+  it("blocks text and media before materialization when the contact is inactive", async () => {
+    const prisma = prismaMock();
+    const inactiveConversation = {
+      ...conversation(),
+      contact: { ...conversation().contact, active: false },
+    };
+    prisma.conversation.findFirst.mockResolvedValue(inactiveConversation);
+    const mediaStorage = { storeUpload: vi.fn() };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      mediaStorage as never,
+    );
+
+    await expect(
+      service.sendText("conversation-a", { content: "Olá" }, current as never),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: "CONTACT_INACTIVE" }) });
+    await expect(
+      service.sendMedia(
+        "conversation-a",
+        { headers: { "content-type": "image/png" } } as never,
+        current as never,
+      ),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: "CONTACT_INACTIVE" }) });
+    expect(mediaStorage.storeUpload).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("fails a queued outbound message if the contact became inactive", async () => {
+    const prisma = prismaMock();
+    const queued = message();
+    queued.conversation.contact.active = false;
+    prisma.message.findFirst.mockResolvedValue(queued);
+    const provider = { send: vi.fn() };
+    const registry = registryMock(provider);
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registry as never,
+      dispatcherMock() as never,
+    );
+
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).rejects.toThrow("O contato está inativo");
+    expect(registry.resolve).not.toHaveBeenCalled();
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
+  it("blocks reactions for an inactive contact before calling the provider", async () => {
+    const prisma = prismaMock();
+    const inactiveMessage = message();
+    inactiveMessage.conversation.contact.active = false;
+    prisma.message.findFirst.mockResolvedValue(inactiveMessage);
+    const evolution = { sendReaction: vi.fn() };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      undefined,
+      evolution as never,
+    );
+
+    await expect(
+      service.react("conversation-a", "message-a", "👍", current as never),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: "CONTACT_INACTIVE" }) });
+    expect(evolution.sendReaction).not.toHaveBeenCalled();
+  });
+
   it("rejects voice uploads when the current profile cannot send audio", async () => {
     const prisma = prismaMock();
     prisma.conversation.findFirst.mockResolvedValue(conversation());
@@ -348,6 +434,160 @@ describe("MessagingOutboundService", () => {
     expect(senderName.resolve).toHaveBeenCalled();
   });
 
+  it.each([
+    ["image/png", "image", MessageType.IMAGE],
+    ["audio/webm", "voice", MessageType.VOICE],
+  ])(
+    "adds the attendant signature to captionless %s media",
+    async (mimeType, mediaType, messageType) => {
+      const prisma = prismaMock();
+      prisma.conversation.findFirst.mockResolvedValue(conversation());
+      prisma.message.findFirst.mockResolvedValue(null);
+      prisma.message.create.mockResolvedValue(message());
+      const mediaStorage = {
+        storeUpload: vi.fn().mockResolvedValue({
+          objectKey: `tenants/tenant-a/messages/${mediaType}`,
+          body: Buffer.from("media"),
+          checksum: "checksum",
+          mimeType,
+          fileName: mediaType === "voice" ? "audio.webm" : "image.png",
+          sizeBytes: 5,
+          messageType,
+          caption: null,
+          durationMs: mediaType === "voice" ? 1_000 : null,
+        }),
+        deleteObject: vi.fn(),
+      };
+      const senderName = { resolve: vi.fn().mockResolvedValue("Natã Rabelo") };
+      const service = new MessagingOutboundService(
+        prisma as never,
+        registryMock() as never,
+        dispatcherMock() as never,
+        mediaStorage as never,
+        undefined,
+        undefined,
+        senderName as never,
+      );
+
+      await service.sendMedia(
+        "conversation-a",
+        {
+          headers: {
+            "content-type": mimeType,
+            "x-media-type": mediaType,
+          },
+        } as never,
+        {
+          ...current,
+          permissions: ["messages.send", "chat.agent_name.show"],
+        } as never,
+      );
+
+      expect(prisma.message.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            content: "*Natã Rabelo:*",
+            mediaCaption: "*Natã Rabelo:*",
+          }),
+        }),
+      );
+      expect(senderName.resolve).toHaveBeenCalled();
+    },
+  );
+
+  it("keeps captionless media empty when the signature permission is disabled", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue(message());
+    const mediaStorage = {
+      storeUpload: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/image",
+        body: Buffer.from("media"),
+        checksum: "checksum",
+        mimeType: "image/png",
+        fileName: "image.png",
+        sizeBytes: 5,
+        messageType: MessageType.IMAGE,
+        caption: null,
+        durationMs: null,
+      }),
+      deleteObject: vi.fn(),
+    };
+    const senderName = { resolve: vi.fn() };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      mediaStorage as never,
+      undefined,
+      undefined,
+      senderName as never,
+    );
+
+    await service.sendMedia(
+      "conversation-a",
+      { headers: { "content-type": "image/png", "x-media-type": "image" } } as never,
+      { ...current, permissions: ["messages.send"] } as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: null, mediaCaption: null }),
+      }),
+    );
+    expect(senderName.resolve).not.toHaveBeenCalled();
+  });
+
+  it("does not create a signature-only caption for a captionless document", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue(message());
+    const mediaStorage = {
+      storeUpload: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/document",
+        body: Buffer.from("document"),
+        checksum: "checksum",
+        mimeType: "application/pdf",
+        fileName: "document.pdf",
+        sizeBytes: 8,
+        messageType: MessageType.DOCUMENT,
+        caption: null,
+        durationMs: null,
+      }),
+      deleteObject: vi.fn(),
+    };
+    const senderName = { resolve: vi.fn().mockResolvedValue("Natã Rabelo") };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      mediaStorage as never,
+      undefined,
+      undefined,
+      senderName as never,
+    );
+
+    await service.sendMedia(
+      "conversation-a",
+      {
+        headers: { "content-type": "application/pdf", "x-media-type": "document" },
+      } as never,
+      {
+        ...current,
+        permissions: ["messages.send", "chat.agent_name.show"],
+      } as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: null, mediaCaption: null }),
+      }),
+    );
+    expect(senderName.resolve).not.toHaveBeenCalled();
+  });
+
   it("resolves a quick-message template with the instance timezone at enqueue time", async () => {
     const prisma = prismaMock();
     const activeConversation = conversation();
@@ -655,7 +895,11 @@ describe("MessagingOutboundService", () => {
 
   it("persists an accepted provider response locally without sending it again", async () => {
     const provider = {
-      send: vi.fn().mockResolvedValue({ accepted: true, providerMessageId: "wa-accepted" }),
+      send: vi.fn().mockResolvedValue({
+        accepted: true,
+        providerMessageId: "wa-accepted",
+        providerChatId: "5511999990000@s.whatsapp.net",
+      }),
     };
     const prisma = prismaMock();
     prisma.message.findFirst.mockResolvedValueOnce(message({ status: MessageStatus.QUEUED }));
@@ -686,6 +930,7 @@ describe("MessagingOutboundService", () => {
         data: expect.objectContaining({
           status: MessageStatus.SENT,
           providerMessageId: "wa-accepted",
+          providerChatId: "5511999990000@s.whatsapp.net",
         }),
       }),
     );
@@ -968,6 +1213,7 @@ function conversation() {
     connectionId: "connection-a",
     contact: {
       id: "contact-a",
+      active: true,
       phone: "+5511999999999",
       normalizedPhone: "+5511999999999",
       name: "Cliente",

@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DepartmentInstanceMultiSelect } from "./departamentos";
+import { DepartmentIconSelect } from "../components/department-icon";
 
 describe("DepartmentInstanceMultiSelect", () => {
   let host: HTMLDivElement;
@@ -79,5 +80,22 @@ describe("DepartmentInstanceMultiSelect", () => {
 
     expect(onChange).toHaveBeenCalledWith([]);
     expect(document.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it("keeps the icon selector at the same minimum external height as the instances selector", async () => {
+    await act(async () => {
+      root.render(
+        <div>
+          <DepartmentInstanceMultiSelect connections={[]} selectedIds={[]} onChange={() => {}} />
+          <DepartmentIconSelect value="department" onChange={() => {}} />
+        </div>,
+      );
+    });
+
+    const instances = document.querySelector('[aria-haspopup="listbox"]');
+    const icon = document.querySelector('[aria-label^="Selecionar ícone"]');
+    expect(instances?.className).toContain("min-h-10");
+    expect(icon?.className).toContain("min-h-10");
+    expect(icon?.className).not.toContain("min-h-11");
   });
 });

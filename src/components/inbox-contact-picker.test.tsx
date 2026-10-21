@@ -6,12 +6,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { InboxContactPicker } from "./inbox-contact-picker";
 
-const mocks = vi.hoisted(() => ({ listContacts: vi.fn(), contactOptions: vi.fn() }));
+const mocks = vi.hoisted(() => ({ listContactsForMessagePicker: vi.fn() }));
 
 vi.mock("@/lib/trixus-api", () => ({
   crmApi: {
-    listContacts: (...args: unknown[]) => mocks.listContacts(...args),
-    contactOptions: (...args: unknown[]) => mocks.contactOptions(...args),
+    listContactsForMessagePicker: (...args: unknown[]) =>
+      mocks.listContactsForMessagePicker(...args),
   },
 }));
 
@@ -46,25 +46,22 @@ beforeEach(() => {
   document.body.append(host);
   root = createRoot(host);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  mocks.listContacts.mockImplementation(async ({ q }: { q?: string }) => {
+  mocks.listContactsForMessagePicker.mockImplementation(async ({ q }: { q?: string }) => {
     const items = q
       ? contacts.filter((contact) => contact.nome.toLowerCase().includes(q.toLowerCase()))
       : contacts;
-    return { items, page: 1, pageSize: 10_000, total: items.length, totalPages: 1 };
-  });
-  mocks.contactOptions.mockResolvedValue({
-    instances: [
-      {
+    return {
+      items,
+      page: 1,
+      pageSize: 10_000,
+      total: items.length,
+      totalPages: 1,
+      instance: {
         id: "instance-1",
-        value: "instance-1",
         name: "Flow iD",
-        externalReference: "flow-id",
         ownerPhone: "556296171414",
       },
-    ],
-    departments: [],
-    profiles: [],
-    tags: [],
+    };
   });
 });
 
@@ -75,7 +72,7 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-it("keeps the real instance fixed while searching and prepares it with multiple selected contacts", async () => {
+it("starts empty and prepares the optional instance with multiple selected contacts", async () => {
   const onSelect = vi.fn();
   await act(async () =>
     root.render(
@@ -93,17 +90,22 @@ it("keeps the real instance fixed while searching and prepares it with multiple 
   expect(document.body.textContent).toContain("Número da instância");
   expect(document.body.textContent).toContain("Flow iD");
   expect(document.body.textContent).toContain("+55 62 9617-1414");
-  expect(mocks.listContacts).toHaveBeenCalledWith(
+  expect(mocks.listContactsForMessagePicker).toHaveBeenCalledWith(
     expect.objectContaining({ page: 1, pageSize: 100 }),
   );
   const instanceButton = document.querySelector<HTMLButtonElement>(
-    '[aria-label="Remover Flow iD"]',
+    '[aria-label="Selecionar Flow iD"]',
   );
-  expect(instanceButton?.disabled).toBe(true);
+  expect(instanceButton?.disabled).toBe(false);
+  const forwardBeforeSelection = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Adicionar",
+  );
+  expect(forwardBeforeSelection?.disabled).toBe(true);
 
   const amanda = document.querySelector<HTMLButtonElement>('[aria-label="Selecionar Amanda SDE"]');
   const zuleica = document.querySelector<HTMLButtonElement>('[aria-label="Selecionar Zuleica"]');
   await act(async () => {
+    instanceButton?.click();
     amanda?.click();
     zuleica?.click();
   });
@@ -117,7 +119,7 @@ it("keeps the real instance fixed while searching and prepares it with multiple 
   expect(document.body.textContent).toContain("Flow iD");
 
   const forward = [...document.querySelectorAll("button")].find(
-    (button) => button.textContent === "Encaminhar",
+    (button) => button.textContent === "Adicionar",
   );
   await act(async () => forward?.click());
 
@@ -133,12 +135,17 @@ it("keeps the real instance fixed while searching and prepares it with multiple 
 });
 
 it("loads the next contact page when the internal list reaches the end", async () => {
-  mocks.listContacts.mockImplementation(async ({ page }: { page: number }) => ({
+  mocks.listContactsForMessagePicker.mockImplementation(async ({ page }: { page: number }) => ({
     items: page === 1 ? [contacts[1]] : [contacts[0]],
     page,
     pageSize: 100,
     total: 2,
     totalPages: 2,
+    instance: {
+      id: "instance-1",
+      name: "Flow iD",
+      ownerPhone: "556296171414",
+    },
   }));
   await act(async () =>
     root.render(
@@ -166,18 +173,24 @@ it("loads the next contact page when the internal list reaches the end", async (
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
 
-  expect(mocks.listContacts).toHaveBeenLastCalledWith(
+  expect(mocks.listContactsForMessagePicker).toHaveBeenLastCalledWith(
     expect.objectContaining({ page: 2, pageSize: 100 }),
   );
   expect(document.body.textContent).toContain("Zuleica");
 });
 
 it("disables confirmation when the current connection has no real owner number", async () => {
-  mocks.contactOptions.mockResolvedValueOnce({
-    instances: [{ id: "instance-1", value: "instance-1", name: "Flow iD", ownerPhone: null }],
-    departments: [],
-    profiles: [],
-    tags: [],
+  mocks.listContactsForMessagePicker.mockResolvedValueOnce({
+    items: contacts,
+    page: 1,
+    pageSize: 100,
+    total: contacts.length,
+    totalPages: 1,
+    instance: {
+      id: "instance-1",
+      name: "Flow iD",
+      ownerPhone: null,
+    },
   });
   await act(async () =>
     root.render(
@@ -194,7 +207,7 @@ it("disables confirmation when the current connection has no real owner number",
 
   expect(document.body.textContent).toContain("número real da instância ainda não está disponível");
   const forward = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Encaminhar",
+    (button) => button.textContent === "Adicionar",
   );
   expect(forward?.disabled).toBe(true);
 });

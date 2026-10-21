@@ -16,7 +16,7 @@ const policies = [
 ];
 
 describe("physical deletion confirmation policy", () => {
-  it("uses a single Confirmar action outside messaging instance removal", () => {
+  it("uses a single standard confirmation action outside messaging instance removal", () => {
     for (const relativePath of policies) {
       const source = readFileSync(resolve(__dirname, relativePath), "utf8");
       expect(source).not.toContain('level: "high"');
@@ -25,7 +25,11 @@ describe("physical deletion confirmation policy", () => {
     const combined = policies
       .map((relativePath) => readFileSync(resolve(__dirname, relativePath), "utf8"))
       .join("\n");
-    expect(combined.match(/confirmLabel: "Confirmar"/g)).toHaveLength(11);
+    const confirmationLabels = [...combined.matchAll(/confirmLabel: "([^"]+)"/g)].map(
+      ([, label]) => label,
+    );
+    expect(confirmationLabels).toHaveLength(11);
+    expect(new Set(confirmationLabels)).toEqual(new Set(["Confirmar", "Excluir"]));
   });
 
   it("keeps reinforced messaging instance removal in frontend and backend", () => {

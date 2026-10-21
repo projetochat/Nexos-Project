@@ -19,6 +19,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizeRegistrationText } from "../common/registration-case";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { Prisma } from "../generated/prisma";
 import {
@@ -57,23 +58,25 @@ export class TagsController {
   @Post("tags")
   @RequirePermissions("chat.tags.create")
   async create(@Body() dto: CreateTagDto, @CurrentUser() current: AuthenticatedUser) {
-    await this.assertTagNameAvailable(dto.name, current.tenantId);
+    const name = await normalizeRegistrationText(this.prisma, current.tenantId, "tags", dto.name);
+    await this.assertTagNameAvailable(name, current.tenantId);
     const archived = await this.prisma.tag.findFirst({
       where: {
         tenantId: current.tenantId,
         archivedAt: { not: null },
-        normalizedName: normalizeName(dto.name),
+        normalizedName: normalizeName(name),
       },
     });
     if (archived) {
       const tag = await this.prisma.tag.update({
         where: { tenantId_id: { tenantId: current.tenantId, id: archived.id } },
         data: {
-          name: clean(dto.name),
-          normalizedName: normalizeName(dto.name),
+          name,
+          normalizedName: normalizeName(name),
           description: cleanOptional(dto.description),
           color: dto.color ?? archived.color,
           active: dto.active ?? true,
+          notifyOnNewConversation: dto.notifyOnNewConversation ?? false,
           archivedAt: null,
         },
       });
@@ -83,16 +86,17 @@ export class TagsController {
       const tag = await this.prisma.tag.create({
         data: {
           tenantId: current.tenantId,
-          name: clean(dto.name),
-          normalizedName: normalizeName(dto.name),
+          name,
+          normalizedName: normalizeName(name),
           description: cleanOptional(dto.description),
           color: dto.color ?? "#3B82F6",
           active: dto.active ?? true,
+          notifyOnNewConversation: dto.notifyOnNewConversation ?? false,
         },
       });
       return serializeTag(tag);
     } catch (error) {
-      handleUniqueTag(error, dto.name);
+      handleUniqueTag(error, name);
     }
   }
 
@@ -104,21 +108,25 @@ export class TagsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findTagOrThrow(id, current.tenantId);
-    if (dto.name) await this.assertTagNameAvailable(dto.name, current.tenantId, id);
+    const name = dto.name
+      ? await normalizeRegistrationText(this.prisma, current.tenantId, "tags", dto.name)
+      : undefined;
+    if (name) await this.assertTagNameAvailable(name, current.tenantId, id);
     try {
       const tag = await this.prisma.tag.update({
         where: { tenantId_id: { tenantId: current.tenantId, id } },
         data: {
-          name: dto.name ? clean(dto.name) : undefined,
-          normalizedName: dto.name ? normalizeName(dto.name) : undefined,
+          name,
+          normalizedName: name ? normalizeName(name) : undefined,
           description: dto.description === undefined ? undefined : cleanOptional(dto.description),
           color: dto.color,
           active: dto.active,
+          notifyOnNewConversation: dto.notifyOnNewConversation,
         },
       });
       return serializeTag(tag);
     } catch (error) {
-      handleUniqueTag(error, dto.name);
+      handleUniqueTag(error, name);
     }
   }
 
@@ -328,6 +336,7 @@ function serializeTag(tag: {
   description: string | null;
   color: string;
   active: boolean;
+  notifyOnNewConversation: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }) {
@@ -337,6 +346,7 @@ function serializeTag(tag: {
     descricao: tag.description,
     cor: tag.color,
     active: tag.active,
+    notifyOnNewConversation: tag.notifyOnNewConversation,
     createdAt: tag.createdAt,
     updatedAt: tag.updatedAt,
   };

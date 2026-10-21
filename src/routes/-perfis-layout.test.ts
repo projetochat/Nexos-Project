@@ -122,6 +122,19 @@ describe("organização do editor de Perfil de Acesso", () => {
     expect(tabs.indexOf('id: "acessos"')).toBeLessThan(tabs.indexOf('id: "jornada"'));
   });
 
+  it("mantém Salvar e Cancelar com as mesmas dimensões no editor", () => {
+    const footerStart = source.indexOf("<EntityFormLog");
+    const footer = source.slice(
+      footerStart,
+      source.indexOf('<div className="space-y-5">', footerStart),
+    );
+
+    expect(footer).toContain('className="h-8 w-20 rounded-lg"');
+    expect(footer).toContain('className="save-action-button"');
+    expect(footer).toContain('variant="ghost"');
+    expect(footer).toContain('variant="primary"');
+  });
+
   it("carrega opções de escopo sem depender dos catálogos CRUD", () => {
     expect(source).toContain("organizationApi.roleScopeOptions");
     expect(source).toContain('["trixus", "role-scope-options"]');

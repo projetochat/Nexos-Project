@@ -1,34 +1,34 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import {
-  pasteTicketEditorText,
   readTicketEditorHtml,
+  ticketEditorClipboardHtml,
   writeTicketEditorHtml,
 } from "./ticket-editor-dom";
 
 describe("ticket editor DOM boundary", () => {
-  it("removes executable markup and inline assets before displaying stored content", () => {
+  it("removes executable markup while preserving safe pasted images", () => {
     const editor = document.createElement("div");
     writeTicketEditorHtml(
       editor,
-      '<p onclick="alert(1)">Ok</p><script>alert(1)</script><svg onload="alert(1)"></svg><img src="x" onerror="alert(1)"><a href="javascript:alert(1)">link</a>',
+      '<p onclick="alert(1)">Ok</p><script>alert(1)</script><svg onload="alert(1)"></svg><img src="data:image/png;base64,AAAA" alt="Captura" onerror="alert(1)"><a href="javascript:alert(1)">link</a>',
     );
-    expect(
-      editor.querySelector("script, svg, img, [onclick], [onerror], [onload], [href]"),
-    ).toBeNull();
+    expect(editor.querySelector("script, svg, [onclick], [onerror], [onload], [href]")).toBeNull();
     expect(editor.querySelector("p")?.textContent).toBe("Ok");
+    expect(editor.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
   });
 
   it("keeps text formatting, lists and safe links", () => {
     const editor = document.createElement("div");
     writeTicketEditorHtml(
       editor,
-      '<b>Bold</b><i>Italic</i><u>Underline</u><ul><li>Item</li></ul><font color="#ff0000" size="3">Color</font><a href="https://example.com">Link</a>',
+      '<div style="text-align: center"><b>Bold</b><i>Italic</i><u>Underline</u></div><ul><li>Item</li></ul><font color="#ff0000" size="3">Color</font><a href="https://example.com">Link</a>',
     );
     expect(editor.querySelector("b")?.textContent).toBe("Bold");
     expect(editor.querySelector("li")?.textContent).toBe("Item");
     expect(editor.querySelector("font")?.getAttribute("color")).toBe("#ff0000");
     expect(editor.querySelector("a")?.getAttribute("href")).toBe("https://example.com");
+    expect(editor.querySelector("div")?.getAttribute("style")).toBe("text-align: center");
   });
 
   it("sanitizes outgoing content as well as incoming content", () => {
@@ -37,19 +37,23 @@ describe("ticket editor DOM boundary", () => {
     expect(readTicketEditorHtml(editor)).toBe("<b>Text</b>");
   });
 
-  it("pastes HTML-looking text literally at the current selection", () => {
+  it("preserves safe inline images and strips unsafe image sources on output", () => {
     const editor = document.createElement("div");
-    editor.textContent = "Before";
-    document.body.append(editor);
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-    window.getSelection()?.removeAllRanges();
-    window.getSelection()?.addRange(range);
-    pasteTicketEditorText(editor, '<img src=x onerror="alert(1)">');
-    expect(editor.querySelector("img")).toBeNull();
-    expect(editor.textContent).toBe('Before<img src=x onerror="alert(1)">');
-    window.getSelection()?.removeAllRanges();
-    editor.remove();
+    editor.innerHTML =
+      '<strong>Antes</strong><img src="data:image/webp;base64,AAAA" alt="Captura"><img src="javascript:alert(1)">';
+    expect(readTicketEditorHtml(editor)).toBe(
+      '<strong>Antes</strong><img src="data:image/webp;base64,AAAA" alt="Captura">',
+    );
+  });
+
+  it("converts a pasted image file into safe inline HTML", async () => {
+    const clipboard = {
+      files: [new File(["png"], "captura.png", { type: "image/png" })],
+      getData: () => "",
+    } as unknown as DataTransfer;
+
+    expect(await ticketEditorClipboardHtml(clipboard)).toBe(
+      '<img src="data:image/png;base64,cG5n" alt="captura.png">',
+    );
   });
 });

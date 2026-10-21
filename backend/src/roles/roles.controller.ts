@@ -22,6 +22,7 @@ import { PermissionsGuard } from "../auth/permissions.guard";
 import { Prisma } from "../generated/prisma";
 import { roleChatScopes } from "../auth/connection-access";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizeRegistrationText } from "../common/registration-case";
 import {
   ConfirmDeletionDto,
   type DeletionImpactPreview,
@@ -29,6 +30,7 @@ import {
 } from "../common/deletion-impact";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
+import { SetFavoriteDepartmentDto } from "./dto/set-favorite-department.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
 
 @Controller()
@@ -146,7 +148,12 @@ export class RolesController {
     this.assertPermissionDependencies(permissionIds);
     this.assertCanGrantPermissions(permissionIds, current);
     await this.assertMetadataScope(dto.metadata, current);
-    const name = dto.name.trim();
+    const name = await normalizeRegistrationText(
+      this.prisma,
+      current.tenantId,
+      "accessProfiles",
+      dto.name,
+    );
     const key = (dto.key ?? name)
       .trim()
       .toLowerCase()
@@ -194,9 +201,18 @@ export class RolesController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const existing = await this.findRoleOrThrow(id, current.tenantId);
+    const name =
+      dto.name === undefined
+        ? undefined
+        : await normalizeRegistrationText(
+            this.prisma,
+            current.tenantId,
+            "accessProfiles",
+            dto.name,
+          );
     this.assertAdministratorRoleProtected(existing);
     const permissionIds = dto.permissionIds ? normalizePermissionIds(dto.permissionIds) : undefined;
-    if (dto.name !== undefined && normalizeRoleName(dto.name) === "administrador") {
+    if (name !== undefined && normalizeRoleName(name) === "administrador") {
       throw new BadRequestException("O nome Administrador é reservado para gestão do sistema.");
     }
     if (permissionIds) {
@@ -222,8 +238,8 @@ export class RolesController {
       if (permissionIds) {
         await this.assertEnabledModulePermissions(permissionIds, current.tenantId);
       }
-      if (dto.name !== undefined) {
-        await this.ensureNameAvailable(tx, current.tenantId, dto.name.trim(), existing.id);
+      if (name !== undefined) {
+        await this.ensureNameAvailable(tx, current.tenantId, name, existing.id);
       }
       if (permissionIds) {
         await this.ensurePermissions(tx, permissionIds);
@@ -239,7 +255,7 @@ export class RolesController {
       const role = await tx.role.update({
         where: { id: existing.id },
         data: {
-          name: dto.name?.trim(),
+          name,
           description: dto.description === undefined ? undefined : dto.description.trim() || null,
           active: dto.active,
           metadata:
@@ -263,6 +279,81 @@ export class RolesController {
     }
     this.realtime.publish({ tenantId: current.tenantId }, "instance-access.updated", {
       roleId: role.id,
+    });
+    return this.serialize(role);
+  }
+
+  @Patch("roles/:id/favorite-department")
+  @RequirePermissions("roles.update")
+  async setFavoriteDepartment(
+    @Param("id") id: string,
+    @Body() dto: SetFavoriteDepartmentDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const existing = await this.findRoleOrThrow(id, current.tenantId);
+    if (existing.id !== current.roleId || existing.key !== "tenant_admin") {
+      throw new ForbiddenException(
+        "O departamento favorito do onboarding só pode ser definido no próprio perfil Administrador.",
+      );
+    }
+    const department = await this.prisma.department.findFirst({
+      where: { id: dto.departmentId, tenantId: current.tenantId, active: true },
+      select: { id: true },
+    });
+    if (!department) throw new NotFoundException("Departamento não encontrado.");
+
+    const connections = await this.prisma.messagingConnection.findMany({
+      where: {
+        tenantId: current.tenantId,
+        providerType: "EVOLUTION",
+        archivedAt: null,
+      },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        departments: {
+          where: { department: { active: true } },
+          select: { departmentId: true },
+        },
+      },
+    });
+    const chatScopes = connections.flatMap((connection) => {
+      const departmentIds = [...new Set(connection.departments.map((item) => item.departmentId))];
+      if (departmentIds.length === 0) return [];
+      return [
+        {
+          connectionId: connection.id,
+          departmentIds,
+          favoriteDepartmentId: departmentIds.includes(department.id) ? department.id : null,
+        },
+      ];
+    });
+    if (!chatScopes.some((scope) => scope.favoriteDepartmentId === department.id)) {
+      throw new BadRequestException(
+        "O departamento favorito precisa estar vinculado a uma instância do Chat.",
+      );
+    }
+    const departmentIds = [...new Set(chatScopes.flatMap((scope) => scope.departmentIds))];
+    const metadata =
+      existing.metadata &&
+      typeof existing.metadata === "object" &&
+      !Array.isArray(existing.metadata)
+        ? existing.metadata
+        : {};
+    const role = await this.prisma.role.update({
+      where: { id: existing.id },
+      data: {
+        metadata: JSON.parse(
+          JSON.stringify({
+            ...metadata,
+            connectionIds: chatScopes.map((scope) => scope.connectionId),
+            departmentIds,
+            chatScopes,
+            onboardingFavoriteDepartmentId: department.id,
+          }),
+        ),
+      },
+      include: { permissions: true },
     });
     return this.serialize(role);
   }
@@ -776,6 +867,7 @@ const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
     "chat.conversations.view_all_active",
     "chat.bulk_actions.execute",
   ],
+  "leads.read": [],
   "connections.read": ["connections.create", "connections.update", "connections.delete"],
   "groups.read": ["groups.create", "groups.update", "groups.leave"],
   "chat.tags.read": ["chat.tags.create", "chat.tags.update", "chat.tags.delete"],

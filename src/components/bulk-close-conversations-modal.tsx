@@ -65,7 +65,7 @@ export function BulkCloseConversationsModal({
         title="Fechar Conversas"
         footer={
           <>
-            <Button variant="secondary" size="sm" disabled={busy} onClick={onClose}>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
               Cancelar
             </Button>
             <Button

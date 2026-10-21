@@ -41,6 +41,30 @@ describe("chat message variable preview", () => {
     );
   });
 
+  it("formats phone variables with the ninth mobile digit without changing the source value", () => {
+    const phone = "556281147652";
+    expect(resolveMessageVariables("{{telefone}} / {{whatsapp}}", { phone })).toBe(
+      "+55 62 98114-7652 / +55 62 98114-7652",
+    );
+    expect(phone).toBe("556281147652");
+  });
+
+  it("applies the phone format to additional-field variables", () => {
+    expect(
+      resolveMessageVariables("{{telefone_secundario}}", {
+        customFieldValues: [
+          {
+            label: "Telefone secundário",
+            variableKey: "telefone_secundario",
+            type: "text",
+            mask: '{"custom":{"format":"phone"}}',
+            value: "+55 62 8114-7652",
+          },
+        ],
+      }),
+    ).toBe("+55 62 98114-7652");
+  });
+
   it("formats persisted typed values and keeps unknown tokens", () => {
     expect(
       resolveMessageVariables(

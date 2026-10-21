@@ -9,7 +9,7 @@ import {
   Optional,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { hash } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { CampaignDispatchQueue } from "../campaigns/campaign-dispatch.queue";
 import { readPositiveInteger } from "../campaigns/campaign-config";
@@ -56,6 +56,7 @@ import {
 } from "./platform-query";
 import type {
   CancelSubscriptionDto,
+  ChangePlatformPasswordDto,
   CreateInvoiceDto,
   CreatePlanDto,
   CreatePlatformClientDto,
@@ -118,18 +119,27 @@ const DEFAULT_PLATFORM_DASHBOARD_CONFIGURATION = {
     dashboardComponent("kpis", "Indicadores", 0, "cards", 4, "records", "platformKpis"),
     dashboardComponent("traffic", "Tráfego de mensagens", 1, "line", 2, "messages", "hour"),
     dashboardComponent(
+      "clientVolumetry",
+      "Volumetria por cliente",
+      2,
+      "table",
+      2,
+      "records",
+      "clientVolumetry",
+    ),
+    dashboardComponent(
       "volumeByClient",
       "Volume de mensagens por cliente",
-      2,
+      3,
       "columns",
-      2,
+      1,
       "messages",
       "clientVolume",
     ),
     dashboardComponent(
       "percentageByClient",
       "Mensagens por cliente",
-      3,
+      4,
       "donut",
       1,
       "messages",
@@ -139,15 +149,41 @@ const DEFAULT_PLATFORM_DASHBOARD_CONFIGURATION = {
     dashboardComponent(
       "subscriptions",
       "Assinaturas por plano",
-      4,
+      5,
       "table",
-      2,
+      1,
       "records",
       "subscriptions",
     ),
-    dashboardComponent("operation", "Operação", 5, "cards", 1, "records", "operation"),
+    dashboardComponent("operation", "Operação", 6, "cards", 1, "records", "operation"),
   ],
 } as const;
+
+type ClientVolumetryCounts = {
+  instances: number;
+  contacts: number;
+  attendants: number;
+  accessProfiles: number;
+  departments: number;
+  tags: number;
+  quickReplies: number;
+  customFields: number;
+  schedules: number;
+  campaigns: number;
+};
+
+const emptyClientVolumetryCounts = (): ClientVolumetryCounts => ({
+  instances: 0,
+  contacts: 0,
+  attendants: 0,
+  accessProfiles: 0,
+  departments: 0,
+  tags: 0,
+  quickReplies: 0,
+  customFields: 0,
+  schedules: 0,
+  campaigns: 0,
+});
 
 const tenantTransitions: Record<TenantStatus, TenantStatus[]> = {
   PROVISIONING: ["TRIAL", "ACTIVE", "SUSPENDED"],
@@ -178,6 +214,61 @@ export class PlatformService {
     private readonly email?: TransactionalEmailService,
   ) {}
 
+  async changeOwnPassword(dto: ChangePlatformPasswordDto, current: AuthenticatedUser) {
+    assertBcryptPasswordLength(dto.currentPassword);
+    assertBcryptPasswordLength(dto.newPassword);
+    assertBcryptPasswordLength(dto.confirmPassword);
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException("A confirmação da nova senha não confere.");
+    }
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
+    }
+
+    const changedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${current.userId}))`;
+      const user = await tx.user.findFirst({
+        where: { id: current.userId, status: "ACTIVE", platformRole: { not: "USER" } },
+        select: { id: true, passwordHash: true },
+      });
+      if (!user) {
+        throw new NotFoundException("Usuário Platform ativo não encontrado.");
+      }
+      if (!(await compare(dto.currentPassword, user.passwordHash))) {
+        throw new BadRequestException("Senha atual inválida.");
+      }
+
+      await tx.user.update({
+        where: { id: current.userId },
+        data: { passwordHash: await hash(dto.newPassword, 12) },
+      });
+      await tx.passwordResetToken.updateMany({
+        where: { userId: current.userId, usedAt: null },
+        data: { usedAt: changedAt },
+      });
+      const revokedSessions = await tx.authSession.updateMany({
+        where: { userId: current.userId, revokedAt: null },
+        data: { revokedAt: changedAt },
+      });
+      await tx.impersonationSession.updateMany({
+        where: { actorUserId: current.userId, status: "ACTIVE" },
+        data: { status: "STOPPED", stoppedAt: changedAt },
+      });
+      await tx.platformAuditLog.create({
+        data: {
+          actorUserId: current.userId,
+          actorPlatformRole: current.platformRole,
+          action: "platform_user.password_changed",
+          targetType: "platform_user",
+          targetId: current.userId,
+          metadataJson: { revokedSessionCount: revokedSessions.count },
+        },
+      });
+      return { ok: true as const, sessionsRevoked: revokedSessions.count };
+    });
+  }
+
   async dashboard(query: PlatformDashboardQueryDto = {}) {
     const range = platformDashboardRange(query, PLATFORM_DASHBOARD_TIMEZONE);
     const [clients, tenants] = await Promise.all([
@@ -190,6 +281,12 @@ export class PlatformService {
         select: {
           id: true,
           name: true,
+          subscriptions: {
+            where: { clientId: { not: null } },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 1,
+            select: { client: { select: { id: true, name: true } } },
+          },
           platformClient: { select: { id: true, name: true } },
         },
       }),
@@ -200,31 +297,54 @@ export class PlatformService {
     const selectedTenant = query.tenantId
       ? tenants.find((tenant) => tenant.id === query.tenantId)
       : undefined;
+    const tenantClient = new Map(
+      tenants.map((tenant) => [
+        tenant.id,
+        tenant.subscriptions[0]?.client ?? tenant.platformClient,
+      ]),
+    );
     if (query.clientId && !selectedClient) {
       throw new BadRequestException("Cliente do dashboard inválido.");
     }
     if (query.tenantId && !selectedTenant) {
       throw new BadRequestException("Tenant do dashboard inválida.");
     }
-    if (selectedClient && selectedTenant && selectedClient.tenantId !== selectedTenant.id) {
+    if (
+      selectedClient &&
+      selectedTenant &&
+      tenantClient.get(selectedTenant.id)?.id !== selectedClient.id
+    ) {
       throw new BadRequestException("Cliente e tenant selecionados não estão vinculados.");
     }
 
-    const effectiveTenantId = selectedTenant?.id ?? selectedClient?.tenantId ?? undefined;
-    const tenantIds = effectiveTenantId
-      ? [effectiveTenantId]
+    const tenantIds = selectedTenant
+      ? [selectedTenant.id]
       : selectedClient
-        ? []
+        ? tenants
+            .filter((tenant) => tenantClient.get(tenant.id)?.id === selectedClient.id)
+            .map((tenant) => tenant.id)
         : tenants.map((tenant) => tenant.id);
-    const tenantWhere: Prisma.TenantWhereInput = effectiveTenantId
-      ? { id: effectiveTenantId }
-      : selectedClient
-        ? { id: "__platform_client_without_tenant__" }
+    const tenantWhere: Prisma.TenantWhereInput =
+      selectedTenant || selectedClient
+        ? { id: { in: tenantIds.length ? tenantIds : ["__platform_client_without_tenant__"] } }
         : {};
-    const scopedTenantRelation = effectiveTenantId
-      ? { tenantId: effectiveTenantId }
-      : selectedClient
-        ? { tenantId: "__platform_client_without_tenant__" }
+    const scopedTenantRelation =
+      selectedTenant || selectedClient
+        ? {
+            tenantId: { in: tenantIds.length ? tenantIds : ["__platform_client_without_tenant__"] },
+          }
+        : {};
+    const invoiceWhere: Prisma.InvoiceWhereInput =
+      selectedTenant || selectedClient
+        ? {
+            tenantId: { in: tenantIds.length ? tenantIds : ["__platform_client_without_tenant__"] },
+          }
+        : {};
+    const subscriptionWhere: Prisma.TenantSubscriptionWhereInput =
+      selectedTenant || selectedClient
+        ? {
+            tenantId: { in: tenantIds.length ? tenantIds : ["__platform_client_without_tenant__"] },
+          }
         : {};
     const messageWhere: Prisma.MessageWhereInput = {
       ...scopedTenantRelation,
@@ -239,16 +359,6 @@ export class PlatformService {
       archivedAt: null,
       createdAt: { gte: range.start, lt: range.end },
     };
-    const invoiceWhere: Prisma.InvoiceWhereInput = effectiveTenantId
-      ? { tenantId: effectiveTenantId }
-      : selectedClient
-        ? { tenantId: "__platform_client_without_tenant__" }
-        : {};
-    const subscriptionWhere: Prisma.TenantSubscriptionWhereInput = effectiveTenantId
-      ? { tenantId: effectiveTenantId }
-      : selectedClient
-        ? { tenantId: "__platform_client_without_tenant__" }
-        : {};
 
     const [
       activeTenants,
@@ -312,23 +422,15 @@ export class PlatformService {
       }),
     ]);
 
-    const tenantClient = new Map(
-      tenants.map((tenant) => [
-        tenant.id,
-        tenant.platformClient
-          ? { clientId: tenant.platformClient.id, clientName: tenant.platformClient.name }
-          : { clientId: null, clientName: "Sem cliente" },
-      ]),
-    );
     const volumeByClient = new Map<
       string,
       { clientId: string | null; clientName: string; total: number }
     >();
     if (selectedTenant) {
-      const client = tenantClient.get(selectedTenant.id) ?? {
-        clientId: null,
-        clientName: "Sem cliente",
-      };
+      const resolvedClient = tenantClient.get(selectedTenant.id);
+      const client = resolvedClient
+        ? { clientId: resolvedClient.id, clientName: resolvedClient.name }
+        : { clientId: null, clientName: "Sem cliente" };
       volumeByClient.set(client.clientId ?? "__without_client__", { ...client, total: 0 });
     } else if (selectedClient) {
       volumeByClient.set(selectedClient.id, {
@@ -344,7 +446,7 @@ export class PlatformService {
           total: 0,
         });
       }
-      if (tenants.some((tenant) => !tenant.platformClient)) {
+      if (tenants.some((tenant) => !tenantClient.get(tenant.id))) {
         volumeByClient.set("__without_client__", {
           clientId: null,
           clientName: "Sem cliente",
@@ -353,10 +455,10 @@ export class PlatformService {
       }
     }
     for (const message of messages) {
-      const client = tenantClient.get(message.tenantId) ?? {
-        clientId: null,
-        clientName: "Sem cliente",
-      };
+      const resolvedClient = tenantClient.get(message.tenantId);
+      const client = resolvedClient
+        ? { clientId: resolvedClient.id, clientName: resolvedClient.name }
+        : { clientId: null, clientName: "Sem cliente" };
       const key = client.clientId ?? "__without_client__";
       const current = volumeByClient.get(key) ?? { ...client, total: 0 };
       current.total += 1;
@@ -367,6 +469,151 @@ export class PlatformService {
     );
     const percentageTotal = messageVolumeByClient.reduce((sum, item) => sum + item.total, 0);
     const messagePercentageByClient = exactPercentages(messageVolumeByClient, percentageTotal);
+
+    const volumetryWhere = selectedTenant || selectedClient ? scopedTenantRelation : {};
+    const [
+      instancesByTenant,
+      contactsByTenant,
+      attendantsByTenant,
+      accessProfilesByTenant,
+      departmentsByTenant,
+      tagsByTenant,
+      quickRepliesByTenant,
+      customFieldsByTenant,
+      schedulesByTenant,
+      campaignsByTenant,
+    ] = await this.prisma.$transaction([
+      this.prisma.messagingConnection.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null, status: { not: "REMOVED" } },
+        _count: { _all: true },
+      }),
+      this.prisma.contact.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: {
+          ...volumetryWhere,
+          archivedAt: null,
+          NOT: { normalizedPhone: { startsWith: "group:" } },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.tenantMembership.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: {
+          ...volumetryWhere,
+          status: "ACTIVE",
+          user: { status: "ACTIVE" },
+          role: { active: true, key: { not: "customer_portal" } },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.role.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, active: true, key: { not: "customer_portal" } },
+        _count: { _all: true },
+      }),
+      this.prisma.department.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: volumetryWhere,
+        _count: { _all: true },
+      }),
+      this.prisma.tag.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null },
+        _count: { _all: true },
+      }),
+      this.prisma.quickReply.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null },
+        _count: { _all: true },
+      }),
+      this.prisma.contactCustomField.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null },
+        _count: { _all: true },
+      }),
+      this.prisma.schedule.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: volumetryWhere,
+        _count: { _all: true },
+      }),
+      this.prisma.campaign.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: { ...volumetryWhere, archivedAt: null },
+        _count: { _all: true },
+      }),
+    ]);
+    const countsByTenant = new Map<string, ClientVolumetryCounts>();
+    const applyCounts = (rows: unknown, metric: keyof ClientVolumetryCounts) => {
+      for (const row of rows as Array<{ tenantId: string; _count: { _all: number } }>) {
+        const counts = countsByTenant.get(row.tenantId) ?? emptyClientVolumetryCounts();
+        counts[metric] = row._count._all;
+        countsByTenant.set(row.tenantId, counts);
+      }
+    };
+    applyCounts(instancesByTenant, "instances");
+    applyCounts(contactsByTenant, "contacts");
+    applyCounts(attendantsByTenant, "attendants");
+    applyCounts(accessProfilesByTenant, "accessProfiles");
+    applyCounts(departmentsByTenant, "departments");
+    applyCounts(tagsByTenant, "tags");
+    applyCounts(quickRepliesByTenant, "quickReplies");
+    applyCounts(customFieldsByTenant, "customFields");
+    applyCounts(schedulesByTenant, "schedules");
+    applyCounts(campaignsByTenant, "campaigns");
+
+    const clientVolumetryRows = new Map<
+      string,
+      ClientVolumetryCounts & { clientId: string | null; clientName: string }
+    >();
+    if (selectedClient) {
+      clientVolumetryRows.set(selectedClient.id, {
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+        ...emptyClientVolumetryCounts(),
+      });
+    } else if (!selectedTenant) {
+      for (const client of clients) {
+        clientVolumetryRows.set(client.id, {
+          clientId: client.id,
+          clientName: client.name,
+          ...emptyClientVolumetryCounts(),
+        });
+      }
+    }
+    for (const tenant of tenants.filter((item) => tenantIds.includes(item.id))) {
+      const client = tenantClient.get(tenant.id);
+      const key = client?.id ?? "__without_client__";
+      const current = clientVolumetryRows.get(key) ?? {
+        clientId: client?.id ?? null,
+        clientName: client?.name ?? "Sem cliente",
+        ...emptyClientVolumetryCounts(),
+      };
+      const tenantCounts = countsByTenant.get(tenant.id) ?? emptyClientVolumetryCounts();
+      for (const metric of Object.keys(tenantCounts) as Array<keyof ClientVolumetryCounts>) {
+        current[metric] += tenantCounts[metric];
+      }
+      clientVolumetryRows.set(key, current);
+    }
+    const clientVolumetry = [...clientVolumetryRows.values()].sort((left, right) =>
+      left.clientName.localeCompare(right.clientName, "pt-BR"),
+    );
+    const clientVolumetryTotals = clientVolumetry.reduce<ClientVolumetryCounts>((totals, row) => {
+      for (const metric of Object.keys(totals) as Array<keyof ClientVolumetryCounts>) {
+        totals[metric] += row[metric];
+      }
+      return totals;
+    }, emptyClientVolumetryCounts());
 
     return {
       range: {
@@ -383,8 +630,8 @@ export class PlatformService {
         tenants: tenants.map((tenant) => ({
           id: tenant.id,
           name: tenant.name,
-          clientId: tenant.platformClient?.id ?? null,
-          clientName: tenant.platformClient?.name ?? "Sem cliente",
+          clientId: tenantClient.get(tenant.id)?.id ?? null,
+          clientName: tenantClient.get(tenant.id)?.name ?? "Sem cliente",
         })),
       },
       kpis: {
@@ -411,6 +658,7 @@ export class PlatformService {
         subscriptions: plan._count.subscriptions,
       })),
       operation: { openTickets, openInvoices, overdueInvoices },
+      clientVolumetry: { rows: clientVolumetry, totals: clientVolumetryTotals },
       semantics: {
         filters:
           "Cliente e tenant restringem todas as métricas; período restringe apenas métricas temporais.",
@@ -419,6 +667,8 @@ export class PlatformService {
           "INBOUND e OUTBOUND, exceto tipo SYSTEM, status FAILED e conversas arquivadas; America/Sao_Paulo.",
         clientGrouping:
           "Tenant sem cliente é agrupada como Sem cliente; cliente sem tenant tem volume zero.",
+        clientVolumetry:
+          "Cadastros vigentes são contados por tenant e consolidados por cliente; o período não restringe essas métricas.",
       },
       scope: { clientId: query.clientId ?? null, tenantId: query.tenantId ?? null, tenantIds },
       // Compatibilidade com consumidores anteriores durante a migração do Dashboard Platform.
@@ -442,7 +692,9 @@ export class PlatformService {
     });
     const stored = readStoredPlatformDashboardConfiguration(row?.value);
     return {
-      configuration: stored?.configuration ?? DEFAULT_PLATFORM_DASHBOARD_CONFIGURATION,
+      configuration: mergePlatformDashboardNativeAdditions(
+        stored?.configuration ?? DEFAULT_PLATFORM_DASHBOARD_CONFIGURATION,
+      ),
       version: stored?.version ?? 0,
       updatedAt: row?.updatedAt ?? null,
       canUpdate: current.platformPermissions?.includes("platform.settings.update") === true,
@@ -3334,12 +3586,45 @@ const PLATFORM_DASHBOARD_VISUALIZATIONS = new Set([
 ]);
 const PLATFORM_DASHBOARD_GROUPS = new Map([
   ["platformKpis", "records"],
+  ["clientVolumetry", "records"],
   ["hour", "messages"],
   ["clientVolume", "messages"],
   ["clientPercentage", "messages"],
   ["subscriptions", "records"],
   ["operation", "records"],
 ]);
+
+function mergePlatformDashboardNativeAdditions(configuration: {
+  schemaVersion: number;
+  components: ReadonlyArray<{
+    id: string;
+    title: string;
+    visible: boolean;
+    order: number;
+    visualization: string;
+    columns: number;
+    dataSource: string;
+    groupBy: string;
+    valueMode: string;
+  }>;
+}) {
+  if (configuration.components.some((component) => component.id === "clientVolumetry")) {
+    return configuration;
+  }
+  const addition = DEFAULT_PLATFORM_DASHBOARD_CONFIGURATION.components.find(
+    (component) => component.id === "clientVolumetry",
+  );
+  if (!addition) return configuration;
+  const components = configuration.components.map((component) => ({ ...component }));
+  const trafficIndex = components.findIndex((component) => component.id === "traffic");
+  components.splice(trafficIndex >= 0 ? trafficIndex + 1 : Math.min(2, components.length), 0, {
+    ...addition,
+  });
+  return {
+    schemaVersion: 1,
+    components: components.map((component, order) => ({ ...component, order })),
+  };
+}
 
 function validatePlatformDashboardConfiguration(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {

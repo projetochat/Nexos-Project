@@ -16,11 +16,13 @@ import { toast } from "sonner";
 import { AdminContainer } from "@/components/admin-shell";
 import { PlatformDashboardFiltersBar } from "@/components/dashboard-filters";
 import { DashboardEditorModal } from "@/components/dashboard-editor-modal";
+import { DashboardMaximizeFrame } from "@/components/dashboard-maximize-frame";
 import {
   DashboardComponentRenderer,
   type DashboardVisualDatum,
 } from "@/components/dashboard-component-renderer";
 import { MessageTrafficWidget } from "@/components/message-traffic-widget";
+import { PlatformClientVolumetryTable } from "@/components/platform-client-volumetry-table";
 import { Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -29,16 +31,20 @@ import {
   type DashboardDataSource,
   type DashboardGroupingOption,
 } from "@/lib/dashboard-components";
-import { datesForOperationalPeriod } from "@/lib/operational-filters";
+import {
+  normalizePlatformDashboardSearch,
+  platformDashboardFiltersFromSearch,
+  platformDashboardSearchFromFilters,
+} from "@/lib/platform-dashboard-search";
 import {
   platformDashboardApi,
   type PlatformDashboardConfiguration,
-  type PlatformDashboardFilters,
   type PlatformDashboardResponse,
 } from "@/lib/platform-dashboard-api";
 import { TrixusApiError } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/")({
+  validateSearch: (search: Record<string, unknown>) => normalizePlatformDashboardSearch(search),
   head: () => ({ meta: [{ title: "Trixus" }] }),
   component: AdminDashboard,
 });
@@ -51,6 +57,7 @@ const PLATFORM_SOURCE_OPTIONS: Array<{ value: DashboardDataSource; label: string
 const PLATFORM_GROUPINGS: Record<"records" | "messages", DashboardGroupingOption[]> = {
   records: [
     { value: "platformKpis", label: "Indicadores da plataforma", section: "native" },
+    { value: "clientVolumetry", label: "Volumetria por cliente", section: "native" },
     { value: "subscriptions", label: "Assinaturas por plano", section: "native" },
     { value: "operation", label: "Operação", section: "native" },
   ],
@@ -67,10 +74,19 @@ export const DEFAULT_PLATFORM_DASHBOARD_COMPONENTS: DashboardComponentConfig[] =
   component("kpis", "Indicadores da plataforma", "cards", 4, "records", "platformKpis", "count"),
   component("traffic", "Tráfego de mensagens", "line", 2, "messages", "hour", "count"),
   component(
+    "clientVolumetry",
+    "Volumetria por cliente",
+    "table",
+    2,
+    "records",
+    "clientVolumetry",
+    "count",
+  ),
+  component(
     "volumeByClient",
     "Volume de mensagens por cliente",
     "columns",
-    2,
+    1,
     "messages",
     "clientVolume",
     "count",
@@ -88,7 +104,7 @@ export const DEFAULT_PLATFORM_DASHBOARD_COMPONENTS: DashboardComponentConfig[] =
     "subscriptions",
     "Assinaturas por plano",
     "table",
-    2,
+    1,
     "records",
     "subscriptions",
     "count",
@@ -98,14 +114,12 @@ export const DEFAULT_PLATFORM_DASHBOARD_COMPONENTS: DashboardComponentConfig[] =
 
 const PLATFORM_NATIVE_IDS = new Set(DEFAULT_PLATFORM_DASHBOARD_COMPONENTS.map((item) => item.id));
 
-function defaultFilters(): PlatformDashboardFilters {
-  return { period: "month", ...datesForOperationalPeriod("month") };
-}
-
 function AdminDashboard() {
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
-  const [filters, setFilters] = React.useState<PlatformDashboardFilters>(defaultFilters);
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const filters = React.useMemo(() => platformDashboardFiltersFromSearch(search), [search]);
   const [editingDashboard, setEditingDashboard] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
   const refreshInFlight = React.useRef(false);
@@ -206,7 +220,6 @@ function AdminDashboard() {
     <AdminContainer className="max-w-none">
       <SectionHeader
         title="Plano de controle SaaS"
-        subtitle="Métricas reais da API Trixus. Cobrança manual, sem gateway integrado."
         actions={
           <div className="flex gap-2">
             <Button
@@ -219,8 +232,16 @@ function AdminDashboard() {
               {refreshing ? "Atualizando..." : "Atualizar"}
             </Button>
             {canUpdateDashboard && (
-              <Button variant="secondary" size="sm" onClick={() => setEditingDashboard(true)}>
-                <Pencil className="h-4 w-4" /> Editar Dashboard
+              <Button
+                variant="secondary"
+                size="sm"
+                className="max-sm:!w-9 max-sm:!px-0"
+                title="Editar Dashboard"
+                aria-label="Editar Dashboard"
+                onClick={() => setEditingDashboard(true)}
+              >
+                <Pencil className="h-4 w-4" />
+                <span className="hidden sm:inline">Editar Dashboard</span>
               </Button>
             )}
           </div>
@@ -231,8 +252,13 @@ function AdminDashboard() {
         value={filters}
         clients={data?.filters.clients ?? []}
         tenants={data?.filters.tenants ?? []}
-        onChange={(patch) => setFilters((current) => ({ ...current, ...patch }))}
-        onClear={() => setFilters(defaultFilters())}
+        onChange={(patch) => {
+          void navigate({
+            search: platformDashboardSearchFromFilters({ ...filters, ...patch }),
+            replace: true,
+          });
+        }}
+        onClear={() => void navigate({ search: {}, replace: true })}
       />
 
       {dashboardQuery.error && (
@@ -247,7 +273,9 @@ function AdminDashboard() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           {visibleComponents.map((config) => (
             <div key={config.id} className={dashboardColumnClass(config.columns)}>
-              <PlatformDashboardComponent config={config} data={data} isMobile={isMobile} />
+              <DashboardMaximizeFrame title={config.title}>
+                <PlatformDashboardComponent config={config} data={data} isMobile={isMobile} />
+              </DashboardMaximizeFrame>
             </div>
           ))}
           {visibleComponents.length === 0 && (
@@ -296,6 +324,20 @@ function PlatformDashboardComponent({
 }) {
   if (
     config.dataSource === "records" &&
+    config.groupBy === "clientVolumetry" &&
+    config.visualization === "table" &&
+    config.valueMode === "count"
+  ) {
+    return (
+      <PlatformClientVolumetryTable
+        title={config.title}
+        rows={data.clientVolumetry.rows}
+        totals={data.clientVolumetry.totals}
+      />
+    );
+  }
+  if (
+    config.dataSource === "records" &&
     config.groupBy === "platformKpis" &&
     config.visualization === "cards" &&
     config.valueMode === "count"
@@ -340,7 +382,6 @@ function PlatformDashboardComponent({
       columns={config.columns}
       valueMode={config.valueMode}
       data={resolvePlatformData(config, data)}
-      showValues={config.groupBy === "clientVolume" && config.visualization === "columns"}
       preserveAllItems={config.groupBy === "clientVolume" || config.groupBy === "clientPercentage"}
     />
   );
@@ -361,7 +402,7 @@ function PlatformDashboardComponent({
 function PlatformKpis({ title, data }: { title: string; data: PlatformDashboardResponse }) {
   return (
     <section aria-label={title}>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Kpi
           label="Tenants ativos"
           value={data.kpis.activeTenants}
@@ -468,16 +509,12 @@ function Kpi({
     info: "bg-info/15 text-info",
   };
   return (
-    <Card>
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            {label}
-          </div>
-          <div className="mt-2 font-mono text-2xl font-semibold">
-            {value.toLocaleString("pt-BR")}
-          </div>
-        </div>
+    <Card className="flex min-h-24 flex-col">
+      <div className="w-full text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-auto flex items-center justify-between gap-3 pt-2">
+        <div className="font-mono text-2xl font-semibold">{value.toLocaleString("pt-BR")}</div>
         <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${tones[tone]}`}>
           <Icon className="h-4 w-4" />
         </div>
@@ -523,6 +560,21 @@ export function resolvePlatformData(
     return data.charts.messagePercentageByClient.map((item) => ({
       nome: item.clientName,
       total: item.total,
+    }));
+  if (config.groupBy === "clientVolumetry")
+    return data.clientVolumetry.rows.map((item) => ({
+      nome: item.clientName,
+      total:
+        item.instances +
+        item.contacts +
+        item.attendants +
+        item.accessProfiles +
+        item.departments +
+        item.tags +
+        item.quickReplies +
+        item.customFields +
+        item.schedules +
+        item.campaigns,
     }));
   if (config.groupBy === "subscriptions")
     return data.subscriptionsByPlan.map((item) => ({ nome: item.name, total: item.subscriptions }));

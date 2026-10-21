@@ -84,6 +84,7 @@ export type SendMessageCommand = {
 export type SendMessageResult = {
   accepted: boolean;
   providerMessageId?: string | null;
+  providerChatId?: string | null;
   providerTimestamp?: Date | null;
   providerStatus?: string | null;
 };

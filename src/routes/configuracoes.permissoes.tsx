@@ -9,6 +9,7 @@ const PERMISSION_GROUP_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   chat: "Chat",
   conversations: "Chat",
+  leads: "Chat",
   messages: "Chat",
   contacts: "Contatos",
   groups: "Gerenciar Grupos",
@@ -28,6 +29,7 @@ const PERMISSION_GROUP_LABELS: Record<string, string> = {
 function permissionLabel(permission: string) {
   const specificLabels: Record<string, string> = {
     "conversations.read": "Ver conversas",
+    "leads.read": "Ver leads",
     "conversations.assign": "Transferir conversas",
     "messages.send": "Enviar mensagens",
     "chat.phone.read": "Ver telefone",

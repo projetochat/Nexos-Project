@@ -1,6 +1,7 @@
 import * as React from "react";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Badge, Card, SearchInput, SectionHeader } from "@/components/ui-kit";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { fmtDateTime } from "@/lib/format";
 import { platformApi, type PlatformAuditLog } from "@/lib/trixus-api";
 
@@ -33,12 +34,15 @@ export function LogsSettingsContent() {
         subtitle="Eventos persistidos pelo plano de controle. Health detalhado fica em Monitoramento."
       />
       <Card>
-        <SearchInput
-          value={q}
-          onChange={setQ}
-          placeholder="Buscar evento..."
-          className="mb-4 max-w-md"
-        />
+        <div className="mb-4 flex max-w-[31.5rem] items-end gap-3">
+          <SearchInput
+            value={q}
+            onChange={setQ}
+            placeholder="Buscar evento..."
+            className="min-w-0 flex-1"
+          />
+          {q && <ClearFiltersButton onClick={() => setQ("")} />}
+        </div>
         {error && <div className="mb-4 text-sm text-destructive">{error}</div>}
         <div className="font-mono text-xs">
           {filtered.map((row) => (

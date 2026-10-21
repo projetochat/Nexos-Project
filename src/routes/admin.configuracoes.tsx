@@ -155,7 +155,12 @@ function PlatformSettingsContent() {
           </Field>
         </div>
         <div className="mt-6 flex justify-end border-t border-border pt-4">
-          <Button variant="primary" onClick={save} disabled={loading || saving}>
+          <Button
+            variant="primary"
+            className="save-action-button"
+            onClick={save}
+            disabled={loading || saving}
+          >
             {saving ? "Salvando..." : "Salvar alterações"}
           </Button>
         </div>

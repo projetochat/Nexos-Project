@@ -28,6 +28,11 @@ type LoginResponse = {
     presentationName?: string | null;
     avatarUrl?: string | null;
     keepSidebarCollapsed?: boolean;
+    chatBubbleColor?: string | null;
+    chatBubbleTextColor?: string | null;
+    customerBubbleColor?: string | null;
+    customerBubbleTextColor?: string | null;
+    chatBackgroundColor?: string | null;
     roleId: string;
     roleKey: ApiRoleKey;
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
@@ -141,6 +146,9 @@ export type ApiDepartment = {
   connectionIds: string[];
   favoriteConnectionIds?: string[];
   active?: boolean;
+  inactivityClosureEnabled: boolean;
+  inactivityTimeoutMinutes: number | null;
+  inactivityClosureMessage: string | null;
   createdAt?: string;
   updatedAt?: string;
   memberCount?: number;
@@ -185,6 +193,11 @@ export type ApiUserMembership = {
     presentationName?: string | null;
     avatarUrl?: string | null;
     keepSidebarCollapsed?: boolean;
+    chatBubbleColor?: string | null;
+    chatBubbleTextColor?: string | null;
+    customerBubbleColor?: string | null;
+    customerBubbleTextColor?: string | null;
+    chatBackgroundColor?: string | null;
     status: "ACTIVE" | "DISABLED";
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   };
@@ -267,6 +280,7 @@ export type ApiTag = {
   descricao?: string | null;
   cor: string;
   active?: boolean;
+  notifyOnNewConversation?: boolean;
   archivedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -308,6 +322,7 @@ export type ApiContactInstanceOption = {
   value: string;
   name: string;
   color: string | null;
+  logoUrl?: string | null;
   externalReference?: string | null;
   ownerPhone?: string | null;
   instanceName?: string | null;
@@ -327,6 +342,7 @@ export type ApiContact = {
   customerDepartmentId?: string | null;
   customerDepartment?: Pick<ApiCustomerDepartment, "id" | "name"> | null;
   customerAccessProfile?: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS" | null;
+  active: boolean;
   email: string | null;
   /** Nome legado; use contactDepartment como fonte canônica do departamento cadastrado. */
   departamento: string | null;
@@ -352,13 +368,21 @@ export type ApiContact = {
   }>;
   createdAt?: string;
   updatedAt?: string;
-  lifecycle?: "created" | "restored";
+  lifecycle?: "created" | "restored" | "linked";
 };
 
 export type ApiGroupContactPickerItem = Pick<
   ApiContact,
   "id" | "nome" | "telefone" | "normalizedPhone" | "avatar_url"
 >;
+
+export type ApiMessageContactPickerPage = PaginatedResponse<ApiGroupContactPickerItem> & {
+  instance: {
+    id: string;
+    name: string;
+    ownerPhone: string | null;
+  } | null;
+};
 
 export type ApiAgendaImportContact = {
   id: string;
@@ -395,8 +419,11 @@ export type ApiConversation = {
   agent_id: string | null;
   status: ApiConversationStatus;
   is_group: boolean;
+  group_name?: string | null;
   created_at: string;
   updated_at: string;
+  closed_at?: string | null;
+  closed_by?: { id: string; membershipId: string; nome: string; email: string } | null;
   last_message_at: string;
   protocolo: string | null;
   unreadCount: number;
@@ -474,7 +501,6 @@ export type QuickReplyMessage = { text: string; attachment?: QuickReplyAttachmen
 
 export type ApiQuickReply = {
   messages?: QuickReplyMessage[] | null;
-  intervalSeconds?: number;
   id: string;
   tenantId: string;
   title: string;
@@ -949,6 +975,7 @@ export type OperationalPeriod =
 
 export type OperationalFilters = {
   period: OperationalPeriod;
+  conversationType?: "all" | "contacts" | "groups";
   start?: string;
   end?: string;
   q?: string;
@@ -1007,6 +1034,39 @@ export type ApiDashboardComponentData = {
 export type ApiDashboardConfiguration = {
   configuration: unknown;
   updatedAt: string | null;
+};
+
+export type ApiProtocolSettings = {
+  module: "CHAT" | "TICKET";
+  format: "YEAR_SEQUENCE" | "YEAR_MONTH_SEQUENCE" | "SEQUENCE" | "DATE_SEQUENCE" | "CUSTOM";
+  digits: number;
+  reset: "YEARLY" | "MONTHLY" | "NEVER";
+  customPattern: string | null;
+  preview: string;
+  confirmationRequired?: boolean;
+  message?: string;
+};
+
+export const REGISTRATION_CASE_KEYS = [
+  "contacts",
+  "contactCompanies",
+  "contactDepartments",
+  "contactProfiles",
+  "attendants",
+  "accessProfiles",
+  "departments",
+  "tags",
+  "botFlows",
+  "automations",
+  "aiAgents",
+  "ticketTitles",
+] as const;
+
+export type ApiRegistrationCaseKey = (typeof REGISTRATION_CASE_KEYS)[number];
+
+export type ApiRegistrationCaseSettings = {
+  values: Record<ApiRegistrationCaseKey, boolean>;
+  counts: Record<ApiRegistrationCaseKey, number>;
 };
 
 export type ApiOperationsReport = {
@@ -1090,6 +1150,10 @@ type CustomerPayload = {
 type ContactPayload = {
   name: string;
   phone: string;
+  linkExistingToCustomer?: boolean;
+  confirmCustomerTransfer?: boolean;
+  expectedCustomerId?: string;
+  active?: boolean;
   email?: string | null;
   customerId?: string | null;
   customerBranchId?: string | null;
@@ -1261,6 +1325,11 @@ export async function hydrateWithTrixusApi() {
     empresaNome: data.tenant.name,
     avatarUrl: data.user.avatarUrl ?? undefined,
     keepSidebarCollapsed: data.user.keepSidebarCollapsed ?? false,
+    chatBubbleColor: data.user.chatBubbleColor ?? undefined,
+    chatBubbleTextColor: data.user.chatBubbleTextColor ?? undefined,
+    customerBubbleColor: data.user.customerBubbleColor ?? undefined,
+    customerBubbleTextColor: data.user.customerBubbleTextColor ?? undefined,
+    chatBackgroundColor: data.user.chatBackgroundColor ?? undefined,
     permissions: effectiveSessionPermissions(role, data.permissions),
   } satisfies SessionUser;
 }
@@ -1341,6 +1410,17 @@ export const organizationApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+  registrationCaseSettings: () =>
+    apiRequest<ApiRegistrationCaseSettings>("/company/registration-case"),
+  updateRegistrationCase: (data: {
+    key: ApiRegistrationCaseKey;
+    enabled: boolean;
+    confirmExistingConversion?: boolean;
+  }) =>
+    apiRequest<{ key: ApiRegistrationCaseKey; enabled: boolean; converted: number }>(
+      "/company/registration-case",
+      { method: "PATCH", body: JSON.stringify(data) },
+    ),
   listFinancialPayments: () => apiRequest<ApiFinancialPayment[]>("/company/financial"),
   listDepartments: () => apiRequest<ApiDepartment[]>("/departments"),
   listDepartmentsByConnection: (
@@ -1362,6 +1442,9 @@ export const organizationApi = {
     color?: string;
     icon?: DepartmentIcon;
     connectionIds: string[];
+    inactivityClosureEnabled?: boolean;
+    inactivityTimeoutMinutes?: number | null;
+    inactivityClosureMessage?: string | null;
   }) => apiRequest<ApiDepartment>("/departments", { method: "POST", body: JSON.stringify(data) }),
   updateDepartment: (
     id: string,
@@ -1372,6 +1455,9 @@ export const organizationApi = {
       icon?: DepartmentIcon;
       connectionIds?: string[];
       active?: boolean;
+      inactivityClosureEnabled?: boolean;
+      inactivityTimeoutMinutes?: number | null;
+      inactivityClosureMessage?: string | null;
     },
   ) =>
     apiRequest<ApiDepartment>(`/departments/${id}`, {
@@ -1434,6 +1520,11 @@ export const organizationApi = {
       metadata?: unknown;
     },
   ) => apiRequest<ApiRole>(`/roles/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  setRoleFavoriteDepartment: (roleId: string, departmentId: string) =>
+    apiRequest<ApiRole>(`/roles/${roleId}/favorite-department`, {
+      method: "PATCH",
+      body: JSON.stringify({ departmentId }),
+    }),
   roleDeletionPreview: (id: string, signal?: AbortSignal) =>
     apiRequest<ApiDeletionImpactPreview>(`/roles/${id}/deletion-preview`, { signal }),
   deleteRole: (id: string, snapshotToken: string, signal?: AbortSignal) =>
@@ -1473,14 +1564,37 @@ export const organizationApi = {
     }),
   deactivateUser: (id: string) =>
     apiRequest<ApiUserMembership>(`/users/${id}/deactivate`, { method: "PATCH" }),
+  userDeletionPreview: (id: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionImpactPreview>(`/users/${id}/deletion-preview`, { signal }),
+  deleteUser: (id: string, snapshotToken: string, signal?: AbortSignal) =>
+    apiRequest<ApiDeletionConfirmationResult>(`/users/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ snapshotToken }),
+      signal,
+    }),
   updateMyProfile: (data: {
     name?: string;
     avatarUrl?: string | null;
     keepSidebarCollapsed?: boolean;
+    chatBubbleColor?: string | null;
+    chatBubbleTextColor?: string | null;
+    customerBubbleColor?: string | null;
+    customerBubbleTextColor?: string | null;
+    chatBackgroundColor?: string | null;
     currentPassword?: string;
     newPassword?: string;
   }) =>
     apiRequest<ApiUserMembership>("/me/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  protocolSettings: () => apiRequest<ApiProtocolSettings[]>("/company/protocols"),
+  updateProtocolSettings: (
+    data: Omit<ApiProtocolSettings, "preview" | "confirmationRequired" | "message"> & {
+      confirmChange?: boolean;
+    },
+  ) =>
+    apiRequest<ApiProtocolSettings>("/company/protocols", {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
@@ -1586,6 +1700,9 @@ export const crmApi = {
 
   listContacts: (params: ListContactsParams = {}) =>
     apiRequest<PaginatedResponse<ApiContact>>(`/crm/contacts${queryString(params)}`),
+  listContactsForMessagePicker: (
+    params: Pick<ListContactsParams, "q" | "priorityInstance" | "page" | "pageSize"> = {},
+  ) => apiRequest<ApiMessageContactPickerPage>(`/crm/message-contact-picker${queryString(params)}`),
   listContactsForGroupPicker: async (
     params: { q?: string; page?: number; pageSize?: number } = {},
   ): Promise<PaginatedResponse<ApiGroupContactPickerItem>> => {
@@ -1655,11 +1772,22 @@ export const crmApi = {
     }),
   listTags: () => apiRequest<ApiTag[]>("/tags"),
   listTagsCatalog: () => apiRequest<ApiTag[]>("/tags?scope=catalog"),
-  createTag: (data: { name: string; description?: string; color?: string; active?: boolean }) =>
-    apiRequest<ApiTag>("/tags", { method: "POST", body: JSON.stringify(data) }),
+  createTag: (data: {
+    name: string;
+    description?: string;
+    color?: string;
+    active?: boolean;
+    notifyOnNewConversation?: boolean;
+  }) => apiRequest<ApiTag>("/tags", { method: "POST", body: JSON.stringify(data) }),
   updateTag: (
     id: string,
-    data: { name?: string; description?: string; color?: string; active?: boolean },
+    data: {
+      name?: string;
+      description?: string;
+      color?: string;
+      active?: boolean;
+      notifyOnNewConversation?: boolean;
+    },
   ) => apiRequest<ApiTag>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   tagDeletionPreview: (id: string, signal?: AbortSignal) =>
     apiRequest<ApiDeletionImpactPreview>(`/tags/${id}/deletion-preview`, { signal }),
@@ -1842,7 +1970,6 @@ export const quickReplyApi = {
     closeOnSend?: boolean;
     active?: boolean;
     messages?: QuickReplyMessage[];
-    intervalSeconds?: number;
     attachmentFileName?: string | null;
     attachmentMimeType?: string | null;
     attachmentSize?: number | null;
@@ -1858,7 +1985,6 @@ export const quickReplyApi = {
       closeOnSend?: boolean;
       active?: boolean;
       messages?: QuickReplyMessage[];
-      intervalSeconds?: number;
       attachmentFileName?: string | null;
       attachmentMimeType?: string | null;
       attachmentSize?: number | null;
@@ -1879,11 +2005,40 @@ export const quickReplyApi = {
     }),
 };
 
+export type BulkConversationResult = {
+  succeeded: string[];
+  failed: Array<{ conversationId: string; message: string }>;
+};
+
 export const conversationApi = {
-  bulkClose: (queues: Array<"ativas" | "standby" | "fila" | "leads">) =>
-    apiRequest<{ closed: number }>("/conversations/bulk-close", {
+  unreadTotal: () => apiRequest<{ unreadCount: number }>("/conversations/unread-total"),
+  bulkClose: (conversationIds: string[]) =>
+    apiRequest<BulkConversationResult & { closed: number }>("/conversations/bulk-close", {
       method: "POST",
-      body: JSON.stringify({ queues }),
+      body: JSON.stringify({ conversationIds }),
+    }),
+  bulkStart: (conversationIds: string[], departmentId?: string) =>
+    apiRequest<BulkConversationResult>("/conversations/bulk-start", {
+      method: "POST",
+      body: JSON.stringify({ conversationIds, departmentId }),
+    }),
+  bulkOptions: (conversationIds: string[]) =>
+    apiRequest<{
+      departments: Array<{ id: string; name: string }>;
+      agents: Array<{ id: string; name: string }>;
+    }>("/conversations/bulk-options", {
+      method: "POST",
+      body: JSON.stringify({ conversationIds }),
+    }),
+  bulkTransfer: (
+    conversationIds: string[],
+    destination:
+      | { mode: "department" | "agent"; targetId: string }
+      | { mode: "status"; status: "fila" | "standby" },
+  ) =>
+    apiRequest<BulkConversationResult>("/conversations/bulk-transfer", {
+      method: "POST",
+      body: JSON.stringify({ conversationIds, ...destination }),
     }),
   list: (params: ListConversationsParams = {}) =>
     apiRequest<PaginatedResponse<ApiConversation> & { counts: ConversationCounts }>(
@@ -2858,6 +3013,15 @@ type ExchangedImpersonationHandoff = LoginResponse & {
 };
 
 export const platformApi = {
+  changeOwnPassword: (data: {
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  }) =>
+    apiRequest<{ ok: true; sessionsRevoked: number }>("/platform/me/password", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   dashboard: () => apiRequest<PlatformDashboard>("/platform/dashboard"),
   health: () => apiRequest<PlatformHealth>("/platform/health"),
   settings: () => apiRequest<PlatformSettings>("/platform/settings"),
@@ -3502,6 +3666,11 @@ function loginResponseToSessionUser(data: LoginResponse): SessionUser {
     empresaNome: data.tenant.name,
     avatarUrl: data.user.avatarUrl ?? undefined,
     keepSidebarCollapsed: data.user.keepSidebarCollapsed ?? false,
+    chatBubbleColor: data.user.chatBubbleColor ?? undefined,
+    chatBubbleTextColor: data.user.chatBubbleTextColor ?? undefined,
+    customerBubbleColor: data.user.customerBubbleColor ?? undefined,
+    customerBubbleTextColor: data.user.customerBubbleTextColor ?? undefined,
+    chatBackgroundColor: data.user.chatBackgroundColor ?? undefined,
     permissions: effectiveSessionPermissions(role, data.permissions),
   };
 }

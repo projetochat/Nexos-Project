@@ -46,6 +46,7 @@ import { Route as ImpersonationCallbackRouteImport } from './routes/impersonatio
 import { Route as ConfiguracoesVariaveisRouteImport } from './routes/configuracoes.variaveis'
 import { Route as ConfiguracoesSegurancaRouteImport } from './routes/configuracoes.seguranca'
 import { Route as ConfiguracoesPermissoesRouteImport } from './routes/configuracoes.permissoes'
+import { Route as ConfiguracoesPadraoCadastrosRouteImport } from './routes/configuracoes.padrao-cadastros'
 import { Route as ConfiguracoesMensagensRouteImport } from './routes/configuracoes.mensagens'
 import { Route as ConfiguracoesIntegracoesRouteImport } from './routes/configuracoes.integracoes'
 import { Route as ConfiguracoesGeralRouteImport } from './routes/configuracoes.geral'
@@ -255,6 +256,12 @@ const ConfiguracoesPermissoesRoute = ConfiguracoesPermissoesRouteImport.update({
   path: '/permissoes',
   getParentRoute: () => ConfiguracoesRoute,
 } as any)
+const ConfiguracoesPadraoCadastrosRoute =
+  ConfiguracoesPadraoCadastrosRouteImport.update({
+    id: '/padrao-cadastros',
+    path: '/padrao-cadastros',
+    getParentRoute: () => ConfiguracoesRoute,
+  } as any)
 const ConfiguracoesMensagensRoute = ConfiguracoesMensagensRouteImport.update({
   id: '/mensagens',
   path: '/mensagens',
@@ -424,6 +431,7 @@ export interface FileRoutesByFullPath {
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
   '/configuracoes/mensagens': typeof ConfiguracoesMensagensRoute
+  '/configuracoes/padrao-cadastros': typeof ConfiguracoesPadraoCadastrosRoute
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
@@ -482,6 +490,7 @@ export interface FileRoutesByTo {
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
   '/configuracoes/mensagens': typeof ConfiguracoesMensagensRoute
+  '/configuracoes/padrao-cadastros': typeof ConfiguracoesPadraoCadastrosRoute
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
@@ -545,6 +554,7 @@ export interface FileRoutesById {
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
   '/configuracoes/mensagens': typeof ConfiguracoesMensagensRoute
+  '/configuracoes/padrao-cadastros': typeof ConfiguracoesPadraoCadastrosRoute
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
@@ -609,6 +619,7 @@ export interface FileRouteTypes {
     | '/configuracoes/geral'
     | '/configuracoes/integracoes'
     | '/configuracoes/mensagens'
+    | '/configuracoes/padrao-cadastros'
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
@@ -667,6 +678,7 @@ export interface FileRouteTypes {
     | '/configuracoes/geral'
     | '/configuracoes/integracoes'
     | '/configuracoes/mensagens'
+    | '/configuracoes/padrao-cadastros'
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
@@ -729,6 +741,7 @@ export interface FileRouteTypes {
     | '/configuracoes/geral'
     | '/configuracoes/integracoes'
     | '/configuracoes/mensagens'
+    | '/configuracoes/padrao-cadastros'
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
@@ -1034,6 +1047,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracoesPermissoesRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
+    '/configuracoes/padrao-cadastros': {
+      id: '/configuracoes/padrao-cadastros'
+      path: '/padrao-cadastros'
+      fullPath: '/configuracoes/padrao-cadastros'
+      preLoaderRoute: typeof ConfiguracoesPadraoCadastrosRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
     '/configuracoes/mensagens': {
       id: '/configuracoes/mensagens'
       path: '/mensagens'
@@ -1271,6 +1291,7 @@ interface ConfiguracoesRouteChildren {
   ConfiguracoesGeralRoute: typeof ConfiguracoesGeralRoute
   ConfiguracoesIntegracoesRoute: typeof ConfiguracoesIntegracoesRoute
   ConfiguracoesMensagensRoute: typeof ConfiguracoesMensagensRoute
+  ConfiguracoesPadraoCadastrosRoute: typeof ConfiguracoesPadraoCadastrosRoute
   ConfiguracoesPermissoesRoute: typeof ConfiguracoesPermissoesRoute
   ConfiguracoesSegurancaRoute: typeof ConfiguracoesSegurancaRoute
   ConfiguracoesVariaveisRoute: typeof ConfiguracoesVariaveisRoute
@@ -1284,6 +1305,7 @@ const ConfiguracoesRouteChildren: ConfiguracoesRouteChildren = {
   ConfiguracoesGeralRoute: ConfiguracoesGeralRoute,
   ConfiguracoesIntegracoesRoute: ConfiguracoesIntegracoesRoute,
   ConfiguracoesMensagensRoute: ConfiguracoesMensagensRoute,
+  ConfiguracoesPadraoCadastrosRoute: ConfiguracoesPadraoCadastrosRoute,
   ConfiguracoesPermissoesRoute: ConfiguracoesPermissoesRoute,
   ConfiguracoesSegurancaRoute: ConfiguracoesSegurancaRoute,
   ConfiguracoesVariaveisRoute: ConfiguracoesVariaveisRoute,

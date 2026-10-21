@@ -21,6 +21,12 @@ describe("PACK 11 · interface de chamados", () => {
     ]) {
       expect(source).toContain(`label="${label}"`);
     }
+    expect(source).toContain(
+      'className="w-full text-xs uppercase tracking-widest text-muted-foreground"',
+    );
+    expect(source).toContain(
+      'className="font-mono text-3xl font-semibold tabular-nums text-foreground"',
+    );
   });
 
   it("atualiza a listagem e os indicadores após mudanças em chamados", () => {
@@ -30,9 +36,21 @@ describe("PACK 11 · interface de chamados", () => {
     expect(source).toContain("conversationId: params.conversationId");
   });
 
-  it("mantém tabela desktop e cards mobile com as datas previstas", () => {
-    expect(source).toContain('className="space-y-3 md:hidden"');
-    expect(source).toContain('className="hidden overflow-hidden p-0 md:block"');
+  it("redistribui os filtros quando o botão de limpar não está visível", () => {
+    expect(source).toContain('"lg:grid-cols-[1fr_220px_auto]"');
+    expect(source).toContain('"lg:grid-cols-[1fr_220px]"');
+    expect(source).toContain(
+      '"lg:grid-cols-[minmax(280px,1.6fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_auto]"',
+    );
+    expect(source).toContain(
+      '"lg:grid-cols-[minmax(280px,1.6fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_minmax(150px,.7fr)]"',
+    );
+    expect(source).not.toContain("_40px]");
+  });
+
+  it("mantém a alternância entre tabela e cards com as datas previstas", () => {
+    expect(source).toContain('viewMode === "cards"');
+    expect(source).toContain('viewMode === "list" ? "overflow-hidden p-0" : "hidden"');
     expect(source).toContain('label="Dt. aprovação"');
     expect(source).toContain('label="Dt. conclusão"');
   });

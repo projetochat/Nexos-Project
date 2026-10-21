@@ -7,4 +7,31 @@ describe("DashboardComponentRenderer height contract", () => {
   it("uses a numeric height for compact column and bar previews", () => {
     expect(source.match(/height=\{compact \? height : "100%"\}/g)).toHaveLength(2);
   });
+
+  it("renders values inside pie slices and leaves values out of the legend", () => {
+    expect(source).toContain("<DashboardPieSliceLabel");
+    expect(source).toContain("if (percent < 0.055) return null");
+    expect(source).not.toContain("dashboardPieLegendValue(item, valueMode)");
+  });
+
+  it("always renders column and bar values outside their shapes", () => {
+    expect(source.match(/<DashboardBarValueLabel/g)).toHaveLength(2);
+    expect(source).toContain('orientation="column"');
+    expect(source).toContain('orientation="bar"');
+    expect(source).toContain('fill="var(--foreground)"');
+    expect(source).toContain("numericY - 7");
+    expect(source).toContain("numericX + numericWidth + 6");
+    expect(source).not.toContain("hasRoom");
+  });
+
+  it("enlarges and centers generic BI visualizations when maximized", () => {
+    expect(source).toContain("useDashboardMaximized()");
+    expect(source).toContain('maximized ? "flex items-center justify-center" : ""');
+    expect(source).toContain("h-[clamp(22rem,58dvh,42rem)]");
+    expect(source).toContain('height={maximized ? "70%" : height}');
+    expect(source).toContain('height={maximized ? "100%" : height}');
+    expect(source).toContain("max-h-[72dvh]");
+    expect(source).toContain("centered={maximized}");
+    expect(source).toContain("flex-wrap justify-center");
+  });
 });

@@ -32,6 +32,7 @@ it("hides advanced viewing controls and aligns actions with rotation controls on
     )!;
     const imageActions = document.querySelector<HTMLElement>('[aria-label="Ações da imagem"]')!;
     const closeWrapper = document.querySelector('[aria-label="Fechar"]')!.parentElement!;
+    const closeButton = closeWrapper.querySelector<HTMLButtonElement>('[aria-label="Fechar"]')!;
     const rotateLeft = document.querySelector(
       '[aria-label="Girar foto à esquerda"]',
     )!.parentElement!;
@@ -47,6 +48,9 @@ it("hides advanced viewing controls and aligns actions with rotation controls on
     expect(rotateRight.className).toContain("sm:hidden");
     expect(closeWrapper.className).toContain("ml-auto");
     expect(closeWrapper.className).toContain("sm:ml-0");
+    expect(closeButton.className).toContain("border-border");
+    expect(closeButton.className).toContain("bg-surface-2");
+    expect(closeButton.className).toContain("hover:bg-surface-3");
   } finally {
     await React.act(() => root.unmount());
     container.remove();

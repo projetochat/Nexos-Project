@@ -20,6 +20,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "./ui/pop
 import { Modal, ConfirmDialog } from "./modal";
 import { MessageReactionPicker } from "./message-reaction-picker";
 import { MessageForwardDialog } from "./message-forward-dialog";
+import { Button } from "./ui-kit";
 
 export function MessageActionsMenu({
   message,
@@ -92,8 +93,6 @@ export function MessageActionsMenu({
   };
   const itemClass =
     "flex min-h-10 w-full items-center gap-3 rounded px-3 py-2 text-left text-sm hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 disabled:cursor-not-allowed";
-  const copyItemClass =
-    "flex min-h-10 w-full items-center gap-3 rounded border border-border px-3 py-2 text-left text-sm text-muted-foreground transition hover:border-primary hover:bg-primary hover:text-primary-foreground focus-visible:border-primary focus-visible:bg-primary focus-visible:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40";
   const mediaReady =
     !!message.media_data && (!message.media_data.state || message.media_data.state === "ready");
   const canCopyToClipboard =
@@ -149,7 +148,7 @@ export function MessageActionsMenu({
               Responder
             </button>
             <button
-              className={copyItemClass}
+              className={itemClass}
               disabled={busy || !canCopyToClipboard}
               onClick={() =>
                 void run(async () => {
@@ -363,16 +362,12 @@ export function MessageActionsMenu({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-border px-3 py-2 text-sm"
-              onClick={() => setEdit(false)}
-            >
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEdit(false)}>
               Cancelar
-            </button>
+            </Button>
             <button
               type="submit"
-              className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
+              className="save-action-button rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
               disabled={busy || !editText.trim()}
             >
               Salvar

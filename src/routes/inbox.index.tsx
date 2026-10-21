@@ -14,21 +14,29 @@ import {
   X,
   PauseCircle,
   RefreshCw,
-  Pencil,
   ChevronLeft,
   ChevronRight,
   MoreVertical,
   Image as ImageIcon,
   Mic,
   CalendarClock,
+  UserRound,
+  UsersRound,
+  ArrowLeftRight,
+  CircleCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Avatar, Badge, Button, Field, Input, SearchInput, Select } from "@/components/ui-kit";
 import { ContactFormModal, contactPayload } from "./contatos";
+import { CreateGroupModal } from "./grupos";
 import { Modal } from "@/components/modal";
 import { useDisclosure } from "@/hooks/use-disclosure";
-import { BulkCloseConversationsModal } from "@/components/bulk-close-conversations-modal";
+import {
+  BulkConversationActionModal,
+  type BulkConversationAction,
+} from "@/components/bulk-conversation-action-modal";
 import {
   ActiveConversationOrchestrator,
   type ActiveConversationRequest,
@@ -46,9 +54,11 @@ import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,
   crmApi,
+  groupsApi,
   type ApiConversation,
   type ApiContact,
   type ApiConversationStatus as ConvStatus,
+  type ApiWhatsappGroupSummary,
 } from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import { useSession } from "@/lib/session";
@@ -120,7 +130,10 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const newConv = useDisclosure();
-  const bulkClose = useDisclosure();
+  const [bulkAction, setBulkAction] = React.useState<BulkConversationAction | null>(null);
+  const [selectedConversationIds, setSelectedConversationIds] = React.useState<Set<string>>(
+    new Set(),
+  );
   const queuePrefs = useQueuePrefs();
   const perms = useChatPerms();
   const user = useSession((state) => state.user);
@@ -154,6 +167,16 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const [selectedClientes, setSelectedClientes] = React.useState<Set<string>>(
     () => new Set(inboxListMemory.selectedClientes),
   );
+  const hasListFilters = Boolean(
+    query || selectedInstancias.size || selectedClientes.size || source !== "todos" || onlyUnread,
+  );
+  const clearListFilters = () => {
+    setQuery("");
+    setSelectedInstancias(new Set());
+    setSelectedClientes(new Set());
+    setSource("todos");
+    setOnlyUnread(false);
+  };
   React.useEffect(() => {
     inboxListMemory.onlyUnread = onlyUnread;
     inboxListMemory.query = query;
@@ -249,6 +272,14 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
     });
   }, [conversas, selectedClientes, selectedInstancias]);
 
+  React.useEffect(() => {
+    const visibleIds = new Set(list.map((conversation) => conversation.id));
+    setSelectedConversationIds((current) => {
+      const next = new Set([...current].filter((id) => visibleIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [list]);
+
   const counts = conversationsPage?.counts ?? { ativas: 0, standby: 0, fila: 0, leads: 0 };
 
   const toggle = (set: Set<string>, key: string, setter: (s: Set<string>) => void) => {
@@ -272,6 +303,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 placeholder="Buscar cliente..."
                 className="flex-1"
               />
+              {hasListFilters && <ClearFiltersButton onClick={clearListFilters} />}
               <Button
                 variant="ghost"
                 size="icon"
@@ -321,9 +353,25 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      onSelect={bulkClose.show}
+                      disabled={selectedConversationIds.size === 0}
+                      onSelect={() => setBulkAction("start")}
                       className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
                     >
+                      <Play className="h-4 w-4" /> Iniciar em Massa
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={selectedConversationIds.size === 0}
+                      onSelect={() => setBulkAction("transfer")}
+                      className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
+                    >
+                      <ArrowLeftRight className="h-4 w-4" /> Transferência em Massa
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={selectedConversationIds.size === 0}
+                      onSelect={() => setBulkAction("close")}
+                      className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
+                    >
+                      <CircleCheck className="h-4 w-4" />
                       Fechar Conversas em Massa
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -368,7 +416,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   >
                     <Icon className="h-3.5 w-3.5 shrink-0" />
                     <span className="whitespace-nowrap">{t.label}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground">
+                    <span className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 font-sans text-[9px] font-semibold leading-none tabular-nums text-primary-foreground">
                       {counts[t.id]}
                     </span>
                   </button>
@@ -438,11 +486,32 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   legacyProfile: c.contact?.nivel_gerencia,
                 });
                 return (
-                  <li key={c.id}>
+                  <li key={c.id} className="flex border-b border-border/60">
+                    {canBulkClose && (
+                      <label
+                        className="flex shrink-0 items-center pl-3"
+                        title="Selecionar conversa"
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Selecionar conversa de ${c.contact?.nome ?? "Contato"}`}
+                          checked={selectedConversationIds.has(c.id)}
+                          onChange={() =>
+                            setSelectedConversationIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(c.id)) next.delete(c.id);
+                              else next.add(c.id);
+                              return next;
+                            })
+                          }
+                          className="h-4 w-4 accent-primary"
+                        />
+                      </label>
+                    )}
                     <Link
                       to="/inbox/$conversationId"
                       params={{ conversationId: c.id }}
-                      className={`flex gap-3 border-b border-border/60 px-4 py-3 transition ${active ? "bg-surface-2" : "hover:bg-surface-1"}`}
+                      className={`flex min-w-0 flex-1 gap-3 px-4 py-3 transition ${active ? "bg-surface-2" : "hover:bg-surface-1"}`}
                     >
                       <div className="relative">
                         <Avatar
@@ -528,10 +597,20 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {canStartConversation && <NewConversationModal open={newConv.open} onClose={newConv.hide} />}
-      {canBulkClose && bulkClose.open && (
-        <BulkCloseConversationsModal
-          onClose={bulkClose.hide}
-          onSuccess={() => void navigate({ to: "/inbox" })}
+      {canBulkClose && bulkAction && selectedConversationIds.size > 0 && (
+        <BulkConversationActionModal
+          action={bulkAction}
+          conversationIds={[...selectedConversationIds]}
+          onClose={() => setBulkAction(null)}
+          onSuccess={(succeededIds) => {
+            setSelectedConversationIds((current) => {
+              const next = new Set(current);
+              succeededIds.forEach((id) => next.delete(id));
+              return next;
+            });
+            if (bulkAction === "close") void navigate({ to: "/inbox" });
+            setBulkAction(null);
+          }}
         />
       )}
     </AppShellFull>
@@ -550,7 +629,14 @@ function ConversationMessagePreview({
   durationMs?: number | null;
 }) {
   const preview = conversationPreview(value, type, durationMs);
-  const Icon = preview.kind === "image" ? ImageIcon : preview.kind === "audio" ? Mic : null;
+  const Icon =
+    preview.kind === "image"
+      ? ImageIcon
+      : preview.kind === "audio"
+        ? Mic
+        : preview.kind === "contact"
+          ? UserRound
+          : null;
   return (
     <span className="inline-flex min-w-0 max-w-full items-center gap-1 align-middle">
       {Icon && <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />}
@@ -625,10 +711,17 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     canStartActiveConversation(permissions) && permissions.includes("contacts.read");
   const canCreateContact = permissions.includes("contacts.create");
   const canEditContact = permissions.includes("contacts.update");
+  const canViewGroups = permissions.includes("groups.read");
+  const canCreateGroup = canViewGroups && permissions.includes("groups.create");
+  const canOpenGroup = canViewGroups && permissions.includes("conversations.read");
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [tab, setTab] = React.useState<"contacts" | "groups">("contacts");
   const [q, setQ] = React.useState("");
   const [page, setPage] = React.useState(1);
+  const [groupQuery, setGroupQuery] = React.useState("");
+  const [groupPage, setGroupPage] = React.useState(1);
+  const [createGroupOpen, setCreateGroupOpen] = React.useState(false);
   const [selectedContact, setSelectedContact] = React.useState<ApiContact | null>(null);
   const [conversationRequest, setConversationRequest] =
     React.useState<ActiveConversationRequest | null>(null);
@@ -651,6 +744,25 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
       }),
     enabled: open && canStartConversation,
   });
+  const {
+    data: groupsPage,
+    isFetching: loadingGroups,
+    error: groupsError,
+  } = useQuery({
+    queryKey: ["trixus", "groups", "conversation-modal", groupQuery.trim(), groupPage],
+    queryFn: () =>
+      groupsApi.list({
+        q: groupQuery.trim() || undefined,
+        page: groupPage,
+        pageSize: 10,
+      }),
+    enabled: open && tab === "groups" && canViewGroups,
+  });
+  const { data: groupInstances = [], error: groupInstancesError } = useQuery({
+    queryKey: ["trixus", "groups", "conversation-modal", "instances"],
+    queryFn: groupsApi.instanceOptions,
+    enabled: open && tab === "groups" && canViewGroups,
+  });
   const { data: contactOptions, error: optionsError } = useQuery({
     queryKey: ["trixus", "contacts", "conversation-options"],
     queryFn: crmApi.contactOptions,
@@ -666,12 +778,17 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     return (contactOptions?.instances ?? []).filter((instance) => allowedIds.has(instance.id));
   }, [availableConnections, contactOptions?.instances]);
   const contacts = contactsPage?.items ?? [];
+  const groups = groupsPage?.items ?? [];
   const formReady = !!contactOptions && !!customersPage;
 
   React.useEffect(() => {
     if (!open) {
       setQ("");
       setPage(1);
+      setGroupQuery("");
+      setGroupPage(1);
+      setTab("contacts");
+      setCreateGroupOpen(false);
       setSelectedContact(null);
       setConversationRequest(null);
       setContactForm(null);
@@ -682,6 +799,15 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     setSelectedContact(contact);
     conversationRequestKey.current += 1;
     setConversationRequest({ key: conversationRequestKey.current, contact });
+  };
+
+  const openGroup = (group: ApiWhatsappGroupSummary) => {
+    if (!canOpenGroup) return;
+    navigate({
+      to: "/inbox/$conversationId",
+      params: { conversationId: group.conversationId },
+    });
+    onClose();
   };
 
   return (
@@ -698,7 +824,36 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
         }
       >
         <div className="flex h-full min-h-0 flex-col gap-3">
-          {canCreateContact && (
+          <div className="grid grid-cols-2 border-b border-border" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "contacts"}
+              onClick={() => setTab("contacts")}
+              className={`flex items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+                tab === "contacts"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <UserRound className="h-4 w-4" /> Contatos
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "groups"}
+              disabled={!canViewGroups}
+              onClick={() => setTab("groups")}
+              className={`flex items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                tab === "groups"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <UsersRound className="h-4 w-4" /> Grupos
+            </button>
+          </div>
+          {tab === "contacts" && canCreateContact && (
             <div className="flex justify-end">
               <Button
                 variant="primary"
@@ -710,110 +865,192 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
               </Button>
             </div>
           )}
-          {(optionsError || customersError) && (
+          {tab === "groups" && canCreateGroup && (
+            <div className="flex justify-end">
+              <Button variant="primary" size="sm" onClick={() => setCreateGroupOpen(true)}>
+                <Plus className="h-3.5 w-3.5" /> Novo Grupo
+              </Button>
+            </div>
+          )}
+          {tab === "contacts" && (optionsError || customersError) && (
             <p className="text-xs text-destructive">
               Não foi possível carregar o cadastro de contatos. Tente abrir novamente.
             </p>
           )}
-          {connectionsError ? (
+          {tab === "groups" && groupInstancesError && (
+            <p className="text-xs text-destructive">
+              Não foi possível carregar as instâncias dos grupos. Tente abrir novamente.
+            </p>
+          )}
+          {tab === "contacts" && connectionsError ? (
             <p className="text-xs text-destructive">{(connectionsError as Error).message}</p>
-          ) : availableConnections.length === 0 ? (
+          ) : tab === "contacts" && availableConnections.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               Conecte uma instância antes de iniciar uma conversa.
             </p>
           ) : null}
-          <Field label="Buscar contato">
-            <SearchInput
-              value={q}
-              onChange={(value) => {
-                setQ(value);
-                setPage(1);
-              }}
-              placeholder="Nome ou telefone…"
-            />
-          </Field>
-          <ul
-            aria-label="Contatos"
-            aria-busy={loadingContacts}
-            className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border"
-          >
-            {contacts.map((contact) => (
-              <li
-                key={contact.id}
-                className={
-                  "flex h-12 items-center gap-2 border-b border-border/60 pr-3 last:border-b-0 " +
-                  (selectedContact?.id === contact.id ? "bg-surface-2" : "hover:bg-surface-1")
-                }
+          {tab === "contacts" ? (
+            <>
+              <Field label="Buscar contato">
+                <SearchInput
+                  value={q}
+                  onChange={(value) => {
+                    setQ(value);
+                    setPage(1);
+                  }}
+                  placeholder="Nome ou telefone..."
+                />
+              </Field>
+              <ul
+                aria-label="Contatos"
+                aria-busy={loadingContacts}
+                className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border"
               >
-                <button
-                  type="button"
-                  aria-pressed={selectedContact?.id === contact.id}
-                  disabled={!contactOptions}
-                  onClick={() => selectContact(contact)}
-                  className="flex h-full min-w-0 flex-1 items-center gap-3 px-3 text-left text-sm"
-                >
-                  <Avatar name={contact.nome} src={contact.avatar_url} size={30} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate">{contact.nome}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">
-                      {maskBrazilPhone(contact.telefone)}
-                    </p>
-                  </div>
-                  {selectedContact?.id === contact.id && (
-                    <Check className="h-4 w-4 shrink-0 text-primary" />
-                  )}
-                </button>
-                {canEditContact && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
-                    title="Editar contato"
-                    aria-label={"Editar contato " + contact.nome}
-                    disabled={!formReady}
-                    onClick={() => setContactForm({ initial: contact })}
+                {contacts.map((contact) => (
+                  <li
+                    key={contact.id}
+                    className="flex h-14 items-center gap-3 border-b border-border/60 px-3 last:border-b-0 hover:bg-surface-1"
                   >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                    <Avatar name={contact.nome} src={contact.avatar_url} size={34} />
+                    <div className="min-w-0 flex-1 text-sm">
+                      <p className="truncate font-medium">{contact.nome}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {maskBrazilPhone(contact.telefone)}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      title="Nova conversa"
+                      aria-label={`Nova conversa com ${contact.nome}`}
+                      aria-pressed={selectedContact?.id === contact.id}
+                      disabled={!contactOptions}
+                      onClick={() => selectContact(contact)}
+                    >
+                      <MessageSquarePlus className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+                {contacts.length === 0 && (
+                  <li className="p-4 text-center text-xs text-muted-foreground">
+                    {loadingContacts
+                      ? "Buscando contatos…"
+                      : contactsError
+                        ? "Não foi possível carregar os contatos."
+                        : "Nenhum contato encontrado."}
+                  </li>
                 )}
-              </li>
-            ))}
-            {contacts.length === 0 && (
-              <li className="p-4 text-center text-xs text-muted-foreground">
-                {loadingContacts
-                  ? "Buscando contatos…"
-                  : contactsError
-                    ? "Não foi possível carregar os contatos."
-                    : "Nenhum contato encontrado."}
-              </li>
-            )}
-          </ul>
-          {(contactsPage?.totalPages ?? 0) > 1 && (
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                Página {page} de {contactsPage?.totalPages}
-              </span>
-              <div className="flex gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label="Página anterior de contatos"
-                  disabled={loadingContacts || page <= 1}
-                  onClick={() => setPage(page - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label="Próxima página de contatos"
-                  disabled={loadingContacts || page >= (contactsPage?.totalPages ?? 1)}
-                  onClick={() => setPage(page + 1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+              </ul>
+              {(contactsPage?.totalPages ?? 0) > 1 && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    Página {page} de {contactsPage?.totalPages}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Página anterior de contatos"
+                      disabled={loadingContacts || page <= 1}
+                      onClick={() => setPage(page - 1)}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Próxima página de contatos"
+                      disabled={loadingContacts || page >= (contactsPage?.totalPages ?? 1)}
+                      onClick={() => setPage(page + 1)}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <Field label="Buscar grupo">
+                <SearchInput
+                  value={groupQuery}
+                  onChange={(value) => {
+                    setGroupQuery(value);
+                    setGroupPage(1);
+                  }}
+                  placeholder="Nome do grupo..."
+                />
+              </Field>
+              <ul
+                aria-label="Grupos"
+                aria-busy={loadingGroups}
+                className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border"
+              >
+                {groups.map((group) => (
+                  <li
+                    key={group.id}
+                    className="flex min-h-16 items-center gap-3 border-b border-border/60 px-3 py-2 last:border-b-0 hover:bg-surface-1"
+                  >
+                    <Avatar name={group.name} src={group.imageUrl ?? undefined} size={38} />
+                    <div className="min-w-0 flex-1 text-sm">
+                      <p className="truncate font-medium">{group.name}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {group.participantsCount.toLocaleString("pt-BR")} participante(s)
+                        {group.connection?.name ? ` · ${group.connection.name}` : ""}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      title="Nova conversa"
+                      aria-label={`Nova conversa com o grupo ${group.name}`}
+                      disabled={!canOpenGroup}
+                      onClick={() => openGroup(group)}
+                    >
+                      <MessageSquarePlus className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+                {groups.length === 0 && (
+                  <li className="p-4 text-center text-xs text-muted-foreground">
+                    {loadingGroups
+                      ? "Buscando grupos…"
+                      : groupsError
+                        ? "Não foi possível carregar os grupos."
+                        : "Nenhum grupo encontrado."}
+                  </li>
+                )}
+              </ul>
+              {(groupsPage?.totalPages ?? 0) > 1 && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    Página {groupPage} de {groupsPage?.totalPages}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Página anterior de grupos"
+                      disabled={loadingGroups || groupPage <= 1}
+                      onClick={() => setGroupPage(groupPage - 1)}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Próxima página de grupos"
+                      disabled={loadingGroups || groupPage >= (groupsPage?.totalPages ?? 1)}
+                      onClick={() => setGroupPage(groupPage + 1)}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </Modal>
@@ -905,6 +1142,20 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
             }}
           />
         )}
+      {canCreateGroup && (
+        <CreateGroupModal
+          open={open && createGroupOpen}
+          onClose={() => setCreateGroupOpen(false)}
+          instances={groupInstances}
+          onSubmit={async (data) => {
+            const group = await groupsApi.create(data);
+            setCreateGroupOpen(false);
+            await qc.invalidateQueries({ queryKey: ["trixus", "groups"] });
+            toast.success("Grupo criado");
+            if (group.conversationId && canOpenGroup) openGroup(group);
+          }}
+        />
+      )}
     </>
   );
 }

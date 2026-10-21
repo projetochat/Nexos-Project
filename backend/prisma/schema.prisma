@@ -103,6 +103,25 @@ enum ContactCustomFieldType {
   DATE
 }
 
+enum ProtocolModule {
+  CHAT
+  TICKET
+}
+
+enum ProtocolFormat {
+  YEAR_SEQUENCE
+  YEAR_MONTH_SEQUENCE
+  SEQUENCE
+  DATE_SEQUENCE
+  CUSTOM
+}
+
+enum ProtocolReset {
+  YEARLY
+  MONTHLY
+  NEVER
+}
+
 enum ConversationStatus {
   ABERTA
   EM_ANDAMENTO
@@ -398,14 +417,14 @@ enum AutomationActionType {
 
 model Tenant {
   schedules                   Schedule[]
-  id                          String                        @id @default(uuid())
+  id                          String                          @id @default(uuid())
   name                        String
-  slug                        String                        @unique
+  slug                        String                          @unique
   legalName                   String?
   displayName                 String?
-  status                      TenantStatus                  @default(ACTIVE)
-  timezone                    String                        @default("America/Sao_Paulo")
-  locale                      String                        @default("pt-BR")
+  status                      TenantStatus                    @default(ACTIVE)
+  timezone                    String                          @default("America/Sao_Paulo")
+  locale                      String                          @default("pt-BR")
   document                    String?
   billingEmail                String?
   technicalEmail              String?
@@ -423,8 +442,8 @@ model Tenant {
   suspendedAt                 DateTime?
   terminatedAt                DateTime?
   suspensionReason            String?
-  createdAt                   DateTime                      @default(now())
-  updatedAt                   DateTime                      @updatedAt
+  createdAt                   DateTime                        @default(now())
+  updatedAt                   DateTime                        @updatedAt
   users                       TenantMembership[]
   departments                 Department[]
   roles                       Role[]
@@ -467,9 +486,59 @@ model Tenant {
   platformClient              PlatformClient?
   onboarding                  TenantOnboarding?
   dashboardConfiguration      TenantDashboardConfiguration?
+  protocolConfigurations      TenantProtocolConfiguration[]
+  protocolSequenceCounters    ProtocolSequenceCounter[]
+  registrationCaseSettings    TenantRegistrationCaseSettings?
 
   @@index([status])
   @@map("tenants")
+}
+
+model TenantRegistrationCaseSettings {
+  tenantId           String   @id
+  contacts           Boolean  @default(false)
+  contactCompanies   Boolean  @default(false) @map("contact_companies")
+  contactDepartments Boolean  @default(false) @map("contact_departments")
+  contactProfiles    Boolean  @default(false) @map("contact_profiles")
+  attendants         Boolean  @default(false)
+  accessProfiles     Boolean  @default(false) @map("access_profiles")
+  departments        Boolean  @default(false)
+  tags               Boolean  @default(false)
+  botFlows           Boolean  @default(false) @map("bot_flows")
+  automations        Boolean  @default(false)
+  aiAgents           Boolean  @default(false) @map("ai_agents")
+  ticketTitles       Boolean  @default(false) @map("ticket_titles")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_registration_case_settings")
+}
+
+model TenantProtocolConfiguration {
+  tenantId      String
+  module        ProtocolModule
+  format        ProtocolFormat
+  digits        Int            @default(6)
+  reset         ProtocolReset  @default(NEVER)
+  customPattern String?
+  updatedAt     DateTime       @updatedAt
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, module])
+  @@map("tenant_protocol_configurations")
+}
+
+model ProtocolSequenceCounter {
+  tenantId   String
+  module     ProtocolModule
+  periodKey  String
+  lastNumber Int            @default(0)
+  updatedAt  DateTime       @updatedAt
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, module, periodKey])
+  @@map("protocol_sequence_counters")
 }
 
 model TenantDashboardConfiguration {
@@ -521,23 +590,28 @@ model PlatformClient {
 }
 
 model User {
-  id                    String                 @id @default(uuid())
-  email                 String                 @unique
-  name                  String
-  avatarUrl             String?                @map("avatar_url")
-  keepSidebarCollapsed  Boolean                @default(false) @map("keep_sidebar_collapsed")
-  passwordHash          String
-  status                UserStatus             @default(ACTIVE)
-  platformRole          PlatformRole           @default(USER)
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  memberships           TenantMembership[]
-  requestedTickets      Ticket[]
-  subscriptions         TenantSubscription[]
-  platformAuditLogs     PlatformAuditLog[]
-  impersonationSessions ImpersonationSession[]
-  passwordResetTokens   PasswordResetToken[]
-  authSessions          AuthSession[]
+  id                      String                 @id @default(uuid())
+  email                   String                 @unique
+  name                    String
+  avatarUrl               String?                @map("avatar_url")
+  keepSidebarCollapsed    Boolean                @default(false) @map("keep_sidebar_collapsed")
+  chatBubbleColor         String?                @map("chat_bubble_color")
+  chatBubbleTextColor     String?                @map("chat_bubble_text_color")
+  customerBubbleColor     String?                @map("customer_bubble_color")
+  customerBubbleTextColor String?                @map("customer_bubble_text_color")
+  chatBackgroundColor     String?                @map("chat_background_color")
+  passwordHash            String
+  status                  UserStatus             @default(ACTIVE)
+  platformRole            PlatformRole           @default(USER)
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  memberships             TenantMembership[]
+  requestedTickets        Ticket[]
+  subscriptions           TenantSubscription[]
+  platformAuditLogs       PlatformAuditLog[]
+  impersonationSessions   ImpersonationSession[]
+  passwordResetTokens     PasswordResetToken[]
+  authSessions            AuthSession[]
 
   @@index([status])
   @@index([platformRole])
@@ -805,25 +879,28 @@ model AuthSession {
 }
 
 model Department {
-  id              String                 @id @default(uuid())
-  tenantId        String
-  name            String
-  description     String?
-  color           String                 @default("#3B82F6")
-  icon            String                 @default("department")
-  active          Boolean                @default(true)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  members         DepartmentMembership[]
-  contacts        Contact[]
-  conversations   Conversation[]
-  quickReplies    QuickReply[]
-  tickets         Ticket[]
-  leads           Lead[]
-  notifications   Notification[]
-  automationRules AutomationRule[]
-  connections     DepartmentConnection[]
+  id                       String                 @id @default(uuid())
+  tenantId                 String
+  name                     String
+  description              String?
+  color                    String                 @default("#3B82F6")
+  icon                     String                 @default("department")
+  active                   Boolean                @default(true)
+  inactivityClosureEnabled Boolean                @default(false)
+  inactivityTimeoutMinutes Int?
+  inactivityClosureMessage String?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  tenant                   Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members                  DepartmentMembership[]
+  contacts                 Contact[]
+  conversations            Conversation[]
+  quickReplies             QuickReply[]
+  tickets                  Ticket[]
+  leads                    Lead[]
+  notifications            Notification[]
+  automationRules          AutomationRule[]
+  connections              DepartmentConnection[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, id])
@@ -1011,6 +1088,7 @@ model Contact {
   customerBranchId           String?
   customerDepartmentId       String?
   customerAccessProfile      CustomerAccessProfile?
+  active                     Boolean                      @default(true)
   portalMembershipId         String?                      @unique
   portalAccessActive         Boolean                      @default(false)
   archivedAt                 DateTime?
@@ -1129,18 +1207,19 @@ model ContactCustomFieldValue {
 }
 
 model Tag {
-  id             String       @id @default(uuid())
-  tenantId       String
-  name           String
-  normalizedName String
-  description    String?
-  color          String       @default("#3B82F6")
-  active         Boolean      @default(true)
-  archivedAt     DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contacts       ContactTag[]
+  id                      String       @id @default(uuid())
+  tenantId                String
+  name                    String
+  normalizedName          String
+  description             String?
+  color                   String       @default("#3B82F6")
+  active                  Boolean      @default(true)
+  notifyOnNewConversation Boolean      @default(false) @map("notify_on_new_conversation")
+  archivedAt              DateTime?
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+  tenant                  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts                ContactTag[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedName])
@@ -1445,7 +1524,6 @@ model MessagingHistoryImport {
 
 model QuickReply {
   messages              Json?
-  intervalSeconds       Int               @default(0)
   id                    String            @id @default(uuid())
   tenantId              String
   title                 String
@@ -1503,7 +1581,8 @@ model Ticket {
   conversationId           String?
   departmentId             String?
   assignedMembershipId     String?
-  createdByMembershipId    String
+  createdByMembershipId    String?
+  createdByNameSnapshot    String?
   closedByMembershipId     String?
   createdAt                DateTime            @default(now())
   updatedAt                DateTime            @updatedAt
@@ -1523,7 +1602,7 @@ model Ticket {
   conversation             Conversation?       @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Restrict)
   department               Department?         @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: SetNull)
   assignedMembership       TenantMembership?   @relation("TicketAssignee", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
-  createdByMembership      TenantMembership    @relation("TicketCreator", fields: [createdByMembershipId], references: [id], onDelete: Restrict)
+  createdByMembership      TenantMembership?   @relation("TicketCreator", fields: [createdByMembershipId], references: [id], onDelete: SetNull)
   closedByMembership       TenantMembership?   @relation("TicketCloser", fields: [closedByMembershipId], references: [id], onDelete: SetNull)
   comments                 TicketComment[]
   history                  TicketHistory[]
@@ -1549,7 +1628,8 @@ model TicketComment {
   id                 String             @id @default(uuid())
   tenantId           String
   ticketId           String
-  authorMembershipId String
+  authorMembershipId String?
+  authorNameSnapshot String?
   bodyText           String
   bodyHtmlSanitized  String?
   internal           Boolean            @default(true)
@@ -1560,7 +1640,7 @@ model TicketComment {
   archivedAt         DateTime?
   tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ticket             Ticket             @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
-  authorMembership   TenantMembership   @relation(fields: [authorMembershipId], references: [id], onDelete: Restrict)
+  authorMembership   TenantMembership?  @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
   attachments        TicketAttachment[]
   requestedApprovals TicketApproval[]   @relation("TicketApprovalRequestComment")
   decidedApprovals   TicketApproval[]   @relation("TicketApprovalDecisionComment")
@@ -1577,7 +1657,8 @@ model TicketApproval {
   ticketId                String
   kind                    TicketApprovalKind
   status                  TicketApprovalStatus @default(PENDING)
-  requestedByMembershipId String
+  requestedByMembershipId String?
+  requestedByNameSnapshot String?
   approverMembershipId    String?
   approverContactId       String?
   requestCommentId        String?
@@ -1586,7 +1667,7 @@ model TicketApproval {
   decidedAt               DateTime?
   tenant                  Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ticket                  Ticket               @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
-  requestedByMembership   TenantMembership     @relation("TicketApprovalRequester", fields: [requestedByMembershipId], references: [id], onDelete: Restrict)
+  requestedByMembership   TenantMembership?    @relation("TicketApprovalRequester", fields: [requestedByMembershipId], references: [id], onDelete: SetNull)
   approverMembership      TenantMembership?    @relation("TicketApprovalAssignee", fields: [approverMembershipId], references: [id], onDelete: SetNull)
   decidedByMembership     TenantMembership?    @relation("TicketApprovalDecider", fields: [decidedByMembershipId], references: [id], onDelete: SetNull)
   approverContact         Contact?             @relation(fields: [approverContactId], references: [id], onDelete: SetNull)
@@ -1625,7 +1706,8 @@ model TicketAttachment {
   tenantId               String
   ticketId               String
   commentId              String?
-  uploadedByMembershipId String
+  uploadedByMembershipId String?
+  uploadedByNameSnapshot String?
   storageProvider        String
   objectKey              String
   originalNameSanitized  String
@@ -1639,7 +1721,7 @@ model TicketAttachment {
   tenant                 Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ticket                 Ticket                 @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
   comment                TicketComment?         @relation(fields: [tenantId, commentId], references: [tenantId, id], onDelete: Restrict)
-  uploadedByMembership   TenantMembership       @relation(fields: [uploadedByMembershipId], references: [id], onDelete: Restrict)
+  uploadedByMembership   TenantMembership?      @relation(fields: [uploadedByMembershipId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, id])
   @@index([tenantId, ticketId, createdAt])
@@ -1803,7 +1885,8 @@ model Campaign {
   completedAt             DateTime?
   cancelledAt             DateTime?
   cancelledByMembershipId String?
-  createdByMembershipId   String
+  createdByMembershipId   String?
+  createdByNameSnapshot   String?
   archivedAt              DateTime?
   version                 Int                   @default(1)
   totalCount              Int                   @default(0)
@@ -1823,7 +1906,7 @@ model Campaign {
   updatedAt               DateTime              @updatedAt
   tenant                  Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   connection              MessagingConnection   @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
-  createdByMembership     TenantMembership      @relation("CampaignCreator", fields: [createdByMembershipId], references: [id], onDelete: Restrict)
+  createdByMembership     TenantMembership?     @relation("CampaignCreator", fields: [createdByMembershipId], references: [id], onDelete: SetNull)
   cancelledByMembership   TenantMembership?     @relation("CampaignCanceller", fields: [cancelledByMembershipId], references: [id], onDelete: SetNull)
   recipients              CampaignRecipient[]
   messages                Message[]

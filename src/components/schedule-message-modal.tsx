@@ -210,6 +210,7 @@ export function ScheduleMessageModal({
               <Button
                 type="button"
                 variant="ghost"
+                size="sm"
                 onClick={editing ? resetForm : close}
                 disabled={busy}
               >
@@ -218,6 +219,7 @@ export function ScheduleMessageModal({
               <Button
                 type="submit"
                 variant="primary"
+                className={editing ? "save-action-button" : undefined}
                 disabled={busy || (!content.trim() && !attachment) || !scheduleAt}
               >
                 {busy ? "Salvando..." : editing ? "Salvar alterações" : "Agendar"}
@@ -321,6 +323,9 @@ export function ScheduleMessageModal({
       <DeletionConfirmDialog
         open={!!removing}
         resourceKey={`conversation-schedule:${removing?.id ?? "none"}`}
+        variant="compact"
+        compactDescription="Deseja realmente excluir esta mensagem agendada?"
+        confirmLabel="Excluir"
         onOpenChange={(nextOpen) => {
           if (!nextOpen) setRemoving(null);
         }}

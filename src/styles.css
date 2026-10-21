@@ -61,6 +61,12 @@
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
+[data-outbound-message="true"] .text-slate-600,
+[data-outbound-message="true"] .text-slate-700,
+[data-outbound-message="true"] .text-blue-700 {
+  color: color-mix(in srgb, var(--chat-outbound-text) 78%, transparent);
+}
+
 /* ---------- DARK (default) ---------- */
 :root,
 .dark {
@@ -593,6 +599,14 @@ button.trash-action:hover svg {
   color: currentColor;
 }
 
+/* Dimensões padronizadas das ações textuais de salvar. */
+button.save-action-button {
+  height: 2rem;
+  min-height: 2rem;
+  min-width: 5rem;
+  border-radius: 0.5rem;
+}
+
 button[title*="Editar"]:hover,
 button[aria-label*="Editar"]:hover {
   border-color: color-mix(in oklab, var(--color-warning) 45%, var(--border));
@@ -665,6 +679,17 @@ button[aria-label*="Duplicar"]:hover,
 button[title*="Duplicar"]:hover svg,
 button[aria-label*="Duplicar"]:hover svg,
 .duplicate-action-button:hover svg {
+  color: currentColor;
+}
+
+/* A ação de visualizar usa o azul primário em qualquer botão nativo ou do UI kit. */
+button:has(svg.lucide-eye):hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color: color-mix(in oklab, var(--color-primary) 45%, var(--border));
+  background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+button:has(svg.lucide-eye):hover:not(:disabled):not([aria-disabled="true"]) svg.lucide-eye {
   color: currentColor;
 }
 

@@ -24,9 +24,19 @@ describe("chat permission alignment", () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     expect(metadata(controller, "create", PERMISSIONS_KEY)).toEqual(["messages.send"]);
     expect(metadata(controller, "bulkClose", PERMISSIONS_KEY)).toEqual([
+      "chat.bulk_actions.execute",
+    ]);
+    expect(metadata(controller, "bulkStart", PERMISSIONS_KEY)).toEqual([
+      "chat.bulk_actions.execute",
+    ]);
+    expect(metadata(controller, "bulkOptions", PERMISSIONS_KEY)).toEqual([
+      "chat.bulk_actions.execute",
+    ]);
+    expect(metadata(controller, "bulkTransfer", PERMISSIONS_KEY)).toEqual([
       "chat.bulk_actions.execute",
     ]);
     expect(metadata(controller, "transferDepartment", PERMISSIONS_KEY)).toEqual([
@@ -39,16 +49,27 @@ describe("chat permission alignment", () => {
   });
 
   it("uses contact editing for customer linking and send permission for schedules", () => {
-    const crm = new CrmController({} as never, {} as never, {} as never, {} as never);
+    const crm = new CrmController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
     const contactActions = new ContactActionsController({} as never, {} as never);
     const leads = new LeadsController({} as never, {} as never);
-    const schedules = new SchedulesController({} as never);
+    const schedules = new SchedulesController({} as never, {} as never);
     expect(metadata(crm, "updateContactCustomer", PERMISSIONS_KEY)).toEqual(["contacts.update"]);
     expect(metadata(contactActions, "blockContact", PERMISSIONS_KEY)).toEqual([
       "conversations.read",
       "contacts.update",
     ]);
-    expect(metadata(leads, "assign", PERMISSIONS_KEY)).toEqual(["conversations.assign"]);
+    expect(metadata(leads, "list", PERMISSIONS_KEY)).toEqual(["leads.read"]);
+    expect(metadata(leads, "assign", PERMISSIONS_KEY)).toEqual([
+      "leads.read",
+      "conversations.assign",
+    ]);
     expect(metadata(schedules, "save", PERMISSIONS_KEY)).toEqual(["messages.send"]);
   });
 });

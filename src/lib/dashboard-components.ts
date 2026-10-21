@@ -50,7 +50,14 @@ export const DASHBOARD_SOURCE_OPTIONS: Array<{ value: DashboardDataSource; label
 ];
 
 const NATIVE_GROUPINGS: Record<DashboardDataSource, DashboardGroupingOption[]> = {
-  records: [{ value: "queue", label: "Status operacional", section: "native" }],
+  records: [
+    { value: "queue", label: "Status operacional", section: "native" },
+    {
+      value: "ticketRequesterContact",
+      label: "Contatos que abriram chamados",
+      section: "native",
+    },
+  ],
   conversations: [
     { value: "status", label: "Status da conversa", section: "native" },
     { value: "connection", label: "Instância", section: "native" },
@@ -76,6 +83,16 @@ const NATIVE_GROUPINGS: Record<DashboardDataSource, DashboardGroupingOption[]> =
 export const DEFAULT_DASHBOARD_COMPONENTS: DashboardComponentConfig[] = [
   component("counters", "Contadores de registro", true, "cards", 4, "records", "queue", "count"),
   component("messages", "Tráfego de mensagens", true, "line", 2, "messages", "hour", "count"),
+  component(
+    "ticketRequesterRanking",
+    "Top 10 contatos que abriram chamados",
+    true,
+    "bars",
+    2,
+    "records",
+    "ticketRequesterContact",
+    "count",
+  ),
   component("tag", "Conversas por etiqueta", true, "columns", 2, "conversations", "tag", "count"),
   component(
     "distribution",
@@ -216,9 +233,11 @@ export function parseDashboardPreferences(value: unknown): DashboardComponentCon
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const candidate = value as Record<string, unknown>;
     if (candidate.version === 2 && Array.isArray(candidate.components)) {
-      return candidate.components
-        .map(normalizeComponent)
-        .filter((item): item is DashboardComponentConfig => item !== null);
+      return mergeNativeDashboardAdditions(
+        candidate.components
+          .map(normalizeComponent)
+          .filter((item): item is DashboardComponentConfig => item !== null),
+      );
     }
     return migrateLegacyPreferences(candidate);
   }
@@ -227,6 +246,22 @@ export function parseDashboardPreferences(value: unknown): DashboardComponentCon
     return cloneDefaults().map((item) => ({ ...item, visible: visible.has(item.id) }));
   }
   return cloneDefaults();
+}
+
+function mergeNativeDashboardAdditions(components: DashboardComponentConfig[]) {
+  if (components.some((component) => component.id === "ticketRequesterRanking")) {
+    return components;
+  }
+  const addition = DEFAULT_DASHBOARD_COMPONENTS.find(
+    (component) => component.id === "ticketRequesterRanking",
+  );
+  if (!addition) return components;
+  const next = components.map((component) => ({ ...component }));
+  const trafficIndex = next.findIndex((component) => component.id === "messages");
+  next.splice(trafficIndex >= 0 ? trafficIndex + 1 : Math.min(2, next.length), 0, {
+    ...addition,
+  });
+  return next;
 }
 
 function migrateLegacyPreferences(value: Record<string, unknown>) {

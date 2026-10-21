@@ -6,6 +6,29 @@ import {
 } from "../generated/prisma";
 import { ConversationsController } from "./conversations.controller";
 
+describe("ConversationsController unread total", () => {
+  it("sums unread messages from every accessible in-progress conversation", async () => {
+    const aggregate = vi.fn().mockResolvedValue({ _sum: { unreadCount: 7 } });
+    const controller = new ConversationsController(
+      { conversation: { aggregate } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      controller.unreadTotal({ tenantId: "tenant-a", roleKey: "tenant_admin" } as never),
+    ).resolves.toEqual({ unreadCount: 7 });
+    expect(aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _sum: { unreadCount: true },
+        where: expect.objectContaining({ AND: expect.any(Array) }),
+      }),
+    );
+  });
+});
+
 describe("ConversationsController contact variable context", () => {
   const current = (permissions: string[] = []) =>
     ({ tenantId: "tenant-a", roleKey: "agent", permissions }) as never;
@@ -421,6 +444,43 @@ describe("ConversationsController connection selection", () => {
     });
   });
 
+  it("allows the tenant administrator to select another tenant connection for the contact", async () => {
+    const selectedConnection = {
+      id: "connection-selected",
+      providerType: MessagingProviderType.EVOLUTION,
+      externalReference: "instance-selected",
+      status: MessagingConnectionStatus.CONNECTED,
+      serviceEnabled: true,
+    };
+    const prisma = {
+      messagingConnection: {
+        findFirst: vi.fn().mockResolvedValue(selectedConnection),
+      },
+    };
+    const controller = new ConversationsController(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      controller["resolveConversationConnection"](
+        "connection-selected",
+        {
+          userId: "user-a",
+          tenantId: "tenant-a",
+          membershipId: "membership-a",
+          roleId: "role-a",
+          roleKey: "tenant_admin",
+          platformRole: "USER",
+          connectionIds: null,
+        },
+        { instance: "instance-older", instanceIds: ["connection-older"] },
+      ),
+    ).resolves.toEqual(selectedConnection);
+  });
+
   it("rejects assigning a conversation to an attendant outside its Chat scope", async () => {
     const prisma = {
       tenantMembership: {
@@ -483,6 +543,39 @@ describe("ConversationsController connection selection", () => {
     ).resolves.toBe("department-favorite");
     await expect(
       controller["resolveDepartmentId"](undefined, current as never, "connection-b"),
+    ).rejects.toThrow("Selecione um departamento para iniciar o atendimento.");
+  });
+
+  it("requires the administrator to select a department explicitly", async () => {
+    const prisma = {
+      department: { findFirst: vi.fn().mockResolvedValue({ id: "department-favorite" }) },
+    };
+    const controller = new ConversationsController(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const current = {
+      tenantId: "tenant-a",
+      roleKey: "tenant_admin",
+      connectionIds: null,
+      chatDepartmentIds: null,
+      chatScopes: [
+        {
+          connectionId: "connection-a",
+          departmentIds: ["department-favorite"],
+          favoriteDepartmentId: "department-favorite",
+        },
+      ],
+    };
+
+    await expect(
+      controller["resolveDepartmentId"](undefined, current as never, "connection-a"),
+    ).rejects.toThrow("Selecione um departamento para iniciar o atendimento.");
+    expect(prisma.department.findFirst).not.toHaveBeenCalled();
+    await expect(
+      controller["resolveAssignedDepartmentId"](undefined, null, "connection-a", current as never),
     ).rejects.toThrow("Selecione um departamento para iniciar o atendimento.");
   });
 
@@ -598,6 +691,32 @@ describe("ConversationsController active conversation creation", () => {
     color: null,
     logoUrl: null,
   };
+
+  it("rejects a new conversation for an inactive contact without creating history", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "contact-a" }]),
+      contact: {
+        findFirst: vi.fn().mockResolvedValue({ ...contact, active: false }),
+        update: vi.fn(),
+      },
+      conversation: { findFirst: vi.fn(), create: vi.fn() },
+    };
+    const prisma = { $transaction: vi.fn((callback) => callback(tx)) };
+    const controller = new ConversationsController(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      controller.create({ contactId: "contact-a", assignToSelf: true }, current as never),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: "CONTACT_INACTIVE" }),
+    });
+    expect(tx.conversation.findFirst).not.toHaveBeenCalled();
+    expect(tx.conversation.create).not.toHaveBeenCalled();
+  });
 
   it("locks the tenant contact and revalidates a changed profile before inserting", async () => {
     const tx = {

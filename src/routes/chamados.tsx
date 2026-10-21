@@ -11,6 +11,8 @@ import {
   Download,
   Eye,
   Headphones,
+  LayoutGrid,
+  List,
   ListChecks,
   MoreHorizontal,
   Paperclip,
@@ -21,6 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import {
   Button,
   Card,
@@ -33,6 +36,7 @@ import {
 } from "@/components/ui-kit";
 import { Modal } from "@/components/modal";
 import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { GridPaginationFooter } from "@/components/grid-pagination-footer";
 import {
   Select as RichSelect,
   SelectContent as RichSelectContent,
@@ -40,6 +44,7 @@ import {
   SelectTrigger as RichSelectTrigger,
 } from "@/components/ui/select";
 import { useDisclosure } from "@/hooks/use-disclosure";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { num } from "@/lib/format";
 import { formatPhoneForDisplay } from "@/lib/input-masks";
 import {
@@ -63,6 +68,7 @@ import {
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { sanitizeTicketEditorHtml } from "@/lib/ticket-editor-dom";
 
 export const Route = createFileRoute("/chamados")({
   validateSearch: (search) => ({
@@ -106,6 +112,7 @@ function ChamadosPage() {
   const qc = useQueryClient();
   const permissions = useSession((state) => state.user?.permissions ?? []);
   const isCustomerPortal = useSession((state) => state.user?.roleKey === "customer_portal");
+  const canView = permissions.includes("tickets.read");
   const canCreate = permissions.includes("tickets.create");
   const canUpdate = permissions.includes("tickets.update");
   const canUpdateStatus = canUpdate;
@@ -121,16 +128,40 @@ function ChamadosPage() {
   const [customerId, setCustomerId] = React.useState("");
   const [departmentId, setDepartmentId] = React.useState("");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [detailMode, setDetailMode] = React.useState<"view" | "manage">("view");
   const [editingTicket, setEditingTicket] = React.useState<ApiTicket | null>(null);
   const [duplicatingTicket, setDuplicatingTicket] = React.useState<ApiTicket | null>(null);
   const [deletingTicket, setDeletingTicket] = React.useState<ApiTicket | null>(null);
+  const isMobile = useIsMobile();
+  const [viewMode, setViewMode] = React.useState<"cards" | "list">("list");
+  const viewModeTouched = React.useRef(false);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+  const hasFilters = Boolean(query || status || customerId || departmentId);
+
+  const clearFilters = () => {
+    setQuery("");
+    setStatus("");
+    setCustomerId("");
+    setDepartmentId("");
+    setPage(1);
+  };
+
+  React.useEffect(() => {
+    if (isMobile) {
+      setViewMode("cards");
+      return;
+    }
+    if (!viewModeTouched.current) setViewMode("list");
+  }, [isMobile]);
   const params = {
     search: query || undefined,
     status: status || undefined,
     customerId: customerId || undefined,
     departmentId: departmentId || undefined,
     conversationId: search.conversationId,
-    pageSize: 25,
+    page,
+    pageSize,
   };
   const tickets = useQuery({
     queryKey: [...listKey, params],
@@ -149,6 +180,7 @@ function ChamadosPage() {
     enabled: !isCustomerPortal,
   });
   const options = useTicketOptions(!isCustomerPortal);
+  const totalPages = Math.max(1, tickets.data?.totalPages ?? page);
   const summary = {
     new: ticketSummary.data?.counts.NOVO ?? 0,
     approval: ticketSummary.data?.counts.AGUARDANDO_APROVACAO ?? 0,
@@ -158,6 +190,14 @@ function ChamadosPage() {
     validated: ticketSummary.data?.counts.VALIDADO ?? 0,
     rejected: ticketSummary.data?.counts.REPROVADO ?? 0,
   };
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [customerId, departmentId, pageSize, query, search.conversationId, status]);
+
+  React.useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
 
   const refreshTickets = React.useCallback(() => {
     qc.invalidateQueries({ queryKey: listKey });
@@ -177,8 +217,25 @@ function ChamadosPage() {
   }, [canCreate, search.conversationId, setNewTicketOpen]);
 
   React.useEffect(() => {
-    if (search.ticketId) setSelectedId(search.ticketId);
+    if (search.ticketId) {
+      setSelectedId(search.ticketId);
+      setDetailMode("view");
+    }
   }, [search.ticketId]);
+
+  const paginationFooter = tickets.data ? (
+    <GridPaginationFooter
+      visible={tickets.data.items.length}
+      total={tickets.data.total}
+      page={page}
+      totalPages={totalPages}
+      pageSize={pageSize}
+      onPage={(nextPage) => setPage(nextPage)}
+      onPageSize={(nextPageSize) => setPageSize(nextPageSize)}
+      suffix="registros"
+      ariaLabelPrefix="chamados"
+    />
+  ) : null;
 
   return (
     <AppShell>
@@ -197,7 +254,15 @@ function ChamadosPage() {
 
         <Card className="mb-4 p-4">
           <div
-            className={`grid grid-cols-2 gap-3 ${isCustomerPortal ? "lg:grid-cols-[1fr_220px]" : "lg:grid-cols-[minmax(280px,1.6fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_minmax(150px,.7fr)]"}`}
+            className={`grid grid-cols-2 gap-3 ${
+              isCustomerPortal
+                ? hasFilters
+                  ? "lg:grid-cols-[1fr_220px_auto]"
+                  : "lg:grid-cols-[1fr_220px]"
+                : hasFilters
+                  ? "lg:grid-cols-[minmax(280px,1.6fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_auto]"
+                  : "lg:grid-cols-[minmax(280px,1.6fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_minmax(150px,.7fr)]"
+            }`}
           >
             <div className="col-span-2 lg:col-span-1">
               <Field label="Busca">
@@ -248,6 +313,11 @@ function ChamadosPage() {
                 ))}
               </Select>
             </Field>
+            {hasFilters && (
+              <div className="flex items-end">
+                <ClearFiltersButton onClick={clearFilters} />
+              </div>
+            )}
           </div>
         </Card>
 
@@ -271,12 +341,44 @@ function ChamadosPage() {
             <SummaryCard
               label="Validados"
               value={summary.validated}
-              tone="blue"
+              tone="validated"
               icon={<CheckCircle2 />}
             />
             <SummaryCard label="Reprovados" value={summary.rejected} tone="red" icon={<Ban />} />
           </div>
         )}
+
+        <div
+          className="mb-3 hidden justify-end gap-1 md:flex"
+          aria-label="Visualização dos chamados"
+        >
+          <Button
+            type="button"
+            variant={viewMode === "cards" ? "primary" : "secondary"}
+            size="icon"
+            aria-label="Visualizar chamados em cards"
+            aria-pressed={viewMode === "cards"}
+            onClick={() => {
+              viewModeTouched.current = true;
+              setViewMode("cards");
+            }}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === "list" ? "primary" : "secondary"}
+            size="icon"
+            aria-label="Visualizar chamados em lista"
+            aria-pressed={viewMode === "list"}
+            onClick={() => {
+              viewModeTouched.current = true;
+              setViewMode("list");
+            }}
+          >
+            <List className="h-4 w-4" />
+          </Button>
+        </div>
 
         {tickets.isLoading ? (
           <Card>Carregando chamados...</Card>
@@ -295,75 +397,113 @@ function ChamadosPage() {
           />
         ) : (
           <>
-            <div className="space-y-3 md:hidden">
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span>{num(tickets.data.total)} chamados encontrados</span>
-                <span>Ordenar por</span>
-              </div>
-              {tickets.data.items.map((ticket) => (
-                <button
-                  key={ticket.id}
-                  type="button"
-                  onClick={() => setSelectedId(ticket.id)}
-                  className="w-full rounded-xl border border-border bg-card p-4 text-left shadow-card"
-                >
-                  <div className="grid grid-cols-[.8fr_2fr] gap-3">
-                    <TicketDatum
-                      label="Nº do chamado"
-                      value={`#${ticket.protocol.replace(/^#/, "")}`}
-                      strong
-                    />
-                    <TicketDatum label="Título" value={ticket.title} link />
-                    <TicketDatum label="Cliente" value={ticket.customer?.name ?? "Sem vínculo"} />
-                    <TicketDatum
-                      label="Departamento"
-                      value={ticket.department?.name ?? "Sem departamento"}
-                    />
-                    <TicketDatum
-                      label="Solicitante"
-                      value={ticket.requesterContact?.name ?? ticket.createdByMembership.user.name}
-                    />
-                    <TicketDatum
-                      label="Prioridade"
-                      value={priorityLabel(ticket.priority)}
-                      dot={priorityDot(ticket.priority)}
-                    />
-                    <TicketDatum
-                      label="Tipo"
-                      value={categoryLabel(ticket.category)}
-                      dot={ticket.category === "DEV" ? "#ef4444" : "#1687ff"}
-                    />
-                    <TicketDatum
-                      label="Status"
-                      value={statusLabel(ticket.status)}
-                      dot={statusDot(ticket.status)}
-                    />
-                    <TicketDatum label="Dt. abertura" value={formatDate(ticket.createdAt)} icon />
-                    <TicketDatum label="Dt. aprovação" value="-" icon />
-                    <TicketDatum
-                      label="Dt. conclusão"
-                      value={ticket.closedAt ? formatDate(ticket.closedAt) : "-"}
-                      icon
-                    />
+            <Card
+              className={viewMode === "cards" ? "overflow-hidden p-0" : "hidden"}
+              padding={false}
+            >
+              <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-3">
+                <div className="col-span-full flex items-center justify-between text-sm text-muted-foreground">
+                  <span>{num(tickets.data.total)} chamados encontrados</span>
+                  <span>Ordenar por</span>
+                </div>
+                {tickets.data.items.map((ticket) => (
+                  <div
+                    key={ticket.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setSelectedId(ticket.id);
+                      setDetailMode("manage");
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      setSelectedId(ticket.id);
+                      setDetailMode("manage");
+                    }}
+                    className="w-full rounded-xl border border-border bg-card p-4 text-left shadow-card"
+                  >
+                    <div className="grid grid-cols-2 gap-3">
+                      <TicketDatum
+                        label="Nº do chamado"
+                        value={`#${ticket.protocol.replace(/^#/, "")}`}
+                        strong
+                      />
+                      <TicketDatum
+                        label="Status"
+                        value={statusLabel(ticket.status)}
+                        dot={statusDot(ticket.status)}
+                      />
+                      <TicketDatum label="Título" value={ticket.title} featured fullWidth />
+                      <TicketDatum label="Cliente" value={ticket.customer?.name ?? "Sem vínculo"} />
+                      <TicketDatum
+                        label="Departamento"
+                        value={ticket.department?.name ?? "Sem departamento"}
+                      />
+                      <TicketDatum
+                        label="Solicitante"
+                        value={
+                          ticket.requesterContact?.name ?? ticket.createdByMembership.user.name
+                        }
+                      />
+                      <TicketDatum
+                        label="Prioridade"
+                        value={priorityLabel(ticket.priority)}
+                        dot={priorityDot(ticket.priority)}
+                      />
+                      <TicketDatum
+                        label="Tipo"
+                        value={categoryLabel(ticket.category)}
+                        dot={ticket.category === "DEV" ? "#ef4444" : "#1687ff"}
+                      />
+                      <TicketDatum label="Dt. abertura" value={formatDate(ticket.createdAt)} icon />
+                      <TicketDatum label="Dt. aprovação" value="-" icon />
+                      <TicketDatum
+                        label="Dt. conclusão"
+                        value={ticket.closedAt ? formatDate(ticket.closedAt) : "-"}
+                        icon
+                      />
+                    </div>
+                    {canView && (
+                      <div className="mt-3 flex justify-end border-t border-border pt-3">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          title="Visualizar chamado"
+                          aria-label={`Visualizar chamado ${ticket.protocol}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedId(ticket.id);
+                            setDetailMode("view");
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
-                </button>
-              ))}
-            </div>
-            <Card className="hidden overflow-hidden p-0 md:block">
+                ))}
+              </div>
+              {paginationFooter}
+            </Card>
+            <Card
+              className={viewMode === "list" ? "overflow-hidden p-0" : "hidden"}
+              padding={false}
+            >
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1100px] table-fixed text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs uppercase tracking-widest text-muted-foreground">
+                  <thead className="bg-surface-2">
+                    <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       <th className="w-20 px-3 py-3">ID</th>
                       <th className="w-[290px] px-3 py-3">Título</th>
                       <th className="px-4 py-3">Prioridade</th>
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Tipo</th>
                       <th className="px-4 py-3">Cliente</th>
-                      <th className="px-4 py-3">Departamento</th>
                       <th className="px-4 py-3">Solicitante</th>
                       <th className="px-4 py-3">Dt. abertura</th>
                       <th className="px-4 py-3">Dt. conclusão</th>
+                      <th className="w-20 px-4 py-3 text-center">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -371,12 +511,15 @@ function ChamadosPage() {
                       <tr
                         key={ticket.id}
                         className="cursor-pointer border-b border-border/60 hover:bg-surface-1"
-                        onClick={() => setSelectedId(ticket.id)}
+                        onClick={() => {
+                          setSelectedId(ticket.id);
+                          setDetailMode("manage");
+                        }}
                       >
                         <td className="px-3 py-3 font-mono text-xs">
                           {ticket.protocol.replace(/^#/, "")}
                         </td>
-                        <td className="max-w-[290px] truncate px-3 py-3 font-medium text-primary underline-offset-2 hover:underline">
+                        <td className="max-w-[290px] truncate px-3 py-3 font-sans font-semibold text-foreground underline-offset-2 hover:underline">
                           {ticket.title}
                         </td>
                         <td className="px-4 py-3">
@@ -395,9 +538,6 @@ function ChamadosPage() {
                         <td className="px-4 py-3 text-xs">
                           {ticket.customer?.name ?? "Sem vínculo"}
                         </td>
-                        <td className="px-4 py-3">
-                          {ticket.department?.name ?? "Sem departamento"}
-                        </td>
                         <td className="px-4 py-3 text-xs">
                           {ticket.requesterContact?.name ?? ticket.createdByMembership.user.name}
                         </td>
@@ -405,17 +545,30 @@ function ChamadosPage() {
                         <td className="px-4 py-3 text-xs">
                           {ticket.closedAt ? formatDate(ticket.closedAt) : "-"}
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          {canView && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              title="Visualizar chamado"
+                              aria-label={`Visualizar chamado ${ticket.protocol}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedId(ticket.id);
+                                setDetailMode("view");
+                              }}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
-                <span>
-                  Mostrando {tickets.data.items.length} de {tickets.data.total} registros
-                </span>
-                <span>1 / {Math.max(1, Math.ceil(tickets.data.total / 25))}</span>
-              </div>
+              {paginationFooter}
             </Card>
           </>
         )}
@@ -429,20 +582,25 @@ function ChamadosPage() {
             onSaved={(ticket) => {
               novo.hide();
               setSelectedId(ticket.id);
+              setDetailMode("manage");
               refreshTickets();
             }}
           />
         )}
         <TicketDetail
           ticketId={selectedId}
-          onClose={() => setSelectedId(null)}
+          onClose={() => {
+            setSelectedId(null);
+            setDetailMode("view");
+          }}
           onChanged={refreshTickets}
-          canUpdate={canUpdate}
-          canUpdateStatus={canUpdateStatus}
-          canComment={canComment}
-          canUploadAttachment={canUploadAttachment}
-          canDeleteAttachment={canDeleteAttachment}
-          canDelete={canDelete}
+          readOnly={detailMode === "view"}
+          canUpdate={detailMode === "manage" && canUpdate}
+          canUpdateStatus={detailMode === "manage" && canUpdateStatus}
+          canComment={detailMode === "manage" && canComment}
+          canUploadAttachment={detailMode === "manage" && canUploadAttachment}
+          canDeleteAttachment={detailMode === "manage" && canDeleteAttachment}
+          canDelete={detailMode === "manage" && canDelete}
           customerPortal={isCustomerPortal}
           onDelete={(ticket) => setDeletingTicket(ticket)}
         />
@@ -456,6 +614,7 @@ function ChamadosPage() {
             onSaved={(ticket) => {
               setDuplicatingTicket(null);
               setSelectedId(ticket.id);
+              setDetailMode("manage");
               refreshTickets();
             }}
           />
@@ -469,6 +628,7 @@ function ChamadosPage() {
             onSaved={(ticket) => {
               setEditingTicket(null);
               setSelectedId(ticket.id);
+              setDetailMode("manage");
               refreshTickets();
             }}
           />
@@ -508,7 +668,7 @@ function SummaryCard({
 }: {
   label: string;
   value: number;
-  tone: "green" | "purple" | "amber" | "blue" | "red";
+  tone: "green" | "purple" | "amber" | "blue" | "validated" | "red";
   icon: React.ReactElement;
 }) {
   const styles = {
@@ -516,19 +676,18 @@ function SummaryCard({
     purple: "border-violet-200 bg-violet-50/80 text-violet-600",
     amber: "border-amber-200 bg-amber-50/80 text-amber-600",
     blue: "border-blue-200 bg-blue-50/80 text-blue-600",
+    validated: "border-blue-400 bg-blue-100/90 text-blue-700",
     red: "border-red-200 bg-red-50/80 text-red-600",
   } as const;
   return (
-    <div
-      className={`flex min-h-20 items-center justify-between rounded-xl border p-4 ${styles[tone]}`}
-    >
-      <div>
-        <p className="text-sm text-foreground/75">{label}</p>
-        <p className="mt-1 text-2xl font-semibold text-foreground">{value}</p>
+    <div className={`flex min-h-24 flex-col rounded-xl border p-4 ${styles[tone]}`}>
+      <p className="w-full text-xs uppercase tracking-widest text-muted-foreground">{label}</p>
+      <div className="mt-auto flex items-center justify-between gap-3 pt-2">
+        <p className="font-mono text-3xl font-semibold tabular-nums text-foreground">{value}</p>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-current/10 [&>svg]:h-4 [&>svg]:w-4">
+          {icon}
+        </span>
       </div>
-      <span className="grid h-10 w-10 place-items-center rounded-full bg-current/10 [&>svg]:h-5 [&>svg]:w-5">
-        {icon}
-      </span>
     </div>
   );
 }
@@ -546,22 +705,24 @@ function TicketDatum({
   label,
   value,
   strong,
-  link,
   dot,
   icon,
+  fullWidth,
+  featured,
 }: {
   label: string;
   value: string;
   strong?: boolean;
-  link?: boolean;
   dot?: string;
   icon?: boolean;
+  fullWidth?: boolean;
+  featured?: boolean;
 }) {
   return (
-    <div className="min-w-0">
-      <p className="text-xs text-primary/75">{label}</p>
+    <div className={`min-w-0 ${fullWidth ? "col-span-2" : ""}`}>
+      <p className="text-xs text-muted-foreground">{label}</p>
       <p
-        className={`truncate text-sm ${strong ? "font-semibold" : ""} ${link ? "text-primary" : ""}`}
+        className={`truncate font-semibold ${featured ? "font-sans text-lg text-foreground" : "text-sm"} ${strong ? "font-semibold" : ""}`}
       >
         {icon && <CalendarDays className="mr-1 inline h-3.5 w-3.5" />}
         {dot && <StatusDot color={dot} />}
@@ -599,6 +760,7 @@ function DialogBubble({
   editedDate,
   title,
   body,
+  bodyHtml,
   tone,
   onEdit,
 }: {
@@ -609,6 +771,7 @@ function DialogBubble({
   editedDate?: string;
   title?: string;
   body: string;
+  bodyHtml?: string | null;
   tone: "gray" | "blue" | "green" | "orange" | "red";
   onEdit?: () => void;
 }) {
@@ -646,7 +809,14 @@ function DialogBubble({
           {editedDate && <span className="text-muted-foreground">Editado em {editedDate}</span>}
         </div>
         {title && <h3 className="mt-2 border-b border-border pb-2 font-semibold">{title}</h3>}
-        <p className="mt-2 whitespace-pre-wrap text-sm">{body}</p>
+        {bodyHtml ? (
+          <div
+            className="mt-2 break-words text-sm [&_a]:text-primary [&_a]:underline [&_img]:my-2 [&_img]:max-h-[32rem] [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
+            dangerouslySetInnerHTML={{ __html: sanitizeTicketEditorHtml(bodyHtml) }}
+          />
+        ) : (
+          <p className="mt-2 whitespace-pre-wrap text-sm">{body}</p>
+        )}
       </div>
       {side === "right" && avatarNode}
     </div>
@@ -1056,7 +1226,13 @@ function TicketEditor({
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="primary" size="sm" disabled={busy} onClick={submit}>
+          <Button
+            variant="primary"
+            size="sm"
+            className="save-action-button"
+            disabled={busy}
+            onClick={submit}
+          >
             {busy ? "Salvando..." : initialTicket && !clone ? "Salvar" : "Salvar Chamado"}
           </Button>
         </>
@@ -1309,6 +1485,7 @@ function TicketDetail({
   ticketId,
   onClose,
   onChanged,
+  readOnly,
   canUpdate,
   canUpdateStatus,
   canComment,
@@ -1321,6 +1498,7 @@ function TicketDetail({
   ticketId: string | null;
   onClose: () => void;
   onChanged: () => void;
+  readOnly: boolean;
   canUpdate: boolean;
   canUpdateStatus: boolean;
   canComment: boolean;
@@ -1358,7 +1536,7 @@ function TicketDetail({
     "reply" | "transfer" | "approval" | "solve" | "cancel"
   >("reply");
   const [assignedMembershipId, setAssignedMembershipId] = React.useState("");
-  const options = useTicketOptions(!!ticketId && !customerPortal);
+  const options = useTicketOptions(!!ticketId && !customerPortal && !readOnly);
   const item = ticket.data;
 
   React.useEffect(() => {
@@ -1459,27 +1637,33 @@ function TicketDetail({
       footer={
         item ? (
           <>
-            {canDelete && !customerPortal && (
+            {canDelete && !customerPortal && !readOnly && (
               <Button
                 variant="outline"
                 size="sm"
-                className="mr-auto border-destructive text-destructive"
+                className="mr-auto h-8 rounded-lg border-destructive text-destructive sm:min-w-20"
                 onClick={() => onDelete(item)}
                 disabled={busy}
               >
                 <Trash2 className="h-4 w-4" /> Excluir
               </Button>
             )}
-            {customerPortal ? (
+            {customerPortal || readOnly ? (
               <Button variant="primary" size="sm" onClick={onClose} disabled={busy}>
                 Fechar
               </Button>
             ) : (
               <>
-                <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
+                <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
                   Cancelar
                 </Button>
-                <Button variant="primary" size="sm" onClick={onClose} disabled={busy}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="save-action-button"
+                  onClick={onClose}
+                  disabled={busy}
+                >
                   Salvar
                 </Button>
               </>
@@ -1501,6 +1685,7 @@ function TicketDetail({
                 date={formatDate(item.createdAt)}
                 title="Descrição do chamado"
                 body={item.descriptionText ?? ""}
+                bodyHtml={item.descriptionHtmlSanitized}
                 tone="blue"
               />
               {comments.data?.map((entry) => (
@@ -1512,6 +1697,7 @@ function TicketDetail({
                   date={formatDate(entry.createdAt)}
                   editedDate={entry.editedAt ? formatDate(entry.editedAt) : undefined}
                   body={entry.bodyText}
+                  bodyHtml={entry.bodyHtmlSanitized}
                   tone={dialogTone(entry.dialogType)}
                   onEdit={
                     entry.authorMembership.user.id === currentUserId
@@ -2065,7 +2251,7 @@ function priorityTone(priority: ApiTicketPriority) {
   return "info";
 }
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(
-    new Date(value),
-  );
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" })
+    .format(new Date(value))
+    .replace(",", "");
 }

@@ -28,6 +28,7 @@ import {
 import { ConversationStatus, MembershipStatus, Prisma } from "../generated/prisma";
 import { MessagesService } from "../conversations/messages.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizeRegistrationText } from "../common/registration-case";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { AssignDepartmentMemberDto } from "./dto/assign-department-member.dto";
@@ -250,7 +251,13 @@ export class DepartmentsController {
   @Post()
   @RequirePermissions("departments.create")
   async create(@Body() dto: CreateDepartmentDto, @CurrentUser() current: AuthenticatedUser) {
-    const name = dto.name.trim();
+    const name = await normalizeRegistrationText(
+      this.prisma,
+      current.tenantId,
+      "departments",
+      dto.name,
+    );
+    const inactivity = this.resolveInactivitySettings(dto);
     await this.entitlements.assertTenantOperational(current.tenantId);
     const department = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
@@ -275,6 +282,7 @@ export class DepartmentsController {
             color: dto.color ?? "#3B82F6",
             icon: dto.icon ?? "department",
             active: dto.active ?? true,
+            ...inactivity,
             connections: {
               create: dto.connectionIds.map((connectionId) => ({
                 connectionId,
@@ -292,6 +300,7 @@ export class DepartmentsController {
           color: dto.color ?? "#3B82F6",
           icon: dto.icon ?? "department",
           active: dto.active ?? true,
+          ...inactivity,
           connections: {
             create: (dto.connectionIds ?? []).map((connectionId) => ({
               connectionId,
@@ -317,14 +326,19 @@ export class DepartmentsController {
       );
     }
     const existing = await this.findDepartmentOrThrow(id, current.tenantId);
+    const name =
+      dto.name === undefined
+        ? undefined
+        : await normalizeRegistrationText(this.prisma, current.tenantId, "departments", dto.name);
+    const inactivity = this.resolveInactivitySettings(dto, existing);
     const department = await this.prisma.$transaction(async (tx) => {
       if (typeof (tx as Partial<Prisma.TransactionClient>).$queryRaw === "function") {
         await tx.$queryRaw(
           Prisma.sql`SELECT id FROM "departments" WHERE id = ${id} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
         );
       }
-      if (dto.name !== undefined) {
-        await this.ensureNameAvailable(tx, current.tenantId, dto.name.trim(), existing.id);
+      if (name !== undefined) {
+        await this.ensureNameAvailable(tx, current.tenantId, name, existing.id);
       }
       if (dto.connectionIds !== undefined) {
         await this.assertConnections(tx, current.tenantId, dto.connectionIds);
@@ -335,11 +349,12 @@ export class DepartmentsController {
       return tx.department.update({
         where: { id },
         data: {
-          name: dto.name?.trim(),
+          name,
           description: dto.description === undefined ? undefined : dto.description?.trim() || null,
           color: dto.color,
           icon: dto.icon,
           active: dto.active,
+          ...inactivity,
           connections:
             dto.connectionIds === undefined
               ? undefined
@@ -702,6 +717,9 @@ export class DepartmentsController {
     color: string;
     icon: string;
     active: boolean;
+    inactivityClosureEnabled: boolean;
+    inactivityTimeoutMinutes: number | null;
+    inactivityClosureMessage: string | null;
     tenantId: string;
     createdAt: Date;
     updatedAt: Date;
@@ -716,8 +734,44 @@ export class DepartmentsController {
       icon: department.icon,
       connectionIds: department.connections?.map((connection) => connection.connectionId) ?? [],
       active: department.active,
+      inactivityClosureEnabled: department.inactivityClosureEnabled,
+      inactivityTimeoutMinutes: department.inactivityTimeoutMinutes,
+      inactivityClosureMessage: department.inactivityClosureMessage,
       createdAt: department.createdAt.toISOString(),
       updatedAt: department.updatedAt.toISOString(),
+    };
+  }
+
+  private resolveInactivitySettings(
+    dto: {
+      inactivityClosureEnabled?: boolean;
+      inactivityTimeoutMinutes?: number | null;
+      inactivityClosureMessage?: string | null;
+    },
+    existing?: {
+      inactivityClosureEnabled: boolean;
+      inactivityTimeoutMinutes: number | null;
+      inactivityClosureMessage: string | null;
+    },
+  ) {
+    const enabled = dto.inactivityClosureEnabled ?? existing?.inactivityClosureEnabled ?? false;
+    const timeout =
+      dto.inactivityTimeoutMinutes === undefined
+        ? (existing?.inactivityTimeoutMinutes ?? null)
+        : dto.inactivityTimeoutMinutes;
+    const message =
+      dto.inactivityClosureMessage === undefined
+        ? (existing?.inactivityClosureMessage ?? null)
+        : dto.inactivityClosureMessage?.trim() || null;
+    if (enabled && (!timeout || !message)) {
+      throw new BadRequestException(
+        "Informe o tempo sem resposta e a mensagem do encerramento por inatividade.",
+      );
+    }
+    return {
+      inactivityClosureEnabled: enabled,
+      inactivityTimeoutMinutes: timeout,
+      inactivityClosureMessage: message,
     };
   }
 
@@ -980,5 +1034,8 @@ function removeDepartmentFromRoleMetadata(metadata: unknown, departmentId: strin
     next.departmentIds = next.departmentIds.filter((item) => item !== departmentId);
   }
   if (next.favoriteDepartmentId === departmentId) next.favoriteDepartmentId = null;
+  if (next.onboardingFavoriteDepartmentId === departmentId) {
+    next.onboardingFavoriteDepartmentId = null;
+  }
   return JSON.stringify(next) === before ? null : next;
 }

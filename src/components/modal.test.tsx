@@ -4,6 +4,30 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { ConfirmDialog, Modal } from "./modal";
 
+it("uses the shared close-button pattern", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onClose = vi.fn();
+  try {
+    await React.act(() => root.render(<Modal open title="Fixture" onClose={onClose} />));
+    const close = document.querySelector<HTMLButtonElement>('button[aria-label="Fechar"]')!;
+    expect(close.className).toContain("h-8");
+    expect(close.className).toContain("w-8");
+    expect(close.className).toContain("rounded-lg");
+    expect(close.className).toContain("border-border");
+    expect(close.className).toContain("bg-surface-2");
+    expect(close.className).toContain("p-0");
+    expect(close.className).toContain("hover:bg-surface-3");
+    await React.act(() => close.click());
+    expect(onClose).toHaveBeenCalledOnce();
+  } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});
+
 it("focuses the delete action each time a confirmation opens", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const container = document.createElement("div");
@@ -29,6 +53,19 @@ it("focuses the delete action each time a confirmation opens", async () => {
     const cancel = Array.from(document.querySelectorAll("button")).find(
       (button) => button.textContent === "Cancelar",
     )!;
+    expect(cancel.className).toContain("min-h-8");
+    expect(cancel.className).toContain("bg-surface-2");
+    expect(cancel.className).toContain("hover:bg-surface-3");
+    expect(cancel.className).toContain("text-xs");
+    const confirm = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Excluir",
+    )!;
+    for (const action of [cancel, confirm]) {
+      expect(action.className).toContain("h-8");
+      expect(action.className).toContain("rounded-lg");
+      expect(action.className).toContain("sm:min-w-20");
+    }
+    expect(confirm.className).toContain("bg-destructive");
     cancel.focus();
     await React.act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     expect(document.activeElement?.textContent).toBe("Excluir");
@@ -71,6 +108,45 @@ it("keeps an async confirmation open when deletion fails", async () => {
     expect(onConfirm).toHaveBeenCalledOnce();
     expect(onClose).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Excluir?");
+  } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});
+
+it("uses the action-specific pending label", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let finish!: () => void;
+  const onConfirm = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const onClose = vi.fn();
+  try {
+    await React.act(() =>
+      root.render(
+        <ConfirmDialog
+          open
+          title="Transferir contato?"
+          confirmLabel="Transferir contato"
+          pendingLabel="Transferindo…"
+          onConfirm={onConfirm}
+          onClose={onClose}
+        />,
+      ),
+    );
+    const confirm = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Transferir contato",
+    )!;
+    await React.act(() => confirm.click());
+    expect(document.body.textContent).toContain("Transferindo…");
+    await React.act(async () => finish());
+    expect(onClose).toHaveBeenCalledOnce();
   } finally {
     await React.act(() => root.unmount());
     container.remove();

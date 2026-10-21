@@ -5,11 +5,12 @@ import {
   CalendarDays,
   Check,
   Crown,
+  Eye,
   Pencil,
   LogOut,
   ChevronLeft,
   ChevronRight,
-  MessageSquareMore,
+  MessageSquarePlus,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { MessageEmojiPicker } from "@/components/message-emoji-picker";
@@ -149,6 +151,7 @@ function GroupsPage() {
   const navigate = useNavigate();
   const permissions = useSession((state) => state.user?.permissions ?? []);
   const canViewChat = permissions.includes("conversations.read");
+  const canView = permissions.includes("groups.read");
   const canCreate = permissions.includes("groups.create");
   const canUpdate = permissions.includes("groups.update");
   const canLeave = permissions.includes("groups.leave");
@@ -164,6 +167,7 @@ function GroupsPage() {
   const [loading, setLoading] = React.useState(true);
   const [syncing, setSyncing] = React.useState(false);
   const [selectedGroup, setSelectedGroup] = React.useState<ApiWhatsappGroup | null>(null);
+  const [groupDetailMode, setGroupDetailMode] = React.useState<"view" | "edit">("view");
   const [leavingGroup, setLeavingGroup] = React.useState<ApiWhatsappGroupSummary | null>(null);
   const initialReloadScheduledRef = React.useRef(false);
   const latestListRequestRef = React.useRef(0);
@@ -230,6 +234,7 @@ function GroupsPage() {
   const invalidateGroupDetail = React.useCallback(() => {
     latestDetailRequestRef.current += 1;
     setSelectedGroup(null);
+    setGroupDetailMode("view");
   }, []);
   const changeQuery = React.useCallback(
     (value: string) => {
@@ -262,16 +267,27 @@ function GroupsPage() {
     },
     [invalidateGroupDetail],
   );
-  const openGroupDetail = React.useCallback(async (group: ApiWhatsappGroupSummary) => {
-    const requestId = ++latestDetailRequestRef.current;
-    try {
-      const detail = await groupsApi.detail(group.id);
-      if (requestId === latestDetailRequestRef.current) setSelectedGroup(detail);
-    } catch (error) {
-      if (requestId !== latestDetailRequestRef.current) return;
-      toast.error("Falha ao carregar grupo", { description: (error as Error).message });
-    }
-  }, []);
+  const hasFilters = Boolean(query.trim() || instanceFilter);
+  const clearFilters = React.useCallback(() => {
+    invalidateGroupDetail();
+    setQuery("");
+    setInstanceFilter("");
+    setPage(1);
+  }, [invalidateGroupDetail]);
+  const openGroupDetail = React.useCallback(
+    async (group: ApiWhatsappGroupSummary, mode: "view" | "edit") => {
+      const requestId = ++latestDetailRequestRef.current;
+      setGroupDetailMode(mode);
+      try {
+        const detail = await groupsApi.detail(group.id);
+        if (requestId === latestDetailRequestRef.current) setSelectedGroup(detail);
+      } catch (error) {
+        if (requestId !== latestDetailRequestRef.current) return;
+        toast.error("Falha ao carregar grupo", { description: (error as Error).message });
+      }
+    },
+    [],
+  );
   const syncGroups = async () => {
     setSyncing(true);
     try {
@@ -329,7 +345,7 @@ function GroupsPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)] gap-2 sm:gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)]">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)] gap-2 sm:gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)_auto]">
             <div className="min-w-0">
               <Field label="Busca">
                 <SearchInput
@@ -347,6 +363,11 @@ function GroupsPage() {
                 emptyLabel="Todas"
               />
             </Field>
+            {hasFilters && (
+              <div className="flex items-end">
+                <ClearFiltersButton onClick={clearFilters} />
+              </div>
+            )}
           </div>
         </Card>
 
@@ -365,7 +386,8 @@ function GroupsPage() {
                   key={group.id}
                   group={group}
                   onOpenChat={canViewChat ? () => void openGroupChat(group) : undefined}
-                  onDetail={() => void openGroupDetail(group)}
+                  onView={canView ? () => void openGroupDetail(group, "view") : undefined}
+                  onEdit={canUpdate ? () => void openGroupDetail(group, "edit") : undefined}
                   canEdit={canUpdate}
                   onLeave={canLeave ? () => setLeavingGroup(group) : undefined}
                 />
@@ -447,7 +469,7 @@ function GroupsPage() {
             );
           }}
           onOpenChat={canViewChat ? (group) => void openGroupChat(group) : undefined}
-          canManage={canUpdate}
+          canManage={canUpdate && groupDetailMode === "edit"}
         />
         {canLeave && (
           <DeletionConfirmDialog
@@ -476,13 +498,15 @@ function GroupsPage() {
 function GroupCard({
   group,
   onOpenChat,
-  onDetail,
+  onView,
+  onEdit,
   canEdit,
   onLeave,
 }: {
   group: ApiWhatsappGroupSummary;
   onOpenChat?: () => void;
-  onDetail: () => void;
+  onView?: () => void;
+  onEdit?: () => void;
   canEdit: boolean;
   onLeave?: () => void;
 }) {
@@ -490,11 +514,11 @@ function GroupCard({
     <div
       role="button"
       tabIndex={0}
-      onDoubleClick={onDetail}
+      onDoubleClick={onView}
       onKeyDown={(event) => {
         if (event.key !== "Enter") return;
         event.preventDefault();
-        onDetail();
+        onView?.();
       }}
       title="Clique duas vezes para visualizar o grupo"
       className="flex min-h-40 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-border bg-card p-3 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md sm:p-4"
@@ -519,10 +543,26 @@ function GroupCard({
         )}
       </div>
       <div className="mt-4 flex min-w-0 justify-end gap-1 border-t border-border pt-3">
+        {onView && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Visualizar grupo"
+            aria-label="Visualizar grupo"
+            onClick={(event) => {
+              event.stopPropagation();
+              onView();
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+        )}
         {onOpenChat && (
           <Button
             variant="ghost"
             size="sm"
+            className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
             title="Abrir conversa"
             aria-label="Abrir conversa"
             onClick={(event) => {
@@ -531,7 +571,7 @@ function GroupCard({
             }}
             onDoubleClick={(event) => event.stopPropagation()}
           >
-            <MessageSquareMore className="h-4 w-4" />
+            <MessageSquarePlus className="h-4 w-4" />
           </Button>
         )}
         {canEdit && (
@@ -542,7 +582,7 @@ function GroupCard({
             aria-label="Editar grupo"
             onClick={(event) => {
               event.stopPropagation();
-              onDetail();
+              onEdit?.();
             }}
             onDoubleClick={(event) => event.stopPropagation()}
           >
@@ -555,7 +595,7 @@ function GroupCard({
             size="sm"
             title="Sair do grupo"
             aria-label="Sair do grupo"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="action-hover-destructive"
             onClick={(event) => {
               event.stopPropagation();
               onLeave();
@@ -598,7 +638,7 @@ function InstanceSelect({
   );
 }
 
-function CreateGroupModal({
+export function CreateGroupModal({
   open,
   onClose,
   instances,
@@ -1088,11 +1128,16 @@ function GroupDetailModal({
             <EntityFormLog createdAt={group.createdAt} updatedAt={group.updatedAt} />
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <Button variant="ghost" size="sm" onClick={onClose} disabled={!!busy}>
-                Cancelar
+                {canManage ? "Cancelar" : "Fechar"}
               </Button>
               {onOpenChat && (
-                <Button variant="primary" size="sm" onClick={() => onOpenChat(group)}>
-                  <MessageSquareMore className="h-3.5 w-3.5" /> Abrir conversa
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
+                  onClick={() => onOpenChat(group)}
+                >
+                  <MessageSquarePlus className="h-3.5 w-3.5" /> Abrir conversa
                 </Button>
               )}
             </div>
@@ -1153,12 +1198,11 @@ function GroupDetailModal({
                     {canManage && (
                       <Button
                         variant="ghost"
-                        size="icon"
+                        size="sm"
                         title={editingName ? "Salvar nome" : "Editar nome"}
                         aria-label={editingName ? "Salvar nome" : "Editar nome"}
                         onClick={editingName ? saveName : () => setEditingName(true)}
                         disabled={busy === "name"}
-                        className="h-9 w-9"
                       >
                         {editingName ? (
                           <Check className="h-4 w-4" />
@@ -1223,14 +1267,14 @@ function GroupDetailModal({
                     {canManage && (
                       <Button
                         variant="ghost"
-                        size="icon"
+                        size="sm"
                         title={editingDescription ? "Salvar descrição" : "Editar descrição"}
                         aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
                         onClick={
                           editingDescription ? saveDescription : () => setEditingDescription(true)
                         }
                         disabled={busy === "description"}
-                        className="h-9 w-9 self-center sm:h-10 sm:w-10"
+                        className="self-center"
                       >
                         {editingDescription ? (
                           <Check className="h-4 w-4" />

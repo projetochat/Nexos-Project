@@ -7,6 +7,7 @@ import {
   Plug,
   Shield,
   SlidersHorizontal,
+  CaseUpper,
 } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { SectionHeader } from "@/components/ui-kit";
@@ -22,6 +23,7 @@ const TABS = [
   { to: "/configuracoes/geral", label: "Filas do Chat", icon: SlidersHorizontal },
   { to: "/configuracoes/permissoes", label: "Permissões", icon: Shield },
   { to: "/configuracoes/integracoes", label: "Integrações", icon: Plug },
+  { to: "/configuracoes/padrao-cadastros", label: "Padrão de Cadastros", icon: CaseUpper },
   { to: "/configuracoes/campos-contato", label: "Campos Adicionais", icon: ListPlus },
   { to: "/configuracoes/variaveis", label: "Variáveis", icon: Braces },
 ] as const;

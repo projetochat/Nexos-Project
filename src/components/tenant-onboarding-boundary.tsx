@@ -59,12 +59,18 @@ import {
   type ApiUserMembership,
 } from "@/lib/trixus-api";
 import { signOut, useSession } from "@/lib/session";
+import { formatPhoneForDisplay } from "@/lib/input-masks";
 import {
   buildOnboardingAttendantPayload,
+  buildOnboardingRoleScopeMetadata,
   canAdvanceOnboardingStep,
   formatOnboardingConnectedAt,
   hasActiveDepartmentConnection,
+  isOnboardingConnectionConnected,
+  onboardingAdministratorRole,
+  onboardingFavoriteDepartmentId,
   onboardingRoleColorClass,
+  onboardingScopeNeedsSync,
   onboardingStepAfterRefresh,
   shouldPollOnboardingConnection,
 } from "@/lib/onboarding";
@@ -157,6 +163,7 @@ export const SUPERVISOR_DEFAULT_PERMISSIONS = [
   "dashboard.update",
   "dashboard.delete",
   "conversations.read",
+  "leads.read",
   "messages.send",
   "chat.messages.edit",
   "chat.messages.delete",
@@ -195,6 +202,7 @@ export const SUPERVISOR_DEFAULT_PERMISSIONS = [
 export const ATTENDANT_DEFAULT_PERMISSIONS = [
   "dashboard.read",
   "conversations.read",
+  "leads.read",
   "messages.send",
   "chat.messages.edit",
   "chat.messages.delete",
@@ -266,6 +274,10 @@ export const DEFAULT_TAGS = [
   { name: "Problema Técnico", description: "Problema técnico", color: "#F04438" },
   { name: "Fechado", description: "Fechado", color: "#7A2CF3" },
 ] as const;
+
+export function onboardingTagDescription(description?: string | null) {
+  return description?.trim() || undefined;
+}
 
 function hasOnboardingDefaults(metadata: unknown) {
   return (
@@ -689,16 +701,24 @@ const InstanceStep = React.forwardRef<
   const selected = visible.find((item) => item.id === selectedId) ?? visible[0];
   const selectedPollingId = selected?.id;
   const selectedNeedsPolling = shouldPollOnboardingConnection(selected);
+  const selectedConnected = isOnboardingConnectionConnected(selected?.status);
 
   React.useEffect(() => {
     if (!selectedId && visible[0]) setSelectedId(visible[0].id);
   }, [selectedId, visible]);
 
   React.useEffect(() => {
+    if (!selectedConnected) return;
+    setQrSessionOpen(false);
+    setQr(null);
+  }, [selectedConnected]);
+
+  React.useEffect(() => {
     if (!selectedNeedsPolling || !selectedPollingId) return;
     let active = true;
     let timeoutId: number | undefined;
     const poll = async () => {
+      let shouldContinue = true;
       try {
         const qrResult = qrSessionOpen ? await connectionsApi.qrStatus(selectedPollingId) : null;
         const updated = qrResult ? null : await connectionsApi.status(selectedPollingId);
@@ -715,7 +735,8 @@ const InstanceStep = React.forwardRef<
             "A sessão externa não existe mais. Gere um novo QR Code para recuperá-la sem perder o histórico.",
           );
         }
-        if ((qrResult?.status ?? updated?.status) === "connected") {
+        if (isOnboardingConnectionConnected(qrResult?.status ?? updated?.status)) {
+          shouldContinue = false;
           setConnectionError(null);
           setQr(null);
           setQrSessionOpen(false);
@@ -728,7 +749,7 @@ const InstanceStep = React.forwardRef<
           "Não foi possível verificar a conexão. Confira sua internet e tente novamente.",
         );
       } finally {
-        if (active) timeoutId = window.setTimeout(() => void poll(), 2_000);
+        if (active && shouldContinue) timeoutId = window.setTimeout(() => void poll(), 2_000);
       }
     };
     void poll();
@@ -928,9 +949,9 @@ const InstanceStep = React.forwardRef<
                     <p className="mb-2 text-sm">Número conectado</p>
                     <p className="flex items-center gap-2">
                       <Phone className="h-5 w-5" />{" "}
-                      {selected.ownerPhoneMasked ||
-                        selected.ownerPhone ||
-                        "Aguardando identificação"}
+                      {selected.ownerPhone
+                        ? formatPhoneForDisplay(selected.ownerPhone)
+                        : selected.ownerPhoneMasked || "Aguardando identificação"}
                     </p>
                   </div>
                 </div>
@@ -997,7 +1018,7 @@ const InstanceStep = React.forwardRef<
       )}
       <QrGenerationLoadingOverlay open={qrGenerationPending} />
       <Modal
-        open={qrSessionOpen && selected?.status !== "connected"}
+        open={qrSessionOpen && !selectedConnected}
         onClose={() => {
           setQrSessionOpen(false);
           setQr(null);
@@ -1038,6 +1059,7 @@ function DepartmentsStep({
   onServerChange: () => Promise<unknown>;
   onBusyChange: (busy: boolean) => void;
 }) {
+  const queryClient = useQueryClient();
   const departments = useQuery({
     queryKey: DEPARTMENTS_QUERY_KEY,
     queryFn: organizationApi.listDepartments,
@@ -1046,6 +1068,7 @@ function DepartmentsStep({
     queryKey: ["trixus", "department-connection-options"],
     queryFn: organizationApi.departmentConnectionOptions,
   });
+  const roles = useQuery({ queryKey: ROLES_QUERY_KEY, queryFn: organizationApi.listRoles });
   const [connectionId, setConnectionId] = React.useState("");
   const [creating, setCreating] = React.useState(false);
   const [editing, setEditing] = React.useState<ApiDepartment | null>(null);
@@ -1053,6 +1076,19 @@ function DepartmentsStep({
   const [bootstrapping, setBootstrapping] = React.useState(false);
   const [bootstrapError, setBootstrapError] = React.useState<string | null>(null);
   const bootstrapStarted = React.useRef(false);
+  const favoriteBootstrapStarted = React.useRef(false);
+  const favoriteDepartmentId = onboardingFavoriteDepartmentId(roles.data ?? []);
+  const favoriteMutation = useMutation({
+    mutationFn: ({ roleId, departmentId }: { roleId: string; departmentId: string }) =>
+      organizationApi.setRoleFavoriteDepartment(roleId, departmentId),
+    onSuccess: async (updatedRole) => {
+      queryClient.setQueryData<ApiRole[]>(ROLES_QUERY_KEY, (current) =>
+        (current ?? []).map((role) => (role.id === updatedRole.id ? updatedRole : role)),
+      );
+      await onServerChange();
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
   React.useEffect(() => {
     if (!connectionId && connections.data?.[0]) setConnectionId(connections.data[0].id);
   }, [connectionId, connections.data]);
@@ -1086,6 +1122,7 @@ function DepartmentsStep({
           await organizationApi.createDepartment({ ...department, connectionIds: [connectionId] });
         }
         await departments.refetch();
+        await queryClient.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
         await onServerChange();
       } catch (error) {
         const refreshed = await departments.refetch();
@@ -1113,6 +1150,52 @@ function DepartmentsStep({
     departments.data,
     departments.isPending,
     onServerChange,
+    queryClient,
+  ]);
+  React.useEffect(() => {
+    if (
+      favoriteDepartmentId ||
+      bootstrapError ||
+      favoriteBootstrapStarted.current ||
+      departments.isPending ||
+      roles.isPending ||
+      bootstrapping ||
+      favoriteMutation.isPending
+    )
+      return;
+    const available = (departments.data ?? []).filter(
+      (department) => department.active && department.connectionIds.length > 0,
+    );
+    if (
+      bootstrapDefaults &&
+      !DEFAULT_DEPARTMENTS.every((item) =>
+        available.some((department) => normalized(department.name) === normalized(item.name)),
+      )
+    )
+      return;
+    const administrator = onboardingAdministratorRole(roles.data ?? []);
+    const preferred =
+      available.find((department) => normalized(department.name) === "atendimento") ?? available[0];
+    if (!administrator || !preferred) return;
+    favoriteBootstrapStarted.current = true;
+    void favoriteMutation
+      .mutateAsync({ roleId: administrator.id, departmentId: preferred.id })
+      .catch((error) => {
+        favoriteBootstrapStarted.current = false;
+        setBootstrapError(
+          `${apiErrorMessageWithRequestId(error)} Atualize a página para tentar novamente.`,
+        );
+      });
+  }, [
+    bootstrapDefaults,
+    bootstrapError,
+    bootstrapping,
+    departments.data,
+    departments.isPending,
+    favoriteDepartmentId,
+    favoriteMutation,
+    roles.data,
+    roles.isPending,
   ]);
   const saveOfficial = useMutation({
     mutationFn: ({ id, data }: { id?: string; data: DepartamentoFormData }) =>
@@ -1124,11 +1207,15 @@ function DepartmentsStep({
             color: data.color,
             icon: data.icon,
             connectionIds: data.connectionIds,
+            inactivityClosureEnabled: data.inactivityClosureEnabled,
+            inactivityTimeoutMinutes: data.inactivityTimeoutMinutes,
+            inactivityClosureMessage: data.inactivityClosureMessage,
           }),
     onSuccess: async () => {
       setCreating(false);
       setEditing(null);
       await departments.refetch();
+      await queryClient.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
       await onServerChange();
     },
     onError: (error) => toast.error((error as Error).message),
@@ -1144,8 +1231,12 @@ function DepartmentsStep({
         connections.isFetching ||
         departments.isError ||
         connections.isError ||
+        roles.isPending ||
+        roles.isError ||
         bootstrapping ||
         saveOfficial.isPending ||
+        favoriteMutation.isPending ||
+        !favoriteDepartmentId ||
         !!bootstrapError ||
         missingRequiredConnection,
     );
@@ -1162,7 +1253,11 @@ function DepartmentsStep({
     departments.isFetching,
     departments.isPending,
     onBusyChange,
+    roles.isError,
+    roles.isPending,
     saveOfficial.isPending,
+    favoriteMutation.isPending,
+    favoriteDepartmentId,
   ]);
   return (
     <CatalogStep
@@ -1193,16 +1288,32 @@ function DepartmentsStep({
             </span>
           }
           action={
-            <Star
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-pressed={favoriteDepartmentId === item.id}
               aria-label={
-                DEFAULT_DEPARTMENTS.find(
-                  (department) => normalized(department.name) === normalized(item.name),
-                )?.favorite
-                  ? "Departamento favorito"
-                  : "Departamento não favorito"
+                favoriteDepartmentId === item.id
+                  ? `${item.name} é o departamento favorito`
+                  : `Definir ${item.name} como departamento favorito`
               }
-              className={`h-5 w-5 ${DEFAULT_DEPARTMENTS.find((department) => normalized(department.name) === normalized(item.name))?.favorite ? "fill-amber-400 text-amber-400" : "text-slate-300"}`}
-            />
+              title={
+                favoriteDepartmentId === item.id ? "Departamento favorito" : "Definir como favorito"
+              }
+              disabled={
+                favoriteMutation.isPending || !onboardingAdministratorRole(roles.data ?? [])
+              }
+              onClick={() => {
+                const administrator = onboardingAdministratorRole(roles.data ?? []);
+                if (!administrator || favoriteDepartmentId === item.id) return;
+                favoriteMutation.mutate({ roleId: administrator.id, departmentId: item.id });
+              }}
+            >
+              <Star
+                className={`h-5 w-5 ${favoriteDepartmentId === item.id ? "fill-amber-400 text-amber-400" : "text-slate-300"}`}
+              />
+            </Button>
           }
           onEdit={() => setEditing(item)}
           onDelete={() => setDeleting(item)}
@@ -1246,6 +1357,11 @@ function DepartmentsStep({
               setDeleting(null);
               void (async () => {
                 await departments.refetch();
+                favoriteBootstrapStarted.current = false;
+                await roles.refetch();
+                await queryClient.invalidateQueries({
+                  queryKey: ["trixus", "role-scope-options"],
+                });
                 await onServerChange();
               })();
             }}
@@ -1284,13 +1400,7 @@ function RolesStep({
     [bootstrapError, bootstrapping, onBusyChange, roles.isPending, scopeOptions.isPending],
   );
   React.useEffect(() => {
-    if (
-      !bootstrapDefaults ||
-      bootstrapStarted.current ||
-      roles.isPending ||
-      scopeOptions.isPending ||
-      !scopeOptions.data
-    )
+    if (bootstrapStarted.current || roles.isPending || scopeOptions.isPending || !scopeOptions.data)
       return;
     const connectionIds = scopeOptions.data.connections.map((connection) => connection.id);
     const departmentIds = scopeOptions.data.departments.map((department) => department.id);
@@ -1304,28 +1414,18 @@ function RolesStep({
       )?.id ??
       departmentIds[0] ??
       null;
-    const metadata = {
-      onboardingDefaultsVersion: 1,
-      connectionIds,
-      departmentIds,
-      chatScopes: scopeOptions.data.connections.map((connection) => {
-        const allowedDepartmentIds = connection.departments.map((department) => department.id);
-        return {
-          connectionId: connection.id,
-          departmentIds: allowedDepartmentIds,
-          favoriteDepartmentId: allowedDepartmentIds.includes(favoriteDepartmentId ?? "")
-            ? favoriteDepartmentId
-            : null,
-        };
-      }),
-    };
+    const persistedFavoriteDepartmentId = onboardingFavoriteDepartmentId(roles.data ?? []);
+    const metadata = buildOnboardingRoleScopeMetadata(
+      scopeOptions.data.connections,
+      persistedFavoriteDepartmentId ?? favoriteDepartmentId,
+    );
     void (async () => {
       try {
         const currentRoles = roles.data ?? [];
         const attendant = currentRoles.find(
           (role) => role.key === "agent" || normalized(role.name) === "atendente",
         );
-        if (!attendant) {
+        if (!attendant && bootstrapDefaults) {
           await organizationApi.createRole({
             key: "agent",
             name: "Atendente",
@@ -1333,7 +1433,7 @@ function RolesStep({
             permissionIds: [...ATTENDANT_DEFAULT_PERMISSIONS],
             metadata,
           });
-        } else if (!hasOnboardingDefaults(attendant.metadata)) {
+        } else if (attendant && bootstrapDefaults && !hasOnboardingDefaults(attendant.metadata)) {
           await organizationApi.updateRole(attendant.id, {
             name: "Atendente",
             description: attendant.description || "Operacionais do chat",
@@ -1347,11 +1447,26 @@ function RolesStep({
               ...metadata,
             },
           });
+        } else if (
+          attendant &&
+          hasOnboardingDefaults(attendant.metadata) &&
+          onboardingScopeNeedsSync(attendant.metadata, metadata)
+        ) {
+          await organizationApi.updateRole(attendant.id, {
+            metadata: {
+              ...(attendant.metadata &&
+              typeof attendant.metadata === "object" &&
+              !Array.isArray(attendant.metadata)
+                ? attendant.metadata
+                : {}),
+              ...metadata,
+            },
+          });
         }
         const supervisor = currentRoles.find(
           (role) => role.key === "supervisor" || normalized(role.name) === "supervisor",
         );
-        if (!supervisor) {
+        if (!supervisor && bootstrapDefaults) {
           await organizationApi.createRole({
             key: "supervisor",
             name: "Supervisor",
@@ -1359,11 +1474,26 @@ function RolesStep({
             permissionIds: [...SUPERVISOR_DEFAULT_PERMISSIONS],
             metadata,
           });
-        } else if (!hasOnboardingDefaults(supervisor.metadata)) {
+        } else if (supervisor && bootstrapDefaults && !hasOnboardingDefaults(supervisor.metadata)) {
           await organizationApi.updateRole(supervisor.id, {
             name: "Supervisor",
             description: supervisor.description || "Tudo do Módulo Chat",
             permissionIds: [...SUPERVISOR_DEFAULT_PERMISSIONS],
+            metadata: {
+              ...(supervisor.metadata &&
+              typeof supervisor.metadata === "object" &&
+              !Array.isArray(supervisor.metadata)
+                ? supervisor.metadata
+                : {}),
+              ...metadata,
+            },
+          });
+        } else if (
+          supervisor &&
+          hasOnboardingDefaults(supervisor.metadata) &&
+          onboardingScopeNeedsSync(supervisor.metadata, metadata)
+        ) {
+          await organizationApi.updateRole(supervisor.id, {
             metadata: {
               ...(supervisor.metadata &&
               typeof supervisor.metadata === "object" &&
@@ -1387,6 +1517,7 @@ function RolesStep({
           return (
             !!role &&
             hasOnboardingDefaults(role.metadata) &&
+            !onboardingScopeNeedsSync(role.metadata, metadata) &&
             permissions.every((permission) => role.permissionIds.includes(permission))
           );
         };
@@ -1685,10 +1816,11 @@ function UsersStep({ onServerChange }: { onServerChange: () => Promise<unknown> 
             size="md"
             footer={
               <>
-                <Button variant="ghost" onClick={() => setCreating(false)}>
+                <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
                   Cancelar
                 </Button>
                 <Button
+                  className="save-action-button"
                   disabled={
                     form.name.trim().length < 3 ||
                     !form.email.includes("@") ||
@@ -2062,7 +2194,7 @@ function TagsStep({
           <CatalogRow
             key={item.id}
             title={item.nome}
-            subtitle={item.descricao || item.cor}
+            subtitle={onboardingTagDescription(item.descricao)}
             icon={<Tag className="h-5 w-5" style={{ color: item.cor }} />}
             onEdit={() => setEditing(item)}
             onDelete={() => setDeleting(item)}
@@ -2311,7 +2443,12 @@ function CatalogEditDialog({
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Cancelar
           </Button>
-          <Button size="sm" onClick={() => void save()} disabled={busy}>
+          <Button
+            size="sm"
+            className="save-action-button"
+            onClick={() => void save()}
+            disabled={busy}
+          >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />} Salvar
           </Button>
         </>

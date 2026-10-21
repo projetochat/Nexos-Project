@@ -356,8 +356,8 @@ export class SchedulesController {
         dueAt: existing.dueAt,
         payload: existing.payload,
       }),
-      title: "Excluir agendamento?",
-      prompt: "Confira os dados atuais antes de excluir este agendamento definitivamente.",
+      title: "Excluir mensagem agendada?",
+      prompt: "Ao excluir, esta mensagem agendada não será enviada.",
       record: {
         name: title,
         identifiers: [
@@ -393,7 +393,7 @@ export class SchedulesController {
       consequences: [
         {
           id: "schedule",
-          text: "O agendamento e seus dados incorporados serão excluídos definitivamente.",
+          text: "A mensagem não será enviada e os dados do agendamento serão excluídos.",
           irreversible: true,
         },
       ],

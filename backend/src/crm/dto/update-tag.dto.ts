@@ -20,4 +20,8 @@ export class UpdateTagDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyOnNewConversation?: boolean;
 }

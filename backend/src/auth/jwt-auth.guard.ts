@@ -135,6 +135,7 @@ export function isOnboardingAdministratorRequest(method: string, path: string) {
   }
   if (path === "/permissions") return method === "GET";
   if (path === "/roles/scope-options") return method === "GET";
+  if (/^\/roles\/[^/]+\/favorite-department$/.test(path)) return method === "PATCH";
   if (path === "/roles" || /^\/roles\/[^/]+$/.test(path)) {
     return ["GET", "POST", "PATCH", "DELETE"].includes(method);
   }

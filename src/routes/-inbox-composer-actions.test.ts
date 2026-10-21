@@ -24,4 +24,19 @@ describe("ações do compositor do chat", () => {
       "input?.setSelectionRange(start + emoji.length, start + emoji.length)",
     );
   });
+
+  it("envia uma mensagem rápida preparada com o primeiro Enter, sem exigir nova confirmação", () => {
+    const textareaStart = source.indexOf("<textarea\n              ref={textareaRef}");
+    const textarea = source.slice(textareaStart, source.indexOf("/>", textareaStart));
+
+    expect(textarea).toContain('if (e.key === "Enter" && !e.shiftKey)');
+    expect(textarea).toContain("handleSend();");
+    expect(textarea).toContain("readOnly={Boolean(sequence)}");
+    expect(textarea).not.toContain("!!sequence");
+    expect(textarea).toContain('"Pressione Enter para enviar a mensagem rápida"');
+    expect(source).toContain("if (sequence) {\n      await sendQuickReply(sequence);");
+    expect(source).toContain("onClick={handleSend}");
+    expect(source).not.toContain("Mensagens múltiplas");
+    expect(source).not.toContain("Cancelar sequência");
+  });
 });

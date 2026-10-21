@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { DepartmentIcon } from "@/components/department-icon";
 import { Modal } from "@/components/modal";
@@ -104,6 +105,7 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
         value: connectionInstanceValue(connection),
         name: connection.name,
         color: connection.color ?? null,
+        logoUrl: connection.logoUrl ?? null,
         externalReference: connection.externalReference,
         ownerPhone: connection.ownerPhone ?? null,
         instanceName: connection.name,
@@ -136,9 +138,24 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
     onCancel();
   }, [onCancel]);
 
+  React.useEffect(() => {
+    if (request?.contact.active !== false) return;
+    toast.error("Contato inativo", {
+      description: "Reative o contato antes de iniciar uma conversa.",
+    });
+    close();
+  }, [close, request]);
+
   const createConversation = React.useCallback(
     async (selectedConnectionId: string, selectedDepartmentId: string) => {
       if (!request || submitting.current) return;
+      if (request.contact.active === false) {
+        toast.error("Contato inativo", {
+          description: "Reative o contato antes de iniciar uma conversa.",
+        });
+        close();
+        return;
+      }
       if (!canStart) {
         toast.error("Você não possui permissão para iniciar conversas.");
         close();
@@ -225,6 +242,8 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
   const continueWithConnection = React.useCallback(
     async (selectedConnectionId: string) => {
       if (!request) return;
+      setConnectionId(selectedConnectionId);
+      setDepartmentId("");
       const existing = existingForConnection(selectedConnectionId);
       if (existing) {
         void openExistingConversation(existing);
@@ -260,14 +279,12 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
         }
       }
       const favorite = isTenantAdmin
-        ? undefined
-        : favoriteDepartmentForConnection(departmentsQuery.data ?? [], selectedConnectionId);
+        ? null
+        : favoriteDepartmentForConnection(departments, selectedConnectionId);
       if (favorite) {
         void createConversation(selectedConnectionId, favorite.id);
         return;
       }
-      setConnectionId(selectedConnectionId);
-      setDepartmentId("");
       setStep("department");
     },
     [
@@ -308,7 +325,7 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
     );
     const linkedReferences = contactInstanceReferences(request.contact);
     const resolved = resolveConnectedContactInstances(request.contact, permitted);
-    setCandidates(linkedReferences.length === 0 ? permitted : resolved);
+    setCandidates(isTenantAdmin || linkedReferences.length === 0 ? permitted : resolved);
     setConnectionId("");
     setDepartmentId("");
     setBlockedInstanceLabel("");
@@ -318,6 +335,14 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
       } else {
         toast.error("Nenhuma instância conectada e permitida para este atendente.");
         close();
+      }
+      return;
+    }
+    if (isTenantAdmin) {
+      if (permitted.length === 1) {
+        void continueWithConnection(permitted[0].id);
+      } else {
+        setStep("instance");
       }
       return;
     }
@@ -357,12 +382,14 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
     existingConversationsQuery.error,
     existingConversationsQuery.isLoading,
     instances,
+    isTenantAdmin,
     instanceCatalogQuery.data?.instances,
     instanceCatalogQuery.isLoading,
     request,
   ]);
 
   const departments = departmentsForConnection(departmentsQuery.data ?? [], connectionId);
+  const selectedInstance = candidates.find((instance) => instance.id === connectionId);
 
   return (
     <>
@@ -412,36 +439,12 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
         </div>
       </Modal>
       <Modal
-        open={step === "instance"}
+        open={step === "instance" || step === "department"}
         onClose={() => !busy && close()}
-        title="Escolher Instância"
-        description="Selecione a instância para iniciar a conversa."
-        size="sm"
-      >
-        <div className="space-y-2">
-          {candidates.map((instance) => (
-            <button
-              key={instance.id}
-              type="button"
-              disabled={busy}
-              onClick={() => void continueWithConnection(instance.id)}
-              className="flex min-h-12 w-full items-center gap-3 rounded-lg border border-border px-4 text-left hover:bg-surface-1"
-            >
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: instance.color ?? "#22c55e" }}
-              />
-              <span className="flex-1 font-medium">{instance.name}</span>
-            </button>
-          ))}
-        </div>
-      </Modal>
-      <Modal
-        open={step === "department"}
-        onClose={() => !busy && close()}
-        title="Escolher Departamento"
-        description="Selecione o departamento para iniciar a conversa nesta instância."
-        size="sm"
+        title="Escolher Instância e Departamento"
+        description="Selecione a instância e o departamento para iniciar o atendimento."
+        size="md"
+        className="sm:max-w-[570px]"
         footer={
           <div className="flex w-full justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={close} disabled={busy}>
@@ -453,39 +456,90 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
               disabled={busy || !departmentId}
               onClick={() => void createConversation(connectionId, departmentId)}
             >
-              {busy ? "Iniciando…" : "Iniciar conversa"}
+              {busy ? "Iniciando…" : "Iniciar Atendimento"}
             </Button>
           </div>
         }
       >
-        <div className="space-y-2">
-          {departments.map((department) => (
-            <button
-              key={department.id}
-              type="button"
-              disabled={busy}
-              onClick={() => setDepartmentId(department.id)}
-              className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-4 text-left ${departmentId === department.id ? "border-primary bg-primary/5" : "border-border"}`}
-            >
-              <span
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
-                style={{ backgroundColor: department.color }}
+        <div className="space-y-4">
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-medium text-muted-foreground">
+              INSTÂNCIAS <span className="text-destructive">*</span>
+            </legend>
+            {candidates.map((instance) => (
+              <button
+                key={instance.id}
+                type="button"
+                disabled={busy}
+                aria-pressed={connectionId === instance.id}
+                onClick={() => void continueWithConnection(instance.id)}
+                className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-4 text-left hover:bg-surface-1 ${connectionId === instance.id ? "border-primary bg-primary/5" : "border-border"}`}
               >
-                <DepartmentIcon icon={department.icon} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-semibold">{department.name}</span>
-                {department.description && (
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {department.description}
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-1 text-muted-foreground">
+                  {instance.logoUrl ? (
+                    <img
+                      src={instance.logoUrl}
+                      alt={`Foto de perfil do WhatsApp de ${instance.name}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <MessageCircle className="h-5 w-5" aria-label="WhatsApp" />
+                  )}
+                </span>
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: instance.color ?? "#22c55e" }}
+                />
+                <span className="flex-1 font-medium">{instance.name}</span>
+                <span
+                  className={`h-4 w-4 rounded-full border-4 ${connectionId === instance.id ? "border-primary" : "border-muted-foreground/40"}`}
+                />
+              </button>
+            ))}
+          </fieldset>
+
+          <fieldset className="space-y-2" disabled={!connectionId || busy}>
+            <legend className="text-xs font-medium text-muted-foreground">
+              DEPARTAMENTOS
+              {selectedInstance
+                ? ` (${selectedInstance.name.toLocaleUpperCase("pt-BR")})`
+                : ""}{" "}
+              <span className="text-destructive">*</span>
+            </legend>
+            {!connectionId ? (
+              <p className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-foreground">
+                Selecione uma instância para listar os departamentos disponíveis.
+              </p>
+            ) : (
+              departments.map((department) => (
+                <button
+                  key={department.id}
+                  type="button"
+                  aria-pressed={departmentId === department.id}
+                  onClick={() => setDepartmentId(department.id)}
+                  className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-4 text-left ${departmentId === department.id ? "border-primary bg-primary/5" : "border-border"}`}
+                >
+                  <span
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
+                    style={{ backgroundColor: department.color }}
+                  >
+                    <DepartmentIcon icon={department.icon} />
                   </span>
-                )}
-              </span>
-              <span
-                className={`h-4 w-4 rounded-full border-4 ${departmentId === department.id ? "border-primary" : "border-muted-foreground/40"}`}
-              />
-            </button>
-          ))}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{department.name}</span>
+                    {department.description && (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {department.description}
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={`h-4 w-4 rounded-full border-4 ${departmentId === department.id ? "border-primary" : "border-muted-foreground/40"}`}
+                  />
+                </button>
+              ))
+            )}
+          </fieldset>
         </div>
       </Modal>
     </>

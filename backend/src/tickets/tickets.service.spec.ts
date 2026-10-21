@@ -86,6 +86,51 @@ describe("TicketsService tenant-wide temporary access policy", () => {
     expect(prisma.ticket.count).toHaveBeenCalledWith({ where });
   });
 
+  it("serializes the persisted author snapshot after the membership is removed", async () => {
+    const prisma = prismaMock();
+    prisma.ticket.findMany.mockResolvedValue([
+      {
+        ...ticket(),
+        createdByMembershipId: null,
+        createdByMembership: null,
+        createdByNameSnapshot: "Atendente removido original",
+      },
+    ]);
+    prisma.ticket.count.mockResolvedValue(1);
+    const service = serviceWith(prisma);
+
+    const result = await service.list({ page: 1, pageSize: 25 }, current);
+
+    expect(result.items[0].createdByMembership).toEqual({
+      id: "deleted",
+      user: { id: "deleted", name: "Atendente removido original", email: "" },
+    });
+  });
+
+  it("serializes the comment author snapshot after the membership is removed", async () => {
+    const prisma = prismaMock();
+    prisma.ticket.findFirst.mockResolvedValue(ticket());
+    prisma.ticketComment.findMany.mockResolvedValue([
+      {
+        id: "comment-a",
+        bodyText: "Resposta histórica",
+        bodyHtmlSanitized: "<p>Resposta histórica</p>",
+        internal: true,
+        dialogType: "RESPONSE",
+        editedAt: null,
+        createdAt: new Date("2026-10-01T12:01:00.000Z"),
+        updatedAt: new Date("2026-10-01T12:01:00.000Z"),
+        authorMembership: null,
+        authorNameSnapshot: "Autora removida",
+      },
+    ]);
+    const service = serviceWith(prisma);
+
+    const result = await service.comments("ticket-a", current);
+
+    expect(result[0].authorMembership.user.name).toBe("Autora removida");
+  });
+
   it("keeps ticket detail isolated by tenant", async () => {
     const prisma = prismaMock();
     prisma.ticket.findFirst.mockResolvedValue(null);
@@ -449,6 +494,73 @@ describe("TicketsService PACK 11 workflow", () => {
     expect(prisma.userInvitation.create).not.toHaveBeenCalled();
   });
 
+  it("does not invite an inactive customer contact", async () => {
+    const prisma = prismaMock();
+    prisma.contact.findFirst.mockResolvedValue(null);
+
+    await expect(serviceWith(prisma).inviteCustomerContact("contact-a", current)).rejects.toThrow(
+      "Contato ativo com cliente, perfil e e-mail é obrigatório",
+    );
+    expect(prisma.contact.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ active: true }),
+      }),
+    );
+    expect(prisma.userInvitation.create).not.toHaveBeenCalled();
+  });
+
+  it("restores portal access only after an explicit access action", async () => {
+    const prisma = prismaMock();
+    prisma.contact.findFirst.mockResolvedValue({
+      id: "contact-a",
+      active: true,
+      name: "Clara",
+      email: "clara@example.test",
+      customer: { id: "customer-a", name: "SDE" },
+      portalMembership: { id: "portal-membership", status: "ACTIVE" },
+      portalAccessActive: false,
+    });
+    prisma.contact.update.mockResolvedValue({});
+
+    await expect(serviceWith(prisma).inviteCustomerContact("contact-a", current)).resolves.toEqual({
+      status: "active",
+      contactId: "contact-a",
+    });
+    expect(prisma.contact.update).toHaveBeenCalledWith({
+      where: { tenantId_id: { tenantId: "tenant-a", id: "contact-a" } },
+      data: { portalAccessActive: true },
+    });
+  });
+
+  it("hides all tickets from an inactive portal contact", async () => {
+    const prisma = prismaMock();
+    prisma.contact.findFirst.mockResolvedValue({
+      id: "contact-a",
+      active: false,
+      customerId: "customer-a",
+      customerAccessProfile: "FULL_ACCESS",
+      portalAccessActive: true,
+    });
+    prisma.ticket.findMany.mockResolvedValue([]);
+    prisma.ticket.count.mockResolvedValue(0);
+
+    await serviceWith(prisma).list(
+      { page: 1, pageSize: 25 },
+      { ...current, roleKey: "customer_portal", membershipId: "portal-membership" },
+    );
+
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            expect.objectContaining({ tenantId: "tenant-a", archivedAt: null }),
+            { id: "__customer_portal_without_active_contact__" },
+          ],
+        },
+      }),
+    );
+  });
+
   it("creates a portal invitation with only the ticket permissions", async () => {
     const prisma = prismaMock();
     const email = {
@@ -570,7 +682,7 @@ function prismaMock() {
     department: { findFirst: vi.fn() },
     departmentMembership: { findMany: vi.fn() },
     conversation: { findFirst: vi.fn() },
-    contact: { findFirst: vi.fn() },
+    contact: { findFirst: vi.fn(), update: vi.fn() },
     customer: { findFirst: vi.fn() },
     customerBranch: { findFirst: vi.fn() },
     customerDepartment: { findFirst: vi.fn() },
@@ -683,6 +795,7 @@ function ticket() {
     conversationId: null,
     assignedMembershipId: null,
     createdByMembershipId: "membership-agent",
+    createdByNameSnapshot: null,
     closedAt: null,
     startedAt: null,
     approvedAt: null,

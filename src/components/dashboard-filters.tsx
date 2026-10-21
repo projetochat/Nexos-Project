@@ -1,7 +1,7 @@
 import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, FilterX } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import {
   Button,
   Card,
@@ -10,6 +10,7 @@ import {
   SearchInput,
   Select,
 } from "@/components/ui-kit";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { connectionsApi, crmApi, organizationApi, type OperationalPeriod } from "@/lib/trixus-api";
 import {
   DASHBOARD_PERIOD_OPTIONS,
@@ -29,6 +30,7 @@ export function DashboardFiltersBar({
   value,
   onChange,
   showDepartment = true,
+  showConversationType = false,
   search,
   onClear,
   className = "mb-6",
@@ -36,6 +38,7 @@ export function DashboardFiltersBar({
   value: OperationalReportFilters;
   onChange: (patch: Partial<OperationalReportFilters>) => void;
   showDepartment?: boolean;
+  showConversationType?: boolean;
   search?: { value: string; onChange: (value: string) => void; placeholder: string };
   onClear?: () => void;
   className?: string;
@@ -76,16 +79,21 @@ export function DashboardFiltersBar({
       value.connectionId ||
       value.customerId ||
       value.departmentId ||
+      (showConversationType && value.conversationType && value.conversationType !== "all") ||
       value.period !== "today"),
   );
   const gridClass =
-    search && !showDepartment
+    search && !showDepartment && showConversationType
       ? showClear
-        ? "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr_auto]"
-        : "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr]"
-      : showClear
-        ? "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr_auto]"
-        : "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]";
+        ? "xl:grid-cols-[minmax(220px,2.5fr)_0.9fr_0.9fr_0.9fr_1fr_0.9fr_0.9fr_auto]"
+        : "xl:grid-cols-[minmax(220px,2.5fr)_0.9fr_0.9fr_0.9fr_1fr_0.9fr_0.9fr]"
+      : search && !showDepartment
+        ? showClear
+          ? "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr_auto]"
+          : "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr]"
+        : showClear
+          ? "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr_auto]"
+          : "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]";
 
   return (
     <Card className={`p-4 ${className}`}>
@@ -93,6 +101,22 @@ export function DashboardFiltersBar({
         {search && (
           <FilterField label="Busca" className="col-span-2 min-w-0 xl:col-span-1">
             <SearchInput {...search} />
+          </FilterField>
+        )}
+        {showConversationType && (
+          <FilterField label="Tipo">
+            <Select
+              value={value.conversationType ?? "all"}
+              onChange={(event) =>
+                onChange({
+                  conversationType: event.target.value as "all" | "contacts" | "groups",
+                })
+              }
+            >
+              <option value="all">Todos</option>
+              <option value="contacts">Contatos</option>
+              <option value="groups">Grupos</option>
+            </Select>
           </FilterField>
         )}
         <FilterField label="Instância">
@@ -167,17 +191,7 @@ export function DashboardFiltersBar({
         </FilterField>
         {showClear && (
           <div className="flex items-end">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={onClear}
-              title="Limpar filtros"
-              aria-label="Limpar filtros"
-              className="min-h-10 w-10 px-0"
-            >
-              <FilterX className="h-4 w-4" />
-            </Button>
+            <ClearFiltersButton onClick={() => onClear?.()} />
           </div>
         )}
       </div>
@@ -188,10 +202,12 @@ export function DashboardFiltersBar({
 export function DashboardDateInput({
   value,
   readOnly,
+  mobilePlaceholder = "dd/mm/aaaa",
   onChange,
 }: {
   value: string;
   readOnly: boolean;
+  mobilePlaceholder?: string;
   onChange: (date: string) => void;
 }) {
   const isMobile = useMobileViewport();
@@ -242,7 +258,7 @@ export function DashboardDateInput({
         type="text"
         inputMode="numeric"
         autoComplete="off"
-        placeholder="DD/MM/AAAA"
+        placeholder={mobilePlaceholder}
         value={draft}
         readOnly={readOnly}
         aria-readonly={readOnly}
@@ -335,7 +351,7 @@ export function PlatformDashboardFiltersBar({
               )
             }
           >
-            <option value="">Todos os clientes</option>
+            <option value="">Todos</option>
             {sortedClients.map((client) => (
               <option key={client.id} value={client.id}>
                 {client.name}
@@ -352,7 +368,7 @@ export function PlatformDashboardFiltersBar({
               )
             }
           >
-            <option value="">Todas as tenants</option>
+            <option value="">Todas</option>
             {availableTenants.map((tenant) => (
               <option key={tenant.id} value={tenant.id}>
                 {tenant.name}
@@ -361,7 +377,7 @@ export function PlatformDashboardFiltersBar({
             ))}
           </Select>
         </FilterField>
-        <FilterField label="Período">
+        <FilterField label="Período" className="col-span-2 lg:col-span-1">
           <Select
             value={value.period}
             onChange={(event) => {
@@ -394,18 +410,7 @@ export function PlatformDashboardFiltersBar({
         </FilterField>
         {showClear && (
           <div className="flex items-end">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={onClear}
-              title="Limpar filtros"
-              aria-label="Limpar filtros"
-              className="min-h-10 gap-2 px-3"
-            >
-              <FilterX className="h-4 w-4" />
-              <span className="hidden xl:inline">Limpar filtros</span>
-            </Button>
+            <ClearFiltersButton onClick={() => onClear?.()} />
           </div>
         )}
       </div>

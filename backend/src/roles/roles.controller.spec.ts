@@ -14,6 +14,106 @@ const current = {
 };
 
 describe("RolesController permission delegation", () => {
+  it("persists one onboarding favorite in the current Administrator scope without touching permissions", async () => {
+    const baseRole = {
+      id: "role-admin",
+      tenantId: "tenant-a",
+      key: "tenant_admin",
+      name: "Administrador",
+      description: null,
+      metadata: { preserved: true },
+      system: true,
+      active: true,
+      createdAt: new Date("2026-10-01T12:00:00.000Z"),
+      updatedAt: new Date("2026-10-01T12:00:00.000Z"),
+      permissions: [{ permissionId: "roles.update" }],
+    };
+    const update = vi.fn(async ({ data }) => ({
+      ...baseRole,
+      metadata: data.metadata,
+      updatedAt: new Date("2026-10-20T12:00:00.000Z"),
+    }));
+    const prisma = {
+      role: { findFirst: vi.fn().mockResolvedValue(baseRole), update },
+      department: { findFirst: vi.fn().mockResolvedValue({ id: "department-new" }) },
+      messagingConnection: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "connection-a",
+            departments: [{ departmentId: "department-old" }, { departmentId: "department-new" }],
+          },
+          {
+            id: "connection-b",
+            departments: [{ departmentId: "department-old" }],
+          },
+        ]),
+      },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await controller.setFavoriteDepartment("role-admin", { departmentId: "department-new" }, {
+      ...current,
+      roleId: "role-admin",
+      roleKey: "tenant_admin",
+      permissions: ["roles.update"],
+    } as never);
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0]?.[0]).toMatchObject({
+      where: { id: "role-admin" },
+      data: {
+        metadata: {
+          preserved: true,
+          onboardingFavoriteDepartmentId: "department-new",
+          connectionIds: ["connection-a", "connection-b"],
+          departmentIds: ["department-old", "department-new"],
+          chatScopes: [
+            {
+              connectionId: "connection-a",
+              departmentIds: ["department-old", "department-new"],
+              favoriteDepartmentId: "department-new",
+            },
+            {
+              connectionId: "connection-b",
+              departmentIds: ["department-old"],
+              favoriteDepartmentId: null,
+            },
+          ],
+        },
+      },
+      include: { permissions: true },
+    });
+    expect(update.mock.calls[0]?.[0]?.data).not.toHaveProperty("permissions");
+  });
+
+  it("does not use the favorite action to mutate another or non-Administrator profile", async () => {
+    const update = vi.fn();
+    const prisma = {
+      role: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "role-agent",
+          tenantId: "tenant-a",
+          key: "agent",
+          name: "Atendente",
+          metadata: {},
+          permissions: [],
+        }),
+        update,
+      },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await expect(
+      controller.setFavoriteDepartment("role-agent", { departmentId: "department-a" }, {
+        ...current,
+        roleId: "role-admin",
+        roleKey: "tenant_admin",
+        permissions: ["roles.update"],
+      } as never),
+    ).rejects.toThrow("próprio perfil Administrador");
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("rejects permissions from a tenant module that is disabled", async () => {
     const controller = new RolesController(
       {} as never,

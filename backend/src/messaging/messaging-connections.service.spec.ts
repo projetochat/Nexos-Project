@@ -22,6 +22,58 @@ const current = {
 };
 
 describe("MessagingConnectionsService", () => {
+  it("notifies only the active administrator from the same tenant on a real disconnect transition", async () => {
+    const prisma = prismaMock();
+    const original = {
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+      ownerPhoneNormalized: "+556281147652",
+    };
+    const disconnected = {
+      ...original,
+      status: MessagingConnectionStatus.DISCONNECTED,
+      updatedAt: new Date("2026-10-20T15:00:00.000Z"),
+    };
+    prisma.messagingConnection.findUniqueOrThrow
+      .mockResolvedValueOnce(original)
+      .mockResolvedValueOnce(disconnected);
+    prisma.messagingConnection.update.mockResolvedValue(disconnected);
+    prisma.tenantMembership.findFirst.mockResolvedValue({
+      user: { email: "admin@tenant.test", name: "Administrador" },
+    });
+    const email = { sendDisconnectedInstanceAlert: vi.fn().mockResolvedValue({ delivered: true }) };
+    const service = new MessagingConnectionsService(
+      prisma as never,
+      {} as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      email as never,
+    );
+
+    await service.updateConnectionStatus("connection-a", MessagingConnectionStatus.DISCONNECTED);
+    await vi.waitFor(() => expect(email.sendDisconnectedInstanceAlert).toHaveBeenCalledOnce());
+    expect(prisma.tenantMembership.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: "tenant-a", role: { key: "tenant_admin" } }),
+      }),
+    );
+    expect(email.sendDisconnectedInstanceAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "admin@tenant.test",
+        instanceName: "Suporte",
+        phone: "+556281147652",
+      }),
+    );
+
+    await service.updateConnectionStatus("connection-a", MessagingConnectionStatus.DISCONNECTED);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(email.sendDisconnectedInstanceAlert).toHaveBeenCalledOnce();
+  });
+
   it("recusa outro número na reconexão e preserva a identidade original", async () => {
     const prisma = prismaMock();
     const original = {
@@ -1556,6 +1608,7 @@ function prismaMock() {
       deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       count: vi.fn().mockResolvedValue(0),
     },
+    tenantMembership: { findFirst: vi.fn() },
     message: {
       findMany: vi.fn().mockResolvedValue([]),
       updateMany: vi.fn(),

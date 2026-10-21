@@ -1,6 +1,7 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsIn,
   IsObject,
@@ -13,6 +14,10 @@ import {
 import { CONTACT_COMPANY_ROLES, CUSTOMER_ACCESS_PROFILES } from "./create-contact.dto";
 
 export class UpdateContactDto {
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
   @IsOptional()
   @IsString()
   @Length(2, 120)

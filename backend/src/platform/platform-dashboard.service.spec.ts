@@ -30,16 +30,24 @@ function dashboardPrisma(messages: Array<Record<string, unknown>> = []) {
         {
           id: "tenant-a",
           name: "Tenant A",
+          subscriptions: [],
           platformClient: { id: "client-a", name: "Cliente A" },
         },
-        { id: "tenant-orphan", name: "Tenant órfã", platformClient: null },
+        { id: "tenant-orphan", name: "Tenant órfã", subscriptions: [], platformClient: null },
       ]),
       count: query(1),
     },
-    tenantMembership: { count: query(2) },
-    messagingConnection: { count: query(3) },
+    tenantMembership: { count: query(2), groupBy: query([]) },
+    messagingConnection: { count: query(3), groupBy: query([]) },
+    contact: { groupBy: query([]) },
+    role: { groupBy: query([]) },
+    department: { groupBy: query([]) },
+    tag: { groupBy: query([]) },
+    quickReply: { groupBy: query([]) },
+    contactCustomField: { groupBy: query([]) },
+    schedule: { groupBy: query([]) },
     message: { count: query(messages.length), findMany: query(messages) },
-    campaign: { count: query(4) },
+    campaign: { count: query(4), groupBy: query([]) },
     ticket: { count: query(5) },
     invoice: { count: query(6) },
     plan: {
@@ -122,7 +130,7 @@ describe("Platform Dashboard", () => {
     ]);
     expect(result.charts.messagePercentageByClient[0]?.percentage).toBe(0);
     expect(prisma.invoice.count).toHaveBeenCalledWith({
-      where: { tenantId: "__platform_client_without_tenant__", status: "OPEN" },
+      where: { tenantId: { in: ["__platform_client_without_tenant__"] }, status: "OPEN" },
     });
     expect(prisma.plan.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -130,13 +138,134 @@ describe("Platform Dashboard", () => {
           _count: {
             select: {
               subscriptions: {
-                where: { tenantId: "__platform_client_without_tenant__" },
+                where: { tenantId: { in: ["__platform_client_without_tenant__"] } },
               },
             },
           },
         }),
       }),
     );
+  });
+
+  it("consolidates registered entities from multiple tenants and totals every metric", async () => {
+    const prisma = dashboardPrisma();
+    prisma.tenant.findMany.mockResolvedValue([
+      {
+        id: "tenant-a",
+        name: "Tenant A",
+        subscriptions: [{ client: { id: "client-a", name: "Cliente A" } }],
+        platformClient: null,
+      },
+      {
+        id: "tenant-b",
+        name: "Tenant B",
+        subscriptions: [{ client: { id: "client-a", name: "Cliente A" } }],
+        platformClient: null,
+      },
+      {
+        id: "tenant-c",
+        name: "Tenant C",
+        subscriptions: [{ client: { id: "client-silent", name: "Cliente silencioso" } }],
+        platformClient: null,
+      },
+    ]);
+    const grouped = (a: number, b: number) => [
+      { tenantId: "tenant-a", _count: { _all: a } },
+      { tenantId: "tenant-b", _count: { _all: b } },
+      { tenantId: "tenant-c", _count: { _all: 1 } },
+    ];
+    prisma.messagingConnection.groupBy.mockResolvedValue(grouped(1, 2));
+    prisma.contact.groupBy.mockResolvedValue(grouped(3, 4));
+    prisma.tenantMembership.groupBy.mockResolvedValue(grouped(1, 2));
+    prisma.role.groupBy.mockResolvedValue(grouped(2, 3));
+    prisma.department.groupBy.mockResolvedValue(grouped(1, 1));
+    prisma.tag.groupBy.mockResolvedValue(grouped(2, 2));
+    prisma.quickReply.groupBy.mockResolvedValue(grouped(3, 3));
+    prisma.contactCustomField.groupBy.mockResolvedValue(grouped(4, 4));
+    prisma.schedule.groupBy.mockResolvedValue(grouped(5, 5));
+    prisma.campaign.groupBy.mockResolvedValue(grouped(6, 6));
+
+    const result = await createService(prisma).dashboard({ clientId: "client-a", period: "today" });
+
+    expect(result.clientVolumetry.rows).toEqual([
+      expect.objectContaining({
+        clientId: "client-a",
+        instances: 3,
+        contacts: 7,
+        departments: 2,
+        campaigns: 12,
+      }),
+    ]);
+    expect(result.clientVolumetry.totals).toEqual({
+      instances: 3,
+      contacts: 7,
+      attendants: 3,
+      accessProfiles: 5,
+      departments: 2,
+      tags: 4,
+      quickReplies: 6,
+      customFields: 8,
+      schedules: 10,
+      campaigns: 12,
+    });
+    expect(prisma.messagingConnection.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: { in: ["tenant-a", "tenant-b"] },
+          archivedAt: null,
+          status: { not: "REMOVED" },
+        },
+      }),
+    );
+    expect(prisma.department.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId: { in: ["tenant-a", "tenant-b"] } } }),
+    );
+
+    const allClientsResult = await createService(prisma).dashboard({ period: "month" });
+    expect(allClientsResult.clientVolumetry.rows).toHaveLength(2);
+    expect(allClientsResult.clientVolumetry.totals).toEqual({
+      instances: 4,
+      contacts: 8,
+      attendants: 4,
+      accessProfiles: 6,
+      departments: 3,
+      tags: 5,
+      quickReplies: 7,
+      customFields: 9,
+      schedules: 11,
+      campaigns: 13,
+    });
+
+    const tenantResult = await createService(prisma).dashboard({
+      tenantId: "tenant-b",
+      period: "year",
+    });
+    expect(tenantResult.clientVolumetry.rows).toEqual([
+      expect.objectContaining({ clientId: "client-a", instances: 2, contacts: 4, departments: 1 }),
+    ]);
+    expect(prisma.contact.groupBy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: { in: ["tenant-b"] },
+          archivedAt: null,
+          NOT: { normalizedPhone: { startsWith: "group:" } },
+        },
+      }),
+    );
+    for (const repository of [
+      prisma.messagingConnection,
+      prisma.contact,
+      prisma.tenantMembership,
+      prisma.role,
+      prisma.department,
+      prisma.tag,
+      prisma.quickReply,
+      prisma.contactCustomField,
+      prisma.schedule,
+      prisma.campaign,
+    ]) {
+      expect(repository.groupBy.mock.calls.at(-1)?.[0]?.where).not.toHaveProperty("createdAt");
+    }
   });
 
   it("returns versioned defaults and update capability before the first save", async () => {
@@ -154,7 +283,99 @@ describe("Platform Dashboard", () => {
       canUpdate: true,
       configuration: { schemaVersion: 1 },
     });
-    expect(result.configuration.components).toHaveLength(6);
+    expect(result.configuration.components).toHaveLength(7);
+    expect(
+      result.configuration.components.map((component) => ({
+        id: component.id,
+        order: component.order,
+        columns: component.columns,
+      })),
+    ).toEqual([
+      { id: "kpis", order: 0, columns: 4 },
+      { id: "traffic", order: 1, columns: 2 },
+      { id: "clientVolumetry", order: 2, columns: 2 },
+      { id: "volumeByClient", order: 3, columns: 1 },
+      { id: "percentageByClient", order: 4, columns: 1 },
+      { id: "subscriptions", order: 5, columns: 1 },
+      { id: "operation", order: 6, columns: 1 },
+    ]);
+  });
+
+  it("preserves an existing customized dashboard layout", async () => {
+    const customizedConfiguration = {
+      schemaVersion: 1,
+      components: [
+        {
+          id: "clientVolumetry",
+          title: "Minha volumetria",
+          visible: false,
+          order: 0,
+          visualization: "table",
+          columns: 3,
+          dataSource: "records",
+          groupBy: "clientVolumetry",
+          valueMode: "count",
+        },
+        {
+          id: "volumeByClient",
+          title: "Meu volume",
+          visible: true,
+          order: 1,
+          visualization: "columns",
+          columns: 2,
+          dataSource: "messages",
+          groupBy: "clientVolume",
+          valueMode: "count",
+        },
+      ],
+    };
+    const service = createService({
+      platformSetting: {
+        findUnique: vi.fn().mockResolvedValue({
+          value: { configuration: customizedConfiguration, version: 4 },
+          updatedAt: new Date("2026-10-21T12:00:00.000Z"),
+        }),
+      },
+    });
+
+    const result = await service.dashboardConfiguration({ platformPermissions: [] } as never);
+
+    expect(result.version).toBe(4);
+    expect(result.configuration).toEqual(customizedConfiguration);
+  });
+
+  it("adds the native volumetry table to an older saved configuration", async () => {
+    const oldConfiguration = {
+      schemaVersion: 1,
+      components: [
+        {
+          id: "traffic",
+          title: "Tráfego",
+          visible: true,
+          order: 0,
+          visualization: "line",
+          columns: 2,
+          dataSource: "messages",
+          groupBy: "hour",
+          valueMode: "count",
+        },
+      ],
+    };
+    const service = createService({
+      platformSetting: {
+        findUnique: vi.fn().mockResolvedValue({
+          value: { configuration: oldConfiguration, version: 1 },
+          updatedAt: new Date("2026-10-21T12:00:00.000Z"),
+        }),
+      },
+    });
+
+    const result = await service.dashboardConfiguration({ platformPermissions: [] } as never);
+
+    expect(result.configuration.components.map((item) => item.id)).toEqual([
+      "traffic",
+      "clientVolumetry",
+    ]);
   });
 
   it("updates atomically, audits and rejects stale versions", async () => {

@@ -589,6 +589,10 @@ it("returns a refreshed deletion impact when the schedule changes after preview"
   const controller = new SchedulesController(prisma as never, {} as never);
   const current = { tenantId: "tenant-a", roleKey: "tenant_admin" } as never;
   const impact = await controller.deletionImpact(item.id, current);
+  expect(impact).toMatchObject({
+    title: "Excluir mensagem agendada?",
+    prompt: "Ao excluir, esta mensagem agendada não será enviada.",
+  });
   version = 2;
 
   await expect(

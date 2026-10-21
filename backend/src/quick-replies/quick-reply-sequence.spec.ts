@@ -48,12 +48,11 @@ describe("quick reply sequence validation", () => {
             },
           },
         ],
-        intervalSeconds: 3,
       }),
     ).toEqual([]);
   });
 
-  it("rejects too many messages, oversized text, invalid attachments and intervals", async () => {
+  it("rejects too many messages, oversized text and invalid attachments", async () => {
     for (const payload of [
       { messages: [] },
       { messages: Array.from({ length: 11 }, () => ({ text: "Olá" })) },
@@ -71,9 +70,6 @@ describe("quick reply sequence validation", () => {
           },
         ],
       },
-      { intervalSeconds: -1 },
-      { intervalSeconds: 61 },
-      { intervalSeconds: 0.5 },
     ])
       expect((await validateReply(payload)).length).toBeGreaterThan(0);
   });

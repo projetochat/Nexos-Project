@@ -9,6 +9,24 @@ export type PlatformDashboardFilters = {
   end?: string;
 };
 
+export type PlatformClientVolumetryCounts = {
+  instances: number;
+  contacts: number;
+  attendants: number;
+  accessProfiles: number;
+  departments: number;
+  tags: number;
+  quickReplies: number;
+  customFields: number;
+  schedules: number;
+  campaigns: number;
+};
+
+export type PlatformClientVolumetryRow = PlatformClientVolumetryCounts & {
+  clientId: string | null;
+  clientName: string;
+};
+
 export type PlatformDashboardResponse = {
   range: { start: string; end: string; timezone: string };
   filters: {
@@ -56,6 +74,10 @@ export type PlatformDashboardResponse = {
     subscriptions: number;
   }>;
   operation: { openTickets: number; openInvoices: number; overdueInvoices: number };
+  clientVolumetry: {
+    rows: PlatformClientVolumetryRow[];
+    totals: PlatformClientVolumetryCounts;
+  };
   semantics: Record<string, unknown>;
 };
 

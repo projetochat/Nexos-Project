@@ -20,7 +20,6 @@ const initial = {
   texto: "Primeira",
   departmentId: null,
   messages: [{ text: "Primeira" }, { text: "Segunda" }],
-  intervalSeconds: 3,
   close_on_send: true,
 } as ApiQuickReply;
 let root: Root;
@@ -101,6 +100,9 @@ describe("quick reply editor", () => {
         .querySelector('[role="switch"][aria-label="Encerrar conversa"]')
         ?.getAttribute("aria-checked"),
     ).toBe("false");
+    const activeSwitch = document.querySelector('[role="switch"][aria-label="Ativo"]');
+    const closeSwitch = document.querySelector('[role="switch"][aria-label="Encerrar conversa"]');
+    expect(closeSwitch?.className).toBe(activeSwitch?.className);
     expect(document.querySelector('[aria-label="Tipo de mídia"]')).not.toBeNull();
     expect(document.querySelector('[aria-label="Abrir opções de anexo"]')).toBeNull();
     await click(button("Adicionar mensagem"));
@@ -220,7 +222,6 @@ describe("quick reply editor", () => {
       "reply",
       expect.objectContaining({
         messages: [{ text: "Primeira" }, { text: "Segunda" }],
-        intervalSeconds: 0,
         closeOnSend: true,
       }),
     );
@@ -244,7 +245,6 @@ describe("quick reply editor", () => {
       expect.objectContaining({
         shortcut: "teste-copia",
         messages: initial.messages,
-        intervalSeconds: 0,
       }),
     );
     expect(api.update).not.toHaveBeenCalled();

@@ -613,6 +613,7 @@ export class GroupsController {
           tenantId: current.tenantId,
           id: { in: contactIds },
           archivedAt: null,
+          active: true,
           NOT: { normalizedPhone: { startsWith: "group:" } },
         },
         select: { id: true, name: true, phone: true, normalizedPhone: true },

@@ -16,11 +16,20 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   departments: vi.fn(),
   ensureDepartmentConnection: vi.fn(),
+  listGroups: vi.fn(),
+  groupInstances: vi.fn(),
+  createGroup: vi.fn(),
   role: "operator",
   connections: [
     { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
     { id: "b", name: "Instância B", status: "connected", providerType: "evolution" },
-  ],
+  ] as Array<{
+    id: string;
+    name: string;
+    status: string;
+    providerType: string;
+    logoUrl?: string | null;
+  }>,
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => ({}),
@@ -42,6 +51,9 @@ vi.mock("@/lib/session", () => ({
           "contacts.read",
           "contacts.create",
           "contacts.update",
+          "conversations.read",
+          "groups.read",
+          "groups.create",
         ],
       },
     }),
@@ -74,6 +86,12 @@ vi.mock("@/lib/trixus-api", () => ({
       profiles: [],
     }),
     listCustomers: async () => ({ items: [] }),
+    listContactsForGroupPicker: async () => ({ items: [], total: 0, totalPages: 1 }),
+  },
+  groupsApi: {
+    list: (...args: unknown[]) => mocks.listGroups(...args),
+    instanceOptions: () => mocks.groupInstances(),
+    create: (...args: unknown[]) => mocks.createGroup(...args),
   },
   conversationApi: {
     list: (...args: unknown[]) => mocks.listConversations(...args),
@@ -161,6 +179,25 @@ beforeEach(() => {
       connectionIds: ["b"],
       favoriteConnectionIds: ["b"],
     },
+  ]);
+  mocks.listGroups.mockResolvedValue({
+    items: [
+      {
+        id: "group-a",
+        conversationId: "group-conversation-a",
+        name: "Grupo Financeiro",
+        imageUrl: null,
+        participantsCount: 8,
+        connection: { id: "a", name: "Instância A" },
+      },
+    ],
+    total: 1,
+    totalPages: 1,
+    page: 1,
+    pageSize: 10,
+  });
+  mocks.groupInstances.mockResolvedValue([
+    { id: "a", value: "a", name: "Instância A", color: "#22c55e", status: "CONNECTED" },
   ]);
 });
 afterEach(async () => {
@@ -273,7 +310,10 @@ describe("new conversation contact picker", () => {
     await act(async () => contactButtons[2].click());
     await flush();
 
-    expect(document.body.textContent).toContain("Escolher Instância");
+    expect(document.body.textContent).toContain("Escolher Instância e Departamento");
+    expect(document.body.textContent).toContain(
+      "Selecione a instância e o departamento para iniciar o atendimento.",
+    );
     expect(document.body.textContent).toContain("Instância A");
     expect(document.body.textContent).toContain("Instância B");
     await act(async () => button("Instância A").click());
@@ -298,7 +338,7 @@ describe("new conversation contact picker", () => {
     await act(async () => contactButtons[1].click());
     await flush();
 
-    expect(document.body.textContent).toContain("Escolher Instância");
+    expect(document.body.textContent).toContain("Escolher Instância e Departamento");
     expect(document.body.textContent).not.toContain("Instância A");
     expect(document.body.textContent).toContain("Instância B");
     await act(async () => button("Instância B").click());
@@ -311,19 +351,43 @@ describe("new conversation contact picker", () => {
       reuseExistingOpen: true,
     });
   });
-  it("opens the existing contact form for creation and editing without selecting the edit target", async () => {
+  it("reuses the contact form for creation and removes editing from this picker", async () => {
     await mount();
     await act(async () => button("Novo Contato").click());
     expect(mocks.form.mock.lastCall?.[0].defaultInstanceId).toBeUndefined();
     expect(mocks.form.mock.lastCall?.[0].initial).toBeUndefined();
     await act(async () => mocks.form.mock.lastCall?.[0].onClose());
+    expect(document.querySelector('[aria-label^="Editar contato"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Nova conversa com Contato 000"]')).not.toBeNull();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps independent contact and group tabs and opens an existing group conversation", async () => {
+    await mount();
+    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain(
+      "Contatos",
+    );
+
+    await act(async () => button("Grupos").click());
+    await flush();
+
+    expect(mocks.listGroups).toHaveBeenCalledWith({ q: undefined, page: 1, pageSize: 10 });
+    expect(document.body.textContent).toContain("Grupo Financeiro");
+    expect(document.body.textContent).toContain("8 participante(s) · Instância A");
+    expect(document.querySelector('ul[aria-label="Grupos"]')).not.toBeNull();
+
     await act(async () =>
       (
-        document.querySelector('[aria-label="Editar contato Contato 000"]') as HTMLButtonElement
+        document.querySelector(
+          '[aria-label="Nova conversa com o grupo Grupo Financeiro"]',
+        ) as HTMLButtonElement
       ).click(),
     );
-    expect(mocks.form.mock.lastCall?.[0].initial.id).toBe("0");
-    expect(mocks.create).not.toHaveBeenCalled();
+
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: "/inbox/$conversationId",
+      params: { conversationId: "group-conversation-a" },
+    });
   });
   it("starts a conversation without requiring or sending a first message", async () => {
     mocks.connections = [
@@ -387,7 +451,7 @@ describe("new conversation contact picker", () => {
     await flush();
     expect(mocks.create).not.toHaveBeenCalled();
     await act(async () => button("Comercial").click());
-    await act(async () => button("Iniciar conversa").click());
+    await act(async () => button("Iniciar Atendimento").click());
     await flush();
 
     expect(mocks.create).toHaveBeenCalledWith({
@@ -399,7 +463,7 @@ describe("new conversation contact picker", () => {
     });
   });
 
-  it("requires the tenant administrator to choose a department even when a favorite is exposed", async () => {
+  it("requires the tenant administrator to select a department explicitly", async () => {
     mocks.role = "admin";
     mocks.connections = [
       { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
@@ -410,10 +474,11 @@ describe("new conversation contact picker", () => {
     await flush();
 
     expect(mocks.create).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Escolher Departamento");
+    expect(document.body.textContent).toContain("Escolher Instância e Departamento");
     await act(async () => button("Comercial").click());
-    await act(async () => button("Iniciar conversa").click());
+    await act(async () => button("Iniciar Atendimento").click());
     await flush();
+
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "0",
       connectionId: "a",
@@ -421,6 +486,19 @@ describe("new conversation contact picker", () => {
       assignToSelf: true,
       reuseExistingOpen: true,
     });
+  });
+
+  it("shows every connected tenant instance to the administrator even when the contact has one link", async () => {
+    mocks.role = "admin";
+    await mount();
+
+    await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
+    await flush();
+
+    expect(document.body.textContent).toContain("Escolher Instância e Departamento");
+    expect(document.body.textContent).toContain("Instância A");
+    expect(document.body.textContent).toContain("Instância B");
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 
   it("navigates directly to an open conversation when only one instance is available", async () => {
@@ -524,7 +602,7 @@ describe("new conversation contact picker", () => {
 
     await act(async () => contactButtons[1].click());
     await flush();
-    expect(document.body.textContent).toContain("Escolher Instância");
+    expect(document.body.textContent).toContain("Escolher Instância e Departamento");
     expect(document.body.textContent).not.toContain("Escolher Departamento");
 
     await act(async () => button("Instância A").click());
@@ -538,21 +616,78 @@ describe("new conversation contact picker", () => {
     expect(getInboxTab()).toBe("standby");
   });
 
-  it("requires the tenant administrator to choose a department after choosing among multiple instances", async () => {
+  it("keeps instance and compatible department selection in one modal", async () => {
     mocks.role = "admin";
+    mocks.connections = [
+      {
+        id: "a",
+        name: "Instância A",
+        status: "connected",
+        providerType: "evolution",
+        logoUrl: "https://example.test/a.png",
+      },
+      { id: "b", name: "Instância B", status: "connected", providerType: "evolution" },
+    ];
+    mocks.departments.mockResolvedValue([
+      {
+        id: "department-a",
+        name: "Comercial",
+        connectionIds: ["a"],
+        favoriteConnectionIds: [],
+      },
+      {
+        id: "department-b",
+        name: "Suporte",
+        connectionIds: ["b"],
+        favoriteConnectionIds: [],
+      },
+    ]);
     await mount();
     const contactButtons = document.querySelectorAll<HTMLButtonElement>(
       "ul li > button[aria-pressed]",
     );
 
-    await act(async () => contactButtons[1].click());
+    await act(async () => contactButtons[0].click());
     await flush();
+    const startDialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find(
+      (dialog) =>
+        dialog.textContent?.includes(
+          "Selecione a instância e o departamento para iniciar o atendimento.",
+        ),
+    );
+    expect(startDialog).toBeDefined();
+    expect(startDialog?.className).toContain("sm:max-w-[570px]");
+    expect(startDialog?.textContent).toContain("Escolher Instância e Departamento");
+    expect(startDialog?.textContent).toContain("INSTÂNCIAS");
+    expect(startDialog?.textContent).toContain("DEPARTAMENTOS");
+    expect(
+      startDialog?.querySelector('img[alt="Foto de perfil do WhatsApp de Instância A"]'),
+    ).not.toBeNull();
+    expect(startDialog?.textContent).toContain(
+      "Selecione uma instância para listar os departamentos disponíveis.",
+    );
     await act(async () => button("Instância B").click());
     await flush();
 
     expect(mocks.create).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Escolher Departamento");
-    expect(document.body.textContent).toContain("Suporte");
+    const updatedDialog = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+    ).find((dialog) =>
+      dialog.textContent?.includes(
+        "Selecione a instância e o departamento para iniciar o atendimento.",
+      ),
+    );
+    expect(updatedDialog).toBe(startDialog);
+    expect(updatedDialog?.textContent).toContain("DEPARTAMENTOS (INSTÂNCIA B)");
+    expect(updatedDialog?.textContent).toContain("Suporte");
+    expect(updatedDialog?.textContent).not.toContain("Comercial");
+    await act(async () => button("Suporte").click());
+    expect(button("Iniciar Atendimento").disabled).toBe(false);
+    await act(async () => button("Instância A").click());
+    await flush();
+    expect(document.body.textContent).toContain("Comercial");
+    expect(document.body.textContent).not.toContain("Suporte");
+    expect(button("Iniciar Atendimento").disabled).toBe(true);
   });
 
   it("ignores a stale favorite that is no longer linked and opens the permitted department picker", async () => {
@@ -579,7 +714,7 @@ describe("new conversation contact picker", () => {
     await flush();
 
     expect(mocks.create).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Escolher Departamento");
+    expect(document.body.textContent).toContain("Escolher Instância e Departamento");
     expect(document.body.textContent).toContain("Comercial");
     expect(document.body.textContent).not.toContain("Antigo");
   });
@@ -617,8 +752,18 @@ describe("new conversation contact picker", () => {
     await flush();
 
     expect(mocks.ensureDepartmentConnection).toHaveBeenCalledWith("a");
-    expect(document.body.textContent).toContain("Escolher Departamento");
-    expect(document.body.textContent).toContain("Atendimento");
     expect(mocks.create).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Escolher Instância e Departamento");
+    await act(async () => button("Atendimento").click());
+    await act(async () => button("Iniciar Atendimento").click());
+    await flush();
+
+    expect(mocks.create).toHaveBeenCalledWith({
+      contactId: "0",
+      connectionId: "a",
+      departmentId: "tenant-a:atendimento",
+      assignToSelf: true,
+      reuseExistingOpen: true,
+    });
   });
 });

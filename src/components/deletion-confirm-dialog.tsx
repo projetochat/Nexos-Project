@@ -23,7 +23,7 @@ import {
   AlertDialogDescription,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui-kit";
+import { Button, closeButtonClassName } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
 
 export type DeletionDependencyOperation = "unlink" | "reassign" | "delete";
@@ -84,6 +84,9 @@ export type DeletionConfirmationResult =
 
 type DeletionConfirmDialogProps = {
   open: boolean;
+  variant?: "default" | "compact";
+  compactDescription?: React.ReactNode;
+  confirmLabel?: string;
   /** Stable domain + record key. Changing it reloads an open dialog. */
   resourceKey: string;
   onOpenChange: (open: boolean) => void;
@@ -105,6 +108,9 @@ type DialogError = {
 
 export function DeletionConfirmDialog({
   open,
+  variant = "default",
+  compactDescription,
+  confirmLabel,
   resourceKey,
   onOpenChange,
   loadImpact,
@@ -112,6 +118,7 @@ export function DeletionConfirmDialog({
   onDeleted,
   formatError = defaultError,
 }: DeletionConfirmDialogProps) {
+  const compact = variant === "compact";
   const [impact, setImpact] = React.useState<DeletionImpactPreview | null>(null);
   const [phase, setPhase] = React.useState<
     "idle" | "loading" | "refreshing" | "verifying" | "submitting"
@@ -286,7 +293,10 @@ export function DeletionConfirmDialog({
       <AlertDialogContent
         aria-busy={isBusy}
         overlayClassName="z-[290]"
-        className="z-[300] flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-xl flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl"
+        className={cn(
+          "z-[300] flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl",
+          compact ? "max-w-sm" : "max-w-md",
+        )}
         onEscapeKeyDown={(event) => {
           if (isCommitting) event.preventDefault();
         }}
@@ -295,8 +305,8 @@ export function DeletionConfirmDialog({
           window.requestAnimationFrame(() => cancelRef.current?.focus({ preventScroll: true }));
         }}
       >
-        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
-          <AlertDialogTitle className="min-w-0 flex-1 text-base leading-6 sm:text-lg">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
+          <AlertDialogTitle className="min-w-0 flex-1 text-base leading-6">
             {impact?.title ?? "Confirmar exclusão"}
           </AlertDialogTitle>
           <AlertDialogDescription className="sr-only">
@@ -305,19 +315,19 @@ export function DeletionConfirmDialog({
           <AlertDialogCancel
             aria-label="Fechar"
             disabled={isCommitting}
-            className="mt-0 h-11 w-11 shrink-0 rounded-lg p-0"
+            className={cn(closeButtonClassName, "mt-0 min-h-0")}
           >
             <X aria-hidden="true" className="h-4 w-4" />
           </AlertDialogCancel>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           <div aria-live="polite" aria-atomic="true" className="sr-only">
             {statusText ?? announcement}
           </div>
 
           {phase === "loading" && !impact ? (
-            <LoadingState />
+            <LoadingState compact={compact} />
           ) : error && !impact ? (
             <ErrorState
               title="Não foi possível carregar os dados"
@@ -326,27 +336,36 @@ export function DeletionConfirmDialog({
               onRetry={() => void requestImpact("initial")}
             />
           ) : impact ? (
-            <div className="space-y-4 text-sm text-foreground">
+            <div className="space-y-3 text-sm text-foreground">
               <section className="flex items-start gap-3">
                 <span
                   aria-hidden="true"
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive"
+                  className={cn(
+                    "flex shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive",
+                    "h-9 w-9 rounded-lg",
+                  )}
                 >
-                  <AlertTriangle className="h-6 w-6" />
+                  <AlertTriangle className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 pt-1">
-                  <p className="text-muted-foreground">{impact.prompt}</p>
-                  {!impact.prompt.includes(impact.record.name) && (
-                    <p className="mt-1 font-semibold">Nome: &quot;{impact.record.name}&quot;</p>
+                  <p className="text-muted-foreground">
+                    {compact ? (compactDescription ?? impact.prompt) : impact.prompt}
+                  </p>
+                  {!compact && (
+                    <>
+                      {!impact.prompt.includes(impact.record.name) && (
+                        <p className="mt-1 font-semibold">Nome: &quot;{impact.record.name}&quot;</p>
+                      )}
+                      {impact.record.identifiers.map((identifier) => (
+                        <p
+                          key={`${identifier.label}:${identifier.value}`}
+                          className="mt-0.5 break-words font-semibold"
+                        >
+                          {identifier.label}: {identifier.value}
+                        </p>
+                      ))}
+                    </>
                   )}
-                  {impact.record.identifiers.map((identifier) => (
-                    <p
-                      key={`${identifier.label}:${identifier.value}`}
-                      className="mt-0.5 break-words font-semibold"
-                    >
-                      {identifier.label}: {identifier.value}
-                    </p>
-                  ))}
                 </div>
               </section>
 
@@ -376,7 +395,7 @@ export function DeletionConfirmDialog({
                 />
               )}
 
-              {impact.dependencies.length > 0 && (
+              {!compact && impact.dependencies.length > 0 && (
                 <section className="overflow-hidden rounded-xl border border-border bg-surface-1 px-4">
                   <ul className="divide-y divide-border">
                     {impact.dependencies.map((dependency) => (
@@ -390,7 +409,7 @@ export function DeletionConfirmDialog({
                 </section>
               )}
 
-              {impact.consequences.length > 0 && (
+              {!compact && impact.consequences.length > 0 && (
                 <section
                   aria-label="Consequências da exclusão"
                   className="rounded-xl border border-destructive/25 bg-destructive/10 p-3.5"
@@ -412,19 +431,19 @@ export function DeletionConfirmDialog({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-surface-1 px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
+        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-surface-1 px-4 py-3 sm:flex-row sm:justify-end">
           <AlertDialogCancel
             ref={cancelRef}
             disabled={isCommitting}
-            className="mt-0 min-h-11 w-full sm:w-auto"
+            className="mt-0 h-8 w-full rounded-lg sm:w-auto sm:min-w-20"
           >
             Cancelar
           </AlertDialogCancel>
           <Button
             type="button"
             variant="destructive"
-            size="lg"
-            className="min-h-11 w-full whitespace-normal sm:w-auto"
+            size="sm"
+            className="h-8 w-full rounded-lg whitespace-normal sm:w-auto sm:min-w-20"
             disabled={
               !impact ||
               isBusy ||
@@ -441,7 +460,7 @@ export function DeletionConfirmDialog({
                 ? "Excluindo…"
                 : impact?.blockedReason
                   ? "Exclusão bloqueada"
-                  : (impact?.confirmation.confirmLabel ?? "Excluir")}
+                  : (confirmLabel ?? impact?.confirmation.confirmLabel ?? "Excluir")}
           </Button>
         </div>
       </AlertDialogContent>
@@ -449,10 +468,13 @@ export function DeletionConfirmDialog({
   );
 }
 
-function LoadingState() {
+function LoadingState({ compact = false }: { compact?: boolean }) {
   return (
     <div
-      className="flex min-h-48 flex-col items-center justify-center gap-3 text-center"
+      className={cn(
+        "flex flex-col items-center justify-center gap-3 text-center",
+        compact ? "min-h-24" : "min-h-48",
+      )}
       role="status"
     >
       <LoaderCircle aria-hidden="true" className="h-6 w-6 animate-spin text-primary" />

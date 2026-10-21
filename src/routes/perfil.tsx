@@ -2,10 +2,21 @@ import { usePhotoCropper } from "@/hooks/use-photo-cropper";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
-import { Bell, Camera, Eye, EyeOff, Trash2, Upload, Volume2, VolumeX } from "lucide-react";
+import {
+  Bell,
+  Camera,
+  Eye,
+  EyeOff,
+  Palette,
+  RotateCcw,
+  Trash2,
+  Upload,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { Modal } from "@/components/modal";
+import { ConfirmDialog, Modal } from "@/components/modal";
 import { SectionHeader, Card, Button, Field, Input, Avatar, Badge } from "@/components/ui-kit";
 import { organizationApi } from "@/lib/trixus-api";
 import { ROLE_META, useSession } from "@/lib/session";
@@ -18,6 +29,18 @@ import {
 import { Switch } from "@/components/ui/switch";
 import type { QueueId } from "@/lib/queue-prefs";
 import { NotificationQueueToggles } from "@/components/notification-queue-toggles";
+import {
+  CHAT_BUBBLE_PALETTE,
+  CHAT_APPEARANCE_PALETTES,
+  DEFAULT_CHAT_BACKGROUND_COLOR,
+  DEFAULT_CHAT_BUBBLE_COLOR,
+  DEFAULT_CHAT_BUBBLE_TEXT_COLOR,
+  DEFAULT_CUSTOMER_BUBBLE_COLOR,
+  DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR,
+  contrastRatio,
+  contrastingTextColor,
+  normalizeHexColor,
+} from "@/lib/chat-appearance";
 
 export const Route = createFileRoute("/perfil")({
   component: PerfilPage,
@@ -25,7 +48,7 @@ export const Route = createFileRoute("/perfil")({
 
 function PerfilPage() {
   const user = useSession((state) => state.user);
-  const [tab, setTab] = React.useState<"general" | "notifications">("general");
+  const [tab, setTab] = React.useState<"general" | "notifications" | "appearance">("general");
   const [soundEnabled, setSoundEnabled] = React.useState(() =>
     inboxNotificationSoundEnabled(useSession.getState().user?.id),
   );
@@ -38,6 +61,23 @@ function PerfilPage() {
   const [cameraOpen, setCameraOpen] = React.useState(false);
   const [photoPreviewOpen, setPhotoPreviewOpen] = React.useState(false);
   const [savingPassword, setSavingPassword] = React.useState(false);
+  const [savingAppearance, setSavingAppearance] = React.useState(false);
+  const [chatBubbleColor, setChatBubbleColor] = React.useState(
+    () => useSession.getState().user?.chatBubbleColor ?? DEFAULT_CHAT_BUBBLE_COLOR,
+  );
+  const [chatBubbleTextColor, setChatBubbleTextColor] = React.useState(
+    () => useSession.getState().user?.chatBubbleTextColor ?? DEFAULT_CHAT_BUBBLE_TEXT_COLOR,
+  );
+  const [customerBubbleColor, setCustomerBubbleColor] = React.useState(
+    () => useSession.getState().user?.customerBubbleColor ?? DEFAULT_CUSTOMER_BUBBLE_COLOR,
+  );
+  const [customerBubbleTextColor, setCustomerBubbleTextColor] = React.useState(
+    () => useSession.getState().user?.customerBubbleTextColor ?? DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR,
+  );
+  const [chatBackgroundColor, setChatBackgroundColor] = React.useState(
+    () => useSession.getState().user?.chatBackgroundColor ?? DEFAULT_CHAT_BACKGROUND_COLOR,
+  );
+  const [confirmAppearanceReset, setConfirmAppearanceReset] = React.useState(false);
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
@@ -60,7 +100,67 @@ function PerfilPage() {
   React.useEffect(() => {
     setSoundEnabled(inboxNotificationSoundEnabled(user?.id));
     setNotificationQueues(inboxNotificationQueues(user?.id));
+    setChatBubbleColor(user?.chatBubbleColor ?? DEFAULT_CHAT_BUBBLE_COLOR);
+    setChatBubbleTextColor(user?.chatBubbleTextColor ?? DEFAULT_CHAT_BUBBLE_TEXT_COLOR);
+    setCustomerBubbleColor(user?.customerBubbleColor ?? DEFAULT_CUSTOMER_BUBBLE_COLOR);
+    setCustomerBubbleTextColor(user?.customerBubbleTextColor ?? DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR);
+    setChatBackgroundColor(user?.chatBackgroundColor ?? DEFAULT_CHAT_BACKGROUND_COLOR);
   }, [user?.id]);
+
+  const saveAppearance = async (reset = false) => {
+    if (!user || savingAppearance) return;
+    const background = reset
+      ? DEFAULT_CHAT_BUBBLE_COLOR
+      : normalizeHexColor(chatBubbleColor, DEFAULT_CHAT_BUBBLE_COLOR);
+    const textColor = reset
+      ? DEFAULT_CHAT_BUBBLE_TEXT_COLOR
+      : normalizeHexColor(chatBubbleTextColor, contrastingTextColor(background));
+    const customerBackground = reset
+      ? DEFAULT_CUSTOMER_BUBBLE_COLOR
+      : normalizeHexColor(customerBubbleColor, DEFAULT_CUSTOMER_BUBBLE_COLOR);
+    const customerText = reset
+      ? DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR
+      : normalizeHexColor(customerBubbleTextColor, contrastingTextColor(customerBackground));
+    const conversationBackground = reset
+      ? DEFAULT_CHAT_BACKGROUND_COLOR
+      : normalizeHexColor(chatBackgroundColor, DEFAULT_CHAT_BACKGROUND_COLOR);
+    setSavingAppearance(true);
+    try {
+      const updated = await organizationApi.updateMyProfile({
+        chatBubbleColor: reset ? null : background,
+        chatBubbleTextColor: reset ? null : textColor,
+        customerBubbleColor: reset ? null : customerBackground,
+        customerBubbleTextColor: reset ? null : customerText,
+        chatBackgroundColor: reset ? null : conversationBackground,
+      });
+      setChatBubbleColor(updated.user.chatBubbleColor ?? DEFAULT_CHAT_BUBBLE_COLOR);
+      setChatBubbleTextColor(updated.user.chatBubbleTextColor ?? DEFAULT_CHAT_BUBBLE_TEXT_COLOR);
+      setCustomerBubbleColor(updated.user.customerBubbleColor ?? DEFAULT_CUSTOMER_BUBBLE_COLOR);
+      setCustomerBubbleTextColor(
+        updated.user.customerBubbleTextColor ?? DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR,
+      );
+      setChatBackgroundColor(updated.user.chatBackgroundColor ?? DEFAULT_CHAT_BACKGROUND_COLOR);
+      useSession.setState((state) => ({
+        user: state.user
+          ? {
+              ...state.user,
+              chatBubbleColor: updated.user.chatBubbleColor ?? undefined,
+              chatBubbleTextColor: updated.user.chatBubbleTextColor ?? undefined,
+              customerBubbleColor: updated.user.customerBubbleColor ?? undefined,
+              customerBubbleTextColor: updated.user.customerBubbleTextColor ?? undefined,
+              chatBackgroundColor: updated.user.chatBackgroundColor ?? undefined,
+            }
+          : state.user,
+      }));
+      toast.success(
+        reset ? "Aparência restaurada para o padrão Trixus." : "Aparência do Chat atualizada.",
+      );
+    } catch (error) {
+      toast.error((error as Error).message || "Não foi possível salvar a aparência do Chat.");
+    } finally {
+      setSavingAppearance(false);
+    }
+  };
 
   const changeNotificationQueues = (queues: QueueId[]) => {
     if (!user) return;
@@ -272,6 +372,9 @@ function PerfilPage() {
               >
                 <Bell className="h-4 w-4" /> Notificações
               </ProfileTabButton>
+              <ProfileTabButton active={tab === "appearance"} onClick={() => setTab("appearance")}>
+                <Palette className="h-4 w-4" /> Aparência
+              </ProfileTabButton>
             </div>
             {tab === "general" ? (
               <>
@@ -348,13 +451,18 @@ function PerfilPage() {
                     </Field>
                   </div>
                   <div className="mt-4 flex justify-end">
-                    <Button variant="primary" onClick={savePassword} disabled={savingPassword}>
+                    <Button
+                      variant="primary"
+                      className="save-action-button"
+                      onClick={savePassword}
+                      disabled={savingPassword}
+                    >
                       Salvar senha
                     </Button>
                   </div>
                 </section>
               </>
-            ) : (
+            ) : tab === "notifications" ? (
               <section aria-labelledby="notification-preferences-title">
                 <p id="notification-preferences-title" className="text-sm font-semibold">
                   Notificações
@@ -400,6 +508,174 @@ function PerfilPage() {
                   />
                 </fieldset>
               </section>
+            ) : (
+              <section aria-labelledby="chat-appearance-title">
+                <p id="chat-appearance-title" className="text-sm font-semibold">
+                  Aparência do Chat
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Personalize apenas os seus balões de mensagens enviadas. O padrão oficial
+                  permanece azul.
+                </p>
+                <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+                  <div>
+                    <Field label="Fundo das minhas mensagens">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="color"
+                          value={normalizeHexColor(chatBubbleColor, DEFAULT_CHAT_BUBBLE_COLOR)}
+                          onChange={(event) => setChatBubbleColor(event.target.value.toUpperCase())}
+                          className="h-10 w-14 p-1"
+                          aria-label="Selecionar cor do balão"
+                        />
+                        <Input
+                          value={chatBubbleColor}
+                          maxLength={7}
+                          onChange={(event) => setChatBubbleColor(event.target.value.toUpperCase())}
+                          aria-label="Cor hexadecimal do balão"
+                        />
+                      </div>
+                    </Field>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <ColorField
+                        label="Texto das minhas mensagens"
+                        value={chatBubbleTextColor}
+                        onChange={setChatBubbleTextColor}
+                      />
+                      <ColorField
+                        label="Fundo das mensagens do cliente"
+                        value={customerBubbleColor}
+                        onChange={setCustomerBubbleColor}
+                      />
+                      <ColorField
+                        label="Texto das mensagens do cliente"
+                        value={customerBubbleTextColor}
+                        onChange={setCustomerBubbleTextColor}
+                      />
+                      <ColorField
+                        label="Fundo da conversa"
+                        value={chatBackgroundColor}
+                        onChange={setChatBackgroundColor}
+                      />
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {Object.entries(CHAT_APPEARANCE_PALETTES).map(([name, colors]) => (
+                        <Button
+                          key={name}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setChatBubbleColor(colors[0]);
+                            setChatBubbleTextColor(colors[1]);
+                            setCustomerBubbleColor(colors[2]);
+                            setCustomerBubbleTextColor(colors[3]);
+                            setChatBackgroundColor(colors[4]);
+                          }}
+                        >
+                          {name}
+                        </Button>
+                      ))}
+                      <Badge tone="default" dot={false}>
+                        Personalizada
+                      </Badge>
+                    </div>
+                    {(contrastRatio(chatBubbleColor, chatBubbleTextColor) < 4.5 ||
+                      contrastRatio(customerBubbleColor, customerBubbleTextColor) < 4.5) && (
+                      <p
+                        role="alert"
+                        className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+                      >
+                        O contraste escolhido pode dificultar a leitura. Recomendamos razão mínima
+                        de 4,5:1.
+                      </p>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2" aria-label="Paleta de cores do Chat">
+                      {CHAT_BUBBLE_PALETTE.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          className="h-8 w-8 rounded-full border-2 border-white shadow ring-1 ring-border"
+                          style={{ backgroundColor: color }}
+                          aria-label={`Usar cor ${color}`}
+                          onClick={() => setChatBubbleColor(color)}
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <Button
+                        variant="ghost"
+                        onClick={() => setConfirmAppearanceReset(true)}
+                        disabled={savingAppearance}
+                      >
+                        <RotateCcw className="mr-1.5 h-4 w-4" /> Restaurar padrão
+                      </Button>
+                      <Button
+                        variant="primary"
+                        className="save-action-button"
+                        onClick={() => void saveAppearance()}
+                        disabled={savingAppearance || !/^#[0-9A-Fa-f]{6}$/.test(chatBubbleColor)}
+                      >
+                        Salvar aparência
+                      </Button>
+                    </div>
+                  </div>
+                  <div
+                    className="rounded-xl border border-border p-4"
+                    style={{
+                      backgroundColor: normalizeHexColor(
+                        chatBackgroundColor,
+                        DEFAULT_CHAT_BACKGROUND_COLOR,
+                      ),
+                    }}
+                  >
+                    <p className="mb-3 text-xs font-medium text-muted-foreground">
+                      Pré-visualização
+                    </p>
+                    <div className="flex justify-end">
+                      <div
+                        className="max-w-[220px] rounded-2xl rounded-br-sm px-3 py-2 text-sm shadow-card"
+                        style={{
+                          backgroundColor: normalizeHexColor(
+                            chatBubbleColor,
+                            DEFAULT_CHAT_BUBBLE_COLOR,
+                          ),
+                          color: contrastingTextColor(chatBubbleColor),
+                        }}
+                      >
+                        Esta é uma mensagem enviada por você.
+                      </div>
+                    </div>
+                    <div className="mt-3 flex justify-start">
+                      <div
+                        className="max-w-[220px] rounded-2xl rounded-bl-sm border border-border px-3 py-2 text-sm shadow-card"
+                        style={{
+                          backgroundColor: normalizeHexColor(
+                            customerBubbleColor,
+                            DEFAULT_CUSTOMER_BUBBLE_COLOR,
+                          ),
+                          color: normalizeHexColor(
+                            customerBubbleTextColor,
+                            DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR,
+                          ),
+                        }}
+                      >
+                        Esta é uma mensagem do cliente.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <ConfirmDialog
+                  open={confirmAppearanceReset}
+                  title="Restaurar aparência?"
+                  description="As cores oficiais do Trixus serão restauradas para este usuário."
+                  confirmLabel="Restaurar"
+                  onClose={() => setConfirmAppearanceReset(false)}
+                  onConfirm={async () => {
+                    await saveAppearance(true);
+                    setConfirmAppearanceReset(false);
+                  }}
+                />
+              </section>
             )}
           </Card>
         </div>
@@ -422,6 +698,36 @@ function PerfilPage() {
         />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Field label={label}>
+      <div className="flex items-center gap-2">
+        <Input
+          type="color"
+          value={normalizeHexColor(value, "#FFFFFF")}
+          onChange={(event) => onChange(event.target.value.toUpperCase())}
+          className="h-10 w-12 p-1"
+          aria-label={label}
+        />
+        <Input
+          value={value}
+          maxLength={7}
+          onChange={(event) => onChange(event.target.value.toUpperCase())}
+          aria-label={`${label} hexadecimal`}
+        />
+      </div>
+    </Field>
   );
 }
 

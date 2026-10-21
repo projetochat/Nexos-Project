@@ -25,6 +25,7 @@ export const TENANT_ADMIN_PERMISSIONS = [
   "contacts.delete",
   "contacts.additional_fields.read",
   "conversations.read",
+  "leads.read",
   "conversations.assign",
   "messages.send",
   "connections.read",

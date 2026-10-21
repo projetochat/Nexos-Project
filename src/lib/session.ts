@@ -34,6 +34,11 @@ export type SessionUser = {
   empresaNome?: string;
   avatarUrl?: string;
   keepSidebarCollapsed?: boolean;
+  chatBubbleColor?: string;
+  chatBubbleTextColor?: string;
+  customerBubbleColor?: string;
+  customerBubbleTextColor?: string;
+  chatBackgroundColor?: string;
   permissions?: string[];
 };
 

@@ -488,7 +488,7 @@ function LoginPage() {
               {passwordChangeError}
             </div>
           )}
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" className="save-action-button w-full" disabled={loading}>
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             Salvar nova senha
           </Button>

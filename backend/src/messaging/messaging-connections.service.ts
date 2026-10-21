@@ -26,6 +26,7 @@ import {
 } from "../generated/prisma";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
+import { TransactionalEmailService } from "../email/transactional-email.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { normalizeRemotePhoneCandidates, phoneFromRemoteIdentity } from "./messaging-identity";
@@ -93,6 +94,9 @@ export class MessagingConnectionsService {
     @Optional()
     @Inject(MessagingMediaCleanupService)
     private readonly mediaCleanup?: MessagingMediaCleanupService,
+    @Optional()
+    @Inject(TransactionalEmailService)
+    private readonly email?: TransactionalEmailService,
   ) {}
 
   async list(current: AuthenticatedUser) {
@@ -991,6 +995,7 @@ export class MessagingConnectionsService {
       status: updated.status.toLowerCase(),
       updatedAt: updated.updatedAt,
     });
+    await this.notifyDisconnectedAdministrator(updated);
     return this.serialize(updated);
   }
 
@@ -1707,9 +1712,52 @@ export class MessagingConnectionsService {
         status: updated.status.toLowerCase(),
         updatedAt: updated.updatedAt,
       });
+      if (updated.status === MessagingConnectionStatus.DISCONNECTED) {
+        await this.notifyDisconnectedAdministrator(updated);
+      }
     }
     void this.historyImport?.enqueueForConnection(updated);
     return updated;
+  }
+
+  private async notifyDisconnectedAdministrator(connection: ConnectionWithArchive) {
+    if (!this.email) return;
+    try {
+      const administrator = await this.prisma.tenantMembership.findFirst({
+        where: {
+          tenantId: connection.tenantId,
+          status: "ACTIVE",
+          role: { key: "tenant_admin" },
+          user: { status: "ACTIVE" },
+        },
+        orderBy: { createdAt: "asc" },
+        select: { user: { select: { email: true, name: true } } },
+      });
+      const recipient = administrator?.user.email?.trim();
+      if (!administrator || !recipient) {
+        this.logger.warn({
+          event: "messaging.connection.disconnected_email_skipped",
+          tenantId: connection.tenantId,
+          connectionId: connection.id,
+          reason: "tenant_administrator_email_unavailable",
+        });
+        return;
+      }
+      await this.email.sendDisconnectedInstanceAlert({
+        to: recipient,
+        administratorName: administrator.user.name,
+        instanceName: connection.name,
+        phone: connection.ownerPhoneNormalized,
+        disconnectedAt: connection.updatedAt,
+      });
+    } catch (error) {
+      this.logger.warn({
+        event: "messaging.connection.disconnected_email_failed",
+        tenantId: connection.tenantId,
+        connectionId: connection.id,
+        reason: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
   }
 
   private async rejectDifferentOwner(current: ConnectionWithArchive, attemptedOwnerPhone: string) {

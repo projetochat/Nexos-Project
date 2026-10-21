@@ -52,9 +52,11 @@ export function DepartmentIcon({
 export function DepartmentIconSelect({
   value = "department",
   onChange,
+  disabled = false,
 }: {
   value?: DepartmentIconName;
   onChange: (value: DepartmentIconName) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const selected =
@@ -62,19 +64,30 @@ export function DepartmentIconSelect({
   const SelectedIcon = selected.icon;
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      open={disabled ? false : open}
+      onOpenChange={(nextOpen) => {
+        if (!disabled) setOpen(nextOpen);
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={`Selecionar ícone. Atual: ${selected.label}`}
-          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-border bg-surface-1 px-3 text-foreground outline-none transition hover:bg-muted focus:border-primary"
+          disabled={disabled}
+          aria-label={
+            disabled
+              ? `Ícone atual: ${selected.label}`
+              : `Selecionar ícone. Atual: ${selected.label}`
+          }
+          className="flex min-h-10 w-full items-center justify-between gap-3 rounded-lg border border-border bg-surface-1 px-3 text-foreground outline-none transition hover:bg-muted focus:border-primary disabled:cursor-default disabled:hover:bg-surface-1"
         >
           <SelectedIcon className="h-5 w-5" />
-          {open ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
+          {!disabled &&
+            (open ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ))}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="z-[250] w-52 p-2">

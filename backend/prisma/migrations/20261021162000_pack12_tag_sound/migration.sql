@@ -1,0 +1,2 @@
+ALTER TABLE "tags"
+  ADD COLUMN IF NOT EXISTS "notify_on_new_conversation" BOOLEAN NOT NULL DEFAULT FALSE;

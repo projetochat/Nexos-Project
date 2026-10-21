@@ -60,11 +60,13 @@ export class RealtimePublisher {
     tenantId: string;
     conversationId: string;
     notificationQueue?: ConversationQueueTab | null;
+    tagNotification?: boolean;
     reason: string;
   }) {
     const payload = {
       conversationId: input.conversationId,
       notificationQueue: input.notificationQueue,
+      tagNotification: input.tagNotification === true,
       reason: input.reason,
     };
     this.realtime.publish({ tenantId: input.tenantId }, "conversation.updated", payload);

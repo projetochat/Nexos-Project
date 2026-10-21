@@ -25,7 +25,6 @@ function quickReply(overrides: Record<string, unknown> = {}) {
     normalizedShortcut: "boas-vindas",
     content: "Olá",
     messages: null,
-    intervalSeconds: 0,
     attachmentFileName: null,
     attachmentMimeType: null,
     attachmentSize: null,

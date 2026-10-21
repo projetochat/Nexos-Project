@@ -198,7 +198,7 @@ function BrowserTitleController() {
   const canReadConversations = !!user?.permissions?.includes("conversations.read");
   const unreadConversations = useQuery({
     queryKey: ["trixus", "conversations", "browser-title-unread"],
-    queryFn: () => conversationApi.list({ onlyUnread: true, pageSize: 1 }),
+    queryFn: () => conversationApi.unreadTotal(),
     enabled: canReadConversations,
     refetchInterval: canReadConversations ? 30_000 : false,
   });
@@ -215,8 +215,8 @@ function BrowserTitleController() {
   }, [canReadConversations, queryClient]);
 
   useEffect(() => {
-    document.title = appTitleWithUnreadConversations(unreadConversations.data?.total ?? 0);
-  }, [pathname, unreadConversations.data?.total]);
+    document.title = appTitleWithUnreadConversations(unreadConversations.data?.unreadCount ?? 0);
+  }, [pathname, unreadConversations.data?.unreadCount]);
 
   return null;
 }

@@ -35,7 +35,7 @@ const toast = {
   info: (_?: unknown) => {},
 };
 import { InboxLayout } from "./inbox.index";
-import { Avatar, Button, Field, Input, Select } from "@/components/ui-kit";
+import { Avatar, Button, CloseButton, Field, Input, Select } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MessageStatusIcon } from "@/components/message-status-icon";
 import { DepartmentIcon } from "@/components/department-icon";
@@ -67,7 +67,16 @@ import {
   sendSequence,
   type SequenceDraft,
 } from "@/lib/quick-reply-sequence";
+import { handleComposerEscape, textToRestoreAfterQuickReply } from "@/lib/composer-escape";
 import { useSession } from "@/lib/session";
+import {
+  DEFAULT_CHAT_BUBBLE_COLOR,
+  DEFAULT_CHAT_BUBBLE_TEXT_COLOR,
+  DEFAULT_CUSTOMER_BUBBLE_COLOR,
+  DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR,
+  DEFAULT_CHAT_BACKGROUND_COLOR,
+  normalizeHexColor,
+} from "@/lib/chat-appearance";
 import { conversationAuthorizationScope } from "@/lib/conversation-query-authorization";
 import { orderConversationMessages } from "@/lib/conversation-message-order";
 import { conversationTimestamp, fmtDate, fmtLogStamp } from "@/lib/format";
@@ -96,6 +105,7 @@ import {
 } from "@/lib/favorite-department";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
+import { PendingMediaPreview } from "@/components/pending-media-preview";
 import {
   CALL_UNAVAILABLE_MESSAGE,
   ConversationCallButton,
@@ -485,11 +495,14 @@ function ConversationPage() {
   const canAssignConversations = user?.permissions?.includes("conversations.assign") ?? false;
   const canCreateTicket =
     modules.tickets && (user?.permissions?.includes("tickets.create") ?? false);
+  const contactActive = conv.contact?.active !== false;
   const canSend =
+    contactActive &&
     canSendMessages &&
     ((conv.is_group && !!conv.protocolo && conv.status !== "fechada" && !isStandby) ||
       (isStarted && conv.status !== "fechada" && !isStandby));
   const showStart =
+    contactActive &&
     conv.status !== "fechada" &&
     (conv.is_group ? !conv.protocolo || isStandby : !conv.agent_id || isStandby);
   const wasStarted = !!conv.protocolo;
@@ -498,7 +511,10 @@ function ConversationPage() {
   const handleAssume = async (departmentId?: string) => {
     if (!user) return;
     if (departmentsLoading) return;
-    const favorite = favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
+    const favorite =
+      user.role === "admin"
+        ? null
+        : favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
     if (!conv.protocolo && !departmentId && !favorite) {
       if (departmentsForConnection(apiDepartments, conv.connection_id).length === 0) return;
       setStartDepartmentId("");
@@ -650,10 +666,26 @@ function ConversationPage() {
             </div>
           </header>
 
+          {!contactActive && (
+            <div
+              role="alert"
+              className="border-b border-warning/30 bg-warning/10 px-5 py-2 text-xs font-medium text-warning-foreground"
+            >
+              Contato inativo — as mensagens recebidas continuam registradas, mas novos envios estão
+              bloqueados.
+            </div>
+          )}
+
           <div data-chat-drop-zone className="relative flex min-h-0 flex-1 flex-col">
             <div
               ref={scrollRef}
               className="inbox-message-background min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6"
+              style={{
+                backgroundColor: normalizeHexColor(
+                  user?.chatBackgroundColor,
+                  DEFAULT_CHAT_BACKGROUND_COLOR,
+                ),
+              }}
             >
               <div className="w-full space-y-4">
                 {(() => {
@@ -762,15 +794,17 @@ function ConversationPage() {
                 }}
                 disabled={!canSend}
                 disabledReason={
-                  conv.status === "fechada"
-                    ? "closed"
-                    : isStandby
-                      ? "standby"
-                      : !conv.agent_id
-                        ? "lead"
-                        : !isMine
-                          ? "not-mine"
-                          : null
+                  !contactActive
+                    ? "inactive"
+                    : conv.status === "fechada"
+                      ? "closed"
+                      : isStandby
+                        ? "standby"
+                        : !conv.agent_id
+                          ? "lead"
+                          : !isMine
+                            ? "not-mine"
+                            : null
                 }
                 onStart={showStart ? handleAssume : undefined}
                 allowQuickReplies={canSendMessages && perms.acessa_mensagens_rapidas}
@@ -780,6 +814,7 @@ function ConversationPage() {
                 mentionOptions={conv.is_group ? mentionOptions : []}
                 replyTo={replyTo}
                 onCancelReply={() => setReplyTo(null)}
+                onCloseConversation={() => void navigate({ to: "/inbox" })}
                 onSent={() => {
                   setReplyTo(null);
                   void invalidateConversationQueries(qc, conv.id);
@@ -823,9 +858,13 @@ function ConversationPage() {
           <>
             <button
               type="button"
-              className="absolute inset-0 z-10 cursor-default bg-transparent"
+              className="absolute inset-0 z-10 cursor-default bg-transparent 2xl:hidden"
               aria-label="Fechar informações do contato"
               onClick={() => setPanelOpen(false)}
+              onWheel={(event) => {
+                event.preventDefault();
+                scrollRef.current?.scrollBy({ top: event.deltaY, behavior: "auto" });
+              }}
             />
             <div className="absolute inset-y-0 right-0 z-20 flex max-w-full 2xl:relative 2xl:inset-auto 2xl:shrink-0">
               <ContactPanel
@@ -1044,6 +1083,10 @@ export function MessageBubble({
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
   const qc = useQueryClient();
+  const chatBubbleColor = useSession((state) => state.user?.chatBubbleColor);
+  const chatBubbleTextColor = useSession((state) => state.user?.chatBubbleTextColor);
+  const customerBubbleColor = useSession((state) => state.user?.customerBubbleColor);
+  const customerBubbleTextColor = useSession((state) => state.user?.customerBubbleTextColor);
   const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
   const [imagePreviewOpen, setImagePreviewOpen] = React.useState(false);
   const [mediaError, setMediaError] = React.useState(false);
@@ -1153,8 +1196,7 @@ export function MessageBubble({
         <span
           className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}
         >
-          {label}
-          <span className="ml-1 opacity-80">— {fmtLogStamp(ts)}</span>
+          {`${label} — ${fmtLogStamp(ts)}`}
         </span>
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
       </div>
@@ -1219,6 +1261,23 @@ export function MessageBubble({
         </div>
       )}
       <div
+        data-outbound-message={mine && !isVisualOnly ? "true" : undefined}
+        style={
+          !isVisualOnly
+            ? ({
+                backgroundColor: mine
+                  ? normalizeHexColor(chatBubbleColor, DEFAULT_CHAT_BUBBLE_COLOR)
+                  : normalizeHexColor(customerBubbleColor, DEFAULT_CUSTOMER_BUBBLE_COLOR),
+                color: mine
+                  ? normalizeHexColor(chatBubbleTextColor, DEFAULT_CHAT_BUBBLE_TEXT_COLOR)
+                  : normalizeHexColor(customerBubbleTextColor, DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR),
+                "--chat-outbound-text": normalizeHexColor(
+                  chatBubbleTextColor,
+                  DEFAULT_CHAT_BUBBLE_TEXT_COLOR,
+                ),
+              } as React.CSSProperties)
+            : undefined
+        }
         tabIndex={0}
         onContextMenu={(event) => {
           if (readOnly) return;
@@ -1235,7 +1294,7 @@ export function MessageBubble({
         className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[50%] ${
           isVisualOnly
             ? "rounded-xl bg-transparent p-0 shadow-none"
-            : `rounded-2xl px-3 py-2 shadow-card ${mine ? "rounded-br-sm bg-[#D0EBFE] text-slate-900" : "rounded-bl-sm border border-border bg-surface-1"}`
+            : `rounded-2xl px-3 py-2 shadow-card ${mine ? "rounded-br-sm" : "rounded-bl-sm border border-border"}`
         }`}
       >
         {!readOnly && !m.deleted_for_everyone && (
@@ -1877,7 +1936,7 @@ function AudioPlayer({
 }
 
 /* -------- Composer with quick replies, audio, paste-image -------- */
-type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | null;
+type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | "inactive" | null;
 function Composer({
   conversationId,
   authorId,
@@ -1889,6 +1948,7 @@ function Composer({
   onSent,
   replyTo,
   onCancelReply,
+  onCloseConversation,
   allowQuickReplies = true,
   allowAudio = true,
   onTicket,
@@ -1905,6 +1965,7 @@ function Composer({
   onSent: () => void;
   replyTo?: Message | null;
   onCancelReply?: () => void;
+  onCloseConversation: () => void;
   allowQuickReplies?: boolean;
   allowAudio?: boolean;
   onTicket?: () => void;
@@ -1917,7 +1978,10 @@ function Composer({
   const isMobile = useIsMobile();
   const composerProtected =
     disabled &&
-    (disabledReason === "lead" || disabledReason === "standby" || disabledReason === "not-mine");
+    (disabledReason === "lead" ||
+      disabledReason === "standby" ||
+      disabledReason === "not-mine" ||
+      disabledReason === "inactive");
 
   type PendingMedia = {
     id: string;
@@ -1938,12 +2002,12 @@ function Composer({
   const [qrFilter, setQrFilter] = React.useState("");
   const [mentionFilter, setMentionFilter] = React.useState<string | null>(null);
   const [pendingCloseAfter, setPendingCloseAfter] = React.useState(false);
+  const quickReplyTextBeforeApplyRef = React.useRef("");
   const draftKey = `${authorId}:${conversationId}`;
   const [sequence, setSequence] = React.useState<SequenceDraft | null>(
     () => quickReplyDrafts.get(draftKey) ?? null,
   );
   const [sequenceSending, setSequenceSending] = React.useState(false);
-  const [sequenceError, setSequenceError] = React.useState("");
   const sequenceAbort = React.useRef<AbortController | null>(null);
   const sequenceMounted = React.useRef(true);
   React.useEffect(() => {
@@ -2057,6 +2121,12 @@ function Composer({
     });
   };
 
+  const selectPendingFile = (id: string) => {
+    setPendingFiles((current) =>
+      current.map((item) => ({ ...item, carriesContext: item.id === id })),
+    );
+  };
+
   const { data: quickReplies = [] } = useQuery({
     queryKey: ["trixus", "quick-replies", "composer"],
     queryFn: () => quickReplyApi.list(),
@@ -2114,11 +2184,11 @@ function Composer({
   const applyQR = (qr: QuickReply) => {
     if (sequenceAbort.current) return;
     const items = quickReplyMessages(qr);
+    quickReplyTextBeforeApplyRef.current = textToRestoreAfterQuickReply(text);
     if (items.length > 1 || items[0]?.attachment) {
       const draft = createSequence(qr, resolveVariables);
       quickReplyDrafts.set(draftKey, draft);
       setSequence(draft);
-      setSequenceError("");
       setText("");
       setPendingVariableTemplate(null);
       clearPendingFiles();
@@ -2187,7 +2257,6 @@ function Composer({
     quickReplyDrafts.set(draftKey, draft);
     setSequence(draft);
     setSequenceSending(true);
-    setSequenceError("");
     try {
       await sendSequence(draft, controller.signal, {
         send: async (item) => {
@@ -2211,7 +2280,6 @@ function Composer({
             quotedMessageId: replyTo?.id ?? null,
           });
         },
-        get: (id) => messageApi.get(conversationId, id),
         progress: () => {
           if (!controller.signal.aborted) setSequence({ ...draft });
           void qc.invalidateQueries({ queryKey: ["trixus", "messages", conversationId] });
@@ -2232,12 +2300,7 @@ function Composer({
         .catch(() => {});
       onSent();
     } catch (error) {
-      if (sequenceMounted.current)
-        setSequenceError(
-          controller.signal.aborted
-            ? "Sequência pausada. Você pode continuar de onde parou."
-            : (error as Error).message,
-        );
+      if (!controller.signal.aborted) toast.error((error as Error).message);
     } finally {
       if (sequenceMounted.current) {
         setSequence(quickReplyDrafts.has(draftKey) ? { ...draft } : null);
@@ -2548,6 +2611,36 @@ function Composer({
     stopRecording();
   };
 
+  const discardPendingAudio = () => {
+    setPendingAudio((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  };
+
+  const cancelPreparedQuickReply = () => {
+    setText(quickReplyTextBeforeApplyRef.current);
+    quickReplyTextBeforeApplyRef.current = "";
+    setPendingVariableTemplate(null);
+    setPendingCloseAfter(false);
+    setShowQR(false);
+    setQrFilter("");
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const cancelPreparedSequence = () => {
+    if (sequenceSending) {
+      sequenceAbort.current?.abort();
+      return;
+    }
+    quickReplyDrafts.delete(draftKey);
+    setSequence(null);
+    setPendingCloseAfter(false);
+    setText(quickReplyTextBeforeApplyRef.current);
+    quickReplyTextBeforeApplyRef.current = "";
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
   const sendAudio = async () => {
     if (!pendingAudio || !authorId) return;
     setAudioSending(true);
@@ -2573,6 +2666,49 @@ function Composer({
     }
   };
 
+  React.useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      const managedOverlayOpen =
+        showCamera ||
+        showContacts ||
+        showSchedule ||
+        Boolean(
+          document.querySelector(
+            '[role="dialog"][aria-modal="true"], [role="dialog"][data-state="open"], [role="menu"][data-state="open"], [role="listbox"][data-state="open"]',
+          ),
+        );
+
+      handleComposerEscape(
+        event,
+        {
+          managedOverlayOpen,
+          sendInProgress: mediaSending || audioSending,
+          customOverlayOpen: showQR || filteredMentions.length > 0,
+          sequencePending: Boolean(sequence),
+          recording,
+          audioPending: Boolean(pendingAudio),
+          filesPending: pendingFiles.length > 0,
+          quickReplyPending: pendingVariableTemplate !== null,
+        },
+        {
+          dismissCustomOverlay: () => {
+            setShowQR(false);
+            setMentionFilter(null);
+          },
+          cancelSequence: cancelPreparedSequence,
+          discardRecording,
+          discardAudio: discardPendingAudio,
+          clearFiles: clearPendingFiles,
+          cancelQuickReply: cancelPreparedQuickReply,
+          closeConversation: onCloseConversation,
+        },
+      );
+    };
+
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  });
+
   return (
     <div
       ref={composerRootRef}
@@ -2594,88 +2730,41 @@ function Composer({
         </div>
       )}
       <div className="w-full">
-        {sequence && (
-          <div
-            className="mb-2 space-y-2 rounded-lg border border-primary/30 bg-card p-3"
-            aria-live="polite"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <strong className="text-sm">
-                {sequence.items.length > 1 ? "Mensagens múltiplas" : "Mensagem rápida com arquivo"}{" "}
-                · {sequence.next}/{sequence.items.length} enviadas
-              </strong>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  if (sequenceSending) {
-                    sequenceAbort.current?.abort();
-                    return;
-                  }
-                  quickReplyDrafts.delete(draftKey);
-                  setSequence(null);
-                  setSequenceError("");
-                  setPendingCloseAfter(false);
-                }}
-              >
-                {sequenceSending ? "Pausar" : "Cancelar sequência"}
-              </Button>
-            </div>
-            <ol className="max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
-              {sequence.items.map((item, index) => (
-                <li
-                  key={item.clientMessageId}
-                  className={index < sequence.next ? "opacity-50" : ""}
-                >
-                  {index + 1}. {item.text || item.attachment?.fileName}
-                  {item.text && item.attachment ? ` · ${item.attachment.fileName}` : ""}
-                  {index < sequence.next ? " ✓" : ""}
-                </li>
-              ))}
-            </ol>
-            <p className="text-xs text-muted-foreground">
-              {sequenceSending
-                ? "Enviando na ordem cadastrada…"
-                : "Clique em Enviar para iniciar ou Continuar para retomar."}{" "}
-              Ao sair da conversa, a sequência será pausada.
-            </p>
-            {sequenceError && (
-              <p role="alert" className="text-xs text-destructive">
-                {sequenceError}
-              </p>
-            )}
-          </div>
-        )}
         {pendingFiles.length > 0 && (
-          <div className="mb-2 max-h-56 space-y-2 overflow-y-auto" aria-label="Anexos selecionados">
+          <div
+            className="mb-2 grid max-h-32 grid-cols-2 gap-1 overflow-y-auto"
+            aria-label="Anexos selecionados"
+          >
             {pendingFiles.map((pendingFile) => (
               <div
                 key={pendingFile.id}
-                className="flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card"
+                className={`flex min-w-0 items-center gap-2 rounded-lg border bg-card px-2 py-1.5 shadow-card ${
+                  pendingFile.carriesContext
+                    ? "border-primary ring-1 ring-primary/30"
+                    : "border-border"
+                }`}
               >
                 {pendingFile.sharedContact ? (
                   <Avatar
                     name={pendingFile.sharedContact.nome}
                     src={pendingFile.sharedContact.avatar_url}
-                    size={48}
+                    size={40}
                   />
                 ) : pendingFile.previewUrl ? (
                   pendingFile.mediaType === "video" ? (
                     <video
                       src={pendingFile.previewUrl}
-                      className="h-16 w-16 rounded object-cover"
+                      className="h-10 w-10 rounded object-cover"
                     />
                   ) : (
                     <img
                       src={pendingFile.previewUrl}
                       alt={`Pré-visualização de ${pendingFile.file.name}`}
-                      className="h-16 w-16 rounded object-cover"
+                      className="h-10 w-10 rounded object-cover"
                     />
                   )
                 ) : (
-                  <div className="flex h-16 w-16 items-center justify-center rounded bg-surface-2">
-                    <Paperclip className="h-5 w-5" />
-                  </div>
+                  <PendingMediaPreview file={pendingFile.file} />
                 )}
                 {pendingFile.sharedContact ? (
                   <div className="min-w-0 flex-1">
@@ -2695,6 +2784,19 @@ function Composer({
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="shrink-0"
+                  aria-label={`Usar ${pendingFile.file.name} com o texto da mensagem`}
+                  aria-pressed={pendingFile.carriesContext}
+                  title="Associar o texto a este anexo"
+                  disabled={mediaSending}
+                  onClick={() => selectPendingFile(pendingFile.id)}
+                >
+                  <Reply className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
                   aria-label={`Remover ${pendingFile.file.name}`}
                   disabled={mediaSending}
                   onClick={() => removePendingFile(pendingFile.id)}
@@ -2835,10 +2937,7 @@ function Composer({
             src={pendingAudio.url}
             duration={formatRecordingDuration(Math.round(pendingAudio.duration / 1000))}
             disabled={audioSending}
-            onDiscard={() => {
-              URL.revokeObjectURL(pendingAudio.url);
-              setPendingAudio(null);
-            }}
+            onDiscard={discardPendingAudio}
             onSend={() => void sendAudio()}
             sending={audioSending}
           />
@@ -2892,28 +2991,29 @@ function Composer({
                   e.preventDefault();
                   handleSend();
                 }
-                if (e.key === "Escape") setShowQR(false);
               }}
-              disabled={
-                disabled ||
-                sequenceSending ||
-                mediaSending ||
-                !!sequence ||
-                recording ||
-                !!pendingAudio
-              }
+              readOnly={Boolean(sequence)}
+              disabled={disabled || sequenceSending || mediaSending || recording || !!pendingAudio}
               aria-label="Mensagem"
-              placeholder={isMobile ? "" : "Digite uma mensagem"}
+              placeholder={
+                sequence
+                  ? "Pressione Enter para enviar a mensagem rápida"
+                  : isMobile
+                    ? ""
+                    : "Digite uma mensagem"
+              }
               title={
-                disabledReason === "closed"
-                  ? "Conversa encerrada."
-                  : disabledReason === "lead"
-                    ? "Clique em Iniciar acima para responder este lead."
-                    : disabledReason === "standby"
-                      ? "Clique em Retomar acima para voltar a atender."
-                      : disabledReason === "not-mine"
-                        ? "Conversa atribuída a outro atendente."
-                        : undefined
+                disabledReason === "inactive"
+                  ? "Contato inativo. Reative-o para enviar mensagens."
+                  : disabledReason === "closed"
+                    ? "Conversa encerrada."
+                    : disabledReason === "lead"
+                      ? "Clique em Iniciar acima para responder este lead."
+                      : disabledReason === "standby"
+                        ? "Clique em Retomar acima para voltar a atender."
+                        : disabledReason === "not-mine"
+                          ? "Conversa atribuída a outro atendente."
+                          : undefined
               }
               className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:opacity-50"
               style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
@@ -2941,20 +3041,8 @@ function Composer({
               size="icon"
               onClick={handleSend}
               disabled={disabled || sequenceSending || mediaSending || recording || !!pendingAudio}
-              aria-label={
-                sequenceSending || mediaSending
-                  ? "Enviando…"
-                  : sequence && (sequence.next > 0 || sequenceError)
-                    ? "Continuar envio"
-                    : "Enviar mensagem"
-              }
-              title={
-                sequenceSending || mediaSending
-                  ? "Enviando…"
-                  : sequence && (sequence.next > 0 || sequenceError)
-                    ? "Continuar envio"
-                    : "Enviar mensagem"
-              }
+              aria-label={sequenceSending || mediaSending ? "Enviando…" : "Enviar mensagem"}
+              title={sequenceSending || mediaSending ? "Enviando…" : "Enviar mensagem"}
             >
               <SendHorizontal className="h-5 w-5" />
             </Button>
@@ -3097,9 +3185,7 @@ export function ContactPanel({
                   <Pencil className="h-3 w-3" /> Editar
                 </Button>
               )}
-              <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fechar painel">
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              <CloseButton onClick={onClose} aria-label="Fechar painel" />
             </div>
           </div>
 
@@ -3210,13 +3296,26 @@ export function ContactPanel({
               </span>
             </div>
             {protocolos.length > 0 && (
-              <input
-                type="text"
-                value={protoFilter}
-                onChange={(e) => setProtoFilter(e.target.value)}
-                placeholder="Filtrar protocolo…"
-                className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
-              />
+              <div className="relative mb-2">
+                <input
+                  type="text"
+                  value={protoFilter}
+                  onChange={(e) => setProtoFilter(e.target.value)}
+                  placeholder="Filtrar protocolo…"
+                  className="w-full rounded-md border border-border bg-background py-1 pl-2 pr-7 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                />
+                {protoFilter && (
+                  <button
+                    type="button"
+                    aria-label="Limpar filtro de protocolos"
+                    title="Limpar filtro"
+                    onClick={() => setProtoFilter("")}
+                    className="absolute right-1 top-1/2 inline-flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+              </div>
             )}
             {protocolos.length === 0 ? (
               <p className="text-xs text-muted-foreground">Nenhum protocolo registrado.</p>

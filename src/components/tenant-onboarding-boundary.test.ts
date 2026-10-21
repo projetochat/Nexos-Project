@@ -6,6 +6,7 @@ import {
   DEFAULT_DEPARTMENTS,
   DEFAULT_QUICK_REPLIES,
   DEFAULT_TAGS,
+  onboardingTagDescription,
   STEPS,
   SUPERVISOR_DEFAULT_PERMISSIONS,
 } from "@/components/tenant-onboarding-boundary";
@@ -14,12 +15,17 @@ import { createOnboardingConnectionWithQr } from "@/components/tenant-onboarding
 import {
   ONBOARDING_INSTANCE_IDEMPOTENCY_KEY,
   buildOnboardingAttendantPayload,
+  buildOnboardingRoleScopeMetadata,
   canAdvanceOnboardingStep,
   formatOnboardingConnectedAt,
   hasActiveDepartmentConnection,
   isOnboardingInstanceNotFound,
+  isOnboardingConnectionConnected,
+  onboardingAdministratorRole,
+  onboardingFavoriteDepartmentId,
   onboardingStepAfterRefresh,
   onboardingRoleColorClass,
+  onboardingScopeNeedsSync,
   shouldPollOnboardingConnection,
 } from "@/lib/onboarding";
 import {
@@ -28,6 +34,7 @@ import {
   type ApiTenantOnboardingStatus,
   type ApiMessagingConnection,
   type ApiDepartment,
+  type ApiRole,
 } from "@/lib/trixus-api";
 
 function status(
@@ -155,8 +162,74 @@ describe("onboarding step requirements", () => {
     ]);
   });
 
+  it("restores the exclusive department favorite from the persisted Administrator scope", () => {
+    const roles = [
+      {
+        id: "role-admin",
+        key: "tenant_admin",
+        name: "Administrador",
+        metadata: { onboardingFavoriteDepartmentId: "department-new" },
+      },
+      {
+        id: "role-agent",
+        key: "agent",
+        name: "Atendente",
+        metadata: {},
+      },
+    ] as ApiRole[];
+
+    expect(onboardingAdministratorRole(roles)?.id).toBe("role-admin");
+    expect(onboardingFavoriteDepartmentId(roles)).toBe("department-new");
+  });
+
+  it("builds official profile scopes with one favorite, including a newly created department", () => {
+    const metadata = buildOnboardingRoleScopeMetadata(
+      [
+        {
+          id: "connection-a",
+          departments: [{ id: "department-old" }, { id: "department-new" }],
+        },
+        { id: "connection-b", departments: [{ id: "department-old" }] },
+      ],
+      "department-new",
+    );
+
+    expect(metadata.departmentIds).toEqual(["department-old", "department-new"]);
+    expect(metadata.chatScopes).toEqual([
+      {
+        connectionId: "connection-a",
+        departmentIds: ["department-old", "department-new"],
+        favoriteDepartmentId: "department-new",
+      },
+      {
+        connectionId: "connection-b",
+        departmentIds: ["department-old"],
+        favoriteDepartmentId: null,
+      },
+    ]);
+    expect(onboardingScopeNeedsSync({ ...metadata }, metadata)).toBe(false);
+    expect(
+      onboardingScopeNeedsSync(
+        {
+          ...metadata,
+          chatScopes: metadata.chatScopes.map((scope) => ({
+            ...scope,
+            favoriteDepartmentId: "department-old",
+          })),
+        },
+        metadata,
+      ),
+    ).toBe(true);
+  });
+
   it("shows Etiquetas before Mensagens Rápidas", () => {
     expect(STEPS.map((step) => step.label).slice(5, 7)).toEqual(["Etiquetas", "Mensagens Rápidas"]);
+  });
+
+  it("shows the trimmed tag description and no color fallback when it is absent", () => {
+    expect(onboardingTagDescription("  Assuntos financeiros  ")).toBe("Assuntos financeiros");
+    expect(onboardingTagDescription("   ")).toBeUndefined();
+    expect(onboardingTagDescription(null)).toBeUndefined();
   });
 
   it("keeps the visible step during catalog refreshes", () => {
@@ -170,6 +243,23 @@ describe("onboarding step requirements", () => {
     expect(shouldPollOnboardingConnection({ ...connection, ownerPhone: "+556281147652" })).toBe(
       false,
     );
+  });
+
+  it("recognizes the connected QR status independent of capitalization", () => {
+    expect(isOnboardingConnectionConnected("connected")).toBe(true);
+    expect(isOnboardingConnectionConnected("CONNECTED")).toBe(true);
+    expect(isOnboardingConnectionConnected(" connecting ")).toBe(false);
+  });
+
+  it("shows the complete formatted WhatsApp number before the masked fallback", () => {
+    const source = readFileSync(
+      new URL("./tenant-onboarding-boundary.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain(
+      "selected.ownerPhone\n                        ? formatPhoneForDisplay",
+    );
+    expect(source).toContain(': selected.ownerPhoneMasked || "Aguardando identificação"');
   });
 
   it("formats the connection date without a comma after the year", () => {

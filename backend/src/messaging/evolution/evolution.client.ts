@@ -231,17 +231,27 @@ export class EvolutionClient {
     );
   }
 
-  deleteMessage(input: { instanceName: string; remoteJid: string; messageId: string }) {
+  async deleteMessage(input: { instanceName: string; remoteJid: string; messageId: string }) {
     const key = { remoteJid: input.remoteJid, fromMe: true, id: input.messageId };
-    return this.request<unknown>(`/chat/deleteMessageForEveryone/${input.instanceName}`, {
-      method: "DELETE",
-      body: key,
-    }).catch(() =>
-      this.request<unknown>(`/message/delete/${input.instanceName}`, {
-        method: "POST",
-        body: { key },
-      }),
+    const response = await this.request<unknown>(
+      `/chat/deleteMessageForEveryone/${input.instanceName}`,
+      {
+        method: "DELETE",
+        body: key,
+      },
     );
+    if (!isConfirmedMessageDeletion(response, key)) {
+      throw new MessagingProviderError(
+        MessagingErrorCode.INVALID_PROVIDER_PAYLOAD,
+        "Evolution did not confirm deletion for the requested message.",
+        false,
+        undefined,
+        undefined,
+        `/chat/deleteMessageForEveryone/${input.instanceName}`,
+        "DELETE",
+      );
+    }
+    return response;
   }
 
   async createGroup(input: { instanceName: string; subject: string; participants: string[] }) {
@@ -527,6 +537,29 @@ function evolutionSemanticError(data: unknown) {
     payload.error === true ||
     payload.success === false ||
     (typeof payload.status === "string" && payload.status.toLowerCase() === "error")
+  );
+}
+
+function isConfirmedMessageDeletion(
+  value: unknown,
+  expected: { id: string; remoteJid: string; fromMe: boolean },
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const response = value as Record<string, unknown>;
+  const candidate =
+    response.key && typeof response.key === "object" && !Array.isArray(response.key)
+      ? (response.key as Record<string, unknown>)
+      : response.response &&
+          typeof response.response === "object" &&
+          !Array.isArray(response.response) &&
+          (response.response as Record<string, unknown>).key &&
+          typeof (response.response as Record<string, unknown>).key === "object"
+        ? ((response.response as Record<string, unknown>).key as Record<string, unknown>)
+        : null;
+  return (
+    candidate?.id === expected.id &&
+    candidate.remoteJid === expected.remoteJid &&
+    candidate.fromMe === expected.fromMe
   );
 }
 

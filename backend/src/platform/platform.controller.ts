@@ -22,6 +22,7 @@ import { PlanEntitlementService } from "./plan-entitlement.service";
 import { PlatformExceptionFilter } from "./platform-exception.filter";
 import {
   CancelSubscriptionDto,
+  ChangePlatformPasswordDto,
   CreatePlatformClientDto,
   CreateInvoiceDto,
   CreatePlanDto,
@@ -47,6 +48,14 @@ import {
 @UseFilters(PlatformExceptionFilter)
 export class PlatformController {
   constructor(@Inject(PlatformService) private readonly platform: PlatformService) {}
+
+  @Patch("me/password")
+  changeOwnPassword(
+    @Body() dto: ChangePlatformPasswordDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.changeOwnPassword(dto, current);
+  }
 
   @Get("dashboard")
   @RequirePlatformPermissions("platform.tenants.read")

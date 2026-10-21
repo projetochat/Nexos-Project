@@ -7,9 +7,11 @@ import {
 } from "@nestjs/common";
 import {
   ConversationStatus,
+  ConversationType,
   LeadStatus,
   MessagingConnectionStatus,
   MessageDirection,
+  MessageType,
   Prisma,
   TicketStatus,
 } from "../generated/prisma";
@@ -38,6 +40,7 @@ type OperationalQuery = {
   start?: string;
   end?: string;
   q?: string;
+  conversationType?: "all" | "contacts" | "groups";
   departmentId?: string;
   assignedMembershipId?: string;
   status?: string;
@@ -63,6 +66,27 @@ const conversationInclude = {
   department: true,
   assignedMembership: { include: { user: { select: { id: true, name: true, email: true } } } },
   connection: true,
+} satisfies Prisma.ConversationInclude;
+
+const historyConversationInclude = {
+  ...conversationInclude,
+  messages: {
+    where: {
+      direction: MessageDirection.SYSTEM,
+      type: MessageType.SYSTEM,
+      OR: [
+        { content: { startsWith: "Conversa encerrada" } },
+        { content: { startsWith: "Atendimento encerrado" } },
+      ],
+    },
+    include: {
+      authorMembership: {
+        include: { user: { select: { id: true, name: true, email: true } } },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 1,
+  },
 } satisfies Prisma.ConversationInclude;
 
 @Injectable()
@@ -155,6 +179,70 @@ export class OperationsService {
       current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []);
     const allowedDepartmentIds =
       current.roleKey === "tenant_admin" ? undefined : (current.chatDepartmentIds ?? []);
+    const groupBy = query.groupBy;
+
+    if (groupBy === "ticketRequesterContact") {
+      const conversationFilter: Prisma.ConversationWhereInput = {};
+      if (query.connectionId) conversationFilter.connectionId = query.connectionId;
+      if (query.conversationId) conversationFilter.id = query.conversationId;
+      if (query.conversationType === "contacts") {
+        conversationFilter.conversationType = ConversationType.DIRECT;
+      }
+      if (query.conversationType === "groups") {
+        conversationFilter.conversationType = ConversationType.GROUP;
+      }
+      const status = parseConversationStatus(query.status);
+      if (status) conversationFilter.status = status;
+
+      const ticketWhere: Prisma.TicketWhereInput = {
+        tenantId: current.tenantId,
+        archivedAt: null,
+        createdAt: { gte: range.start, lt: range.end },
+        requesterContactId: { not: null },
+        requesterContact: { is: { archivedAt: null } },
+        ...(query.customerId ? { customerId: query.customerId } : {}),
+        ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+        ...(query.assignedMembershipId ? { assignedMembershipId: query.assignedMembershipId } : {}),
+        ...(query.contactId ? { requesterContactId: query.contactId } : {}),
+        ...(Object.keys(conversationFilter).length > 0
+          ? { conversation: { is: conversationFilter } }
+          : {}),
+      };
+      const q = query.q?.trim();
+      if (q) {
+        ticketWhere.OR = [
+          { protocol: { contains: q, mode: "insensitive" } },
+          { title: { contains: q, mode: "insensitive" } },
+          { requesterContact: { name: { contains: q, mode: "insensitive" } } },
+          { requesterContact: { email: { contains: q, mode: "insensitive" } } },
+          { requesterContact: { phone: { contains: q, mode: "insensitive" } } },
+        ];
+      }
+
+      const rows = await this.prisma.ticket.groupBy({
+        by: ["requesterContactId"],
+        where: ticketWhere,
+        _count: { _all: true },
+        orderBy: [{ _count: { requesterContactId: "desc" } }, { requesterContactId: "asc" }],
+        take: 10,
+      });
+      const contactIds = rows.flatMap((row) =>
+        row.requesterContactId ? [row.requesterContactId] : [],
+      );
+      const contacts = await this.prisma.contact.findMany({
+        where: { tenantId: current.tenantId, archivedAt: null, id: { in: contactIds } },
+        select: { id: true, name: true },
+      });
+      const contactsById = new Map(contacts.map((contact) => [contact.id, contact.name]));
+      return {
+        items: rows.flatMap((row) => {
+          if (!row.requesterContactId) return [];
+          const name = contactsById.get(row.requesterContactId);
+          return name ? [{ nome: name, total: row._count._all }] : [];
+        }),
+      };
+    }
+
     const contactWhere: Prisma.ContactWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
@@ -165,8 +253,6 @@ export class OperationsService {
       ...(allowedConnectionIds ? { instanceIds: { hasSome: allowedConnectionIds } } : {}),
       ...(allowedDepartmentIds ? { departmentId: { in: allowedDepartmentIds } } : {}),
     };
-    const groupBy = query.groupBy;
-
     if (groupBy.startsWith("custom:")) {
       if (!canReadContactAdditionalFields(current)) {
         throw new ForbiddenException("Sem permissão para consultar campos adicionais.");
@@ -316,7 +402,7 @@ export class OperationsService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
         where,
-        include: conversationInclude,
+        include: historyConversationInclude,
         orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
         skip: Number((page - 1) * pageSize),
         take: Number(pageSize),
@@ -331,7 +417,7 @@ export class OperationsService {
       pageSize,
     });
     return {
-      items: items.map((conversation) => serializeConversation(conversation, current)),
+      items: items.map((conversation) => serializeHistoryConversation(conversation, current)),
       total,
       page,
       pageSize,
@@ -402,7 +488,7 @@ export class OperationsService {
         at: ticket.createdAt,
         event: "ticket.created",
         origin: "ticket",
-        user: ticket.createdByMembership.user.name,
+        user: ticket.createdByMembership?.user.name ?? ticket.createdByNameSnapshot ?? null,
         description: `Chamado ${ticket.protocol} criado`,
       })),
       ...(conversation.closedAt
@@ -879,6 +965,8 @@ function conversationWhere(
   if (query.contactId) where.contactId = query.contactId;
   if (query.customerId) where.contact = { customerId: query.customerId };
   if (query.connectionId) where.connectionId = query.connectionId;
+  if (query.conversationType === "contacts") where.conversationType = ConversationType.DIRECT;
+  if (query.conversationType === "groups") where.conversationType = ConversationType.GROUP;
   const q = query.q?.trim();
   if (q) {
     where.AND = [
@@ -888,6 +976,7 @@ function conversationWhere(
           { lastMessagePreview: { contains: q, mode: "insensitive" } },
           { contact: { name: { contains: q, mode: "insensitive" } } },
           { contact: { phone: { contains: q, mode: "insensitive" } } },
+          { groupName: { contains: q, mode: "insensitive" } },
           { assignedMembership: { user: { name: { contains: q, mode: "insensitive" } } } },
           { department: { name: { contains: q, mode: "insensitive" } } },
         ],
@@ -935,6 +1024,8 @@ function serializeConversation(
     last_message_at: (conversation.lastMessageAt ?? conversation.updatedAt).toISOString(),
     lastMessagePreview: conversation.lastMessagePreview,
     unreadCount: conversation.unreadCount,
+    is_group: conversation.conversationType === ConversationType.GROUP,
+    group_name: conversation.groupName,
     contact: {
       id: conversation.contact.id,
       nome: conversation.contact.name,
@@ -968,6 +1059,26 @@ function serializeConversation(
           id: conversation.connection.id,
           name: conversation.connection.name,
           status: conversation.connection.status.toLowerCase(),
+        }
+      : null,
+  };
+}
+
+function serializeHistoryConversation(
+  conversation: Prisma.ConversationGetPayload<{ include: typeof historyConversationInclude }>,
+  current: Pick<AuthenticatedUser, "roleKey" | "permissions">,
+) {
+  const serialized = serializeConversation(conversation, current);
+  const closureMembership =
+    conversation.messages?.[0]?.authorMembership ?? conversation.assignedMembership;
+  return {
+    ...serialized,
+    closed_by: closureMembership
+      ? {
+          id: closureMembership.user.id,
+          membershipId: closureMembership.id,
+          nome: closureMembership.presentationName?.trim() || closureMembership.user.name,
+          email: closureMembership.user.email,
         }
       : null,
   };

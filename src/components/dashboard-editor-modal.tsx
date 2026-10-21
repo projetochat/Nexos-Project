@@ -120,8 +120,10 @@ export function DashboardEditorModal({
   const [configuring, setConfiguring] = React.useState<DashboardComponentConfig | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [deleting, setDeleting] = React.useState<DashboardComponentConfig | null>(null);
+  const [restoring, setRestoring] = React.useState(false);
   const [draggingId, setDraggingId] = React.useState<string | null>(null);
   const touchDraggingId = React.useRef<string | null>(null);
+  const dragBlockedByControl = React.useRef(false);
   const protectedComponentIds = nativeComponentIds ?? DEFAULT_DASHBOARD_COMPONENT_IDS;
 
   React.useEffect(() => {
@@ -130,15 +132,10 @@ export function DashboardEditorModal({
     setConfiguring(null);
     setCreating(false);
     setDeleting(null);
+    setRestoring(false);
   }, [components, open]);
 
-  const apply = React.useCallback(
-    (next: DashboardComponentConfig[]) => {
-      setDraft(next);
-      onChange(next);
-    },
-    [onChange],
-  );
+  const apply = React.useCallback((next: DashboardComponentConfig[]) => setDraft(next), []);
 
   const openConfiguration = (component: DashboardComponentConfig, isNew = false) => {
     setConfiguring({ ...component });
@@ -163,7 +160,9 @@ export function DashboardEditorModal({
   };
 
   const restoreDefaults = () => {
-    apply(restoreComponents(draft));
+    const restored = restoreComponents(draft);
+    setDraft(restored);
+    onChange(restored);
     onClose();
   };
 
@@ -178,22 +177,34 @@ export function DashboardEditorModal({
       <Modal
         open={open && !configuring}
         onClose={onClose}
-        title="Editar Dashboard"
+        title="Editar Dashboards"
+        description="Arraste e solte para definir a posição dos componentes."
         size="xl"
-        className="sm:max-w-2xl"
+        className="sm:max-w-5xl"
         footer={
           <div className="flex w-full flex-wrap items-center justify-between gap-3">
             {canUpdate ? (
-              <Button variant="ghost" onClick={restoreDefaults}>
+              <Button variant="ghost" onClick={() => setRestoring(true)}>
                 <RotateCcw className="h-4 w-4" />
                 Restaurar padrão
               </Button>
             ) : (
               <span />
             )}
-            <Button variant="secondary" onClick={onClose}>
-              Cancelar
-            </Button>
+            <div className="ml-auto flex gap-2">
+              <Button variant="ghost" size="sm" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button
+                className="save-action-button"
+                onClick={() => {
+                  onChange(draft);
+                  onClose();
+                }}
+              >
+                Salvar
+              </Button>
+            </div>
           </div>
         }
       >
@@ -206,13 +217,34 @@ export function DashboardEditorModal({
           </div>
         )}
 
-        <div className="space-y-2" aria-label="Componentes do dashboard">
+        <div
+          className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+          aria-label="Componentes do dashboard"
+        >
           {draft.map((component, index) => {
             const Icon = VISUALIZATION_ICONS[component.visualization];
             return (
               <div
                 key={component.id}
                 data-dashboard-component-id={component.id}
+                role={canUpdate ? "group" : undefined}
+                tabIndex={canUpdate ? 0 : undefined}
+                draggable={canUpdate}
+                aria-label={canUpdate ? `Reordenar ${component.title}` : undefined}
+                onPointerDownCapture={(event) => {
+                  dragBlockedByControl.current = Boolean(
+                    (event.target as HTMLElement).closest("[data-dashboard-interactive]"),
+                  );
+                }}
+                onDragStart={(event) => {
+                  if (!canUpdate || dragBlockedByControl.current) {
+                    event.preventDefault();
+                    return;
+                  }
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", component.id);
+                  setDraggingId(component.id);
+                }}
                 onDragOver={(event) => {
                   if (canUpdate) event.preventDefault();
                 }}
@@ -223,68 +255,57 @@ export function DashboardEditorModal({
                   reorder(sourceId, component.id);
                   setDraggingId(null);
                 }}
-                onDragEnd={() => setDraggingId(null)}
-                className={`flex min-h-14 flex-nowrap items-center gap-1.5 rounded-xl border border-border bg-surface-1 px-2 py-2 transition hover:border-primary/30 hover:bg-surface-2 sm:gap-2 sm:px-3 ${
-                  draggingId === component.id ? "opacity-50" : ""
-                }`}
+                onDragEnd={() => {
+                  dragBlockedByControl.current = false;
+                  setDraggingId(null);
+                }}
+                onPointerDown={(event) => {
+                  if (
+                    !canUpdate ||
+                    event.pointerType === "mouse" ||
+                    (event.target as HTMLElement).closest("[data-dashboard-interactive]")
+                  )
+                    return;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  touchDraggingId.current = component.id;
+                  setDraggingId(component.id);
+                }}
+                onPointerMove={(event) => {
+                  if (event.pointerType === "mouse" || touchDraggingId.current !== component.id)
+                    return;
+                  const target = document
+                    .elementFromPoint(event.clientX, event.clientY)
+                    ?.closest<HTMLElement>("[data-dashboard-component-id]")
+                    ?.dataset.dashboardComponentId;
+                  if (target) reorder(component.id, target);
+                }}
+                onPointerUp={(event) => {
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                  dragBlockedByControl.current = false;
+                  touchDraggingId.current = null;
+                  setDraggingId(null);
+                }}
+                onPointerCancel={(event) => {
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                  dragBlockedByControl.current = false;
+                  touchDraggingId.current = null;
+                  setDraggingId(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === "ArrowUp") moveComponent(component.id, -1);
+                  if (event.key === "ArrowDown") moveComponent(component.id, 1);
+                }}
+                className={`grid min-h-32 grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[1fr_auto] gap-x-3 gap-y-3 rounded-xl border border-border bg-surface-1 p-3 transition hover:border-primary/30 hover:bg-surface-2 ${
+                  canUpdate
+                    ? "touch-none cursor-grab outline-none focus-visible:ring-2 focus-visible:ring-primary active:cursor-grabbing"
+                    : ""
+                } ${draggingId === component.id ? "opacity-50" : ""}`}
               >
-                {canUpdate ? (
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    draggable
-                    aria-label={`Reordenar ${component.title}`}
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("text/plain", component.id);
-                      setDraggingId(component.id);
-                    }}
-                    onDragEnd={() => setDraggingId(null)}
-                    onPointerDown={(event) => {
-                      if (event.pointerType === "mouse") return;
-                      event.currentTarget.setPointerCapture(event.pointerId);
-                      touchDraggingId.current = component.id;
-                      setDraggingId(component.id);
-                    }}
-                    onPointerMove={(event) => {
-                      if (event.pointerType === "mouse" || touchDraggingId.current !== component.id)
-                        return;
-                      const target = document
-                        .elementFromPoint(event.clientX, event.clientY)
-                        ?.closest<HTMLElement>("[data-dashboard-component-id]")
-                        ?.dataset.dashboardComponentId;
-                      if (target) reorder(component.id, target);
-                    }}
-                    onPointerUp={(event) => {
-                      if (event.pointerType !== "mouse") {
-                        touchDraggingId.current = null;
-                        setDraggingId(null);
-                      }
-                    }}
-                    onPointerCancel={() => {
-                      touchDraggingId.current = null;
-                      setDraggingId(null);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "ArrowUp") {
-                        event.preventDefault();
-                        moveComponent(component.id, -1);
-                      }
-                      if (event.key === "ArrowDown") {
-                        event.preventDefault();
-                        moveComponent(component.id, 1);
-                      }
-                    }}
-                    className="flex shrink-0 touch-none cursor-grab items-center gap-1 rounded text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary active:cursor-grabbing sm:gap-2"
-                  >
-                    <GripVertical className="h-4 w-4" />
-                    <span className="w-5 text-center font-mono text-xs">{index + 1}</span>
-                  </div>
-                ) : (
-                  <span className="w-5 shrink-0 text-center font-mono text-xs text-muted-foreground">
-                    {index + 1}
-                  </span>
-                )}
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary sm:h-9 sm:w-9">
                   <Icon className="h-4 w-4" />
                 </div>
@@ -297,53 +318,68 @@ export function DashboardEditorModal({
                   </p>
                 </div>
 
-                <div className="flex shrink-0 items-center">
-                  <Switch
-                    aria-label={`Exibir ${component.title}`}
-                    checked={component.visible}
-                    disabled={!canUpdate}
-                    onCheckedChange={(visible) =>
-                      apply(
-                        draft.map((item) =>
-                          item.id === component.id ? { ...item, visible } : item,
-                        ),
-                      )
-                    }
-                  />
-                </div>
+                {canUpdate ? (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none self-start text-muted-foreground"
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </div>
+                ) : (
+                  <span />
+                )}
 
-                <div className="ml-auto flex shrink-0 gap-1 max-sm:[&_button]:h-8 max-sm:[&_button]:w-8 sm:gap-1.5">
-                  {canCreate && (
-                    <IconButton
-                      label="Duplicar"
-                      ariaLabel={`Duplicar ${component.title}`}
-                      primary
-                      onClick={() =>
-                        openConfiguration(duplicateDashboardComponent(component), true)
+                <div className="col-span-3 flex items-center border-t border-border pt-3">
+                  <span className="mr-auto font-mono text-xs text-muted-foreground">
+                    {index + 1}
+                  </span>
+                  <span data-dashboard-interactive>
+                    <Switch
+                      aria-label={`Exibir ${component.title}`}
+                      checked={component.visible}
+                      disabled={!canUpdate}
+                      onCheckedChange={(visible) =>
+                        apply(
+                          draft.map((item) =>
+                            item.id === component.id ? { ...item, visible } : item,
+                          ),
+                        )
                       }
-                    >
-                      <Copy className="h-4 w-4" />
-                    </IconButton>
-                  )}
-                  {canDelete && !protectedComponentIds.has(component.id) && (
-                    <IconButton
-                      label="Excluir"
-                      ariaLabel={`Excluir ${component.title}`}
-                      destructive
-                      onClick={() => setDeleting(component)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </IconButton>
-                  )}
-                  {canUpdate && (
-                    <IconButton
-                      label="Editar"
-                      ariaLabel={`Editar ${component.title}`}
-                      onClick={() => openConfiguration(component)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </IconButton>
-                  )}
+                    />
+                  </span>
+                  <div data-dashboard-interactive className="ml-2 flex shrink-0 gap-1.5">
+                    {canCreate && (
+                      <IconButton
+                        label="Duplicar"
+                        ariaLabel={`Duplicar ${component.title}`}
+                        primary
+                        onClick={() =>
+                          openConfiguration(duplicateDashboardComponent(component), true)
+                        }
+                      >
+                        <Copy className="h-4 w-4" />
+                      </IconButton>
+                    )}
+                    {canDelete && !protectedComponentIds.has(component.id) && (
+                      <IconButton
+                        label="Excluir"
+                        ariaLabel={`Excluir ${component.title}`}
+                        destructive
+                        onClick={() => setDeleting(component)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </IconButton>
+                    )}
+                    {canUpdate && (
+                      <IconButton
+                        label="Editar"
+                        ariaLabel={`Editar ${component.title}`}
+                        onClick={() => openConfiguration(component)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </IconButton>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -372,6 +408,28 @@ export function DashboardEditorModal({
           setCreating(false);
         }}
         onSave={saveConfiguration}
+      />
+
+      <ConfirmDialog
+        open={restoring}
+        title="Restaurar padrão?"
+        description={
+          <div className="space-y-2">
+            <p>Tem certeza de que deseja restaurar o dashboard?</p>
+            <div>
+              <p>Esta ação irá restaurar:</p>
+              <ul className="list-disc pl-5">
+                <li>A ordem dos componentes.</li>
+                <li>Os tipos de visualização dos BIs nativos.</li>
+                <li>As configurações padrão dos componentes.</li>
+              </ul>
+            </div>
+          </div>
+        }
+        confirmLabel="Restaurar padrão"
+        destructive
+        onConfirm={restoreDefaults}
+        onClose={() => setRestoring(false)}
       />
 
       <ConfirmDialog
@@ -458,12 +516,14 @@ function DashboardComponentConfigModal({
       onClose={onClose}
       title="Configurar Componente"
       size="xl"
+      className="md:max-w-[57.6rem]"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
           <Button
+            className={!creating ? "save-action-button" : undefined}
             disabled={!groupAvailable}
             onClick={() => {
               const title = draft.title.trim();
@@ -484,25 +544,31 @@ function DashboardComponentConfigModal({
         <span>Todos os componentes criados respeitam o painel de filtro do dashboard.</span>
       </div>
 
-      <div className="mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-        <Field label="Título do componente *" error={error}>
-          <Input
-            required
-            aria-invalid={!!error}
-            value={draft.title}
-            onChange={(event) => {
-              patch({ title: event.target.value });
-              if (error) setError("");
-            }}
-          />
-        </Field>
-        <label className="flex min-h-10 items-center gap-2 pb-0.5 text-sm font-medium text-foreground">
+      <div className="mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 sm:gap-3">
+        <div className="min-w-0" data-dashboard-component-title-field>
+          <Field label="Título do componente *" error={error}>
+            <Input
+              required
+              aria-invalid={!!error}
+              value={draft.title}
+              onChange={(event) => {
+                patch({ title: event.target.value });
+                if (error) setError("");
+              }}
+            />
+          </Field>
+        </div>
+        <label
+          className="flex min-h-10 flex-col items-start justify-end gap-1 pb-0.5 text-sm font-medium text-foreground sm:flex-row sm:items-center sm:gap-2"
+          data-dashboard-mobile-visibility-control
+        >
+          <span className="sm:order-2">Visível</span>
           <Switch
+            className="sm:order-1"
             aria-label={`Alterar visibilidade de ${draft.title}`}
             checked={draft.visible}
             onCheckedChange={(visible) => patch({ visible })}
           />
-          Visível
         </label>
       </div>
 
@@ -535,89 +601,105 @@ function DashboardComponentConfigModal({
       </fieldset>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="space-y-3">
-          <Field label="Quantidade de colunas">
-            <Select
-              value={draft.columns}
-              onChange={(event) => patch({ columns: Number(event.target.value) as 1 | 2 | 3 | 4 })}
-            >
-              <option value={1}>1 coluna (25%)</option>
-              <option value={2}>2 colunas (50%)</option>
-              <option value={3}>3 colunas (75%)</option>
-              <option value={4}>4 colunas (100%)</option>
-            </Select>
-          </Field>
+        <div
+          className="grid min-w-0 grid-cols-2 gap-3 lg:block lg:space-y-3"
+          data-dashboard-mobile-config-grid
+        >
+          <div className="min-w-0">
+            <Field label="Quantidade de colunas">
+              <Select
+                value={draft.columns}
+                onChange={(event) =>
+                  patch({ columns: Number(event.target.value) as 1 | 2 | 3 | 4 })
+                }
+              >
+                <option value={1}>1 coluna (25%)</option>
+                <option value={2}>2 colunas (50%)</option>
+                <option value={3}>3 colunas (75%)</option>
+                <option value={4}>4 colunas (100%)</option>
+              </Select>
+            </Field>
+          </div>
 
-          <Field label="Fonte de dados">
-            <Select
-              value={draft.dataSource}
-              onChange={(event) => chooseSource(event.target.value as DashboardDataSource)}
-            >
-              {sourceOptions.map((source) => (
-                <option key={source.value} value={source.value}>
-                  {source.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-
-          <Field
-            label="Campo agrupador"
-            error={groupAvailable ? undefined : "Este campo não está mais disponível."}
-          >
-            <Select
-              value={draft.groupBy}
-              onChange={(event) => patch({ groupBy: event.target.value })}
-            >
-              {!groupAvailable && (
-                <option value={draft.groupBy} disabled>
-                  Campo indisponível
-                </option>
-              )}
-              <optgroup label="Campos nativos">
-                {nativeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+          <div className="min-w-0">
+            <Field label="Fonte de dados">
+              <Select
+                value={draft.dataSource}
+                onChange={(event) => chooseSource(event.target.value as DashboardDataSource)}
+              >
+                {sourceOptions.map((source) => (
+                  <option key={source.value} value={source.value}>
+                    {source.label}
                   </option>
                 ))}
-              </optgroup>
-              {customOptions.length > 0 && (
-                <optgroup label="Campos personalizados">
-                  {customOptions.map((option) => (
+              </Select>
+            </Field>
+          </div>
+
+          <div className="min-w-0">
+            <Field
+              label="Campo agrupador"
+              error={groupAvailable ? undefined : "Este campo não está mais disponível."}
+            >
+              <Select
+                value={draft.groupBy}
+                onChange={(event) => patch({ groupBy: event.target.value })}
+              >
+                {!groupAvailable && (
+                  <option value={draft.groupBy} disabled>
+                    Campo indisponível
+                  </option>
+                )}
+                <optgroup label="Campos nativos">
+                  {nativeOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
                   ))}
                 </optgroup>
-              )}
-            </Select>
-          </Field>
+                {customOptions.length > 0 && (
+                  <optgroup label="Campos personalizados">
+                    {customOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </Select>
+            </Field>
+          </div>
 
-          <Field label="Campo p/ valor">
-            <Select
-              value={draft.valueMode}
-              onChange={(event) => patch({ valueMode: event.target.value as DashboardValueMode })}
-            >
-              <option value="count">Quantidade (∑)</option>
-              <option value="percentage">Percentual (%)</option>
-            </Select>
-          </Field>
+          <div className="min-w-0">
+            <Field label="Campo p/ valor">
+              <Select
+                value={draft.valueMode}
+                onChange={(event) => patch({ valueMode: event.target.value as DashboardValueMode })}
+              >
+                <option value="count">Quantidade (∑)</option>
+                <option value="percentage">Percentual (%)</option>
+              </Select>
+            </Field>
+          </div>
         </div>
 
         <section
-          className="min-w-0 overflow-hidden rounded-xl border border-border bg-surface-1 p-3"
+          className="grid h-80 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-surface-1 p-3 lg:h-auto"
           aria-label="Preview"
+          data-dashboard-mobile-preview
         >
           <h3 className="mb-2 text-sm font-semibold text-foreground">Preview</h3>
-          {renderPreview?.(draft) ?? (
-            <DashboardComponentRenderer
-              visualization={draft.visualization}
-              columns={draft.columns}
-              valueMode={draft.valueMode}
-              data={previewData}
-              compact
-            />
-          )}
+          <div className="min-h-0 min-w-0 overflow-auto">
+            {renderPreview?.(draft) ?? (
+              <DashboardComponentRenderer
+                visualization={draft.visualization}
+                columns={draft.columns}
+                valueMode={draft.valueMode}
+                data={previewData}
+                compact
+              />
+            )}
+          </div>
         </section>
       </div>
     </Modal>

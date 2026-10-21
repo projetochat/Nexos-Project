@@ -17,8 +17,10 @@ import {
   deletionSnapshot,
   type DeletionImpactPreview,
 } from "../common/deletion-impact";
+import { normalizeRegistrationText } from "../common/registration-case";
 import {
   Prisma,
+  ProtocolModule,
   TicketAttachmentStatus,
   TicketApprovalKind,
   TicketApprovalStatus,
@@ -27,6 +29,7 @@ import {
   TicketPriority,
   TicketStatus,
 } from "../generated/prisma";
+import { nextProtocol } from "../common/protocol-numbering";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
@@ -128,6 +131,7 @@ export class TicketsService {
         id: contactId,
         tenantId: current.tenantId,
         archivedAt: null,
+        active: true,
         customerId: { not: null },
         email: { not: null },
         customerAccessProfile: { not: null },
@@ -135,9 +139,15 @@ export class TicketsService {
       include: { customer: { select: { id: true, name: true } }, portalMembership: true },
     });
     if (!contact?.email || !contact.customer) {
-      throw new BadRequestException("Contato elegível com cliente, perfil e e-mail é obrigatório.");
+      throw new BadRequestException(
+        "Contato ativo com cliente, perfil e e-mail é obrigatório para liberar o acesso.",
+      );
     }
     if (contact.portalMembership?.status === "ACTIVE") {
+      await this.prisma.contact.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: contact.id } },
+        data: { portalAccessActive: true },
+      });
       return { status: "active" as const, contactId: contact.id };
     }
     const email = contact.email.toLowerCase().trim();
@@ -266,6 +276,12 @@ export class TicketsService {
       relations.customerDepartmentId ?? null,
       current,
     );
+    const title = await normalizeRegistrationText(
+      this.prisma,
+      current.tenantId,
+      "ticketTitles",
+      sanitizePlainText(input.title, 180),
+    );
     const html = sanitizeTicketHtml(input.descriptionHtml);
     const descriptionText = htmlToText(html);
     if (!descriptionText) throw new BadRequestException("Descrição do chamado obrigatoria.");
@@ -275,13 +291,21 @@ export class TicketsService {
         create: { tenantId: current.tenantId, lastNumber: 1 },
         update: { lastNumber: { increment: 1 } },
       });
-      const protocol = `TKT-${String(counter.lastNumber).padStart(6, "0")}`;
+      const protocol = (
+        await nextProtocol(
+          tx,
+          current.tenantId,
+          ProtocolModule.TICKET,
+          new Date(),
+          counter.lastNumber,
+        )
+      ).protocol;
       const created = await tx.ticket.create({
         data: {
           tenantId: current.tenantId,
           number: counter.lastNumber,
           protocol,
-          title: sanitizePlainText(input.title, 180),
+          title,
           descriptionHtmlSanitized: html,
           descriptionText,
           status: approvalPlan ? TicketStatus.AGUARDANDO_APROVACAO : TicketStatus.NOVO,
@@ -344,7 +368,14 @@ export class TicketsService {
       throw new BadRequestException("Selecione um departamento antes de editar este chamado.");
     }
     const data: Prisma.TicketUpdateInput = {};
-    if (dto.title !== undefined) data.title = sanitizePlainText(dto.title, 180);
+    if (dto.title !== undefined) {
+      data.title = await normalizeRegistrationText(
+        this.prisma,
+        current.tenantId,
+        "ticketTitles",
+        sanitizePlainText(dto.title, 180),
+      );
+    }
     if (dto.descriptionHtml !== undefined) {
       const html = sanitizeTicketHtml(dto.descriptionHtml);
       data.descriptionHtmlSanitized = html;
@@ -1297,7 +1328,7 @@ export class TicketsService {
     // The controller/guard remains responsible for requiring the appropriate ticket permission.
     if (current.roleKey !== "customer_portal") return where;
     const contact = await this.portalContact(current);
-    if (!contact?.portalAccessActive || !contact.customerId) {
+    if (!contact?.portalAccessActive || contact.active === false || !contact.customerId) {
       return { AND: [where, { id: "__customer_portal_without_active_contact__" }] };
     }
     const scope: Prisma.TicketWhereInput =
@@ -1318,6 +1349,7 @@ export class TicketsService {
     const contact = await this.portalContact(current);
     if (
       !contact?.portalAccessActive ||
+      contact.active === false ||
       !contact.customerId ||
       !contact.customerDepartmentId ||
       !contact.customerBranchId ||
@@ -1350,6 +1382,7 @@ export class TicketsService {
       where: {
         tenantId: current.tenantId,
         portalMembershipId: current.membershipId,
+        active: true,
         archivedAt: null,
       },
       include: {
@@ -1714,6 +1747,7 @@ export class TicketsService {
         tenantId: current.tenantId,
         portalMembershipId: current.membershipId,
         portalAccessActive: true,
+        active: true,
         archivedAt: null,
       },
       select: { id: true, customerId: true, customerAccessProfile: true },
@@ -1728,6 +1762,7 @@ export class TicketsService {
       where: {
         tenantId: current.tenantId,
         email: { equals: membership.user.email, mode: "insensitive" },
+        active: true,
         archivedAt: null,
       },
       select: { id: true, customerId: true, customerAccessProfile: true },
@@ -1825,7 +1860,10 @@ function serializeTicketList(ticket: TicketWithRelations) {
     assignedMembership: ticket.assignedMembership
       ? serializeMembership(ticket.assignedMembership)
       : null,
-    createdByMembership: serializeMembership(ticket.createdByMembership),
+    createdByMembership: serializeHistoricalMembership(
+      ticket.createdByMembership,
+      ticket.createdByNameSnapshot,
+    ),
     commentsCount: ticket._count.comments,
     attachmentsCount: ticket._count.attachments,
     createdAt: ticket.createdAt,
@@ -1854,6 +1892,21 @@ function serializeMembership(membership: {
   return { id: membership.id, user: membership.user };
 }
 
+function serializeHistoricalMembership(
+  membership: { id: string; user: { id: string; name: string; email: string } } | null,
+  nameSnapshot: string | null,
+) {
+  if (membership) return serializeMembership(membership);
+  return {
+    id: "deleted",
+    user: {
+      id: "deleted",
+      name: nameSnapshot?.trim() || "Atendente removido",
+      email: "",
+    },
+  };
+}
+
 function serializeComment(comment: {
   id: string;
   bodyText: string;
@@ -1863,7 +1916,8 @@ function serializeComment(comment: {
   editedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  authorMembership: { id: string; user: { id: string; name: string; email: string } };
+  authorMembership: { id: string; user: { id: string; name: string; email: string } } | null;
+  authorNameSnapshot: string | null;
 }) {
   return {
     id: comment.id,
@@ -1874,7 +1928,10 @@ function serializeComment(comment: {
     editedAt: comment.editedAt,
     createdAt: comment.createdAt,
     updatedAt: comment.updatedAt,
-    authorMembership: serializeMembership(comment.authorMembership),
+    authorMembership: serializeHistoricalMembership(
+      comment.authorMembership,
+      comment.authorNameSnapshot,
+    ),
   };
 }
 

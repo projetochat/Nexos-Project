@@ -10,7 +10,10 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
 }));
 vi.mock("../routes/contatos", () => ({ ContactFormModal: () => null, contactPayload: vi.fn() }));
-vi.mock("@/lib/session", () => ({ useSession: () => ({ id: "viewer" }) }));
+vi.mock("@/lib/session", () => ({
+  useSession: (selector: (state: unknown) => unknown) =>
+    selector({ user: { id: "viewer", chatBubbleColor: null, chatBubbleTextColor: null } }),
+}));
 vi.mock("@/lib/trixus-api", () => ({
   messageApi: { downloadMedia: vi.fn(async () => new Blob(["media"])) },
 }));
@@ -116,8 +119,9 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
       reactions: [],
     } as ApiMessage);
     const outboundBubble = host.querySelector('[data-message-id="outbound-text"] [tabindex="0"]')!;
-    expect(outboundBubble.className).toContain("bg-[#D0EBFE]");
-    expect(outboundBubble.className).toContain("text-slate-900");
+    expect(outboundBubble.getAttribute("data-outbound-message")).toBe("true");
+    expect((outboundBubble as HTMLElement).style.backgroundColor).toBe("rgb(208, 235, 254)");
+    expect((outboundBubble as HTMLElement).style.color).toBe("rgb(15, 23, 42)");
     expect(outboundBubble.className).not.toContain("bg-gradient-brand");
 
     await render({
@@ -322,6 +326,38 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
       type: "audio",
       content: "[áudio]",
       media_data: { file_name: "audio.ogg", state: "ready" },
+      author_id: "agent-real",
+      author_name: "Atendente real",
+      author_avatar_url: "https://example.test/agent.png",
+      outbound_origin: "trixus",
+    } as ApiMessage);
+    expect(host.querySelector('img[alt="Atendente real"]')?.getAttribute("src")).toBe(
+      "https://example.test/agent.png",
+    );
+
+    await render({
+      ...base,
+      sender: "agent",
+      direction: "outbound",
+      type: "image",
+      content: "[imagem]",
+      media_data: { file_name: "imagem.png", state: "failed" },
+      author_id: "agent-real",
+      author_name: "Atendente real",
+      author_avatar_url: "https://example.test/agent.png",
+      outbound_origin: "trixus",
+    } as ApiMessage);
+    expect(host.querySelector('img[alt="Atendente real"]')?.getAttribute("src")).toBe(
+      "https://example.test/agent.png",
+    );
+
+    await render({
+      ...base,
+      sender: "agent",
+      direction: "outbound",
+      type: "audio",
+      content: "[áudio]",
+      media_data: { file_name: "audio.ogg", state: "ready" },
       outbound_origin: "external",
     } as ApiMessage);
     expect(host.querySelector('img[alt="WhatsApp VOCICAL"]')?.getAttribute("src")).toBe(
@@ -404,11 +440,11 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
     expect(host.textContent).toContain("NOVA CONVERSA");
     expect(host.textContent).toContain("27.SET.2026 14:30");
     expect(host.textContent).toContain("— 27.SET.2026 14:30");
-    const lifecycleTimestamp = [...host.querySelectorAll("span")].find((item) =>
-      item.textContent?.startsWith("— 27.SET.2026 14:30"),
+    const lifecyclePill = [...host.querySelectorAll("span")].find(
+      (item) => item.textContent === "NOVA CONVERSA — 27.SET.2026 14:30",
     );
-    expect(lifecycleTimestamp?.className).toContain("ml-1");
-    expect(lifecycleTimestamp?.className).not.toContain("ml-2");
+    expect(lifecyclePill).not.toBeNull();
+    expect(lifecyclePill?.querySelector("span")).toBeNull();
     expect(host.textContent).not.toContain("PASSIVA");
 
     await renderSystemLog("Nova lead (passiva)");

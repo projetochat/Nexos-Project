@@ -54,7 +54,7 @@ export function useChatPerms(): ChatPerms {
     pode_editar_etiquetas: has("chat.tags.update"),
     pode_criar_respostas_rapidas: has("chat.quick_replies.create"),
     pode_gerenciar_respostas_rapidas: has("chat.quick_replies.update"),
-    visualiza_leads: has("conversations.read"),
+    visualiza_leads: has("leads.read"),
     visualiza_contatos: has("contacts.read"),
     visualiza_numero: has("chat.phone.read"),
     excluir_mensagem: has("chat.messages.delete"),

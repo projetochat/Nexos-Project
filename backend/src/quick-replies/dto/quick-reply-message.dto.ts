@@ -10,7 +10,6 @@ import {
   Matches,
   Max,
   Min,
-  ValidateIf,
   ValidateNested,
 } from "class-validator";
 
@@ -40,10 +39,4 @@ export class QuickReplySequenceDto {
   @ValidateNested({ each: true })
   @Type(() => QuickReplyMessageDto)
   messages?: QuickReplyMessageDto[];
-
-  @ValidateIf((_object, value) => value !== undefined)
-  @IsInt()
-  @Min(0)
-  @Max(60)
-  intervalSeconds?: number;
 }

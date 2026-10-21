@@ -35,7 +35,9 @@ import {
   MessageDirection,
   MessageType,
   Prisma,
+  ProtocolModule,
 } from "../generated/prisma";
+import { nextProtocol } from "../common/protocol-numbering";
 import { PrismaService } from "../prisma/prisma.service";
 import { lockActiveDepartmentForConversation } from "../departments/department-conversation-lock";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
@@ -49,8 +51,14 @@ import { MessagesService } from "./messages.service";
 import { conversationQueueScope } from "./conversation-queue-scope";
 import { conversationVisibilityWhere } from "./conversation-visibility";
 import { BulkCloseConversationsDto } from "./dto/bulk-close-conversations.dto";
+import {
+  BulkConversationSelectionDto,
+  BulkStartConversationsDto,
+  BulkTransferConversationsDto,
+} from "./dto/bulk-conversations.dto";
 import { ConfirmDeletionDto } from "../common/deletion-impact";
 import { ConversationPurgeService } from "./conversation-purge.service";
+import { pendingLeadVisibilityWhere } from "../leads/lead-visibility";
 
 const BULK_CLOSE_WRITE_BATCH_SIZE = 500;
 const ACTIVE_CONVERSATION_STATUSES: ConversationStatus[] = [
@@ -152,6 +160,24 @@ export class ConversationsController {
     };
   }
 
+  @Get("unread-total")
+  @RequirePermissions("conversations.read")
+  async unreadTotal(@CurrentUser() current: AuthenticatedUser) {
+    const visibility = await this.visibilityWhere(current);
+    const result = await this.prisma.conversation.aggregate({
+      where: {
+        AND: [
+          { tenantId: current.tenantId, archivedAt: null },
+          visibility,
+          pendingLeadVisibilityWhere(current),
+          { status: { not: ConversationStatus.FECHADA }, unreadCount: { gt: 0 } },
+        ],
+      },
+      _sum: { unreadCount: true },
+    });
+    return { unreadCount: result._sum.unreadCount ?? 0 };
+  }
+
   @Get(":id")
   @RequirePermissions("conversations.read")
   async detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
@@ -198,6 +224,13 @@ export class ConversationsController {
         where: { id: dto.contactId, tenantId: current.tenantId, archivedAt: null },
       });
       if (!contact) throw new BadRequestException("Contato inexistente para este tenant.");
+      if (contact.active === false) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: "CONTACT_INACTIVE",
+          message: "O contato está inativo. Reative-o para iniciar uma conversa.",
+        });
+      }
 
       const connection = await this.resolveConversationConnection(
         dto.connectionId,
@@ -360,9 +393,10 @@ export class ConversationsController {
     @Param("id") id: string,
     @Body() dto: AssignConversationDto,
     @CurrentUser() current: AuthenticatedUser,
+    authorization: "individual" | "bulk" = "individual",
   ) {
     const requiredPermission = dto.self ? "messages.send" : "conversations.assign";
-    if (!current.permissions?.includes(requiredPermission)) {
+    if (authorization === "individual" && !current.permissions?.includes(requiredPermission)) {
       throw new ForbiddenException("Permissão insuficiente.");
     }
     const conversation = await this.findVisibleConversation(id, current);
@@ -588,7 +622,7 @@ export class ConversationsController {
           status: { not: ConversationStatus.FECHADA },
         },
         conversationVisibilityWhere(current),
-        { OR: dto.queues.map((queue) => conversationQueueScope(queue)) },
+        { id: { in: dto.conversationIds } },
       ],
     };
     let closedIds: string[] = [];
@@ -605,29 +639,33 @@ export class ConversationsController {
 
             const now = new Date();
             const closedAt = new Date(now.getTime() + 1);
-            const missingProtocolCount = conversations.reduce(
-              (total, conversation) => total + (conversation.protocol ? 0 : 1),
-              0,
-            );
-            let nextReservedProtocol = 0;
-            if (missingProtocolCount > 0) {
+            const missingProtocolCount = conversations.filter((item) => !item.protocol).length;
+            let legacyNext = 0;
+            if (
+              !(tx as { protocolSequenceCounter?: unknown }).protocolSequenceCounter &&
+              missingProtocolCount
+            ) {
               const counter = await tx.conversationProtocolCounter.upsert({
                 where: { tenantId: current.tenantId },
                 update: { lastNumber: { increment: missingProtocolCount } },
                 create: { tenantId: current.tenantId, lastNumber: missingProtocolCount },
               });
-              nextReservedProtocol = counter.lastNumber - missingProtocolCount + 1;
+              legacyNext = counter.lastNumber - missingProtocolCount + 1;
             }
-            const rows = conversations.map((conversation) => {
+            const rows = [];
+            for (const conversation of conversations) {
               const protocol =
-                conversation.protocol ?? String(nextReservedProtocol++).padStart(6, "0");
-              return {
+                conversation.protocol ??
+                ((tx as { protocolSequenceCounter?: unknown }).protocolSequenceCounter
+                  ? (await nextProtocol(tx, current.tenantId, ProtocolModule.CHAT, now)).protocol
+                  : String(legacyNext++).padStart(6, "0"));
+              rows.push({
                 id: conversation.id,
                 protocol,
                 startNote: `Conversa iniciada - protocolo ${protocol}.`,
                 endNote: `Conversa encerrada - protocolo ${protocol}.`,
-              };
-            });
+              });
+            }
 
             for (const batch of chunk(rows, BULK_CLOSE_WRITE_BATCH_SIZE)) {
               const expectedStarts = new Map(batch.map((row) => [row.id, row.startNote]));
@@ -722,7 +760,137 @@ export class ConversationsController {
         reason: "status.updated",
       });
     }
-    return { closed: closedIds.length };
+    const closedSet = new Set(closedIds);
+    return {
+      closed: closedIds.length,
+      succeeded: closedIds,
+      failed: dto.conversationIds
+        .filter((conversationId) => !closedSet.has(conversationId))
+        .map((conversationId) => ({
+          conversationId,
+          message: "Conversa não encontrada, sem acesso ou não elegível para encerramento.",
+        })),
+    };
+  }
+
+  @Post("bulk-start")
+  @RequirePermissions("chat.bulk_actions.execute")
+  async bulkStart(
+    @Body() dto: BulkStartConversationsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.runBulkConversationAction(dto.conversationIds, async (conversationId) => {
+      await this.assign(
+        conversationId,
+        { self: true, departmentId: dto.departmentId },
+        current,
+        "bulk",
+      );
+    });
+  }
+
+  @Post("bulk-options")
+  @RequirePermissions("chat.bulk_actions.execute")
+  async bulkOptions(
+    @Body() dto: BulkConversationSelectionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const conversations = await this.prisma.conversation.findMany({
+      where: {
+        AND: [
+          { tenantId: current.tenantId, archivedAt: null, id: { in: dto.conversationIds } },
+          conversationVisibilityWhere(current),
+        ],
+      },
+      select: { connectionId: true },
+    });
+    const connectionIds = Array.from(
+      new Set(conversations.map((conversation) => conversation.connectionId).filter(Boolean)),
+    ) as string[];
+    if (connectionIds.length === 0) return { departments: [], agents: [] };
+
+    const [departments, memberships] = await Promise.all([
+      this.prisma.department.findMany({
+        where: {
+          tenantId: current.tenantId,
+          active: true,
+          AND: [departmentIdAccess(current)],
+          connections: { some: { connectionId: { in: connectionIds } } },
+        },
+        select: {
+          id: true,
+          name: true,
+          connections: { select: { connectionId: true } },
+        },
+        orderBy: { name: "asc" },
+      }),
+      this.prisma.tenantMembership.findMany({
+        where: {
+          tenantId: current.tenantId,
+          status: MembershipStatus.ACTIVE,
+          user: { status: "ACTIVE" },
+        },
+        select: {
+          id: true,
+          presentationName: true,
+          user: { select: { name: true } },
+          role: { select: { key: true, metadata: true } },
+        },
+      }),
+    ]);
+    return {
+      departments: departments
+        .filter((department) => {
+          const available = new Set(
+            department.connections.map((connection) => connection.connectionId),
+          );
+          return connectionIds.every((connectionId) => available.has(connectionId));
+        })
+        .map(({ id, name }) => ({ id, name })),
+      agents: memberships
+        .filter(
+          (membership) =>
+            membership.role.key === "tenant_admin" ||
+            connectionIds.every((connectionId) =>
+              (roleConnectionIds(membership.role) ?? []).includes(connectionId),
+            ),
+        )
+        .map((membership) => ({
+          id: membership.id,
+          name: membership.presentationName?.trim() || membership.user.name,
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
+    };
+  }
+
+  @Post("bulk-transfer")
+  @RequirePermissions("chat.bulk_actions.execute")
+  async bulkTransfer(
+    @Body() dto: BulkTransferConversationsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    if (dto.mode !== "status" && !dto.targetId) {
+      throw new BadRequestException("Selecione o destino da transferência.");
+    }
+    if (dto.mode === "status" && !dto.status) {
+      throw new BadRequestException("Selecione o status da transferência.");
+    }
+    return this.runBulkConversationAction(dto.conversationIds, async (conversationId) => {
+      if (dto.mode === "department") {
+        await this.transferDepartment(conversationId, { departmentId: dto.targetId! }, current);
+        return;
+      }
+      if (dto.mode === "agent") {
+        await this.assign(conversationId, { membershipId: dto.targetId! }, current, "bulk");
+        return;
+      }
+      await this.updateStatus(
+        conversationId,
+        { status: dto.status === "fila" ? "aberta" : "aguardando" },
+        current,
+        "bulk",
+      );
+    });
   }
 
   @Patch(":id/status")
@@ -731,13 +899,14 @@ export class ConversationsController {
     @Param("id") id: string,
     @Body() dto: UpdateConversationStatusDto,
     @CurrentUser() current: AuthenticatedUser,
+    authorization: "individual" | "bulk" = "individual",
   ) {
     const conversation = await this.findVisibleConversation(id, current);
     const target = parseStatus(dto.status);
 
     const requiredPermission =
       target === ConversationStatus.FECHADA ? "messages.send" : "conversations.assign";
-    if (!current.permissions?.includes(requiredPermission)) {
+    if (authorization === "individual" && !current.permissions?.includes(requiredPermission)) {
       throw new ForbiddenException("Permissão insuficiente.");
     }
 
@@ -815,6 +984,27 @@ export class ConversationsController {
     return this.serialize(updated, current);
   }
 
+  private async runBulkConversationAction(
+    conversationIds: string[],
+    action: (conversationId: string) => Promise<void>,
+  ) {
+    const succeeded: string[] = [];
+    const failed: Array<{ conversationId: string; message: string }> = [];
+    for (const conversationId of conversationIds) {
+      try {
+        await action(conversationId);
+        succeeded.push(conversationId);
+      } catch (error) {
+        failed.push({
+          conversationId,
+          message:
+            error instanceof Error ? error.message : "Não foi possível processar a conversa.",
+        });
+      }
+    }
+    return { succeeded, failed };
+  }
+
   private async buildWhere(
     current: AuthenticatedUser,
     query: ListConversationsQueryDto,
@@ -826,6 +1016,7 @@ export class ConversationsController {
         archivedAt: null,
       },
       await this.visibilityWhere(current),
+      pendingLeadVisibilityWhere(current),
       this.searchWhere(query),
     ];
 
@@ -924,9 +1115,11 @@ export class ConversationsController {
       await this.assertDepartmentForConnection(departmentId, connectionId, current, db);
       return departmentId;
     }
-    const favorite = current.chatScopes?.find(
-      (scope) => scope.connectionId === connectionId,
-    )?.favoriteDepartmentId;
+    const favorite =
+      current.roleKey === "tenant_admin"
+        ? null
+        : current.chatScopes?.find((scope) => scope.connectionId === connectionId)
+            ?.favoriteDepartmentId;
     if (favorite) {
       await this.assertDepartmentForConnection(favorite, connectionId, current, db);
       return favorite;
@@ -947,9 +1140,11 @@ export class ConversationsController {
       return requestedDepartmentId;
     }
     if (connectionId) {
-      const favorite = current.chatScopes?.find(
-        (scope) => scope.connectionId === connectionId,
-      )?.favoriteDepartmentId;
+      const favorite =
+        current.roleKey === "tenant_admin"
+          ? null
+          : current.chatScopes?.find((scope) => scope.connectionId === connectionId)
+              ?.favoriteDepartmentId;
       if (favorite) {
         await this.assertDepartmentForConnection(favorite, connectionId, current);
         return favorite;
@@ -1011,6 +1206,7 @@ export class ConversationsController {
         selectedConnection.name,
       ]);
       if (
+        current.roleKey !== "tenant_admin" &&
         linkedConnectionKeys.length > 0 &&
         !selectedConnectionKeys.some((key) => linkedConnectionKeys.includes(key))
       ) {
@@ -1142,12 +1338,7 @@ export class ConversationsController {
   }
 
   private async nextProtocol(tx: Prisma.TransactionClient, tenantId: string) {
-    const counter = await tx.conversationProtocolCounter.upsert({
-      where: { tenantId },
-      update: { lastNumber: { increment: 1 } },
-      create: { tenantId, lastNumber: 1 },
-    });
-    return String(counter.lastNumber).padStart(6, "0");
+    return (await nextProtocol(tx, tenantId, ProtocolModule.CHAT)).protocol;
   }
 
   private async membershipDisplayName(
@@ -1223,6 +1414,7 @@ export class ConversationsController {
         ? {
             id: conversation.contact.id,
             nome: conversation.contact.name,
+            active: conversation.contact.active,
             telefone: conversation.contact.phone,
             avatar_url: conversation.contact.avatarUrl,
             customer_id: conversation.contact.customerId,

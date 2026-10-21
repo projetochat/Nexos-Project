@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Inject,
@@ -17,10 +18,16 @@ import { compare, hash } from "bcryptjs";
 import {
   IsArray,
   IsBoolean,
+  IsEnum,
+  IsInt,
+  IsIn,
   IsEmail,
   IsOptional,
   IsString,
   IsTimeZone,
+  Matches,
+  Max,
+  Min,
   MaxLength,
   MinLength,
 } from "class-validator";
@@ -31,12 +38,36 @@ import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { effectivePermissions } from "../auth/effective-permissions";
 import { roleChatDepartmentIds, roleConnectionIds } from "../auth/connection-access";
-import { Prisma } from "../generated/prisma";
+import {
+  ConversationStatus,
+  Prisma,
+  ProtocolFormat,
+  ProtocolModule,
+  ProtocolReset,
+} from "../generated/prisma";
+import {
+  changedDeletion,
+  ConfirmDeletionDto,
+  deletionSnapshot,
+  type DeletionImpactPreview,
+} from "../common/deletion-impact";
+import {
+  defaultProtocolConfig,
+  previewNextProtocol,
+  type ProtocolNumberingConfig,
+} from "../common/protocol-numbering";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { RealtimeService } from "../realtime/realtime.service";
+import {
+  REGISTRATION_CASE_KEYS,
+  type RegistrationCaseKey,
+  normalizeRegistrationText,
+  registrationCaseSnapshot,
+  updateRegistrationCase,
+} from "../common/registration-case";
 
 class CreateInvitationDto {
   @IsEmail()
@@ -59,6 +90,31 @@ class UpdateMyProfileDto {
   @IsOptional()
   @IsBoolean()
   keepSidebarCollapsed?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9A-Fa-f]{6}$/)
+  chatBubbleColor?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9A-Fa-f]{6}$/)
+  chatBubbleTextColor?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9A-Fa-f]{6}$/)
+  customerBubbleColor?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9A-Fa-f]{6}$/)
+  customerBubbleTextColor?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9A-Fa-f]{6}$/)
+  chatBackgroundColor?: string | null;
 
   @IsOptional()
   @IsString()
@@ -113,6 +169,43 @@ class UpdateCompanySettingsDto {
   timezone!: string;
 }
 
+class UpdateProtocolSettingsDto {
+  @IsEnum(ProtocolModule)
+  module!: ProtocolModule;
+
+  @IsEnum(ProtocolFormat)
+  format!: ProtocolFormat;
+
+  @IsInt()
+  @Min(4)
+  @Max(10)
+  digits!: number;
+
+  @IsEnum(ProtocolReset)
+  reset!: ProtocolReset;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  customPattern?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  confirmChange?: boolean;
+}
+
+class UpdateRegistrationCaseDto {
+  @IsIn(REGISTRATION_CASE_KEYS)
+  key!: RegistrationCaseKey;
+
+  @IsBoolean()
+  enabled!: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  confirmExistingConversion?: boolean;
+}
+
 type MembershipWithRelations = {
   id: string;
   tenantId: string;
@@ -128,6 +221,11 @@ type MembershipWithRelations = {
     passwordHash: string;
     avatarUrl?: string | null;
     keepSidebarCollapsed: boolean;
+    chatBubbleColor?: string | null;
+    chatBubbleTextColor?: string | null;
+    customerBubbleColor?: string | null;
+    customerBubbleTextColor?: string | null;
+    chatBackgroundColor?: string | null;
     status: string;
     platformRole: string;
   };
@@ -176,6 +274,12 @@ export class UsersController {
         email: membership.user.email,
         name: membership.presentationName?.trim() || membership.user.name,
         avatarUrl: membership.user.avatarUrl,
+        keepSidebarCollapsed: membership.user.keepSidebarCollapsed,
+        chatBubbleColor: membership.user.chatBubbleColor,
+        chatBubbleTextColor: membership.user.chatBubbleTextColor,
+        customerBubbleColor: membership.user.customerBubbleColor,
+        customerBubbleTextColor: membership.user.customerBubbleTextColor,
+        chatBackgroundColor: membership.user.chatBackgroundColor,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         roleName: membership.role.name,
@@ -238,6 +342,21 @@ export class UsersController {
           ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
           ...(dto.keepSidebarCollapsed !== undefined
             ? { keepSidebarCollapsed: dto.keepSidebarCollapsed }
+            : {}),
+          ...(dto.chatBubbleColor !== undefined
+            ? { chatBubbleColor: normalizeChatColor(dto.chatBubbleColor) }
+            : {}),
+          ...(dto.chatBubbleTextColor !== undefined
+            ? { chatBubbleTextColor: normalizeChatColor(dto.chatBubbleTextColor) }
+            : {}),
+          ...(dto.customerBubbleColor !== undefined
+            ? { customerBubbleColor: normalizeChatColor(dto.customerBubbleColor) }
+            : {}),
+          ...(dto.customerBubbleTextColor !== undefined
+            ? { customerBubbleTextColor: normalizeChatColor(dto.customerBubbleTextColor) }
+            : {}),
+          ...(dto.chatBackgroundColor !== undefined
+            ? { chatBackgroundColor: normalizeChatColor(dto.chatBackgroundColor) }
             : {}),
           ...(passwordHash ? { passwordHash } : {}),
         },
@@ -400,6 +519,105 @@ export class UsersController {
     });
   }
 
+  @Get("company/registration-case")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("settings.manage")
+  registrationCase(@CurrentUser() current: AuthenticatedUser) {
+    return registrationCaseSnapshot(this.prisma, current.tenantId);
+  }
+
+  @Patch("company/registration-case")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("settings.manage")
+  updateRegistrationCase(
+    @Body() dto: UpdateRegistrationCaseDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return updateRegistrationCase(this.prisma, current.tenantId, dto);
+  }
+
+  @Get("company/protocols")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("settings.manage")
+  async protocolSettings(@CurrentUser() current: AuthenticatedUser) {
+    const saved = await this.prisma.tenantProtocolConfiguration.findMany({
+      where: { tenantId: current.tenantId },
+    });
+    return Promise.all(
+      [ProtocolModule.CHAT, ProtocolModule.TICKET].map(async (module) => {
+        const row = saved.find((item) => item.module === module);
+        const config: ProtocolNumberingConfig = row
+          ? {
+              module,
+              format: row.format,
+              digits: row.digits,
+              reset: row.reset,
+              customPattern: row.customPattern,
+            }
+          : defaultProtocolConfig(module);
+        return {
+          ...config,
+          preview: await previewNextProtocol(this.prisma, current.tenantId, config),
+        };
+      }),
+    );
+  }
+
+  @Patch("company/protocols")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("settings.manage")
+  async updateProtocolSettings(
+    @Body() dto: UpdateProtocolSettingsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const customPattern = dto.customPattern?.trim() || null;
+    if (dto.format === ProtocolFormat.CUSTOM && !customPattern?.includes("{SEQ}")) {
+      throw new BadRequestException("O formato personalizado deve conter {SEQ}.");
+    }
+    const existing = await this.prisma.tenantProtocolConfiguration.findUnique({
+      where: { tenantId_module: { tenantId: current.tenantId, module: dto.module } },
+    });
+    const next = {
+      format: dto.format,
+      digits: dto.digits,
+      reset: dto.reset,
+      customPattern: dto.format === ProtocolFormat.CUSTOM ? customPattern : null,
+    };
+    const currentConfig = existing ?? defaultProtocolConfig(dto.module);
+    const changed =
+      currentConfig.format !== next.format ||
+      currentConfig.digits !== next.digits ||
+      currentConfig.reset !== next.reset ||
+      currentConfig.customPattern !== next.customPattern;
+    const protocolAlreadyUsed = changed
+      ? dto.module === ProtocolModule.CHAT
+        ? (await this.prisma.conversation.count({
+            where: { tenantId: current.tenantId, protocol: { not: null } },
+          })) > 0
+        : (await this.prisma.ticket.count({
+            where: { tenantId: current.tenantId },
+          })) > 0
+      : false;
+    if (protocolAlreadyUsed && !dto.confirmChange) {
+      return {
+        confirmationRequired: true,
+        message:
+          "Protocolos antigos permanecerão inalterados. Somente os novos usarão o novo padrão.",
+      };
+    }
+    const saved = await this.prisma.tenantProtocolConfiguration.upsert({
+      where: { tenantId_module: { tenantId: current.tenantId, module: dto.module } },
+      create: { tenantId: current.tenantId, module: dto.module, ...next },
+      update: next,
+    });
+    const config: ProtocolNumberingConfig = { module: saved.module, ...next };
+    return {
+      ...config,
+      confirmationRequired: false,
+      preview: await previewNextProtocol(this.prisma, current.tenantId, config),
+    };
+  }
+
   @Get("company/financial")
   @UseGuards(PermissionsGuard)
   @RequirePermissions("settings.manage")
@@ -470,7 +688,13 @@ export class UsersController {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
-      await this.assertNameAvailable(tx, current.tenantId, dto.name);
+      const presentationName = await normalizeRegistrationText(
+        tx,
+        current.tenantId,
+        "attendants",
+        dto.name,
+      );
+      await this.assertNameAvailable(tx, current.tenantId, presentationName);
       await this.entitlements.assertTenantOperational(current.tenantId);
       const membershipStatus = dto.membershipStatus ?? "ACTIVE";
       if (membershipStatus === "ACTIVE") {
@@ -503,7 +727,13 @@ export class UsersController {
       }
 
       const created = await tx.tenantMembership.create({
-        data: { tenantId: current.tenantId, userId: user.id, roleId, status: membershipStatus },
+        data: {
+          tenantId: current.tenantId,
+          userId: user.id,
+          roleId,
+          status: membershipStatus,
+          presentationName,
+        },
       });
       await this.replaceDepartments(tx, current.tenantId, created.id, dto.departmentIds ?? []);
       return tx.tenantMembership.findUniqueOrThrow({
@@ -563,7 +793,13 @@ export class UsersController {
         (dto.membershipStatus !== undefined && dto.membershipStatus !== latest.status) ||
         (dto.status !== undefined && dto.status !== latest.user.status);
       if (dto.name !== undefined) {
-        await this.assertNameAvailable(tx, current.tenantId, dto.name, existing.id);
+        const presentationName = await normalizeRegistrationText(
+          tx,
+          current.tenantId,
+          "attendants",
+          dto.name,
+        );
+        await this.assertNameAvailable(tx, current.tenantId, presentationName, existing.id);
       }
       const otherMembership = await tx.tenantMembership.findFirst({
         where: { userId: latest.userId, tenantId: { not: current.tenantId } },
@@ -597,7 +833,16 @@ export class UsersController {
         data: {
           roleId: dto.roleId,
           status: dto.membershipStatus,
-          ...(dto.name !== undefined ? { presentationName: dto.name.trim() } : {}),
+          ...(dto.name !== undefined
+            ? {
+                presentationName: await normalizeRegistrationText(
+                  tx,
+                  current.tenantId,
+                  "attendants",
+                  dto.name,
+                ),
+              }
+            : {}),
         },
       });
       if (dto.departmentIds) {
@@ -645,6 +890,139 @@ export class UsersController {
   @RequirePermissions("users.delete")
   deactivate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.setMembershipStatus(id, current, "DISABLED");
+  }
+
+  @Get("users/:id/deletion-preview")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.delete")
+  deletionPreview(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.membershipDeletionImpact(id, current);
+  }
+
+  @Delete("users/:id")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.delete")
+  async remove(
+    @Param("id") id: string,
+    @Body() dto: ConfirmDeletionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const initial = await this.membershipDeletionImpact(id, current);
+    if (initial.snapshotToken !== dto.snapshotToken) return changedDeletion(initial);
+    if (initial.blockedReason) throw new BadRequestException(initial.blockedReason);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tenant_memberships" WHERE id = ${id} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
+      );
+      const latest = await this.membershipDeletionImpact(id, current, tx);
+      if (latest.snapshotToken !== dto.snapshotToken) return changedDeletion(latest);
+      if (latest.blockedReason) throw new BadRequestException(latest.blockedReason);
+
+      const membership = await this.findMembershipOrThrow(id, current.tenantId, tx);
+      const authorName = membership.presentationName?.trim() || membership.user.name;
+      const authoredMessages = await tx.message.updateMany({
+        where: { tenantId: current.tenantId, authorMembershipId: id, participantName: null },
+        data: { participantName: authorName },
+      });
+      await tx.messageReaction.updateMany({
+        where: {
+          tenantId: current.tenantId,
+          actorMembershipId: id,
+          externalParticipantName: null,
+        },
+        data: { externalParticipantName: authorName },
+      });
+      const historyRows = await tx.ticketHistory.findMany({
+        where: { tenantId: current.tenantId, actorMembershipId: id },
+        select: { id: true, metadata: true },
+      });
+      for (const history of historyRows) {
+        const metadata =
+          history.metadata &&
+          typeof history.metadata === "object" &&
+          !Array.isArray(history.metadata)
+            ? history.metadata
+            : {};
+        await tx.ticketHistory.update({
+          where: { id: history.id },
+          data: {
+            metadata: {
+              ...metadata,
+              actorSnapshot: {
+                membershipId: membership.id,
+                userId: membership.userId,
+                name: authorName,
+                email: membership.user.email,
+              },
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+      await tx.notification.updateMany({
+        where: { tenantId: current.tenantId, membershipId: id },
+        data: { membershipId: null },
+      });
+      await Promise.all([
+        tx.ticket.updateMany({
+          where: { tenantId: current.tenantId, createdByMembershipId: id },
+          data: { createdByNameSnapshot: authorName },
+        }),
+        tx.ticketComment.updateMany({
+          where: { tenantId: current.tenantId, authorMembershipId: id },
+          data: { authorNameSnapshot: authorName },
+        }),
+        tx.ticketApproval.updateMany({
+          where: { tenantId: current.tenantId, requestedByMembershipId: id },
+          data: { requestedByNameSnapshot: authorName },
+        }),
+        tx.ticketAttachment.updateMany({
+          where: { tenantId: current.tenantId, uploadedByMembershipId: id },
+          data: { uploadedByNameSnapshot: authorName },
+        }),
+        tx.campaign.updateMany({
+          where: { tenantId: current.tenantId, createdByMembershipId: id },
+          data: { createdByNameSnapshot: authorName },
+        }),
+      ]);
+      await tx.platformAuditLog.create({
+        data: {
+          actorUserId: current.userId,
+          actorPlatformRole: current.platformRole,
+          action: "tenant_membership.deleted",
+          targetType: "TenantMembership",
+          targetId: membership.id,
+          tenantId: current.tenantId,
+          metadataJson: {
+            membership: {
+              id: membership.id,
+              userId: membership.userId,
+              name: authorName,
+              email: membership.user.email,
+              roleId: membership.role.id,
+              roleKey: membership.role.key,
+              roleName: membership.role.name,
+              status: membership.status,
+              createdAt: membership.createdAt.toISOString(),
+            },
+            preservedAuthorship: {
+              messageNames: authoredMessages.count,
+              ticketHistorySnapshots: historyRows.length,
+            },
+            dependencies: latest.dependencies.map(({ id: dependencyId, count }) => ({
+              id: dependencyId,
+              count,
+            })),
+          },
+        },
+      });
+      await tx.tenantMembership.delete({ where: { id: membership.id } });
+      return { status: "deleted" as const };
+    });
+    if (result.status === "deleted") {
+      this.publishAuthorizationChanged(id, "membership.deleted");
+    }
+    return result;
   }
 
   @Get("user-invitations")
@@ -751,6 +1129,145 @@ export class UsersController {
       this.publishAuthorizationChanged(membership.id, "membership.status.updated");
     }
     return this.serializeMembership(updated);
+  }
+
+  private async membershipDeletionImpact(
+    id: string,
+    current: AuthenticatedUser,
+    db: PrismaService | Prisma.TransactionClient = this.prisma,
+  ): Promise<DeletionImpactPreview> {
+    const membership = await this.findMembershipOrThrow(id, current.tenantId, db);
+    const [
+      openConversations,
+      assignedConversations,
+      authoredMessages,
+      ticketHistory,
+      createdTickets,
+      ticketComments,
+      requestedApprovals,
+      ticketAttachments,
+      createdCampaigns,
+    ] = await Promise.all([
+      db.conversation.count({
+        where: {
+          tenantId: current.tenantId,
+          assignedMembershipId: membership.id,
+          status: ConversationStatus.EM_ANDAMENTO,
+          archivedAt: null,
+        },
+      }),
+      db.conversation.count({
+        where: { tenantId: current.tenantId, assignedMembershipId: membership.id },
+      }),
+      db.message.count({
+        where: { tenantId: current.tenantId, authorMembershipId: membership.id },
+      }),
+      db.ticketHistory.count({
+        where: { tenantId: current.tenantId, actorMembershipId: membership.id },
+      }),
+      db.ticket.count({
+        where: { tenantId: current.tenantId, createdByMembershipId: membership.id },
+      }),
+      db.ticketComment.count({
+        where: { tenantId: current.tenantId, authorMembershipId: membership.id },
+      }),
+      db.ticketApproval.count({
+        where: { tenantId: current.tenantId, requestedByMembershipId: membership.id },
+      }),
+      db.ticketAttachment.count({
+        where: { tenantId: current.tenantId, uploadedByMembershipId: membership.id },
+      }),
+      db.campaign.count({
+        where: { tenantId: current.tenantId, createdByMembershipId: membership.id },
+      }),
+    ]);
+    const historicalAuthorshipCount =
+      createdTickets + ticketComments + requestedApprovals + ticketAttachments + createdCampaigns;
+    const name = membership.presentationName?.trim() || membership.user.name;
+    const blockedReason =
+      membership.role.key === "tenant_admin"
+        ? "O usuário administrador da tenant não pode ser excluído."
+        : membership.id === current.membershipId || membership.userId === current.userId
+          ? "Você não pode excluir o próprio acesso."
+          : openConversations > 0
+            ? `Este atendente possui ${openConversations} conversa(s) em andamento. Transfira ou encerre os atendimentos antes de excluir.`
+            : undefined;
+    const dependencies = [
+      {
+        id: "open-conversations",
+        label: "Conversas em andamento",
+        count: openConversations,
+        operation: "reassign" as const,
+        operationLabel: "Devem ser transferidas ou encerradas antes da exclusão",
+      },
+      {
+        id: "assigned-conversations",
+        label: "Conversas atribuídas",
+        count: assignedConversations,
+        operation: "unlink" as const,
+        operationLabel: "Serão preservadas e ficarão sem atendente",
+      },
+      {
+        id: "authored-messages",
+        label: "Mensagens enviadas",
+        count: authoredMessages,
+        operation: "unlink" as const,
+        operationLabel: "Serão preservadas com o nome do autor",
+      },
+      {
+        id: "ticket-history",
+        label: "Históricos de chamados",
+        count: ticketHistory,
+        operation: "unlink" as const,
+        operationLabel: "Serão preservados com snapshot mínimo do autor",
+      },
+      {
+        id: "historical-authorship",
+        label: "Registros com autoria histórica",
+        count: historicalAuthorshipCount,
+        operation: "unlink" as const,
+        operationLabel: "Serão preservados com o nome original do autor",
+      },
+    ];
+    return {
+      snapshotToken: deletionSnapshot({
+        membershipId: membership.id,
+        updatedAt: membership.updatedAt,
+        openConversations,
+        assignedConversations,
+        authoredMessages,
+        ticketHistory,
+        createdTickets,
+        ticketComments,
+        requestedApprovals,
+        ticketAttachments,
+        createdCampaigns,
+      }),
+      title: "Excluir atendente?",
+      prompt: `Deseja realmente excluir o atendente "${name}"?`,
+      record: {
+        name,
+        identifiers: [
+          { label: "E-mail", value: membership.user.email },
+          { label: "Perfil", value: membership.role.name },
+        ],
+      },
+      dependencies,
+      consequences: [
+        {
+          id: "tenant-membership-only",
+          text: "Somente o vínculo deste atendente com a empresa será removido; a conta global será preservada.",
+          irreversible: true,
+        },
+        {
+          id: "preserve-operational-history",
+          text: "Conversas, mensagens e históricos serão preservados.",
+          irreversible: false,
+        },
+      ],
+      confirmation: { level: "standard", confirmLabel: "Excluir" },
+      blockedReason,
+    };
   }
 
   private publishAuthorizationChanged(membershipId: string, reason: string) {
@@ -909,6 +1426,11 @@ export class UsersController {
         presentationName: membership.presentationName,
         avatarUrl: membership.user.avatarUrl,
         keepSidebarCollapsed: membership.user.keepSidebarCollapsed,
+        chatBubbleColor: membership.user.chatBubbleColor,
+        chatBubbleTextColor: membership.user.chatBubbleTextColor,
+        customerBubbleColor: membership.user.customerBubbleColor,
+        customerBubbleTextColor: membership.user.customerBubbleTextColor,
+        chatBackgroundColor: membership.user.chatBackgroundColor,
         status: membership.user.status,
         platformRole: membership.user.platformRole,
       },
@@ -962,6 +1484,12 @@ function normalizeAvatarUrl(value: string | null | undefined) {
     throw new BadRequestException("Imagem de perfil invalida.");
   }
   return trimmed;
+}
+
+function normalizeChatColor(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  if (value === null || value.trim() === "") return null;
+  return value.trim().toUpperCase();
 }
 
 function normalizeUserName(value: string) {

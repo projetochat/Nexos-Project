@@ -6,6 +6,7 @@ import {
   NATIVE_RESERVED_VARIABLE_KEYS,
   normalizeCanonicalContactFieldName,
 } from "../../backend/src/crm/contact-custom-field-catalog";
+import { formatPhoneVariable } from "../../backend/src/common/phone-display";
 
 export { NATIVE_CONTACT_FIELD_NAMES, NATIVE_MESSAGE_VARIABLE_KEYS };
 
@@ -73,8 +74,8 @@ export function resolveMessageVariables(text: string, context: MessageVariableCo
   const values: Record<string, string> = {
     contato: context.contactName?.trim() ?? "",
     nome: context.contactName?.trim() ?? "",
-    telefone: context.phone?.trim() ?? "",
-    whatsapp: context.phone?.trim() ?? "",
+    telefone: formatPhoneVariable(context.phone ?? ""),
+    whatsapp: formatPhoneVariable(context.phone ?? ""),
     email: context.email?.trim() ?? "",
     instancia: context.instance?.trim() ?? "",
     cliente: context.customer?.trim() ?? "",
@@ -147,6 +148,9 @@ function renderField(field: MessageVariableField, timezone?: string | null) {
     return "";
   }
   const mask = parseMask(field.mask);
+  if (type === "TEXT" && mask?.custom?.format === "phone") {
+    return formatPhoneVariable(String(value));
+  }
   if (type === "DATE") {
     if (mask?.date?.variant === "datetime") {
       const instant = new Date(String(value));
@@ -166,6 +170,7 @@ function renderField(field: MessageVariableField, timezone?: string | null) {
 }
 
 type MessageFieldMask = {
+  custom?: { format?: string };
   date?: { variant?: string };
   list?: { variant?: string };
 };

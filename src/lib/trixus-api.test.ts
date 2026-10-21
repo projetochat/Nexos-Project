@@ -838,6 +838,30 @@ describe("trixus-api auth client", () => {
     });
   });
 
+  it("changes only the authenticated Platform user's password through the dedicated route", async () => {
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://localhost:3001/api/platform/me/password");
+      expect(init?.method).toBe("PATCH");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer platform-access");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        currentPassword: "SenhaAtual@2026",
+        newPassword: "NovaSenha@2026",
+        confirmPassword: "NovaSenha@2026",
+      });
+      return responseJson(200, { ok: true, sessionsRevoked: 2 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      platformApi.changeOwnPassword({
+        currentPassword: "SenhaAtual@2026",
+        newPassword: "NovaSenha@2026",
+        confirmPassword: "NovaSenha@2026",
+      }),
+    ).resolves.toEqual({ ok: true, sessionsRevoked: 2 });
+  });
+
   it("preserves platform empty states instead of treating them as errors", async () => {
     localStorage.setItem("trixus.api.accessToken", "platform-access");
     vi.stubGlobal(

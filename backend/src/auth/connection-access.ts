@@ -28,6 +28,12 @@ export function roleChatDepartmentIds(role: { key: string; metadata?: unknown })
 
 export function roleChatScopes(role: { key: string; metadata?: unknown }): ChatScope[] {
   if (role.key === "tenant_admin") return [];
+  return roleChatPreferences(role);
+}
+
+// Preferências não são limites de acesso. O Administrador continua irrestrito
+// pelos helpers abaixo, mas ainda precisa do favorito salvo pelo Wizard.
+export function roleChatPreferences(role: { metadata?: unknown }): ChatScope[] {
   const value = (role.metadata as { chatScopes?: unknown } | null)?.chatScopes;
   if (!Array.isArray(value)) {
     const metadata = role.metadata as

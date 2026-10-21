@@ -10,12 +10,17 @@ import {
   ChevronDown,
   X,
   Trash2,
+  Clock3,
+  Eye,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import {
   SectionHeader,
   Card,
+  Badge,
   Button,
   Field,
   Input,
@@ -38,6 +43,11 @@ import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
 import { DepartmentIcon, DepartmentIconSelect } from "@/components/department-icon";
 import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
+import { GreetingMessageEditor } from "@/components/greeting-message-editor";
+import {
+  CONNECTION_MESSAGE_VARIABLES,
+  mergeMessageVariables,
+} from "@/lib/message-variable-options";
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
 
@@ -48,6 +58,9 @@ export type DepartamentoFormData = {
   icon?: DepartmentIconName;
   connectionIds: string[];
   active?: boolean;
+  inactivityClosureEnabled?: boolean;
+  inactivityTimeoutMinutes?: number | null;
+  inactivityClosureMessage?: string | null;
 };
 
 type DepartmentDeactivationPreview = Awaited<
@@ -90,7 +103,9 @@ function Page() {
   const canCreate = permissions.includes("departments.create");
   const canUpdate = permissions.includes("departments.update");
   const canDelete = permissions.includes("departments.delete");
+  const canRead = permissions.includes("departments.read");
   const [editing, setEditing] = React.useState<ApiDepartment | null>(null);
+  const [viewing, setViewing] = React.useState<ApiDepartment | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = React.useState<ApiDepartment | null>(null);
   const [pendingDeactivation, setPendingDeactivation] = React.useState<{
@@ -100,6 +115,11 @@ function Page() {
   const [migrationTargets, setMigrationTargets] = React.useState<Record<string, string>>({});
   const [query, setQuery] = React.useState("");
   const [instanceFilter, setInstanceFilter] = React.useState("");
+  const hasFilters = Boolean(query.trim() || instanceFilter);
+  const clearFilters = () => {
+    setQuery("");
+    setInstanceFilter("");
+  };
   const novo = useDisclosure();
 
   const {
@@ -131,6 +151,9 @@ function Page() {
             color: payload.data.color,
             icon: payload.data.icon,
             connectionIds: payload.data.connectionIds,
+            inactivityClosureEnabled: payload.data.inactivityClosureEnabled,
+            inactivityTimeoutMinutes: payload.data.inactivityTimeoutMinutes,
+            inactivityClosureMessage: payload.data.inactivityClosureMessage,
           }),
     onSuccess: (data, vars) => {
       const previous = vars.id ? editing : null;
@@ -221,7 +244,7 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)] gap-2 sm:gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)]">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)] gap-2 sm:gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)_auto]">
             <Field label="Busca">
               <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
             </Field>
@@ -237,6 +260,11 @@ function Page() {
                 }))}
               />
             </Field>
+            {hasFilters && (
+              <div className="flex items-end">
+                <ClearFiltersButton onClick={clearFilters} />
+              </div>
+            )}
           </div>
         </Card>
 
@@ -251,57 +279,86 @@ function Page() {
             {filtered.map((d) => (
               <Card
                 key={d.id}
-                className={`min-h-[86px] p-4 transition hover:border-primary/35 hover:bg-surface-1 ${d.active ? "" : "opacity-60"}`}
+                className="flex min-h-[148px] flex-col p-4 transition hover:border-primary/35 hover:bg-surface-1"
               >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
-                      style={{ background: d.color }}
-                    >
-                      <DepartmentIcon icon={d.icon} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold">{d.name}</p>
-                      {!d.active && <p className="text-xs text-muted-foreground">Inativo</p>}
-                    </div>
+                <div className="flex min-w-0 items-start gap-3">
+                  <div
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
+                    style={{ background: d.color }}
+                  >
+                    <DepartmentIcon icon={d.icon} />
                   </div>
-                  <div className="flex shrink-0 gap-1">
-                    {canCreate && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Duplicar departamento"
-                        aria-label={`Duplicar departamento ${d.name}`}
-                        onClick={() => setDuplicating(d)}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold">{d.name}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                      {d.description?.trim() || "Sem descrição"}
+                    </p>
+                    {d.inactivityClosureEnabled && d.inactivityTimeoutMinutes && (
+                      <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Clock3 className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span>
+                          Encerramento por inatividade: {d.inactivityTimeoutMinutes}{" "}
+                          {d.inactivityTimeoutMinutes === 1 ? "minuto" : "minutos"}
+                        </span>
+                      </p>
                     )}
-                    {canUpdate && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Editar departamento"
-                        aria-label={`Editar departamento ${d.name}`}
-                        onClick={() => setEditing(d)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Excluir departamento"
-                        aria-label={`Excluir departamento ${d.name}`}
-                        onClick={() => setDeleting(d)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                  </div>
+                  <div className="ml-auto shrink-0 self-start">
+                    <Badge tone={d.active ? "success" : "destructive"}>
+                      {d.active ? "Ativo" : "Inativo"}
+                    </Badge>
                   </div>
                 </div>
+                {(canRead || canCreate || canUpdate || canDelete) && (
+                  <div className="mt-auto flex min-h-11 items-end justify-end border-t border-border pt-3">
+                    <div className="flex shrink-0 gap-1.5">
+                      {canRead && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Visualizar departamento"
+                          aria-label={`Visualizar departamento ${d.name}`}
+                          onClick={() => setViewing(d)}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canCreate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Duplicar departamento"
+                          aria-label={`Duplicar departamento ${d.name}`}
+                          onClick={() => setDuplicating(d)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canUpdate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Editar departamento"
+                          aria-label={`Editar departamento ${d.name}`}
+                          onClick={() => setEditing(d)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Excluir departamento"
+                          aria-label={`Excluir departamento ${d.name}`}
+                          onClick={() => setDeleting(d)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </Card>
             ))}
             {filtered.length === 0 && (
@@ -340,6 +397,16 @@ function Page() {
             connections={connectionOptions}
             onClose={() => setEditing(null)}
             onSubmit={(data) => void submitDepartment(data)}
+          />
+        )}
+        {canRead && (
+          <DepartamentoForm
+            open={!!viewing}
+            initial={viewing ?? undefined}
+            readOnly
+            departments={departamentos}
+            connections={connectionOptions}
+            onClose={() => setViewing(null)}
           />
         )}
         <DepartmentDeactivationModal
@@ -401,19 +468,22 @@ export function DepartamentoForm({
   onSubmit,
   initial,
   clone = false,
+  readOnly = false,
   departments,
   connections,
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: DepartamentoFormData) => void;
+  onSubmit?: (data: DepartamentoFormData) => void;
   initial?: ApiDepartment;
   clone?: boolean;
+  readOnly?: boolean;
   departments: ApiDepartment[];
   connections: Array<Pick<ApiMessagingConnection, "id" | "name" | "status" | "color" | "logoUrl">>;
 }) {
   const [form, setForm] = React.useState<DepartamentoFormData>({ connectionIds: [] });
   const [error, setError] = React.useState("");
+  const [inactivityError, setInactivityError] = React.useState("");
   const duplicateNameError = (name: string) => {
     const normalizedName = normalizeDepartmentName(name);
     if (!normalizedName) return "";
@@ -435,13 +505,24 @@ export function DepartamentoForm({
             icon: initial.icon,
             connectionIds: initial.connectionIds,
             active: clone ? true : initial.active,
+            inactivityClosureEnabled: initial.inactivityClosureEnabled,
+            inactivityTimeoutMinutes: initial.inactivityTimeoutMinutes,
+            inactivityClosureMessage: initial.inactivityClosureMessage,
           }
-        : { color: "#3B82F6", icon: "department", connectionIds: [], active: true },
+        : {
+            color: "#3B82F6",
+            icon: "department",
+            connectionIds: [],
+            active: true,
+            inactivityClosureEnabled: false,
+          },
     );
     setError("");
+    setInactivityError("");
   }, [clone, departments, initial, open]);
 
   const submit = () => {
+    if (readOnly || !onSubmit) return;
     if (!form.name || form.name.trim().length < 2) {
       setError("Informe o nome.");
       toast.error("Nome obrigatório.");
@@ -452,6 +533,15 @@ export function DepartamentoForm({
       setError(duplicateError);
       return;
     }
+    if (
+      form.inactivityClosureEnabled &&
+      (!form.inactivityTimeoutMinutes || !form.inactivityClosureMessage?.trim())
+    ) {
+      setInactivityError("Informe o tempo sem resposta e a mensagem de encerramento.");
+      toast.error("Complete o encerramento por inatividade.");
+      return;
+    }
+    setInactivityError("");
     onSubmit({ ...form, color: completeHexColor(form.color) });
   };
 
@@ -460,11 +550,13 @@ export function DepartamentoForm({
       open={open}
       onClose={onClose}
       title={
-        initial && !clone
-          ? "Editar Departamento"
-          : clone
-            ? "Duplicar Departamento"
-            : "Novo Departamento"
+        readOnly
+          ? "Visualizar Departamento"
+          : initial && !clone
+            ? "Editar Departamento"
+            : clone
+              ? "Duplicar Departamento"
+              : "Novo Departamento"
       }
       size="md"
       footer={
@@ -476,16 +568,18 @@ export function DepartamentoForm({
           />
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>
-              Cancelar
+              {readOnly ? "Fechar" : "Cancelar"}
             </Button>
-            <Button variant="primary" size="sm" onClick={submit}>
-              Salvar
-            </Button>
+            {!readOnly && (
+              <Button variant="primary" size="sm" className="save-action-button" onClick={submit}>
+                Salvar
+              </Button>
+            )}
           </div>
         </div>
       }
     >
-      <div className="space-y-4">
+      <fieldset disabled={readOnly} className="min-w-0 space-y-4 disabled:opacity-80">
         {!clone && (
           <div className="flex items-center gap-2">
             <Switch
@@ -536,6 +630,7 @@ export function DepartamentoForm({
             <DepartmentIconSelect
               value={form.icon}
               onChange={(icon) => setForm((current) => ({ ...current, icon }))}
+              disabled={readOnly}
             />
           </Field>
         </div>
@@ -546,7 +641,92 @@ export function DepartamentoForm({
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
         </Field>
-      </div>
+        <div className="border-t border-border pt-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 font-semibold text-text-primary">
+              <Clock3 className="h-5 w-5 text-blue-700 dark:text-blue-300" />
+              <span>Encerramento por inatividade</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="department-inactivity-closure"
+                checked={form.inactivityClosureEnabled === true}
+                onCheckedChange={(inactivityClosureEnabled) => {
+                  setInactivityError("");
+                  setForm((current) => ({ ...current, inactivityClosureEnabled }));
+                }}
+              />
+              <label htmlFor="department-inactivity-closure" className="text-sm text-text-muted">
+                {form.inactivityClosureEnabled ? "Ativado" : "Desativado"}
+              </label>
+            </div>
+          </div>
+          {form.inactivityClosureEnabled && (
+            <div className="mt-3 space-y-3">
+              <Field label="Tempo sem resposta do cliente *">
+                <div className="flex overflow-hidden rounded-lg border border-border bg-surface-1">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10080}
+                    value={form.inactivityTimeoutMinutes ?? ""}
+                    onChange={(event) => {
+                      setInactivityError("");
+                      setForm((current) => ({
+                        ...current,
+                        inactivityTimeoutMinutes: event.target.value
+                          ? Number(event.target.value)
+                          : null,
+                      }));
+                    }}
+                    className="rounded-none border-0"
+                  />
+                  <span className="flex items-center border-l border-border px-3 text-sm text-text-muted">
+                    minutos
+                  </span>
+                </div>
+              </Field>
+              <Field label="Mensagem *">
+                <GreetingMessageEditor
+                  value={form.inactivityClosureMessage ?? ""}
+                  attachment={null}
+                  variables={mergeMessageVariables(CONNECTION_MESSAGE_VARIABLES, [])}
+                  disabled={readOnly}
+                  invalid={Boolean(inactivityError)}
+                  placeholder="Digite a mensagem de encerramento..."
+                  showAttachment={false}
+                  showEmoji
+                  maxLength={4000}
+                  rows={4}
+                  onChange={(value) => {
+                    setInactivityError("");
+                    setForm((current) => ({
+                      ...current,
+                      inactivityClosureMessage: value,
+                    }));
+                  }}
+                />
+              </Field>
+              <div
+                role="note"
+                data-department-inactivity-notice
+                className="flex gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+              >
+                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  O prazo começa após a mensagem do atendente. Se o cliente responder, a contagem é
+                  interrompida.
+                </span>
+              </div>
+              {inactivityError && (
+                <p className="text-xs text-destructive" role="alert">
+                  {inactivityError}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </fieldset>
     </Modal>
   );
 }

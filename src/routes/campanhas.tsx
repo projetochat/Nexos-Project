@@ -5,6 +5,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { Copy, Eye, Megaphone, Pause, Play, Plus, RefreshCw, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import {
   Alert,
@@ -102,7 +103,11 @@ function Page() {
   const canReadRecipients = permissions.includes("campaigns.read");
   const createModal = useDisclosure();
   const [filters, setFilters] = React.useState<CampaignFilters>(DEFAULT_CAMPAIGN_FILTERS);
+  const hasFilters = Boolean(
+    filters.search.trim() || filters.status !== "ALL" || filters.connectionId,
+  );
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [detailMode, setDetailMode] = React.useState<"view" | "manage">("manage");
   const [confirming, setConfirming] = React.useState<null | {
     action: "start" | "cancel";
     campaign: ApiCampaign;
@@ -139,7 +144,10 @@ function Page() {
     null;
 
   React.useEffect(() => {
-    if (!selectedId && listQuery.data?.items[0]) setSelectedId(listQuery.data.items[0].id);
+    if (!selectedId && listQuery.data?.items[0]) {
+      setSelectedId(listQuery.data.items[0].id);
+      setDetailMode("manage");
+    }
   }, [listQuery.data?.items, selectedId]);
 
   const detailQuery = useQuery({
@@ -222,7 +230,7 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(220px,1fr)_180px_220px]">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(220px,1fr)_180px_220px_auto]">
             <div className="col-span-2 lg:col-span-1">
               <Field label="Busca">
                 <SearchInput
@@ -262,6 +270,11 @@ function Page() {
                 }))}
               />
             </Field>
+            {hasFilters && (
+              <div className="flex items-end">
+                <ClearFiltersButton onClick={() => setFilters(DEFAULT_CAMPAIGN_FILTERS)} />
+              </div>
+            )}
           </div>
         </Card>
 
@@ -298,7 +311,15 @@ function Page() {
                     key={campaign.id}
                     campaign={campaign}
                     selected={campaign.id === detail?.id}
-                    onSelect={() => setSelectedId(campaign.id)}
+                    canView={canReadRecipients}
+                    onSelect={() => {
+                      setSelectedId(campaign.id);
+                      setDetailMode("manage");
+                    }}
+                    onView={() => {
+                      setSelectedId(campaign.id);
+                      setDetailMode("view");
+                    }}
                   />
                 ))}
               </>
@@ -309,12 +330,13 @@ function Page() {
             campaign={detail}
             recipients={recipients}
             loading={detailQuery.isLoading || recipientsQuery.isLoading}
-            canStartAction={canStart}
-            canPauseAction={canPause}
-            canCancelAction={canCancel}
-            canDuplicateAction={canDuplicate}
+            canStartAction={detailMode === "manage" && canStart}
+            canPauseAction={detailMode === "manage" && canPause}
+            canCancelAction={detailMode === "manage" && canCancel}
+            canDuplicateAction={detailMode === "manage" && canDuplicate}
             canReadRecipients={canReadRecipients}
-            canDelete={canDelete}
+            canDelete={detailMode === "manage" && canDelete}
+            readOnly={detailMode === "view"}
             onAction={(action, campaign) => {
               if (action === "start" || action === "cancel") setConfirming({ action, campaign });
               else if (action === "remove") setRemovingCampaign(campaign);
@@ -332,6 +354,7 @@ function Page() {
               createModal.hide();
               setFilters(DEFAULT_CAMPAIGN_FILTERS);
               setSelectedId(campaign.id);
+              setDetailMode("manage");
               invalidateCampaigns();
             }}
           />
@@ -377,11 +400,15 @@ function Page() {
 function CampaignRow({
   campaign,
   selected,
+  canView,
   onSelect,
+  onView,
 }: {
   campaign: ApiCampaign;
   selected: boolean;
+  canView: boolean;
   onSelect: () => void;
+  onView: () => void;
 }) {
   const counters = campaign.counters;
   const progress = counters.eligible
@@ -392,8 +419,9 @@ function CampaignRow({
       )
     : 0;
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onDoubleClick={onSelect}
       onKeyDown={(event) => {
         if (event.key !== "Enter") return;
@@ -411,7 +439,26 @@ function CampaignRow({
             {fmtDate(Date.parse(campaign.createdAt))}
           </p>
         </div>
-        <Badge tone={STATUS_TONE[campaign.status]}>{STATUS_LABEL[campaign.status]}</Badge>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge tone={STATUS_TONE[campaign.status]}>{STATUS_LABEL[campaign.status]}</Badge>
+          {canView && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title="Visualizar campanha"
+              aria-label="Visualizar campanha"
+              className="h-8 w-8"
+              onClick={(event) => {
+                event.stopPropagation();
+                onView();
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
       <div className="mt-4 h-2 overflow-hidden rounded-full bg-surface-2">
         <div className="h-full bg-primary" style={{ width: `${progress}%` }} />
@@ -422,7 +469,7 @@ function CampaignRow({
         <Metric label="Falhas" value={counters.failed} />
         <Metric label="Excluidas" value={counters.skipped + counters.cancelled} />
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -436,6 +483,7 @@ function CampaignDetail({
   canDuplicateAction,
   canReadRecipients,
   canDelete,
+  readOnly,
   onAction,
 }: {
   campaign: ApiCampaign | null;
@@ -456,6 +504,7 @@ function CampaignDetail({
   canDuplicateAction: boolean;
   canReadRecipients: boolean;
   canDelete: boolean;
+  readOnly: boolean;
   onAction: (
     action: "start" | "pause" | "resume" | "cancel" | "duplicate" | "remove",
     campaign: ApiCampaign,
@@ -479,7 +528,10 @@ function CampaignDetail({
             {campaign.description || "Sem descrição"}
           </p>
         </div>
-        <Badge tone={STATUS_TONE[campaign.status]}>{STATUS_LABEL[campaign.status]}</Badge>
+        <div className="flex items-center gap-2">
+          {readOnly && <Badge tone="info">Somente leitura</Badge>}
+          <Badge tone={STATUS_TONE[campaign.status]}>{STATUS_LABEL[campaign.status]}</Badge>
+        </div>
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-4">
@@ -544,7 +596,7 @@ function CampaignDetail({
           <Button
             size="sm"
             variant="ghost"
-            className="trash-action"
+            className="trash-action h-8 rounded-lg sm:min-w-20"
             onClick={() => onAction("remove", campaign)}
           >
             <Trash2 className="h-3.5 w-3.5" /> Excluir
@@ -649,7 +701,11 @@ function CampaignEditor({
     [tagsQuery.data],
   );
   const sortedContacts = React.useMemo(
-    () => sortByOptionLabel(contactsQuery.data?.items ?? [], (contact) => contact.nome),
+    () =>
+      sortByOptionLabel(
+        (contactsQuery.data?.items ?? []).filter((contact) => contact.active !== false),
+        (contact) => contact.nome,
+      ),
     [contactsQuery.data?.items],
   );
   const sortedCustomers = React.useMemo(

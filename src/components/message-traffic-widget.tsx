@@ -8,6 +8,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card } from "@/components/ui-kit";
+import { useDashboardMaximized } from "@/components/dashboard-maximized-context";
 import {
   DASHBOARD_CHART_MARGIN,
   DASHBOARD_CHART_TEXT_COLOR,
@@ -38,98 +39,104 @@ export function MessageTrafficWidget({
   columns: 1 | 2 | 3 | 4;
   isMobile: boolean;
 }) {
+  const maximized = useDashboardMaximized();
   const compact = isMobile || columns <= 2;
   const ticks = messageHourTicks(isMobile);
   const totals = messageTrafficSummary(data, contactsTotal);
   return (
-    <Card className="h-full min-w-0">
+    <Card className={`h-full min-w-0 ${maximized ? "flex flex-col" : ""}`}>
       <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">{title}</p>
-      <ResponsiveContainer width="100%" height={260}>
-        <LineChart data={data} margin={DASHBOARD_CHART_MARGIN}>
-          <CartesianGrid stroke="var(--border)" vertical={false} />
-          <XAxis
-            dataKey="hora"
-            stroke="var(--muted-foreground)"
-            tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
-            fontSize={11}
-            ticks={ticks}
-            interval={0}
-            angle={compact ? -45 : 0}
-            textAnchor={compact ? "end" : "middle"}
-            height={compact ? 48 : 30}
-            tickMargin={compact ? 8 : 0}
-          />
-          <YAxis
-            stroke="var(--muted-foreground)"
-            tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
-            fontSize={11}
-            allowDecimals={false}
-            width={38}
-          />
-          <Tooltip
-            contentStyle={{
-              background: "var(--popover)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              color: "var(--popover-foreground)",
-              fontSize: 12,
-            }}
-          />
-          <Line
-            type="monotone"
-            dataKey="recebidas"
-            name="Recebidos"
-            stroke="#2563eb"
-            strokeWidth={2}
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="enviadas"
-            name="Enviados"
-            stroke="#dc2626"
-            strokeWidth={2}
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="total"
-            name="Total"
-            stroke="#94a3b8"
-            strokeWidth={2}
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="contatosAtendidos"
-            name="Contatos"
-            stroke="#16a34a"
-            strokeWidth={2}
-            dot={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-      <table
-        aria-label="Totais do tráfego de mensagens no período"
-        className="mx-auto mt-1 w-full max-w-md table-fixed border-collapse whitespace-nowrap text-xs"
+      <div
+        className={maximized ? "flex min-h-0 flex-1 flex-col justify-center" : ""}
+        data-message-traffic-visual
       >
-        <thead>
-          <tr>
-            <MessageTrafficLegendHeader label="Recebidos" color="#2563eb" />
-            <MessageTrafficLegendHeader label="Enviados" color="#dc2626" />
-            <MessageTrafficLegendHeader label="Total" color="#94a3b8" />
-            <MessageTrafficLegendHeader label="Contatos" color="#16a34a" />
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <MessageTrafficTotalCell label="Recebidos" value={totals.recebidas} />
-            <MessageTrafficTotalCell label="Enviados" value={totals.enviadas} />
-            <MessageTrafficTotalCell label="Total" value={totals.total} emphasized />
-            <MessageTrafficTotalCell label="Contatos" value={totals.contatos} />
-          </tr>
-        </tbody>
-      </table>
+        <ResponsiveContainer width="100%" height={maximized ? "58%" : 260}>
+          <LineChart data={data} margin={DASHBOARD_CHART_MARGIN}>
+            <CartesianGrid stroke="var(--border)" vertical={false} />
+            <XAxis
+              dataKey="hora"
+              stroke="var(--muted-foreground)"
+              tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
+              fontSize={11}
+              ticks={ticks}
+              interval={0}
+              angle={compact ? -45 : 0}
+              textAnchor={compact ? "end" : "middle"}
+              height={compact ? 48 : 30}
+              tickMargin={compact ? 8 : 0}
+            />
+            <YAxis
+              stroke="var(--muted-foreground)"
+              tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
+              fontSize={11}
+              allowDecimals={false}
+              width={38}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "var(--popover)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                color: "var(--popover-foreground)",
+                fontSize: 12,
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="recebidas"
+              name="Recebidos"
+              stroke="#2563eb"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="enviadas"
+              name="Enviados"
+              stroke="#dc2626"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="total"
+              name="Total"
+              stroke="#94a3b8"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="contatosAtendidos"
+              name="Contatos"
+              stroke="#16a34a"
+              strokeWidth={2}
+              dot={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+        <table
+          aria-label="Totais do tráfego de mensagens no período"
+          className="mx-auto mt-1 w-full max-w-md table-fixed border-collapse whitespace-nowrap text-xs"
+        >
+          <thead>
+            <tr>
+              <MessageTrafficLegendHeader label="Recebidos" color="#2563eb" />
+              <MessageTrafficLegendHeader label="Enviados" color="#dc2626" />
+              <MessageTrafficLegendHeader label="Total" color="#94a3b8" />
+              <MessageTrafficLegendHeader label="Contatos" color="#16a34a" />
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <MessageTrafficTotalCell label="Recebidos" value={totals.recebidas} />
+              <MessageTrafficTotalCell label="Enviados" value={totals.enviadas} />
+              <MessageTrafficTotalCell label="Total" value={totals.total} emphasized />
+              <MessageTrafficTotalCell label="Contatos" value={totals.contatos} />
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 }

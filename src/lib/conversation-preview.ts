@@ -6,7 +6,7 @@ export type ConversationPreviewSegment = {
 };
 
 export type ConversationPreview = {
-  kind: "text" | "image" | "audio" | "video" | "document" | "sticker" | "empty";
+  kind: "text" | "image" | "audio" | "video" | "document" | "contact" | "sticker" | "empty";
   segments: ConversationPreviewSegment[];
   duration: string | null;
 };
@@ -20,7 +20,7 @@ export function conversationPreview(
   const normalized = clean.toLowerCase();
   const kind = previewKind(normalized, messageType);
   const markerOnly =
-    /^\[?(?:imagem|image|foto|audio|áudio|voice|voz|video|vídeo|documento|figurinha)\]?$/i.test(
+    /^\[?(?:imagem|image|foto|audio|áudio|voice|voz|video|vídeo|documento|contato|figurinha)\]?$/i.test(
       clean,
     );
 
@@ -31,6 +31,14 @@ export function conversationPreview(
       kind,
       segments: [{ text: previewLabel(kind), bold: false }],
       duration: kind === "audio" ? formatPreviewDuration(durationMs) : null,
+    };
+  }
+  if (kind === "contact") {
+    const contactName = clean.replace(/^\[contato\]\s*/i, "").trim() || "Contato compartilhado";
+    return {
+      kind,
+      segments: [{ text: contactName, bold: true }],
+      duration: null,
     };
   }
   return {
@@ -63,6 +71,7 @@ export function formatPreviewDuration(durationMs?: number | null) {
 }
 
 function previewKind(normalized: string, messageType?: ApiMessage["type"] | null) {
+  if (normalized.startsWith("[contato]")) return "contact";
   if (messageType === "image") return normalized.includes("[figurinha]") ? "sticker" : "image";
   if (messageType === "audio" || messageType === "voice") return "audio";
   if (messageType === "video") return "video";
@@ -86,6 +95,7 @@ function previewLabel(kind: ConversationPreview["kind"]) {
   if (kind === "audio") return "Áudio";
   if (kind === "video") return "Vídeo";
   if (kind === "document") return "Documento";
+  if (kind === "contact") return "Contato";
   if (kind === "sticker") return "Figurinha";
   return "Sem mensagens";
 }

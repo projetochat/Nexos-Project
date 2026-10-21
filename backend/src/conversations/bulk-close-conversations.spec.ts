@@ -43,27 +43,33 @@ function setup(rows: Array<{ id: string; protocol: string | null }>) {
 }
 
 describe("bulk closing conversations", () => {
-  it("rejects empty, duplicate and unknown queues and accepts the four queues", async () => {
-    for (const queues of [[], ["ativas", "ativas"], ["fechada"], "ativas"]) {
+  it("rejects empty, duplicate and invalid selections", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    for (const conversationIds of [[], [id, id], ["invalid"], id]) {
       expect(
-        await validate(plainToInstance(BulkCloseConversationsDto, { queues })),
+        await validate(plainToInstance(BulkCloseConversationsDto, { conversationIds })),
       ).not.toHaveLength(0);
     }
     expect(
       await validate(
         plainToInstance(BulkCloseConversationsDto, {
-          queues: ["ativas", "standby", "fila", "leads"],
+          conversationIds: [id],
         }),
       ),
     ).toHaveLength(0);
   });
-  it("closes beyond one UI page, scopes tenant and connections, and includes groups", async () => {
+  it("closes only selected ids while preserving tenant and visibility scope", async () => {
     const rows = Array.from({ length: 125 }, (_, i) => ({
       id: `conversation-${i}`,
       protocol: null,
     }));
     const { controller, tx, messages, realtime } = setup(rows);
-    expect(await controller.bulkClose({ queues: ["leads"] }, user)).toEqual({ closed: 125 });
+    const conversationIds = rows.map((row) => row.id);
+    expect(await controller.bulkClose({ conversationIds }, user)).toEqual({
+      closed: 125,
+      succeeded: conversationIds,
+      failed: [],
+    });
     expect(tx.conversation.findMany).toHaveBeenCalledWith({
       where: {
         AND: [
@@ -77,15 +83,7 @@ describe("bulk closing conversations", () => {
               },
             ],
           },
-          {
-            OR: [
-              {
-                status: "ABERTA",
-                assignedMembershipId: null,
-                lead: { is: { status: { in: ["NEW", "QUEUED"] } } },
-              },
-            ],
-          },
+          { id: { in: conversationIds } },
         ],
       },
       select: { id: true, protocol: true },
@@ -119,7 +117,7 @@ describe("bulk closing conversations", () => {
         content: "Conversa iniciada - protocolo 000007.",
       },
     ] as never);
-    await controller.bulkClose({ queues: ["ativas", "standby", "fila"] }, user);
+    await controller.bulkClose({ conversationIds: ["group"] }, user);
     expect(tx.conversationProtocolCounter.upsert).not.toHaveBeenCalled();
     expect(messages.createSystemMessage).not.toHaveBeenCalled();
     expect(tx.message.createMany.mock.calls[0][0].data).toEqual([
@@ -132,9 +130,18 @@ describe("bulk closing conversations", () => {
   });
   it("does not publish changes if the transaction fails, and tolerates repeat requests", async () => {
     const { controller, db, realtime } = setup([]);
-    expect(await controller.bulkClose({ queues: ["leads"] }, user)).toEqual({ closed: 0 });
+    expect(await controller.bulkClose({ conversationIds: ["empty"] }, user)).toEqual({
+      closed: 0,
+      succeeded: [],
+      failed: [
+        {
+          conversationId: "empty",
+          message: "Conversa não encontrada, sem acesso ou não elegível para encerramento.",
+        },
+      ],
+    });
     db.$transaction.mockRejectedValueOnce(new Error("database failure"));
-    await expect(controller.bulkClose({ queues: ["leads"] }, user)).rejects.toThrow(
+    await expect(controller.bulkClose({ conversationIds: ["empty"] }, user)).rejects.toThrow(
       "database failure",
     );
     expect(realtime.publishConversationUpdated).not.toHaveBeenCalled();
@@ -146,7 +153,13 @@ describe("bulk closing conversations", () => {
     }));
     const { controller, tx, db, realtime } = setup(rows);
 
-    expect(await controller.bulkClose({ queues: ["fila"] }, user)).toEqual({ closed: 1_205 });
+    expect(
+      await controller.bulkClose({ conversationIds: rows.map((row) => row.id) }, user),
+    ).toEqual({
+      closed: 1_205,
+      succeeded: rows.map((row) => row.id),
+      failed: [],
+    });
 
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.message.findMany).toHaveBeenCalledTimes(3);
@@ -164,7 +177,11 @@ describe("bulk closing conversations", () => {
       return work(tx);
     });
 
-    expect(await controller.bulkClose({ queues: ["fila"] }, user)).toEqual({ closed: 1 });
+    expect(await controller.bulkClose({ conversationIds: ["retry"] }, user)).toEqual({
+      closed: 1,
+      succeeded: ["retry"],
+      failed: [],
+    });
     expect(db.$transaction).toHaveBeenCalledTimes(3);
     expect(realtime.publishConversationUpdated).toHaveBeenCalledTimes(1);
   });

@@ -132,4 +132,41 @@ describe("ConversationPurgeService", () => {
     expect(impact.blockedReason).toContain("campanha pendente ou em processamento");
     expect(impact.confirmation).toEqual({ level: "standard", confirmLabel: "Excluir" });
   });
+
+  it("counts only closed conversations as history in the contact deletion impact", async () => {
+    const db = {
+      contact: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "contact-a",
+          name: "Ana",
+          phone: "+5511999999999",
+          normalizedPhone: "5511999999999",
+          updatedAt,
+        }),
+      },
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([
+          { ...conversationRecord(), id: "closed", status: "FECHADA" },
+          { ...conversationRecord(), id: "active", status: "EM_ATENDIMENTO" },
+        ]),
+      },
+      campaignRecipient: { findMany: vi.fn().mockResolvedValue([]) },
+      ticket: { count: vi.fn().mockResolvedValue(0) },
+      contactCustomFieldValue: { count: vi.fn().mockResolvedValue(0) },
+      contactTag: { count: vi.fn().mockResolvedValue(0) },
+      contactMessagingPreference: { count: vi.fn().mockResolvedValue(0) },
+      lead: { count: vi.fn().mockResolvedValue(0) },
+      outboxEvent: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const service = new ConversationPurgeService(db as never, { deleteObject: vi.fn() } as never);
+
+    const impact = await service.contactImpact("contact-a", "tenant-a");
+
+    expect(impact.dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "conversation-history", count: 1 }),
+        expect.objectContaining({ id: "active-conversations", count: 1 }),
+      ]),
+    );
+  });
 });

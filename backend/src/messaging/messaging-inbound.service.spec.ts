@@ -242,6 +242,55 @@ describe("MessagingInboundService", () => {
     );
   });
 
+  it("persists inbound messages for an inactive contact without sending an automatic reply", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      welcomeEnabled: true,
+      welcomeNewMessage: "Olá {{nome}}, bem-vindo!",
+      welcomeExistingMessage: "Olá novamente {{nome}}!",
+    });
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue({ ...contact(), active: false });
+    prisma.contact.update.mockResolvedValue({ ...contact(), active: false });
+    prisma.conversation.findFirst.mockResolvedValue(null);
+    prisma.conversation.create.mockResolvedValue(conversation({ id: "conversation-inactive" }));
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound-inactive",
+      conversationId: "conversation-inactive",
+      status: MessageStatus.CREATED,
+      createdAt: new Date(),
+    });
+    prisma.conversation.update.mockResolvedValue(
+      conversation({ id: "conversation-inactive", unreadCount: 1 }),
+    );
+    const outbound = { queueAutomatedText: vi.fn() };
+
+    await new MessagingInboundService(
+      prisma as never,
+      undefined,
+      undefined,
+      undefined,
+      outbound as never,
+    ).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-inactive",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Ainda estou aqui",
+      occurredAt: new Date("2026-10-21T12:00:00.000Z"),
+    });
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ content: "Ainda estou aqui" }) }),
+    );
+    expect(outbound.queueAutomatedText).not.toHaveBeenCalled();
+  });
+
   it("queues configured welcome media with the resolved text as its caption", async () => {
     const prisma = prismaMock();
     const attachment = {
@@ -1664,6 +1713,7 @@ function prismaMock() {
     department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
     contactDepartment: { findFirst: vi.fn().mockResolvedValue({ name: "Financeiro" }) },
     customer: { findFirst: vi.fn().mockResolvedValue({ name: "Cliente XPTO" }) },
+    contactTag: { count: vi.fn().mockResolvedValue(0) },
     tenantMembership: {
       findMany: vi.fn().mockResolvedValue([
         {

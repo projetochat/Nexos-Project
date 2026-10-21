@@ -19,4 +19,8 @@ export class CreateTagDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyOnNewConversation?: boolean;
 }

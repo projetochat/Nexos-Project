@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { AuthModule } from "../auth/auth.module";
+import { EmailModule } from "../email/email.module";
 import { PrismaModule } from "../prisma/prisma.module";
 import { PlatformModule } from "../platform/platform.module";
 import { QueueModule } from "../queue/queue.module";
@@ -32,6 +33,7 @@ import { MessagingServicePauseService } from "./messaging-service-pause.service"
 @Module({
   imports: [
     AuthModule,
+    EmailModule,
     PrismaModule,
     QueueModule,
     RealtimeModule,

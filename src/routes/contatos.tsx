@@ -25,6 +25,7 @@ import {
   ArrowDownWideNarrow,
   Building2,
   Bold,
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -59,6 +60,7 @@ import {
   UserRound,
   Redo2,
   X,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
@@ -67,6 +69,7 @@ import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Avatar,
   Badge,
@@ -109,7 +112,7 @@ const OfficialTagForm = React.lazy(() =>
 export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 
 const DEFAULT_PAGE_SIZE = 25;
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 10000] as const;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 5000] as const;
 const CUSTOMER_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const DEFAULT_CUSTOMER_PAGE_SIZE = 10;
 const FAVORITE_COUNTRY_CODES_KEY = "trixus.favorite-country-codes";
@@ -409,10 +412,12 @@ type AgendaImportPreviewState = {
 function ContatosPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const user = useSession((state) => state.user);
   const canCreateContacts = user?.permissions?.includes("contacts.create") ?? false;
   const canUpdateContacts = user?.permissions?.includes("contacts.update") ?? false;
   const canDeleteContacts = user?.permissions?.includes("contacts.delete") ?? false;
+  const canViewContacts = user?.permissions?.includes("contacts.read") ?? false;
   const canReadAdditionalFields =
     user?.permissions?.includes("contacts.additional_fields.read") ?? false;
   const canStartConversation = canStartActiveConversation(user?.permissions);
@@ -450,6 +455,9 @@ function ContatosPage() {
   const [pageSize, setPageSize] = React.useState(
     () => loadContactFiltersMemory(filtersStorageKey).pageSize,
   );
+  React.useEffect(() => {
+    if (isMobile) setViewMode("cards");
+  }, [isMobile]);
   const [loadedFiltersStorageKey, setLoadedFiltersStorageKey] = React.useState(filtersStorageKey);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [allFilteredSelected, setAllFilteredSelected] = React.useState(false);
@@ -487,6 +495,7 @@ function ContatosPage() {
   const [total, setTotal] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
   const [editing, setEditing] = React.useState<Contact | null>(null);
+  const [viewing, setViewing] = React.useState<Contact | null>(null);
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
   const [conversationRequest, setConversationRequest] =
     React.useState<ActiveConversationRequest | null>(null);
@@ -1852,64 +1861,38 @@ function ContatosPage() {
                   <div
                     key={contact.id}
                     data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
-                    className="rounded-lg border border-border bg-surface-1 p-3 scroll-mt-4"
+                    className="overflow-hidden rounded-lg border border-border bg-surface-1 scroll-mt-4"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
-                        {(canUpdateContacts || canDeleteContacts) && (
-                          <input
-                            type="checkbox"
-                            className="h-5 w-5 shrink-0"
-                            checked={allFilteredSelected || selectedIds.includes(contact.id)}
-                            onChange={() => toggleContactSelection(contact.id)}
-                            aria-label={`Selecionar ${contact.nome}`}
-                          />
-                        )}
-                        <Avatar
-                          name={contact.nome}
-                          src={contact.avatar_url ?? undefined}
-                          size={32}
+                    <div className="flex min-w-0 items-center gap-3 p-3">
+                      {(canUpdateContacts || canDeleteContacts) && (
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5 shrink-0"
+                          checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                          onChange={() => toggleContactSelection(contact.id)}
+                          aria-label={`Selecionar ${contact.nome}`}
                         />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold">{contact.nome}</p>
-                          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-                            {formatPhoneWithDdi(contact.telefone)}
-                          </p>
-                        </div>
+                      )}
+                      <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={32} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{contact.nome}</p>
+                        <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                          {formatPhoneWithDdi(contact.telefone)}
+                        </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {canStartConversation && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Abrir conversa"
-                            onClick={() => void openConversation(contact)}
-                          >
-                            <MessageSquarePlus className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        {canUpdateContacts && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Editar"
-                            onClick={() => setEditing(contact)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        {canDeleteContacts && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="trash-action"
-                            title="Excluir"
-                            onClick={() => setDeleting(contact)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
+                    </div>
+                    <div className="flex justify-end border-t border-border px-3 py-2">
+                      <ContactActions
+                        contact={contact}
+                        canViewContacts={canViewContacts}
+                        canStartConversation={canStartConversation}
+                        canUpdateContacts={canUpdateContacts}
+                        canDeleteContacts={canDeleteContacts}
+                        onOpenConversation={openConversation}
+                        onView={setViewing}
+                        onEdit={setEditing}
+                        onDelete={setDeleting}
+                      />
                     </div>
                   </div>
                 ))}
@@ -1989,10 +1972,12 @@ function ContatosPage() {
                           <td className="sticky right-0 bg-card px-3 py-3 group-hover:bg-surface-1">
                             <ContactActions
                               contact={contact}
+                              canViewContacts={canViewContacts}
                               canStartConversation={canStartConversation}
                               canUpdateContacts={canUpdateContacts}
                               canDeleteContacts={canDeleteContacts}
                               onOpenConversation={openConversation}
+                              onView={setViewing}
                               onEdit={setEditing}
                               onDelete={setDeleting}
                             />
@@ -2024,33 +2009,43 @@ function ContatosPage() {
                     <div
                       key={contact.id}
                       data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
-                      className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-surface-1 p-3 scroll-mt-4"
+                      className="min-w-0 overflow-hidden rounded-lg border border-border bg-surface-1 scroll-mt-4"
                     >
-                      {(canUpdateContacts || canDeleteContacts) && (
-                        <input
-                          type="checkbox"
-                          className="h-5 w-5 shrink-0"
-                          checked={allFilteredSelected || selectedIds.includes(contact.id)}
-                          onChange={() => toggleContactSelection(contact.id)}
-                          aria-label={`Selecionar ${contact.nome}`}
+                      <div className="flex min-w-0 items-center gap-3 p-3">
+                        {(canUpdateContacts || canDeleteContacts) && (
+                          <input
+                            type="checkbox"
+                            className="h-5 w-5 shrink-0"
+                            checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                            onChange={() => toggleContactSelection(contact.id)}
+                            aria-label={`Selecionar ${contact.nome}`}
+                          />
+                        )}
+                        <Avatar
+                          name={contact.nome}
+                          src={contact.avatar_url ?? undefined}
+                          size={40}
                         />
-                      )}
-                      <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={40} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{contact.nome}</p>
-                        <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-                          {formatPhoneWithDdi(contact.telefone)}
-                        </p>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">{contact.nome}</p>
+                          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                            {formatPhoneWithDdi(contact.telefone)}
+                          </p>
+                        </div>
                       </div>
-                      <ContactActions
-                        contact={contact}
-                        canStartConversation={canStartConversation}
-                        canUpdateContacts={canUpdateContacts}
-                        canDeleteContacts={canDeleteContacts}
-                        onOpenConversation={openConversation}
-                        onEdit={setEditing}
-                        onDelete={setDeleting}
-                      />
+                      <div className="flex justify-end border-t border-border px-3 py-2">
+                        <ContactActions
+                          contact={contact}
+                          canViewContacts={canViewContacts}
+                          canStartConversation={canStartConversation}
+                          canUpdateContacts={canUpdateContacts}
+                          canDeleteContacts={canDeleteContacts}
+                          onOpenConversation={openConversation}
+                          onView={setViewing}
+                          onEdit={setEditing}
+                          onDelete={setDeleting}
+                        />
+                      </div>
                     </div>
                   ))}
                 {!loading && contacts.length === 0 && (
@@ -2062,7 +2057,7 @@ function ContatosPage() {
             )}
             <div
               data-contacts-list-footer
-              className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3"
+              className="flex items-center justify-between gap-2 border-t border-border bg-surface-2 px-3 py-1.5 text-xs text-muted-foreground sm:px-4"
             >
               <div className="flex min-w-0 items-center gap-2">
                 <span className="shrink-0 leading-tight sm:leading-normal">
@@ -2072,23 +2067,25 @@ function ContatosPage() {
                     {formatIntegerPtBr(contacts.length)} de {formatIntegerPtBr(total)}
                   </span>
                 </span>
-                <Select
-                  value={String(pageSize)}
-                  onChange={(event) => setPageSize(Number(event.target.value))}
-                  className="h-8 w-20 text-xs sm:w-24"
-                >
-                  {PAGE_SIZE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Select>
+                <div className="w-16 shrink-0">
+                  <Select
+                    value={String(pageSize)}
+                    onChange={(event) => setPageSize(Number(event.target.value))}
+                    className="!h-6 !min-h-6 !w-full !rounded-md !px-2 !py-0 !pr-6 !text-xs"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
               </div>
               <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0"
+                  className="!h-7 !min-h-7 !w-7 !p-0"
                   disabled={pageSafe === 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
@@ -2100,7 +2097,7 @@ function ContatosPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0"
+                  className="!h-7 !min-h-7 !w-7 !p-0"
                   disabled={pageSafe === totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 >
@@ -2174,6 +2171,23 @@ function ContatosPage() {
                 toast.error("Falha ao salvar", { description: (e as Error).message });
               }
             }}
+          />
+        )}
+        {canViewContacts && (
+          <ContactFormModal
+            open={!!viewing}
+            initial={viewing ?? undefined}
+            readOnly
+            customers={customers}
+            tags={tags}
+            departments={departments}
+            profiles={profiles}
+            instances={visibleInstances}
+            onCustomerCreated={() => undefined}
+            onDepartmentSaved={() => undefined}
+            onProfileSaved={() => undefined}
+            onClose={() => setViewing(null)}
+            onSubmit={() => undefined}
           />
         )}
         <ActiveConversationOrchestrator
@@ -2264,29 +2278,50 @@ function ContatosPage() {
 
 function ContactActions({
   contact,
+  canViewContacts,
   canStartConversation,
   canUpdateContacts,
   canDeleteContacts,
   onOpenConversation,
+  onView,
   onEdit,
   onDelete,
 }: {
   contact: Contact;
+  canViewContacts: boolean;
   canStartConversation: boolean;
   canUpdateContacts: boolean;
   canDeleteContacts: boolean;
   onOpenConversation: (contact: Contact) => void;
+  onView: (contact: Contact) => void;
   onEdit: (contact: Contact) => void;
   onDelete: (contact: Contact) => void;
 }) {
   return (
     <div className="flex shrink-0 justify-center gap-1">
+      {canViewContacts && (
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Visualizar"
+          aria-label={`Visualizar ${contact.nome}`}
+          onClick={() => onView(contact)}
+        >
+          <Eye className="h-3.5 w-3.5" />
+        </Button>
+      )}
       {canStartConversation && (
         <Button
           variant="ghost"
           size="sm"
-          title="Abrir conversa"
+          className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
+          title={
+            contact.active === false
+              ? "Contato inativo — reative para abrir uma conversa"
+              : "Abrir conversa"
+          }
           aria-label={`Abrir conversa com ${contact.nome}`}
+          disabled={contact.active === false}
           onClick={() => onOpenConversation(contact)}
         >
           <MessageSquarePlus className="h-3.5 w-3.5" />
@@ -3328,6 +3363,7 @@ export function ContactFormModal({
   onCustomerCreated,
   onDepartmentSaved,
   onProfileSaved,
+  readOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -3340,6 +3376,7 @@ export function ContactFormModal({
   onDepartmentSaved: (department: ContactCatalog) => void;
   onProfileSaved: (profile: ContactCatalog) => void;
   onSubmit: (data: {
+    active: boolean;
     nome: string;
     telefone: string;
     countryCode?: string;
@@ -3354,6 +3391,7 @@ export function ContactFormModal({
   }) => void | Promise<void>;
   initial?: Contact;
   defaultInstanceId?: string;
+  readOnly?: boolean;
 }) {
   const canReadAdditionalFields = useSession(
     (state) => state.user?.permissions?.includes("contacts.additional_fields.read") ?? false,
@@ -3362,6 +3400,7 @@ export function ContactFormModal({
     (state) => state.user?.permissions?.includes("chat.tags.create") ?? false,
   );
   const [nome, setNome] = React.useState("");
+  const [active, setActive] = React.useState(true);
   const [telefone, setTelefone] = React.useState("");
   const [countryCode, setCountryCode] = React.useState("55");
   const [customerId, setCustomerId] = React.useState("");
@@ -3393,6 +3432,7 @@ export function ContactFormModal({
     const sessionKey = initial?.id ?? "new-contact";
     if (initializedFormSession.current === sessionKey) return;
     initializedFormSession.current = sessionKey;
+    setActive(initial?.active ?? true);
     setNome(initial?.nome ?? "");
     const initialPhone = splitPhoneByCountry(initial?.telefone ?? "");
     setCountryCode(initialPhone.countryCode);
@@ -3485,6 +3525,7 @@ export function ContactFormModal({
       toast.info("Referências antigas de instância foram removidas deste contato.");
     }
     void onSubmit({
+      active,
       nome: nome.trim(),
       telefone,
       countryCode,
@@ -3499,12 +3540,21 @@ export function ContactFormModal({
     });
   };
 
+  const activeStateChanged = Boolean(initial) && initial?.active !== active;
+  const saveLabel = activeStateChanged
+    ? active
+      ? "Reativar contato"
+      : "Desativar contato"
+    : initial
+      ? "Salvar alterações"
+      : "Cadastrar contato";
+
   return (
     <>
       <Modal
         open={open}
         onClose={onClose}
-        title={initial ? "Editar Contato" : "Novo Contato"}
+        title={readOnly ? "Visualizar Contato" : initial ? "Editar Contato" : "Novo Contato"}
         description=""
         size="xl"
         footer={
@@ -3512,11 +3562,18 @@ export function ContactFormModal({
             <ContactFormLog contact={initial} />
             <div className="flex shrink-0 justify-end gap-1.5 sm:gap-2">
               <Button variant="ghost" size="sm" className="px-2 sm:px-2.5" onClick={onClose}>
-                Cancelar
+                {readOnly ? "Fechar" : "Cancelar"}
               </Button>
-              <Button variant="primary" size="sm" className="px-2.5 sm:px-2.5" onClick={handle}>
-                Salvar
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="save-action-button px-2.5 sm:px-2.5"
+                  onClick={handle}
+                >
+                  {saveLabel}
+                </Button>
+              )}
             </div>
           </div>
         }
@@ -3540,284 +3597,317 @@ export function ContactFormModal({
               ))}
             </div>
           )}
-          {activeContactTab === "Geral" && (
-            <div className="grid gap-x-4 md:grid-cols-2 md:gap-y-4">
+          <fieldset disabled={readOnly} className="contents">
+            {activeContactTab === "Geral" && (
               <div className="space-y-4">
-                <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3 md:grid-cols-[7.5rem_minmax(0,1fr)] md:items-start md:gap-x-4 md:gap-y-4">
-                  <div className="row-span-2 self-stretch">
-                    <div className="flex h-full min-h-[8.5rem] items-center justify-center">
-                      {avatarUrl ? (
-                        <button
-                          type="button"
-                          aria-label="Mostrar foto"
-                          onClick={() => setPhotoPreviewOpen(true)}
-                          className="group relative inline-flex cursor-pointer rounded-full outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                        >
-                          <Avatar name={nome || "Contato"} src={avatarUrl} size={88} />
-                          <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-foreground/80 px-1.5 py-0.5 text-[10px] font-medium text-background opacity-0 transition group-hover:opacity-100">
-                            Mostrar foto
-                          </span>
-                        </button>
-                      ) : (
-                        <Avatar name={nome || "Contato"} src={avatarUrl ?? undefined} size={88} />
-                      )}
-                    </div>
-                  </div>
-                  <Field label="Nome *">
-                    <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-                    {errors.nome && (
-                      <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-                    )}
-                  </Field>
-                  <Field label="WhatsApp *">
-                    <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
-                      <CountryCodeSelect
-                        value={countryCode}
-                        onChange={handleCountryCodeChange}
-                        compact
-                        embedded
-                      />
-                      <Input
-                        value={telefone}
-                        onChange={(e) => handlePhoneChange(e.target.value)}
-                        onBlur={handlePhoneBlur}
-                        placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
-                        className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
-                      />
-                    </div>
-                    {errors.telefone && (
-                      <span className="mt-1 block text-[11px] text-destructive">
-                        {errors.telefone}
-                      </span>
-                    )}
-                  </Field>
-                </div>
-                <Field label="E-mail">
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value.toLocaleLowerCase("en-US"))}
-                    placeholder="email@exemplo.com"
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="contact-active"
+                    checked={active}
+                    onCheckedChange={setActive}
+                    aria-label={active ? "Contato ativo" : "Contato inativo"}
                   />
-                  {errors.email && (
-                    <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
-                  )}
-                </Field>
-                <div className="hidden md:block">
-                  <Field label="Instâncias">
-                    <InstanceMultiSelect
-                      instances={instances}
-                      selectedIds={instanceIds}
-                      onChange={setInstanceIds}
-                    />
-                  </Field>
+                  <label htmlFor="contact-active" className="text-sm text-foreground">
+                    {active ? "Ativo" : "Inativo"}
+                  </label>
                 </div>
-              </div>
-              <div className="space-y-4">
-                <Field label="Empresa do Contato">
-                  <div className="flex gap-2">
-                    <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                      <option value="">- Sem empresa -</option>
-                      {customers.map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                          {customer.nome}
-                        </option>
-                      ))}
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={customersManager.show}
-                      title="Gerenciar empresas"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </Field>
-                <Field label="Departamento do Contato">
-                  <div className="flex gap-2">
-                    <Select
-                      value={contactDepartmentId}
-                      onChange={(e) => setContactDepartmentId(e.target.value)}
-                    >
-                      <option value="">- Sem departamento -</option>
-                      {departments.map((department) => (
-                        <option key={department.id} value={department.id}>
-                          {department.nome}
-                        </option>
-                      ))}
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={departmentsManager.show}
-                      title="Gerenciar departamentos"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </Field>
-                <Field label="Perfil do Contato">
-                  <div className="flex gap-2">
-                    <Select
-                      value={contactProfileId}
-                      onChange={(e) => setContactProfileId(e.target.value)}
-                    >
-                      <option value="">- Sem perfil -</option>
-                      {profiles.map((profile) => (
-                        <option key={profile.id} value={profile.id}>
-                          {profile.nome}
-                        </option>
-                      ))}
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={profilesManager.show}
-                      title="Gerenciar perfis"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </Field>
-                <div className="md:hidden">
-                  <Field label="Instâncias">
-                    <InstanceMultiSelect
-                      instances={instances}
-                      selectedIds={instanceIds}
-                      onChange={setInstanceIds}
-                    />
-                  </Field>
-                </div>
-                <Field label="Etiquetas">
-                  <div className="flex min-w-0 gap-2">
-                    <div className="min-w-0 flex-1">
-                      <TagMultiSelect
-                        tags={availableTags}
-                        selectedIds={tagIds}
-                        onChange={setTagIds}
-                      />
-                    </div>
-                    {canCreateTags && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={tagsManager.show}
-                        title="Nova etiqueta"
-                        aria-label="Nova etiqueta"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </Field>
-              </div>
-            </div>
-          )}
-          {groupedCustomFields.map(([group, fields]) => (
-            <div key={group} className="space-y-3">
-              {group && (
-                <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  {group}
-                </h3>
-              )}
-              <div className="grid gap-4 md:grid-cols-2">
-                {fields.map((field) => {
-                  const isHtmlField = field.type === "text" && contactTextVariant(field) === "html";
-                  const errorKey = `custom_${field.id}`;
-                  const format = customFieldFormat(field);
-                  const liveError = format
-                    ? customFieldError(String(customFields[field.id] ?? ""), format)
-                    : null;
-                  const fieldError = liveError ?? errors[errorKey];
-                  return (
-                    <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
-                      <div>
-                        {field.type !== "checkbox" && (
-                          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
-                            <span>
-                              {field.label}
-                              {field.required && <span className="text-destructive"> *</span>}
-                            </span>
-                            {field.note && (
-                              <InfoTooltip label={field.label}>{field.note}</InfoTooltip>
-                            )}
-                          </div>
+                <div className="grid gap-x-4 md:grid-cols-2 md:gap-y-4">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3 md:grid-cols-[7.5rem_minmax(0,1fr)] md:items-start md:gap-x-4 md:gap-y-4">
+                      <div className="row-span-2 self-stretch">
+                        <div className="flex h-full min-h-[8.5rem] items-center justify-center">
+                          {avatarUrl ? (
+                            <button
+                              type="button"
+                              aria-label="Mostrar foto"
+                              onClick={() => setPhotoPreviewOpen(true)}
+                              className="group relative inline-flex cursor-pointer rounded-full outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                            >
+                              <Avatar name={nome || "Contato"} src={avatarUrl} size={88} />
+                              <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-foreground/80 px-1.5 py-0.5 text-[10px] font-medium text-background opacity-0 transition group-hover:opacity-100">
+                                Mostrar foto
+                              </span>
+                            </button>
+                          ) : (
+                            <Avatar
+                              name={nome || "Contato"}
+                              src={avatarUrl ?? undefined}
+                              size={88}
+                            />
+                          )}
+                        </div>
+                      </div>
+                      <Field label="Nome *">
+                        <Input value={nome} onChange={(e) => setNome(e.target.value)} />
+                        {errors.nome && (
+                          <span className="mt-1 block text-[11px] text-destructive">
+                            {errors.nome}
+                          </span>
                         )}
-                        <div
-                          className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}
-                        >
-                          <CustomContactFieldInput
-                            field={field}
-                            value={customFields[field.id]}
-                            error={fieldError}
-                            onChange={(value) => {
-                              setCustomFields((current) => ({ ...current, [field.id]: value }));
-                              setErrors((current) => {
-                                if (!current[errorKey]) return current;
-                                const next = { ...current };
-                                delete next[errorKey];
-                                return next;
-                              });
-                            }}
+                      </Field>
+                      <Field label="WhatsApp *">
+                        <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
+                          <CountryCodeSelect
+                            value={countryCode}
+                            onChange={handleCountryCodeChange}
+                            compact
+                            embedded
+                          />
+                          <Input
+                            value={telefone}
+                            onChange={(e) => handlePhoneChange(e.target.value)}
+                            onBlur={handlePhoneBlur}
+                            placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
+                            className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
                           />
                         </div>
-                        {fieldError && (
+                        {errors.telefone && (
                           <span className="mt-1 block text-[11px] text-destructive">
-                            {fieldError}
+                            {errors.telefone}
                           </span>
                         )}
-                      </div>
+                      </Field>
                     </div>
-                  );
-                })}
+                    <Field label="E-mail">
+                      <Input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value.toLocaleLowerCase("en-US"))}
+                        placeholder="email@exemplo.com"
+                      />
+                      {errors.email && (
+                        <span className="mt-1 block text-[11px] text-destructive">
+                          {errors.email}
+                        </span>
+                      )}
+                    </Field>
+                    <div className="hidden md:block">
+                      <Field label="Instâncias">
+                        <InstanceMultiSelect
+                          instances={instances}
+                          selectedIds={instanceIds}
+                          onChange={setInstanceIds}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <Field label="Empresa do Contato">
+                      <div className="flex gap-2">
+                        <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                          <option value="">- Sem empresa -</option>
+                          {customers.map((customer) => (
+                            <option key={customer.id} value={customer.id}>
+                              {customer.nome}
+                            </option>
+                          ))}
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={customersManager.show}
+                          title="Gerenciar empresas"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </Field>
+                    <Field label="Departamento do Contato">
+                      <div className="flex gap-2">
+                        <Select
+                          value={contactDepartmentId}
+                          onChange={(e) => setContactDepartmentId(e.target.value)}
+                        >
+                          <option value="">- Sem departamento -</option>
+                          {departments.map((department) => (
+                            <option key={department.id} value={department.id}>
+                              {department.nome}
+                            </option>
+                          ))}
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={departmentsManager.show}
+                          title="Gerenciar departamentos"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </Field>
+                    <Field label="Perfil do Contato">
+                      <div className="flex gap-2">
+                        <Select
+                          value={contactProfileId}
+                          onChange={(e) => setContactProfileId(e.target.value)}
+                        >
+                          <option value="">- Sem perfil -</option>
+                          {profiles.map((profile) => (
+                            <option key={profile.id} value={profile.id}>
+                              {profile.nome}
+                            </option>
+                          ))}
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={profilesManager.show}
+                          title="Gerenciar perfis"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </Field>
+                    <div className="md:hidden">
+                      <Field label="Instâncias">
+                        <InstanceMultiSelect
+                          instances={instances}
+                          selectedIds={instanceIds}
+                          onChange={setInstanceIds}
+                        />
+                      </Field>
+                    </div>
+                    <Field label="Etiquetas">
+                      <div className="flex min-w-0 gap-2">
+                        <div className="min-w-0 flex-1">
+                          <TagMultiSelect
+                            tags={availableTags}
+                            selectedIds={tagIds}
+                            onChange={setTagIds}
+                          />
+                        </div>
+                        {canCreateTags && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={tagsManager.show}
+                            title="Nova etiqueta"
+                            aria-label="Nova etiqueta"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </Field>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            )}
+            {groupedCustomFields.map(([group, fields]) => (
+              <div key={group} className="space-y-3">
+                {group && (
+                  <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                    {group}
+                  </h3>
+                )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  {fields.map((field) => {
+                    const isHtmlField =
+                      field.type === "text" && contactTextVariant(field) === "html";
+                    const errorKey = `custom_${field.id}`;
+                    const format = customFieldFormat(field);
+                    const liveError = format
+                      ? customFieldError(String(customFields[field.id] ?? ""), format)
+                      : null;
+                    const fieldError = liveError ?? errors[errorKey];
+                    return (
+                      <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
+                        <div>
+                          {field.type !== "checkbox" && (
+                            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
+                              <span>
+                                {field.label}
+                                {field.required && <span className="text-destructive"> *</span>}
+                              </span>
+                              {field.note && (
+                                <InfoTooltip label={field.label}>{field.note}</InfoTooltip>
+                              )}
+                            </div>
+                          )}
+                          <div
+                            className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}
+                          >
+                            <CustomContactFieldInput
+                              field={field}
+                              value={customFields[field.id]}
+                              error={fieldError}
+                              readOnly={readOnly}
+                              onChange={(value) => {
+                                setCustomFields((current) => ({ ...current, [field.id]: value }));
+                                setErrors((current) => {
+                                  if (!current[errorKey]) return current;
+                                  const next = { ...current };
+                                  delete next[errorKey];
+                                  return next;
+                                });
+                              }}
+                            />
+                          </div>
+                          {fieldError && (
+                            <span className="mt-1 block text-[11px] text-destructive">
+                              {fieldError}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </fieldset>
         </div>
-        <CustomersManagerModal
-          open={customersManager.open}
-          onClose={customersManager.hide}
-          onCustomerSelected={(customer) => {
-            onCustomerCreated(customer);
-            setCustomerId(customer.id);
-            customersManager.hide();
-          }}
-        />
-        <DepartmentsManagerModal
-          open={departmentsManager.open}
-          onClose={departmentsManager.hide}
-          onDepartmentSelected={(department) => {
-            onDepartmentSaved(department);
-            setContactDepartmentId(department.id);
-            departmentsManager.hide();
-          }}
-        />
-        <ContactProfilesManagerModal
-          open={profilesManager.open}
-          onClose={profilesManager.hide}
-          onProfileSelected={(profile) => {
-            onProfileSaved(profile);
-            setContactProfileId(profile.id);
-            profilesManager.hide();
-          }}
-        />
-        <React.Suspense fallback={null}>
-          <OfficialTagForm
-            open={tagsManager.open}
-            onClose={tagsManager.hide}
-            tags={availableTags}
-            onSubmit={async (data) => {
-              const created = await crmApi.createTag(data);
-              setAvailableTags((current) =>
-                sortByOptionLabel([created, ...current], (item) => item.nome),
-              );
-              setTagIds((current) => [...new Set([...current, created.id])]);
-              tagsManager.hide();
-              toast.success("Etiqueta criada");
+        {!readOnly && (
+          <CustomersManagerModal
+            open={customersManager.open}
+            onClose={customersManager.hide}
+            onCustomerSelected={(customer) => {
+              onCustomerCreated(customer);
+              setCustomerId(customer.id);
+              customersManager.hide();
             }}
           />
-        </React.Suspense>
+        )}
+        {!readOnly && (
+          <DepartmentsManagerModal
+            open={departmentsManager.open}
+            onClose={departmentsManager.hide}
+            onDepartmentSelected={(department) => {
+              onDepartmentSaved(department);
+              setContactDepartmentId(department.id);
+              departmentsManager.hide();
+            }}
+          />
+        )}
+        {!readOnly && (
+          <ContactProfilesManagerModal
+            open={profilesManager.open}
+            onClose={profilesManager.hide}
+            onProfileSelected={(profile) => {
+              onProfileSaved(profile);
+              setContactProfileId(profile.id);
+              profilesManager.hide();
+            }}
+          />
+        )}
+        {!readOnly && (
+          <React.Suspense fallback={null}>
+            <OfficialTagForm
+              open={tagsManager.open}
+              onClose={tagsManager.hide}
+              tags={availableTags}
+              onSubmit={async (data) => {
+                const created = await crmApi.createTag(data);
+                setAvailableTags((current) =>
+                  sortByOptionLabel([created, ...current], (item) => item.nome),
+                );
+                setTagIds((current) => [...new Set([...current, created.id])]);
+                tagsManager.hide();
+                toast.success("Etiqueta criada");
+              }}
+            />
+          </React.Suspense>
+        )}
       </Modal>
       {avatarUrl && (
         <Modal
@@ -4272,7 +4362,7 @@ function DepartmentFormModal({
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancelar
             </Button>
-            <Button variant="primary" size="sm" onClick={save}>
+            <Button variant="primary" size="sm" className="save-action-button" onClick={save}>
               Salvar
             </Button>
           </div>
@@ -4845,11 +4935,13 @@ function CustomContactFieldInput({
   value,
   onChange,
   error,
+  readOnly = false,
 }: {
   field: ContactCustomField;
   value: string | boolean | undefined;
   onChange: (value: string | boolean) => void;
   error?: string | null;
+  readOnly?: boolean;
 }) {
   const format = customFieldFormat(field);
   if (format) {
@@ -4928,7 +5020,13 @@ function CustomContactFieldInput({
       );
     }
     if (variant === "html") {
-      return <HtmlTextEditor value={inputValue} onChange={(next) => onChange(next)} />;
+      return (
+        <HtmlTextEditor
+          value={inputValue}
+          onChange={(next) => onChange(next)}
+          readOnly={readOnly}
+        />
+      );
     }
     return (
       <Input type="text" value={inputValue} onChange={(event) => onChange(event.target.value)} />
@@ -5087,10 +5185,12 @@ function HtmlTextEditor({
   value,
   onChange,
   expanded = false,
+  readOnly = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   expanded?: boolean;
+  readOnly?: boolean;
 }) {
   const editorRef = React.useRef<HTMLDivElement>(null);
   const selectionRef = React.useRef<Range | null>(null);
@@ -5169,148 +5269,154 @@ function HtmlTextEditor({
 
   const editor = (
     <div className="w-full overflow-hidden rounded-lg border border-border bg-surface-1">
-      <div className="flex items-start justify-between gap-2 border-b border-border bg-card px-2 py-1.5">
-        <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
-          <ToolbarButton title="Desfazer" onClick={() => command("undo")}>
-            <Undo2 className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Refazer" onClick={() => command("redo")}>
-            <Redo2 className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarDivider />
-          <ToolbarSelect
-            title="Tipo da fonte"
-            value={fontName}
-            className="w-32"
-            onMouseDown={saveSelection}
-            onChange={(next) => {
-              setFontName(next);
-              command("fontName", next);
-            }}
-          >
-            <option value="Arial">Sans Serif</option>
-            <option value="Times New Roman">Serif</option>
-            <option value="Courier New">Largura fixa</option>
-            <option value="Arial Black">Largo</option>
-            <option value="Arial Narrow">Estreito</option>
-            <option value="Comic Sans MS">Comic Sans MS</option>
-            <option value="Garamond">Garamond</option>
-            <option value="Georgia">Georgia</option>
-            <option value="Tahoma">Tahoma</option>
-            <option value="Trebuchet MS">Trebuchet MS</option>
-            <option value="Verdana">Verdana</option>
-          </ToolbarSelect>
-          <ToolbarDivider />
-          <label
-            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-foreground transition hover:bg-card"
-            title="Tamanho da fonte"
-          >
-            <Type className="h-4 w-4" />
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            <select
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
-              value={fontSize}
+      {!readOnly && (
+        <div className="flex items-start justify-between gap-2 border-b border-border bg-card px-2 py-1.5">
+          <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
+            <ToolbarButton title="Desfazer" onClick={() => command("undo")}>
+              <Undo2 className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Refazer" onClick={() => command("redo")}>
+              <Redo2 className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarDivider />
+            <ToolbarSelect
+              title="Tipo da fonte"
+              value={fontName}
+              className="w-32"
               onMouseDown={saveSelection}
-              onChange={(event) => {
-                setFontSize(event.target.value);
-                command("fontSize", event.target.value);
+              onChange={(next) => {
+                setFontName(next);
+                command("fontName", next);
               }}
-              aria-label="Tamanho da fonte"
             >
-              <option value="2">Pequeno</option>
-              <option value="3">Normal</option>
-              <option value="5">Grande</option>
-              <option value="7">Enorme</option>
-            </select>
-          </label>
-          <ToolbarDivider />
-          <ToolbarButton title="Negrito" onClick={() => command("bold")}>
-            <Bold className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Itálico" onClick={() => command("italic")}>
-            <Italic className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Sublinhado" onClick={() => command("underline")}>
-            <Underline className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Riscado" onClick={() => command("strikeThrough")}>
-            <Strikethrough className="h-4 w-4" />
-          </ToolbarButton>
-          <label
-            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
-            title="Cor do texto"
-          >
-            <span className="font-semibold">A</span>
-            <span className="h-1 w-4 rounded-sm" style={{ backgroundColor: fontColor }} />
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              type="color"
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              value={fontColor}
-              onMouseDown={saveSelection}
-              onChange={(event) => {
-                setFontColor(event.target.value);
-                command("foreColor", event.target.value);
-              }}
-            />
-          </label>
-          <ToolbarDivider />
-          <label
-            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
-            title="Alinhamento"
-          >
-            {alignmentIcon}
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            <select
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
-              value={alignmentCommand}
-              onMouseDown={saveSelection}
-              onChange={(event) => {
-                setAlignmentCommand(event.target.value);
-                command(event.target.value);
-              }}
-              aria-label="Alinhamento"
+              <option value="Arial">Sans Serif</option>
+              <option value="Times New Roman">Serif</option>
+              <option value="Courier New">Largura fixa</option>
+              <option value="Arial Black">Largo</option>
+              <option value="Arial Narrow">Estreito</option>
+              <option value="Comic Sans MS">Comic Sans MS</option>
+              <option value="Garamond">Garamond</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Tahoma">Tahoma</option>
+              <option value="Trebuchet MS">Trebuchet MS</option>
+              <option value="Verdana">Verdana</option>
+            </ToolbarSelect>
+            <ToolbarDivider />
+            <label
+              className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-foreground transition hover:bg-card"
+              title="Tamanho da fonte"
             >
-              <option value="justifyLeft">Esquerda</option>
-              <option value="justifyCenter">Centro</option>
-              <option value="justifyRight">Direita</option>
-              <option value="justifyFull">Justificado</option>
-            </select>
-          </label>
-          <ToolbarButton title="Lista numerada" onClick={() => command("insertOrderedList")}>
-            <ListOrdered className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Marcadores" onClick={() => command("insertUnorderedList")}>
-            <List className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Diminuir recuo" onClick={() => command("outdent")}>
-            <ListIndentDecrease className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton title="Aumentar recuo" onClick={() => command("indent")}>
-            <ListIndentIncrease className="h-4 w-4" />
-          </ToolbarButton>
-          {!expanded && (
-            <>
-              <ToolbarDivider />
-              <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
-                <Expand className="h-4 w-4" />
-              </ToolbarButton>
-            </>
-          )}
+              <Type className="h-4 w-4" />
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              <select
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
+                value={fontSize}
+                onMouseDown={saveSelection}
+                onChange={(event) => {
+                  setFontSize(event.target.value);
+                  command("fontSize", event.target.value);
+                }}
+                aria-label="Tamanho da fonte"
+              >
+                <option value="2">Pequeno</option>
+                <option value="3">Normal</option>
+                <option value="5">Grande</option>
+                <option value="7">Enorme</option>
+              </select>
+            </label>
+            <ToolbarDivider />
+            <ToolbarButton title="Negrito" onClick={() => command("bold")}>
+              <Bold className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Itálico" onClick={() => command("italic")}>
+              <Italic className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Sublinhado" onClick={() => command("underline")}>
+              <Underline className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Riscado" onClick={() => command("strikeThrough")}>
+              <Strikethrough className="h-4 w-4" />
+            </ToolbarButton>
+            <label
+              className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
+              title="Cor do texto"
+            >
+              <span className="font-semibold">A</span>
+              <span className="h-1 w-4 rounded-sm" style={{ backgroundColor: fontColor }} />
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="color"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                value={fontColor}
+                onMouseDown={saveSelection}
+                onChange={(event) => {
+                  setFontColor(event.target.value);
+                  command("foreColor", event.target.value);
+                }}
+              />
+            </label>
+            <ToolbarDivider />
+            <label
+              className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
+              title="Alinhamento"
+            >
+              {alignmentIcon}
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              <select
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
+                value={alignmentCommand}
+                onMouseDown={saveSelection}
+                onChange={(event) => {
+                  setAlignmentCommand(event.target.value);
+                  command(event.target.value);
+                }}
+                aria-label="Alinhamento"
+              >
+                <option value="justifyLeft">Esquerda</option>
+                <option value="justifyCenter">Centro</option>
+                <option value="justifyRight">Direita</option>
+                <option value="justifyFull">Justificado</option>
+              </select>
+            </label>
+            <ToolbarButton title="Lista numerada" onClick={() => command("insertOrderedList")}>
+              <ListOrdered className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Marcadores" onClick={() => command("insertUnorderedList")}>
+              <List className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Diminuir recuo" onClick={() => command("outdent")}>
+              <ListIndentDecrease className="h-4 w-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Aumentar recuo" onClick={() => command("indent")}>
+              <ListIndentIncrease className="h-4 w-4" />
+            </ToolbarButton>
+            {!expanded && (
+              <>
+                <ToolbarDivider />
+                <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
+                  <Expand className="h-4 w-4" />
+                </ToolbarButton>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <div
         ref={editorRef}
-        contentEditable
+        contentEditable={!readOnly}
         suppressContentEditableWarning
-        className={`w-full overflow-y-auto px-3 py-2 text-sm outline-none [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${
+        className={`w-full overflow-y-auto px-3 py-2 text-base outline-none sm:text-sm [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${
           expanded ? "h-[62vh]" : "h-44"
         }`}
         onBlur={saveSelection}
-        onInput={() => {
-          saveSelection();
-          sync();
-        }}
+        onInput={
+          readOnly
+            ? undefined
+            : () => {
+                saveSelection();
+                sync();
+              }
+        }
         onKeyUp={saveSelection}
         onMouseUp={saveSelection}
       />
@@ -5320,19 +5426,21 @@ function HtmlTextEditor({
   return (
     <>
       {editor}
-      <Modal
-        open={fullscreen}
-        onClose={() => setFullscreen(false)}
-        title="Editar Texto HTML"
-        size="xl"
-        footer={
-          <Button variant="primary" size="sm" onClick={() => setFullscreen(false)}>
-            Concluir
-          </Button>
-        }
-      >
-        <HtmlTextEditor value={value} onChange={onChange} expanded />
-      </Modal>
+      {!readOnly && (
+        <Modal
+          open={fullscreen}
+          onClose={() => setFullscreen(false)}
+          title="Editar Texto HTML"
+          size="xl"
+          footer={
+            <Button variant="primary" size="sm" onClick={() => setFullscreen(false)}>
+              Concluir
+            </Button>
+          }
+        >
+          <HtmlTextEditor value={value} onChange={onChange} expanded />
+        </Modal>
+      )}
     </>
   );
 }
@@ -5407,6 +5515,7 @@ function CustomDateInput({
   onChange: (value: string) => void;
 }) {
   const [draft, setDraft] = React.useState(() => formatDateForDisplay(value, variant));
+  const pickerRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dateInput) {
@@ -5415,33 +5524,81 @@ function CustomDateInput({
     setDraft(formatDateForDisplay(value, variant));
   }, [value, variant]);
 
+  const commitDate = (date: Date) => {
+    const parsed = dateDraftFromDate(date, variant);
+    setDraft(parsed.display);
+    onChange(parsed.iso);
+  };
+
   return (
-    <Input
-      type="text"
-      inputMode="numeric"
-      value={draft}
-      data-date-input="true"
-      onKeyDown={(event) => {
-        if (event.key.toLowerCase() !== "h") return;
-        event.preventDefault();
-        const parsed = dateDraftFromDate(new Date(), variant);
-        setDraft(parsed.display);
-        onChange(parsed.iso);
-      }}
-      onChange={(event) => {
-        setDraft(event.target.value);
-      }}
-      onBlur={() => {
-        const parsed = parseDateDraft(draft, variant);
-        if (!parsed) {
-          onChange(draft);
-          return;
-        }
-        setDraft(parsed.display);
-        onChange(parsed.iso);
-      }}
-    />
+    <div className="relative">
+      <Input
+        type="text"
+        inputMode="numeric"
+        placeholder={variant === "datetime" ? "dd/mm/aaaa hh:mm" : "dd/mm/aaaa"}
+        value={draft}
+        data-date-input="true"
+        className="pr-10"
+        onKeyDown={(event) => {
+          if (event.key.toLowerCase() !== "h") return;
+          event.preventDefault();
+          commitDate(new Date());
+        }}
+        onChange={(event) => {
+          setDraft(event.target.value);
+        }}
+        onBlur={() => {
+          const parsed = parseDateDraft(draft, variant);
+          if (!parsed) {
+            onChange(draft);
+            return;
+          }
+          setDraft(parsed.display);
+          onChange(parsed.iso);
+        }}
+      />
+      <input
+        ref={pickerRef}
+        type={variant === "datetime" ? "datetime-local" : "date"}
+        value={nativeDateInputValue(value, variant)}
+        onChange={(event) => {
+          if (!event.target.value) return;
+          const date = new Date(
+            variant === "date" ? `${event.target.value}T00:00:00` : event.target.value,
+          );
+          if (!Number.isNaN(date.getTime())) commitDate(date);
+        }}
+        className="pointer-events-none absolute h-px w-px opacity-0"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      <button
+        type="button"
+        className="absolute right-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+        aria-label={variant === "datetime" ? "Selecionar data e hora" : "Selecionar data"}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => {
+          const picker = pickerRef.current;
+          if (!picker) return;
+          if (typeof picker.showPicker === "function") picker.showPicker();
+          else picker.click();
+        }}
+      >
+        <CalendarDays className="h-4 w-4" />
+      </button>
+    </div>
   );
+}
+
+function nativeDateInputValue(value: string, variant: ContactDateVariant) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const base = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return variant === "datetime"
+    ? `${base}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+    : base;
 }
 
 function dateDraftFromDate(date: Date, variant: ContactDateVariant) {
@@ -6293,7 +6450,7 @@ function CustomerFormModal({
             <Button variant="ghost" size="sm" onClick={onClose}>
               Cancelar
             </Button>
-            <Button variant="primary" size="sm" onClick={save}>
+            <Button variant="primary" size="sm" className="save-action-button" onClick={save}>
               Salvar
             </Button>
           </div>
@@ -6466,6 +6623,7 @@ function canonicalContactInstanceIds(
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function contactPayload(data: {
+  active?: boolean;
   nome: string;
   telefone: string;
   countryCode?: string;
@@ -6480,6 +6638,7 @@ export function contactPayload(data: {
 }) {
   return {
     name: data.nome,
+    active: data.active ?? true,
     phone: formatPhoneForSubmit(data.telefone, data.countryCode),
     customerId: data.customer_id,
     email: data.email,

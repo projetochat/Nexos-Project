@@ -793,9 +793,14 @@ export class MessagingOutboundService {
       }
       const connection = await this.resolveConnection(tx, current.tenantId, conversation);
       const effectiveAt = this.now();
-      const caption = stored.caption
-        ? await this.prepareOutboundText(tx, stored.caption, conversation, current, effectiveAt)
-        : stored.caption;
+      const caption = await this.prepareOutboundMediaCaption(
+        tx,
+        stored.caption,
+        stored.messageType,
+        conversation,
+        current,
+        effectiveAt,
+      );
       const quoted = quotedMessageId
         ? await this.resolveQuotedMessage(tx, {
             tenantId: current.tenantId,
@@ -804,7 +809,9 @@ export class MessagingOutboundService {
           })
         : null;
       const now = new Date();
-      const preview = mediaPreview(stored.messageType, caption, stored.fileName);
+      const preview =
+        contactCardPreview(stored.mimeType, stored.fileName, stored.body) ??
+        mediaPreview(stored.messageType, caption, stored.fileName);
       const message = await tx.message.create({
         data: {
           tenantId: current.tenantId,
@@ -908,6 +915,18 @@ export class MessagingOutboundService {
       throw new OutboundDispatchError(
         MessagingErrorCode.DELIVERY_REJECTED,
         "Message is already failed and needs an explicit retry rule.",
+        false,
+      );
+    }
+
+    if (message.conversation.contact.active === false) {
+      await this.failMessage(message.id, input.tenantId, {
+        code: MessagingErrorCode.DELIVERY_REJECTED,
+        message: "O contato está inativo. Reative-o antes de enviar mensagens.",
+      });
+      throw new OutboundDispatchError(
+        MessagingErrorCode.DELIVERY_REJECTED,
+        "O contato está inativo. Reative-o antes de enviar mensagens.",
         false,
       );
     }
@@ -1158,6 +1177,7 @@ export class MessagingOutboundService {
         data: {
           status: result.accepted ? MessageStatus.SENT : MessageStatus.FAILED,
           providerMessageId: result.providerMessageId ?? null,
+          providerChatId: result.providerChatId ?? message.providerChatId ?? null,
           providerStatus: result.providerStatus ?? null,
           providerAcceptedAt: result.providerTimestamp ?? null,
           sentAt: result.accepted ? (result.providerTimestamp ?? new Date()) : null,
@@ -1220,6 +1240,8 @@ export class MessagingOutboundService {
             data: {
               status: MessageStatus.SENT,
               providerMessageId: acceptedProviderResult.providerMessageId,
+              providerChatId:
+                acceptedProviderResult.providerChatId ?? message.providerChatId ?? null,
               providerStatus: acceptedProviderResult.providerStatus ?? null,
               providerAcceptedAt: acceptedProviderResult.providerTimestamp ?? null,
               sentAt: acceptedProviderResult.providerTimestamp ?? new Date(),
@@ -1346,6 +1368,7 @@ export class MessagingOutboundService {
       include: { conversation: { include: { connection: true, contact: true } } },
     });
     if (!message) throw new NotFoundException("Mensagem não encontrada.");
+    this.assertContactActive(message.conversation.contact);
     if (!message.providerMessageId) {
       throw new BadRequestException({
         statusCode: 422,
@@ -1478,7 +1501,9 @@ export class MessagingOutboundService {
     assignedMembershipId: string | null;
     status: ConversationStatus;
     conversationType?: ConversationType;
+    contact?: { active: boolean } | null;
   }) {
+    this.assertContactActive(conversation.contact);
     if (conversation.status === ConversationStatus.FECHADA) {
       throw new BadRequestException("Conversa encerrada não aceita novas mensagens.");
     }
@@ -1488,6 +1513,16 @@ export class MessagingOutboundService {
     if (conversation.conversationType === ConversationType.GROUP) return;
     if (!conversation.assignedMembershipId) {
       throw new BadRequestException("Conversa precisa estar assumida antes do envio.");
+    }
+  }
+
+  private assertContactActive(contact?: { active: boolean } | null) {
+    if (contact?.active === false) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: "CONTACT_INACTIVE",
+        message: "O contato está inativo. Reative-o antes de enviar mensagens.",
+      });
     }
   }
 
@@ -1536,6 +1571,44 @@ export class MessagingOutboundService {
       : null;
     if (!agentName) return resolvedContent;
     return cleanMessageContent(`*${agentName}:*\n\n${resolvedContent}`);
+  }
+
+  private async prepareOutboundMediaCaption(
+    tx: Prisma.TransactionClient,
+    caption: string | null,
+    messageType: MessageType,
+    conversation: { id: string; protocol?: string | null },
+    current: AuthenticatedUser,
+    effectiveAt: Date,
+  ) {
+    const resolvedCaption = caption
+      ? cleanMessageContent(
+          await this.resolveConversationTemplate(
+            tx,
+            conversation.id,
+            current.tenantId,
+            caption,
+            effectiveAt,
+            canReadContactAdditionalFields(current),
+          ),
+        )
+      : null;
+    if (!current.permissions?.includes("chat.agent_name.show")) return resolvedCaption;
+    if (
+      !resolvedCaption &&
+      messageType !== MessageType.IMAGE &&
+      messageType !== MessageType.AUDIO &&
+      messageType !== MessageType.VOICE
+    ) {
+      return null;
+    }
+    const agentName = this.senderDisplayName
+      ? await this.senderDisplayName.resolve(tx, current)
+      : null;
+    if (!agentName) return resolvedCaption;
+    return cleanMessageContent(
+      resolvedCaption ? `*${agentName}:*\n\n${resolvedCaption}` : `*${agentName}:*`,
+    );
   }
 
   private async resolveConversationTemplate(
@@ -1985,6 +2058,20 @@ function mediaPreview(type: MessageType, caption: string | null, fileName: strin
   if (type === MessageType.VIDEO) return "[video]";
   if (type === MessageType.DOCUMENT) return `[documento] ${fileName}`;
   return `[${type.toLowerCase()}]`;
+}
+
+export function contactCardPreview(mimeType: string, fileName: string, body: Buffer) {
+  if (mimeType.toLowerCase() !== "text/vcard" && !/\.vcf$/i.test(fileName)) return null;
+  const unfolded = body.toString("utf8").replace(/\r?\n[ \t]/g, "");
+  const names = [...unfolded.matchAll(/^FN(?:;[^:]*)?:(.*)$/gim)];
+  const rawName = names.at(-1)?.[1]?.trim();
+  if (!rawName) return "[contato] Contato compartilhado";
+  const name = rawName
+    .replace(/\\n/gi, " ")
+    .replace(/\\([\\,;])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `[contato] ${name || "Contato compartilhado"}`;
 }
 
 function sanitizeReaction(value: string | null) {

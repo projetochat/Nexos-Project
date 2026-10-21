@@ -3,6 +3,7 @@ import {
   CONTACT_CUSTOM_FIELD_VARIABLE_KEY_STOP_WORDS,
   NATIVE_RESERVED_VARIABLE_KEYS,
 } from "../crm/contact-custom-field-catalog";
+import { formatPhoneVariable } from "../common/phone-display";
 
 const NATIVE_VARIABLE_KEYS = new Set<string>(NATIVE_RESERVED_VARIABLE_KEYS);
 const LEGACY_STOP_WORDS = new Set<string>(CONTACT_CUSTOM_FIELD_VARIABLE_KEY_STOP_WORDS);
@@ -45,8 +46,8 @@ export function resolveMessageTemplate(text: string, context: TemplateContext = 
   const values: Record<string, string> = {
     contato: context.contactName?.trim() ?? "",
     nome: context.contactName?.trim() ?? "",
-    telefone: context.phone?.trim() ?? "",
-    whatsapp: context.phone?.trim() ?? "",
+    telefone: formatPhoneVariable(context.phone ?? ""),
+    whatsapp: formatPhoneVariable(context.phone ?? ""),
     email: context.email?.trim() ?? "",
     instancia: context.instance?.trim() ?? "",
     departamento: context.department?.trim() ?? "",
@@ -116,6 +117,9 @@ function renderCustomField(field: TemplateCustomField, timezone?: string | null)
     return "";
   }
   const mask = parseMask(field.mask);
+  if (type === "TEXT" && mask?.custom?.format === "phone") {
+    return formatPhoneVariable(String(value));
+  }
   if (type === "DATE") {
     if (mask?.date?.variant === "datetime") {
       const instant = new Date(String(value));
@@ -135,6 +139,7 @@ function renderCustomField(field: TemplateCustomField, timezone?: string | null)
 }
 
 type MessageFieldMask = {
+  custom?: { format?: string };
   date?: { variant?: string };
   list?: { variant?: string };
 };

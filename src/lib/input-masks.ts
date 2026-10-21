@@ -1,33 +1,13 @@
-import { AsYouType, parsePhoneNumberFromString } from "libphonenumber-js/min";
+import {
+  formatBrazilPhoneWithDdi,
+  formatPhoneForDisplay,
+  onlyPhoneDigits,
+} from "../../backend/src/common/phone-display";
+
+export { formatBrazilPhoneWithDdi, formatPhoneForDisplay };
 
 export function onlyDigits(value: string) {
-  return value.replace(/\D/g, "");
-}
-
-export function formatPhoneForDisplay(value: string) {
-  const digits = onlyDigits(value);
-  if (!digits) return "";
-
-  const phone = parsePhoneNumberFromString(`+${digits}`);
-  if (!phone?.country || !phone.nationalNumber) return value.trim();
-
-  const nationalNumber = new AsYouType(phone.country).input(String(phone.nationalNumber));
-  return `+${phone.countryCallingCode} ${nationalNumber}`.trim();
-}
-
-export function formatBrazilPhoneWithDdi(value: string) {
-  const digits = onlyDigits(value);
-  if (!digits) return "";
-
-  const local = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
-  if (local.length === 11) {
-    return `+55 ${local.slice(0, 2)} ${local.slice(2, 7)}-${local.slice(7)}`;
-  }
-  if (local.length === 10) {
-    return `+55 ${local.slice(0, 2)} ${local.slice(2, 6)}-${local.slice(6)}`;
-  }
-
-  return formatPhoneForDisplay(value);
+  return onlyPhoneDigits(value);
 }
 
 export function maskBrazilPhone(value: string) {

@@ -123,6 +123,11 @@ export class AuthService {
           name: user.name,
           avatarUrl: user.avatarUrl,
           keepSidebarCollapsed: user.keepSidebarCollapsed,
+          chatBubbleColor: user.chatBubbleColor,
+          chatBubbleTextColor: user.chatBubbleTextColor,
+          customerBubbleColor: user.customerBubbleColor,
+          customerBubbleTextColor: user.customerBubbleTextColor,
+          chatBackgroundColor: user.chatBackgroundColor,
           roleId: "",
           roleKey: "platform_admin",
           platformRole: user.platformRole,
@@ -342,6 +347,11 @@ export class AuthService {
         name: membershipDisplayName(membership, user.name),
         avatarUrl: user.avatarUrl,
         keepSidebarCollapsed: user.keepSidebarCollapsed,
+        chatBubbleColor: user.chatBubbleColor,
+        chatBubbleTextColor: user.chatBubbleTextColor,
+        customerBubbleColor: user.customerBubbleColor,
+        customerBubbleTextColor: user.customerBubbleTextColor,
+        chatBackgroundColor: user.chatBackgroundColor,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         platformRole: user.platformRole,
@@ -521,7 +531,10 @@ export class AuthService {
       include: { tenant: true, role: true, contact: true },
     });
     if (!invitation) throw new UnauthorizedException("Convite inválido ou expirado.");
-    if (invitation.contactId && (!invitation.contact || invitation.contact.archivedAt)) {
+    if (
+      invitation.contactId &&
+      (!invitation.contact || invitation.contact.archivedAt || invitation.contact.active === false)
+    ) {
       throw new UnauthorizedException("Convite de contato não está mais ativo.");
     }
     const requestedName = dto.name?.trim();
@@ -585,14 +598,18 @@ export class AuthService {
         });
       }
       if (invitation.contactId) {
-        await tx.contact.updateMany({
+        const linkedContact = await tx.contact.updateMany({
           where: {
             id: invitation.contactId,
             tenantId: invitation.tenantId,
             archivedAt: null,
+            active: true,
           },
           data: { portalMembershipId: membership.id, portalAccessActive: true },
         });
+        if (linkedContact.count !== 1) {
+          throw new UnauthorizedException("Convite de contato não está mais ativo.");
+        }
       }
       await tx.userInvitation.update({
         where: { id: invitation.id },
@@ -627,6 +644,12 @@ export class AuthService {
       },
     });
     if (!invitation) throw new UnauthorizedException("Convite inválido ou expirado.");
+    if (
+      invitation.contactId &&
+      (!invitation.contact || invitation.contact.archivedAt || invitation.contact.active === false)
+    ) {
+      throw new UnauthorizedException("Convite de contato não está mais ativo.");
+    }
     return {
       email: invitation.email,
       expiresAt: invitation.expiresAt,
@@ -815,6 +838,11 @@ export class AuthService {
         name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
         keepSidebarCollapsed: membership.user.keepSidebarCollapsed,
+        chatBubbleColor: membership.user.chatBubbleColor,
+        chatBubbleTextColor: membership.user.chatBubbleTextColor,
+        customerBubbleColor: membership.user.customerBubbleColor,
+        customerBubbleTextColor: membership.user.customerBubbleTextColor,
+        chatBackgroundColor: membership.user.chatBackgroundColor,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         platformRole: membership.user.platformRole,
@@ -849,6 +877,11 @@ export class AuthService {
           name: user.name,
           avatarUrl: user.avatarUrl,
           keepSidebarCollapsed: user.keepSidebarCollapsed,
+          chatBubbleColor: user.chatBubbleColor,
+          chatBubbleTextColor: user.chatBubbleTextColor,
+          customerBubbleColor: user.customerBubbleColor,
+          customerBubbleTextColor: user.customerBubbleTextColor,
+          chatBackgroundColor: user.chatBackgroundColor,
           roleId: "",
           roleKey: "platform_admin",
           roleName: "Dono",
@@ -915,6 +948,11 @@ export class AuthService {
         name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
         keepSidebarCollapsed: membership.user.keepSidebarCollapsed,
+        chatBubbleColor: membership.user.chatBubbleColor,
+        chatBubbleTextColor: membership.user.chatBubbleTextColor,
+        customerBubbleColor: membership.user.customerBubbleColor,
+        customerBubbleTextColor: membership.user.customerBubbleTextColor,
+        chatBackgroundColor: membership.user.chatBackgroundColor,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         roleName: membership.role.name,

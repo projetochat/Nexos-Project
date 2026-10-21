@@ -72,6 +72,7 @@ export class EvolutionMessagingProvider implements MessagingProvider {
     return {
       accepted: true,
       providerMessageId: response.key?.id ?? null,
+      providerChatId: response.key?.remoteJid ?? null,
       providerTimestamp: parseProviderTimestamp(response.messageTimestamp),
       providerStatus: response.status ?? "sent_by_evolution",
     };
