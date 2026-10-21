@@ -1343,7 +1343,12 @@ export class CampaignsService {
     const connection = await this.prisma.messagingConnection.findFirst({
       where: { id: connectionId, tenantId },
     });
-    if (!connection) throw new BadRequestException("A conexão selecionada não pertence ao tenant.");
+    if (!connection) {
+      throw canonicalBadRequest(
+        "CAMPAIGN_CONNECTION_UNAVAILABLE",
+        "A conexão selecionada não está disponivel.",
+      );
+    }
     if (
       connection.providerType !== MessagingProviderType.EVOLUTION ||
       connection.status !== MessagingConnectionStatus.CONNECTED

@@ -74,11 +74,15 @@ export class MessagingInboundService {
       });
       if (!connection) throw new Error("Messaging connection not found for tenant.");
       if (connection.serviceEnabled === false) throw new MessagingServicePausedError();
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${this.duplicateLockKey(
+        event,
+        connection,
+      )}, 0))`;
       const groupDisplayName = isGroup
         ? await this.resolveGroupDisplayName(event, connection.externalReference)
         : null;
 
-      const duplicateWhere = this.duplicateWhere(event);
+      const duplicateWhere = this.duplicateWhere(event, connection);
       const duplicate = await tx.message.findFirst({
         where: duplicateWhere,
       });
@@ -848,15 +852,53 @@ export class MessagingInboundService {
     return { updated: true, messageId: message.id, conversationId: message.conversationId };
   }
 
-  private duplicateWhere(event: InboundMessageEvent): Prisma.MessageWhereInput {
+  private duplicateWhere(
+    event: InboundMessageEvent,
+    connection: { ownerExternalId: string | null; ownerPhoneNormalized: string | null },
+  ): Prisma.MessageWhereInput {
+    const providerIds: Prisma.MessageWhereInput[] = [
+      { externalMessageId: event.externalMessageId },
+      ...(event.fromMe ? [{ providerMessageId: event.externalMessageId }] : []),
+    ];
+    const ownerMatches: Prisma.MessagingConnectionWhereInput[] = [
+      ...(connection.ownerPhoneNormalized
+        ? [{ ownerPhoneNormalized: connection.ownerPhoneNormalized }]
+        : []),
+      ...(connection.ownerExternalId ? [{ ownerExternalId: connection.ownerExternalId }] : []),
+    ];
+
     return {
       tenantId: event.tenantId,
-      connectionId: event.connectionId,
       OR: [
-        { externalMessageId: event.externalMessageId },
-        ...(event.fromMe ? [{ providerMessageId: event.externalMessageId }] : []),
+        {
+          connectionId: event.connectionId,
+          OR: providerIds,
+        },
+        ...(ownerMatches.length
+          ? [
+              {
+                connection: {
+                  is: {
+                    tenantId: event.tenantId,
+                    OR: ownerMatches,
+                  },
+                },
+                OR: providerIds,
+              },
+            ]
+          : []),
       ],
     };
+  }
+
+  private duplicateLockKey(
+    event: InboundMessageEvent,
+    connection: { ownerExternalId: string | null; ownerPhoneNormalized: string | null },
+  ) {
+    const ownerPhone = connection.ownerPhoneNormalized?.replace(/\D/g, "");
+    const ownerExternal = connection.ownerExternalId?.split("@", 1)[0]?.replace(/\D/g, "");
+    const ownerIdentity = ownerPhone || ownerExternal || `connection:${event.connectionId}`;
+    return `inbound-message:${event.tenantId}:${ownerIdentity}:${event.externalMessageId}`;
   }
 
   private async findOrCreateConversation(

@@ -871,10 +871,26 @@ describe("MessagingInboundService", () => {
     expect(prisma.message.findFirst).toHaveBeenCalledWith({
       where: {
         tenantId: "tenant-a",
-        connectionId: "connection-a",
         OR: [
-          { externalMessageId: "campaign-provider-id" },
-          { providerMessageId: "campaign-provider-id" },
+          {
+            connectionId: "connection-a",
+            OR: [
+              { externalMessageId: "campaign-provider-id" },
+              { providerMessageId: "campaign-provider-id" },
+            ],
+          },
+          {
+            connection: {
+              is: {
+                tenantId: "tenant-a",
+                OR: [{ ownerPhoneNormalized: "+5511888888888" }],
+              },
+            },
+            OR: [
+              { externalMessageId: "campaign-provider-id" },
+              { providerMessageId: "campaign-provider-id" },
+            ],
+          },
         ],
       },
     });
@@ -1695,6 +1711,7 @@ function conversation(overrides: Record<string, unknown> = {}) {
 function prismaMock() {
   const prisma = {
     $queryRaw: vi.fn().mockResolvedValue([{ serviceEnabled: true }]),
+    $executeRaw: vi.fn().mockResolvedValue(0),
     messagingConnection: { findFirst: vi.fn() },
     message: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     contact: {
