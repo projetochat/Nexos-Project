@@ -86,6 +86,7 @@ type DeletionConfirmDialogProps = {
   open: boolean;
   variant?: "default" | "compact";
   compactDescription?: React.ReactNode;
+  showRecordDetails?: boolean;
   confirmLabel?: string;
   /** Stable domain + record key. Changing it reloads an open dialog. */
   resourceKey: string;
@@ -110,6 +111,7 @@ export function DeletionConfirmDialog({
   open,
   variant = "default",
   compactDescription,
+  showRecordDetails = true,
   confirmLabel,
   resourceKey,
   onOpenChange,
@@ -300,6 +302,7 @@ export function DeletionConfirmDialog({
         onEscapeKeyDown={(event) => {
           if (isCommitting) event.preventDefault();
         }}
+        onOverlayClick={() => handleOpenChange(false)}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           window.requestAnimationFrame(() => cancelRef.current?.focus({ preventScroll: true }));
@@ -349,9 +352,11 @@ export function DeletionConfirmDialog({
                 </span>
                 <div className="min-w-0 pt-1">
                   <p className="text-muted-foreground">
-                    {compact ? (compactDescription ?? impact.prompt) : impact.prompt}
+                    {compact
+                      ? (compactDescription ?? impact.prompt)
+                      : emphasizeRecordName(impact.prompt, impact.record.name)}
                   </p>
-                  {!compact && (
+                  {!compact && showRecordDetails && (
                     <>
                       {!impact.prompt.includes(impact.record.name) && (
                         <p className="mt-1 font-semibold">Nome: &quot;{impact.record.name}&quot;</p>
@@ -466,6 +471,19 @@ export function DeletionConfirmDialog({
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+function emphasizeRecordName(prompt: string, recordName: string) {
+  if (!recordName || !prompt.includes(recordName)) return prompt;
+  const parts = prompt.split(recordName);
+  return parts.map((part, index) => (
+    <React.Fragment key={`${part}:${index}`}>
+      {part}
+      {index < parts.length - 1 ? (
+        <strong className="font-semibold text-foreground">{recordName}</strong>
+      ) : null}
+    </React.Fragment>
+  ));
 }
 
 function LoadingState({ compact = false }: { compact?: boolean }) {

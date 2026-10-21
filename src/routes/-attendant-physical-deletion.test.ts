@@ -11,10 +11,12 @@ describe("attendant physical deletion UI contract", () => {
     expect(route).toContain("organizationApi.deleteUser(removing.id, snapshotToken, signal)");
   });
 
-  it("exposes the preview and DELETE contracts without replacing block/unblock", () => {
+  it("exposes the preview and DELETE contracts without a block/unblock action", () => {
     expect(api).toContain("`/users/${id}/deletion-preview`");
     expect(api).toContain("apiRequest<ApiDeletionConfirmationResult>(`/users/${id}`");
-    expect(route).toContain("organizationApi.deactivateUser(atendente.id)");
-    expect(route).toContain("organizationApi.activateUser(atendente.id)");
+    expect(route).not.toContain("organizationApi.deactivateUser(atendente.id)");
+    expect(route).not.toContain("organizationApi.activateUser(atendente.id)");
+    expect(route).not.toContain("Bloquear Atendente?");
+    expect(route).not.toContain("Desbloquear Atendente?");
   });
 });

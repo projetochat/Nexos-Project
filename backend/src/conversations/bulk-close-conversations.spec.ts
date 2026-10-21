@@ -57,6 +57,20 @@ describe("bulk closing conversations", () => {
         }),
       ),
     ).toHaveLength(0);
+    expect(
+      await validate(
+        plainToInstance(BulkCloseConversationsDto, {
+          tabs: ["ativas", "standby", "fila", "leads"],
+        }),
+      ),
+    ).toHaveLength(0);
+    expect(
+      await validate(
+        plainToInstance(BulkCloseConversationsDto, {
+          tabs: ["fila", "fila"],
+        }),
+      ),
+    ).not.toHaveLength(0);
   });
   it("closes only selected ids while preserving tenant and visibility scope", async () => {
     const rows = Array.from({ length: 125 }, (_, i) => ({

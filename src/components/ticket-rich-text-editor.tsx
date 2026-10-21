@@ -32,10 +32,12 @@ export function RichTextEditor({
   value,
   onChange,
   expanded = false,
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   expanded?: boolean;
+  invalid?: boolean;
 }) {
   const editorRef = React.useRef<HTMLDivElement>(null);
   const selectionRef = React.useRef<Range | null>(null);
@@ -101,7 +103,10 @@ export function RichTextEditor({
     </button>
   );
   const editor = (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface-1 focus-within:border-primary">
+    <div
+      aria-invalid={invalid}
+      className={`overflow-hidden rounded-lg border bg-surface-1 focus-within:border-primary ${invalid ? "border-destructive focus-within:border-destructive" : "border-border"}`}
+    >
       <div className="border-b border-border bg-card px-2 py-1.5">
         <div className="flex flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
           {tool("Desfazer", "undo", <Undo2 className="h-4 w-4" />)}

@@ -43,4 +43,18 @@ describe("catálogo do Perfil de Acesso", () => {
 
     expect(source).toContain('leave: "Sair"');
   });
+
+  it("posiciona Ver leads imediatamente antes de Executa ações em massa", () => {
+    const source = readFileSync(new URL("./perfis.tsx", import.meta.url), "utf8");
+    const catalog = source.slice(
+      source.indexOf("const PERMISSION_GROUPS"),
+      source.indexOf("const DEFAULT_ROLE_COLOR"),
+    );
+
+    const leadsIndex = catalog.indexOf('id: "leads.read"');
+    const bulkIndex = catalog.indexOf('id: "chat.bulk_actions.execute"');
+    expect(leadsIndex).toBeGreaterThan(-1);
+    expect(bulkIndex).toBeGreaterThan(leadsIndex);
+    expect(catalog.slice(leadsIndex, bulkIndex).match(/\bid:\s*"/g)).toHaveLength(1);
+  });
 });

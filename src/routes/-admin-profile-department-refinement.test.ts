@@ -29,7 +29,7 @@ describe("visualização protegida do perfil Administrador", () => {
 });
 
 describe("encerramento por inatividade do Departamento", () => {
-  it("usa o editor de mensagens, move o erro para baixo e simplifica o texto", () => {
+  it("usa o editor de mensagens, sinaliza a obrigatoriedade na borda e simplifica o texto", () => {
     expect(departmentsSource).toContain("<GreetingMessageEditor");
     expect(departmentsSource).toContain("showAttachment={false}");
     expect(departmentsSource).toContain("showEmoji");
@@ -39,8 +39,12 @@ describe("encerramento por inatividade do Departamento", () => {
     );
 
     const editorPosition = departmentsSource.indexOf("<GreetingMessageEditor");
-    const alertPosition = departmentsSource.indexOf('role="alert"', editorPosition);
-    expect(alertPosition).toBeGreaterThan(editorPosition);
+    const invalidPosition = departmentsSource.indexOf(
+      "invalid={inactivityErrors.message}",
+      editorPosition,
+    );
+    expect(invalidPosition).toBeGreaterThan(editorPosition);
+    expect(departmentsSource).not.toContain('role="alert"');
   });
 
   it("mantém o relógio em azul escuro e o editor configurável sem alterar o padrão existente", () => {

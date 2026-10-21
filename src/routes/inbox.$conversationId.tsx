@@ -74,7 +74,7 @@ import {
   DEFAULT_CHAT_BUBBLE_TEXT_COLOR,
   DEFAULT_CUSTOMER_BUBBLE_COLOR,
   DEFAULT_CUSTOMER_BUBBLE_TEXT_COLOR,
-  DEFAULT_CHAT_BACKGROUND_COLOR,
+  chatBackgroundStyle,
   normalizeHexColor,
 } from "@/lib/chat-appearance";
 import { conversationAuthorizationScope } from "@/lib/conversation-query-authorization";
@@ -680,12 +680,7 @@ function ConversationPage() {
             <div
               ref={scrollRef}
               className="inbox-message-background min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6"
-              style={{
-                backgroundColor: normalizeHexColor(
-                  user?.chatBackgroundColor,
-                  DEFAULT_CHAT_BACKGROUND_COLOR,
-                ),
-              }}
+              style={chatBackgroundStyle(user?.chatBackgroundColor, user?.chatBackgroundMode)}
             >
               <div className="w-full space-y-4">
                 {(() => {

@@ -59,17 +59,17 @@ it("reserva espaço suficiente para todas as ações da grade", () => {
 
   expect(source).toContain('<div className="overflow-x-auto">');
   expect(source).toContain('className="w-full min-w-[1100px] table-fixed text-sm"');
-  expect(source).toContain('className="w-[18%] rounded-tr-lg px-2 py-3 text-center font-medium"');
-  expect(source).toContain('className="mx-auto grid w-[196px] grid-cols-5 gap-1"');
+  expect(source).toContain('className="w-[16%] rounded-tr-lg px-2 py-3 text-center font-medium"');
+  expect(source).toContain('className="mx-auto grid w-[156px] grid-cols-4 gap-1"');
   expect(source).toContain('size="icon"');
 });
 
-it("alinha o olho na primeira coluna de ações e usa hover semântico ao bloquear", () => {
+it("alinha as ações sem oferecer bloqueio ou desbloqueio", () => {
   const source = readFileSync(new URL("./atendentes.tsx", import.meta.url), "utf8");
 
-  expect(source).toContain('className="mx-auto grid w-[196px] grid-cols-5 gap-1"');
-  expect(source.match(/\? "action-hover-destructive"/g)).toHaveLength(2);
-  expect(source.match(/: "action-hover-success"/g)).toHaveLength(2);
+  expect(source).toContain('className="mx-auto grid w-[156px] grid-cols-4 gap-1"');
+  expect(source).not.toContain('title={a.ativo ? "Bloquear" : "Desbloquear"}');
+  expect(source).not.toContain("Bloquear Atendente?");
   expect(source).toContain("aria-label={`Excluir ${a.nome}`}");
 });
 

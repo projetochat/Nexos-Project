@@ -33,6 +33,7 @@ type LoginResponse = {
     customerBubbleColor?: string | null;
     customerBubbleTextColor?: string | null;
     chatBackgroundColor?: string | null;
+    chatBackgroundMode?: "IMAGE" | "COLOR";
     roleId: string;
     roleKey: ApiRoleKey;
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
@@ -198,6 +199,7 @@ export type ApiUserMembership = {
     customerBubbleColor?: string | null;
     customerBubbleTextColor?: string | null;
     chatBackgroundColor?: string | null;
+    chatBackgroundMode?: "IMAGE" | "COLOR";
     status: "ACTIVE" | "DISABLED";
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   };
@@ -215,6 +217,31 @@ export type PaginatedResponse<T> = {
   page: number;
   pageSize: number;
   totalPages: number;
+};
+
+export type ApiCountry = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export type ApiAdministrativeDivision = {
+  id: string;
+  code: string;
+  name: string;
+  countryCode: string;
+};
+
+export type ApiCity = {
+  id: string;
+  name: string;
+  countryCode: string;
+  countryName: string;
+  divisionId: string | null;
+  divisionCode: string | null;
+  divisionName: string | null;
+  ibgeCode: string | null;
+  geonamesId: string | null;
 };
 
 export type ApiCustomer = {
@@ -238,6 +265,7 @@ export type ApiCustomer = {
   addressWithoutNumber: boolean;
   complement: string | null;
   neighborhood: string | null;
+  cityId?: string | null;
   city: string;
   state: string;
   country: string | null;
@@ -376,7 +404,19 @@ export type ApiGroupContactPickerItem = Pick<
   "id" | "nome" | "telefone" | "normalizedPhone" | "avatar_url"
 >;
 
-export type ApiMessageContactPickerPage = PaginatedResponse<ApiGroupContactPickerItem> & {
+export type ApiMessageContactPickerItem = Pick<
+  ApiContact,
+  | "id"
+  | "nome"
+  | "telefone"
+  | "normalizedPhone"
+  | "avatar_url"
+  | "active"
+  | "instancia"
+  | "instanceIds"
+>;
+
+export type ApiMessageContactPickerPage = PaginatedResponse<ApiMessageContactPickerItem> & {
   instance: {
     id: string;
     name: string;
@@ -416,6 +456,7 @@ export type ApiConversation = {
   connection_id: string | null;
   department_id: string | null;
   assigned_membership_id: string | null;
+  assigned_membership_name_snapshot?: string | null;
   agent_id: string | null;
   status: ApiConversationStatus;
   is_group: boolean;
@@ -423,7 +464,12 @@ export type ApiConversation = {
   created_at: string;
   updated_at: string;
   closed_at?: string | null;
-  closed_by?: { id: string; membershipId: string; nome: string; email: string } | null;
+  closed_by?: {
+    id: string | null;
+    membershipId: string | null;
+    nome: string;
+    email: string | null;
+  } | null;
   last_message_at: string;
   protocolo: string | null;
   unreadCount: number;
@@ -1142,6 +1188,7 @@ type CustomerPayload = {
   addressWithoutNumber?: boolean;
   complement?: string | null;
   neighborhood?: string | null;
+  cityId?: string | null;
   city?: string | null;
   state?: string | null;
   country?: string | null;
@@ -1330,6 +1377,7 @@ export async function hydrateWithTrixusApi() {
     customerBubbleColor: data.user.customerBubbleColor ?? undefined,
     customerBubbleTextColor: data.user.customerBubbleTextColor ?? undefined,
     chatBackgroundColor: data.user.chatBackgroundColor ?? undefined,
+    chatBackgroundMode: data.user.chatBackgroundMode ?? "IMAGE",
     permissions: effectiveSessionPermissions(role, data.permissions),
   } satisfies SessionUser;
 }
@@ -1581,6 +1629,7 @@ export const organizationApi = {
     customerBubbleColor?: string | null;
     customerBubbleTextColor?: string | null;
     chatBackgroundColor?: string | null;
+    chatBackgroundMode?: "IMAGE" | "COLOR";
     currentPassword?: string;
     newPassword?: string;
   }) =>
@@ -1631,6 +1680,22 @@ export const onboardingApi = {
       `/onboarding/department-connection/${encodeURIComponent(connectionId)}`,
       { method: "POST" },
     ),
+};
+
+export const locationApi = {
+  countries: () => apiRequest<ApiCountry[]>("/locations/countries"),
+  divisions: (countryCode: string) =>
+    apiRequest<ApiAdministrativeDivision[]>(`/locations/divisions${queryString({ countryCode })}`),
+  cities: (
+    params: {
+      q?: string;
+      countryCode?: string;
+      divisionId?: string;
+      page?: number;
+      pageSize?: number;
+    } = {},
+  ) => apiRequest<PaginatedResponse<ApiCity>>(`/locations/cities${queryString(params)}`),
+  city: (id: string) => apiRequest<ApiCity>(`/locations/cities/${id}`),
 };
 
 export const crmApi = {
@@ -2010,35 +2075,46 @@ export type BulkConversationResult = {
   failed: Array<{ conversationId: string; message: string }>;
 };
 
+export type BulkConversationSelection = {
+  tab?: "ativas" | "standby" | "fila" | "leads";
+  tabs?: Array<"ativas" | "standby" | "fila" | "leads">;
+  q?: string;
+  source?: "todos" | "privado" | "grupos" | "humano" | "bots";
+  onlyUnread?: boolean;
+  customerIds?: string[];
+  instances?: string[];
+};
+
 export const conversationApi = {
   unreadTotal: () => apiRequest<{ unreadCount: number }>("/conversations/unread-total"),
-  bulkClose: (conversationIds: string[]) =>
+  bulkClose: (selection: BulkConversationSelection) =>
     apiRequest<BulkConversationResult & { closed: number }>("/conversations/bulk-close", {
       method: "POST",
-      body: JSON.stringify({ conversationIds }),
+      body: JSON.stringify(selection),
     }),
-  bulkStart: (conversationIds: string[], departmentId?: string) =>
+  bulkStart: (selection: BulkConversationSelection, departmentId?: string) =>
     apiRequest<BulkConversationResult>("/conversations/bulk-start", {
       method: "POST",
-      body: JSON.stringify({ conversationIds, departmentId }),
+      body: JSON.stringify({ ...selection, departmentId }),
     }),
-  bulkOptions: (conversationIds: string[]) =>
+  bulkOptions: (selection: BulkConversationSelection) =>
     apiRequest<{
+      counts: ConversationCounts;
       departments: Array<{ id: string; name: string }>;
       agents: Array<{ id: string; name: string }>;
     }>("/conversations/bulk-options", {
       method: "POST",
-      body: JSON.stringify({ conversationIds }),
+      body: JSON.stringify(selection),
     }),
   bulkTransfer: (
-    conversationIds: string[],
+    selection: BulkConversationSelection,
     destination:
       | { mode: "department" | "agent"; targetId: string }
       | { mode: "status"; status: "fila" | "standby" },
   ) =>
     apiRequest<BulkConversationResult>("/conversations/bulk-transfer", {
       method: "POST",
-      body: JSON.stringify({ conversationIds, ...destination }),
+      body: JSON.stringify({ ...selection, ...destination }),
     }),
   list: (params: ListConversationsParams = {}) =>
     apiRequest<PaginatedResponse<ApiConversation> & { counts: ConversationCounts }>(
@@ -2738,8 +2814,10 @@ export type PlatformClient = {
   document: string | null;
   responsibleName: string;
   responsibleEmail: string;
+  cityId?: string | null;
   city: string;
   state: string;
+  country: string;
   registeredAt: string;
   status: "ACTIVE" | "SUSPENDED" | "CANCELLED" | "PROSPECTING";
   notes: string | null;
@@ -2755,8 +2833,10 @@ export type PlatformClientPayload = {
   document: string;
   responsibleName: string;
   responsibleEmail: string;
+  cityId?: string | null;
   city: string;
   state: string;
+  country: string;
   registeredAt?: string;
   status?: "ACTIVE" | "SUSPENDED" | "CANCELLED" | "PROSPECTING";
   notes?: string;
@@ -3671,6 +3751,7 @@ function loginResponseToSessionUser(data: LoginResponse): SessionUser {
     customerBubbleColor: data.user.customerBubbleColor ?? undefined,
     customerBubbleTextColor: data.user.customerBubbleTextColor ?? undefined,
     chatBackgroundColor: data.user.chatBackgroundColor ?? undefined,
+    chatBackgroundMode: data.user.chatBackgroundMode ?? "IMAGE",
     permissions: effectiveSessionPermissions(role, data.permissions),
   };
 }

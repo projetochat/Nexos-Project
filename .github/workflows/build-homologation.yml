@@ -115,6 +115,8 @@ jobs:
           docker run --rm --entrypoint sh "trixus-hml-release/backend:$GITHUB_SHA" \
             -c 'command -v node && test -s /app/backend/dist/src/main.js'
           docker run --rm "trixus-hml-release/migrate:$GITHUB_SHA"
+          docker run --rm --entrypoint bun "trixus-hml-release/migrate:$GITHUB_SHA" \
+            run locations:catalog:verify
           docker run --rm --entrypoint sh "trixus-hml-release/frontend:$GITHUB_SHA" \
             -c 'command -v bun && test -s /app/.output/server/index.mjs'
       - name: Package exactly three HML images

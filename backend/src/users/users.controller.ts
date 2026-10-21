@@ -117,6 +117,10 @@ class UpdateMyProfileDto {
   chatBackgroundColor?: string | null;
 
   @IsOptional()
+  @IsIn(["IMAGE", "COLOR"])
+  chatBackgroundMode?: "IMAGE" | "COLOR";
+
+  @IsOptional()
   @IsString()
   @MaxLength(120)
   name?: string;
@@ -226,6 +230,7 @@ type MembershipWithRelations = {
     customerBubbleColor?: string | null;
     customerBubbleTextColor?: string | null;
     chatBackgroundColor?: string | null;
+    chatBackgroundMode: string;
     status: string;
     platformRole: string;
   };
@@ -280,6 +285,7 @@ export class UsersController {
         customerBubbleColor: membership.user.customerBubbleColor,
         customerBubbleTextColor: membership.user.customerBubbleTextColor,
         chatBackgroundColor: membership.user.chatBackgroundColor,
+        chatBackgroundMode: membership.user.chatBackgroundMode,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         roleName: membership.role.name,
@@ -334,6 +340,16 @@ export class UsersController {
       }
     }
     const passwordHash = dto.newPassword ? await hash(dto.newPassword, 12) : undefined;
+    const effectiveBackgroundMode = dto.chatBackgroundMode ?? membership.user.chatBackgroundMode;
+    const effectiveBackgroundColor =
+      dto.chatBackgroundColor === undefined
+        ? membership.user.chatBackgroundColor
+        : normalizeChatColor(dto.chatBackgroundColor);
+    if (effectiveBackgroundMode === "COLOR" && !effectiveBackgroundColor) {
+      throw new BadRequestException(
+        "Informe uma cor de fundo antes de selecionar o modo de cor sólida.",
+      );
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: membership.userId },
@@ -357,6 +373,9 @@ export class UsersController {
             : {}),
           ...(dto.chatBackgroundColor !== undefined
             ? { chatBackgroundColor: normalizeChatColor(dto.chatBackgroundColor) }
+            : {}),
+          ...(dto.chatBackgroundMode !== undefined
+            ? { chatBackgroundMode: dto.chatBackgroundMode }
             : {}),
           ...(passwordHash ? { passwordHash } : {}),
         },
@@ -712,10 +731,21 @@ export class UsersController {
           where: { tenantId_userId: { tenantId: current.tenantId, userId: user.id } },
         });
         if (existing) throw new BadRequestException("Usuário já pertence a este tenant.");
-        throw new BadRequestException(
-          "E-mail já vinculado a uma conta existente. Utilize o fluxo de convite ou vínculo.",
-        );
-      } else {
+        const deletedOrphan = await tx.user.deleteMany({
+          where: {
+            id: user.id,
+            platformRole: "USER",
+            memberships: { none: {} },
+          },
+        });
+        if (deletedOrphan.count === 0) {
+          throw new BadRequestException(
+            "E-mail já vinculado a uma conta existente. Utilize o fluxo de convite ou vínculo.",
+          );
+        }
+        user = null;
+      }
+      if (!user) {
         user = await tx.user.create({
           data: {
             email,
@@ -925,6 +955,13 @@ export class UsersController {
         where: { tenantId: current.tenantId, authorMembershipId: id, participantName: null },
         data: { participantName: authorName },
       });
+      const assignedConversations = await tx.conversation.updateMany({
+        where: {
+          tenantId: current.tenantId,
+          assignedMembershipId: id,
+        },
+        data: { assignedMembershipNameSnapshot: authorName },
+      });
       await tx.messageReaction.updateMany({
         where: {
           tenantId: current.tenantId,
@@ -985,6 +1022,14 @@ export class UsersController {
           data: { createdByNameSnapshot: authorName },
         }),
       ]);
+      await tx.tenantMembership.delete({ where: { id: membership.id } });
+      const deletedGlobalUser = await tx.user.deleteMany({
+        where: {
+          id: membership.userId,
+          platformRole: "USER",
+          memberships: { none: {} },
+        },
+      });
       await tx.platformAuditLog.create({
         data: {
           actorUserId: current.userId,
@@ -1006,9 +1051,11 @@ export class UsersController {
               createdAt: membership.createdAt.toISOString(),
             },
             preservedAuthorship: {
+              conversationNames: assignedConversations.count,
               messageNames: authoredMessages.count,
               ticketHistorySnapshots: historyRows.length,
             },
+            globalUserDeleted: deletedGlobalUser.count === 1,
             dependencies: latest.dependencies.map(({ id: dependencyId, count }) => ({
               id: dependencyId,
               count,
@@ -1016,7 +1063,6 @@ export class UsersController {
           },
         },
       });
-      await tx.tenantMembership.delete({ where: { id: membership.id } });
       return { status: "deleted" as const };
     });
     if (result.status === "deleted") {
@@ -1147,6 +1193,7 @@ export class UsersController {
       requestedApprovals,
       ticketAttachments,
       createdCampaigns,
+      otherMemberships,
     ] = await Promise.all([
       db.conversation.count({
         where: {
@@ -1179,6 +1226,9 @@ export class UsersController {
       }),
       db.campaign.count({
         where: { tenantId: current.tenantId, createdByMembershipId: membership.id },
+      }),
+      db.tenantMembership.count({
+        where: { userId: membership.userId, id: { not: membership.id } },
       }),
     ]);
     const historicalAuthorshipCount =
@@ -1242,6 +1292,8 @@ export class UsersController {
         requestedApprovals,
         ticketAttachments,
         createdCampaigns,
+        otherMemberships,
+        deletesGlobalUser: otherMemberships === 0 && membership.user.platformRole === "USER",
       }),
       title: "Excluir atendente?",
       prompt: `Deseja realmente excluir o atendente "${name}"?`,
@@ -1255,8 +1307,11 @@ export class UsersController {
       dependencies,
       consequences: [
         {
-          id: "tenant-membership-only",
-          text: "Somente o vínculo deste atendente com a empresa será removido; a conta global será preservada.",
+          id: "attendant-account",
+          text:
+            otherMemberships === 0 && membership.user.platformRole === "USER"
+              ? "O atendente e sua conta de acesso serão excluídos permanentemente; o e-mail poderá ser cadastrado novamente."
+              : "O vínculo com esta empresa será removido, mas a conta será preservada porque possui outro vínculo ou acesso à plataforma.",
           irreversible: true,
         },
         {
@@ -1431,6 +1486,7 @@ export class UsersController {
         customerBubbleColor: membership.user.customerBubbleColor,
         customerBubbleTextColor: membership.user.customerBubbleTextColor,
         chatBackgroundColor: membership.user.chatBackgroundColor,
+        chatBackgroundMode: membership.user.chatBackgroundMode,
         status: membership.user.status,
         platformRole: membership.user.platformRole,
       },

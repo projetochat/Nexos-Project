@@ -5,12 +5,17 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   MaxLength,
 } from "class-validator";
 import { CUSTOMER_PERSON_TYPES, CUSTOMER_STATUSES } from "./create-customer.dto";
 
 export class UpdateCustomerDto {
+  @IsOptional()
+  @IsUUID()
+  cityId?: string | null;
+
   @IsOptional()
   @IsIn(CUSTOMER_PERSON_TYPES)
   personType?: (typeof CUSTOMER_PERSON_TYPES)[number];

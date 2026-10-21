@@ -3,18 +3,59 @@ import {
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsIn,
   IsOptional,
+  IsString,
   IsUUID,
 } from "class-validator";
 
 export class BulkConversationSelectionDto {
+  @IsOptional()
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(100)
   @ArrayUnique()
   @IsUUID("4", { each: true })
-  conversationIds!: string[];
+  conversationIds?: string[];
+
+  @IsOptional()
+  @IsIn(["ativas", "standby", "fila", "leads"])
+  tab?: "ativas" | "standby" | "fila" | "leads";
+
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(4)
+  @ArrayUnique()
+  @IsIn(["ativas", "standby", "fila", "leads"], { each: true })
+  tabs?: Array<"ativas" | "standby" | "fila" | "leads">;
+
+  @IsOptional()
+  @IsString()
+  q?: string;
+
+  @IsOptional()
+  @IsIn(["todos", "privado", "grupos", "humano", "bots"])
+  source?: "todos" | "privado" | "grupos" | "humano" | "bots";
+
+  @IsOptional()
+  @IsBoolean()
+  onlyUnread?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ArrayUnique()
+  @IsUUID("4", { each: true })
+  customerIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ArrayUnique()
+  @IsString({ each: true })
+  instances?: string[];
 }
 
 export class BulkStartConversationsDto extends BulkConversationSelectionDto {

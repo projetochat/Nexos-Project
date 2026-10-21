@@ -29,14 +29,15 @@ type AlertDialogContentProps = React.ComponentPropsWithoutRef<
   typeof AlertDialogPrimitive.Content
 > & {
   overlayClassName?: string;
+  onOverlayClick?: React.MouseEventHandler<HTMLDivElement>;
 };
 
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   AlertDialogContentProps
->(({ className, overlayClassName, ...props }, ref) => (
+>(({ className, overlayClassName, onOverlayClick, ...props }, ref) => (
   <AlertDialogPortal>
-    <AlertDialogOverlay className={overlayClassName} />
+    <AlertDialogOverlay className={overlayClassName} onClick={onOverlayClick} />
     <AlertDialogPrimitive.Content
       ref={ref}
       className={cn(

@@ -32,6 +32,7 @@ import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import { platformApi, type PlatformPlan } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/admin/planos")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
@@ -498,9 +499,11 @@ function PlanForm({
   const [trialDays, setTrialDays] = React.useState(0);
   const [features, setFeatures] = React.useState<Record<string, boolean>>(DEFAULT_FEATURES);
   const [limits, setLimits] = React.useState<Record<string, number>>(DEFAULT_LIMITS);
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
+    setErrors({});
     setName(forceCreate && initial ? `${initial.name} - Cópia` : (initial?.name ?? ""));
     setCode(forceCreate ? "" : (initial?.code ?? ""));
     setStatus(normalizeEditablePlanStatus(initial?.status));
@@ -508,6 +511,11 @@ function PlanForm({
     setFeatures({ ...DEFAULT_FEATURES, ...(initial?.features ?? {}) });
     setLimits({ ...DEFAULT_LIMITS, ...(initial?.limits ?? {}) });
   }, [forceCreate, initial, open]);
+
+  React.useEffect(() => {
+    if (!name.trim()) return;
+    setErrors((current) => (current.name ? {} : current));
+  }, [name]);
 
   function setLimit(key: string, value: string) {
     const parsed = Number(value);
@@ -521,7 +529,11 @@ function PlanForm({
   async function save() {
     try {
       const visibleLimits = [limits.maxUsers, limits.maxConnections, limits.maxCampaigns];
-      if (!name.trim()) throw new Error("Informe o nome do plano.");
+      if (!name.trim()) {
+        setErrors({ name: true });
+        showRequiredFieldsToast(["Nome do plano"]);
+        return;
+      }
       if (!Number.isInteger(trialDays) || trialDays < 0 || trialDays > 90) {
         throw new Error("Informe uma quantidade válida de dias de trial.");
       }
@@ -583,6 +595,8 @@ function PlanForm({
             value={name}
             placeholder="Ex.: Basic, Profissional..."
             onChange={(event) => setName(event.target.value)}
+            className={requiredFieldClassName(Boolean(errors.name))}
+            aria-invalid={Boolean(errors.name)}
           />
         </Field>
         <Field label="Código">

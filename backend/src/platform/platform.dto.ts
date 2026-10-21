@@ -10,6 +10,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -127,6 +128,10 @@ export class UpdatePlatformDashboardConfigurationDto {
 }
 
 export class CreatePlatformClientDto {
+  @IsOptional()
+  @IsUUID()
+  cityId?: string;
+
   @IsString()
   @IsNotEmpty()
   name!: string;
@@ -136,20 +141,35 @@ export class CreatePlatformClientDto {
   @Matches(/^\d{14}$/)
   document?: string;
 
+  @ValidateIf(
+    (dto: CreatePlatformClientDto) =>
+      dto.status !== "PROSPECTING" || Boolean(dto.responsibleName?.trim()),
+  )
   @IsString()
   @IsNotEmpty()
-  responsibleName!: string;
+  responsibleName?: string;
 
+  @ValidateIf(
+    (dto: CreatePlatformClientDto) =>
+      dto.status !== "PROSPECTING" || Boolean(dto.responsibleEmail?.trim()),
+  )
   @IsEmail()
-  responsibleEmail!: string;
+  responsibleEmail?: string;
 
+  @ValidateIf((dto: CreatePlatformClientDto) => !dto.cityId)
   @IsString()
   @IsNotEmpty()
-  city!: string;
+  city?: string;
 
+  @ValidateIf((dto: CreatePlatformClientDto) => !dto.cityId)
   @IsString()
-  @Matches(/^[A-Z]{2}$/)
-  state!: string;
+  @MaxLength(20)
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  country?: string;
 
   @IsOptional()
   @IsISO8601()
@@ -166,6 +186,10 @@ export class CreatePlatformClientDto {
 
 export class UpdatePlatformClientDto {
   @IsOptional()
+  @IsUUID()
+  cityId?: string | null;
+
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   name?: string;
@@ -177,12 +201,22 @@ export class UpdatePlatformClientDto {
   @Matches(/^\d{14}$/)
   document?: string;
 
-  @IsOptional()
+  @ValidateIf(
+    (dto: UpdatePlatformClientDto) =>
+      dto.responsibleName !== undefined &&
+      (dto.status !== "PROSPECTING" ||
+        (typeof dto.responsibleName === "string" && Boolean(dto.responsibleName.trim()))),
+  )
   @IsString()
   @IsNotEmpty()
   responsibleName?: string;
 
-  @IsOptional()
+  @ValidateIf(
+    (dto: UpdatePlatformClientDto) =>
+      dto.responsibleEmail !== undefined &&
+      (dto.status !== "PROSPECTING" ||
+        (typeof dto.responsibleEmail === "string" && Boolean(dto.responsibleEmail.trim()))),
+  )
   @IsEmail()
   responsibleEmail?: string;
 
@@ -193,8 +227,13 @@ export class UpdatePlatformClientDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^[A-Z]{2}$/)
+  @MaxLength(20)
   state?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  country?: string;
 
   @IsOptional()
   @IsISO8601()

@@ -41,6 +41,7 @@ import {
 } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import { DepartmentIcon, DepartmentIconSelect } from "@/components/department-icon";
 import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { GreetingMessageEditor } from "@/components/greeting-message-editor";
@@ -483,7 +484,10 @@ export function DepartamentoForm({
 }) {
   const [form, setForm] = React.useState<DepartamentoFormData>({ connectionIds: [] });
   const [error, setError] = React.useState("");
-  const [inactivityError, setInactivityError] = React.useState("");
+  const [inactivityErrors, setInactivityErrors] = React.useState({
+    timeout: false,
+    message: false,
+  });
   const duplicateNameError = (name: string) => {
     const normalizedName = normalizeDepartmentName(name);
     if (!normalizedName) return "";
@@ -518,30 +522,33 @@ export function DepartamentoForm({
           },
     );
     setError("");
-    setInactivityError("");
+    setInactivityErrors({ timeout: false, message: false });
   }, [clone, departments, initial, open]);
 
   const submit = () => {
     if (readOnly || !onSubmit) return;
+    const requiredFields: string[] = [];
     if (!form.name || form.name.trim().length < 2) {
       setError("Informe o nome.");
-      toast.error("Nome obrigatório.");
-      return;
+      requiredFields.push("Nome");
     }
-    const duplicateError = duplicateNameError(form.name);
+    const duplicateError = form.name ? duplicateNameError(form.name) : "";
     if (duplicateError) {
       setError(duplicateError);
+    }
+    const timeoutMissing = Boolean(form.inactivityClosureEnabled && !form.inactivityTimeoutMinutes);
+    const messageMissing = Boolean(
+      form.inactivityClosureEnabled && !form.inactivityClosureMessage?.trim(),
+    );
+    setInactivityErrors({ timeout: timeoutMissing, message: messageMissing });
+    if (timeoutMissing) requiredFields.push("Tempo sem resposta do cliente");
+    if (messageMissing) requiredFields.push("Mensagem");
+    if (requiredFields.length) {
+      showRequiredFieldsToast(requiredFields);
       return;
     }
-    if (
-      form.inactivityClosureEnabled &&
-      (!form.inactivityTimeoutMinutes || !form.inactivityClosureMessage?.trim())
-    ) {
-      setInactivityError("Informe o tempo sem resposta e a mensagem de encerramento.");
-      toast.error("Complete o encerramento por inatividade.");
-      return;
-    }
-    setInactivityError("");
+    if (duplicateError) return;
+    setInactivityErrors({ timeout: false, message: false });
     onSubmit({ ...form, color: completeHexColor(form.color) });
   };
 
@@ -593,13 +600,15 @@ export function DepartamentoForm({
           </div>
         )}
         <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
-          <Field label="Nome *" error={error || undefined}>
+          <Field label="Nome *" error={error && error !== "Informe o nome." ? error : undefined}>
             <Input
               value={form.name ?? ""}
               onChange={(e) => {
                 setForm({ ...form, name: e.target.value });
-                setError(duplicateNameError(e.target.value));
+                if (e.target.value.trim().length >= 2) setError(duplicateNameError(e.target.value));
               }}
+              aria-invalid={Boolean(error)}
+              className={requiredFieldClassName(Boolean(error))}
             />
           </Field>
           <Field label="Cor">
@@ -652,7 +661,7 @@ export function DepartamentoForm({
                 id="department-inactivity-closure"
                 checked={form.inactivityClosureEnabled === true}
                 onCheckedChange={(inactivityClosureEnabled) => {
-                  setInactivityError("");
+                  setInactivityErrors({ timeout: false, message: false });
                   setForm((current) => ({ ...current, inactivityClosureEnabled }));
                 }}
               />
@@ -664,14 +673,17 @@ export function DepartamentoForm({
           {form.inactivityClosureEnabled && (
             <div className="mt-3 space-y-3">
               <Field label="Tempo sem resposta do cliente *">
-                <div className="flex overflow-hidden rounded-lg border border-border bg-surface-1">
+                <div
+                  className={`flex overflow-hidden rounded-lg border border-border bg-surface-1 ${requiredFieldClassName(inactivityErrors.timeout)}`}
+                >
                   <Input
                     type="number"
                     min={1}
                     max={10080}
                     value={form.inactivityTimeoutMinutes ?? ""}
                     onChange={(event) => {
-                      setInactivityError("");
+                      if (event.target.value)
+                        setInactivityErrors((current) => ({ ...current, timeout: false }));
                       setForm((current) => ({
                         ...current,
                         inactivityTimeoutMinutes: event.target.value
@@ -680,6 +692,7 @@ export function DepartamentoForm({
                       }));
                     }}
                     className="rounded-none border-0"
+                    aria-invalid={inactivityErrors.timeout}
                   />
                   <span className="flex items-center border-l border-border px-3 text-sm text-text-muted">
                     minutos
@@ -692,14 +705,15 @@ export function DepartamentoForm({
                   attachment={null}
                   variables={mergeMessageVariables(CONNECTION_MESSAGE_VARIABLES, [])}
                   disabled={readOnly}
-                  invalid={Boolean(inactivityError)}
+                  invalid={inactivityErrors.message}
                   placeholder="Digite a mensagem de encerramento..."
                   showAttachment={false}
                   showEmoji
                   maxLength={4000}
                   rows={4}
                   onChange={(value) => {
-                    setInactivityError("");
+                    if (value.trim())
+                      setInactivityErrors((current) => ({ ...current, message: false }));
                     setForm((current) => ({
                       ...current,
                       inactivityClosureMessage: value,
@@ -718,11 +732,6 @@ export function DepartamentoForm({
                   interrompida.
                 </span>
               </div>
-              {inactivityError && (
-                <p className="text-xs text-destructive" role="alert">
-                  {inactivityError}
-                </p>
-              )}
             </div>
           )}
         </div>

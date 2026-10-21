@@ -121,6 +121,13 @@ const credentialFixtureHashes = new Map([
 ]);
 const generatedDirectoryPattern =
   /(^|\/)(\.output|dist|dist-ssr|coverage|build|logs|tmp|\.tmp|\.nyc_output)(\/|$)/;
+const forbiddenOperationalPaths = new Map([
+  ["trixus-storage/", "dados operacionais locais"],
+  [
+    "docs/TRIXUS_MANUAL_DE_ESTUDOS_E_CONHECIMENTO_2026-10-13.docx",
+    "documento local fora do escopo da release",
+  ],
+]);
 const dumpPattern = /\.(dump|bak|backup|sqlite(?:3)?|db|sql\.gz)$/i;
 const credentialPatterns = [
   { label: "chave privada PEM", pattern: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
@@ -216,6 +223,11 @@ const mode = modeArgument.slice(2);
 const violations = [];
 for (const filePath of listFiles(mode)) {
   const lowerPath = filePath.toLowerCase();
+  for (const [forbiddenPath, reason] of forbiddenOperationalPaths) {
+    if (filePath === forbiddenPath || filePath.startsWith(forbiddenPath)) {
+      violations.push([filePath, reason]);
+    }
+  }
   if (lowerPath.endsWith(".log")) violations.push([filePath, "arquivo de log"]);
   if (generatedDirectoryPattern.test(filePath)) violations.push([filePath, "artefato gerado"]);
   if (isForbiddenEnvironmentPath(filePath)) violations.push([filePath, "arquivo de ambiente"]);

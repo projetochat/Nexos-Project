@@ -614,6 +614,7 @@ export class ConversationsController {
     @Body() dto: BulkCloseConversationsDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    const conversationIds = await this.resolveBulkConversationIds(dto, current);
     const where: Prisma.ConversationWhereInput = {
       AND: [
         {
@@ -622,7 +623,7 @@ export class ConversationsController {
           status: { not: ConversationStatus.FECHADA },
         },
         conversationVisibilityWhere(current),
-        { id: { in: dto.conversationIds } },
+        { id: { in: conversationIds } },
       ],
     };
     let closedIds: string[] = [];
@@ -764,7 +765,7 @@ export class ConversationsController {
     return {
       closed: closedIds.length,
       succeeded: closedIds,
-      failed: dto.conversationIds
+      failed: conversationIds
         .filter((conversationId) => !closedSet.has(conversationId))
         .map((conversationId) => ({
           conversationId,
@@ -779,7 +780,8 @@ export class ConversationsController {
     @Body() dto: BulkStartConversationsDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.runBulkConversationAction(dto.conversationIds, async (conversationId) => {
+    const conversationIds = await this.resolveBulkConversationIds(dto, current);
+    return this.runBulkConversationAction(conversationIds, async (conversationId) => {
       await this.assign(
         conversationId,
         { self: true, departmentId: dto.departmentId },
@@ -795,10 +797,16 @@ export class ConversationsController {
     @Body() dto: BulkConversationSelectionDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    const countWhere = await this.buildBulkSelectionWhere(dto, current, { omitTab: true });
+    const counts = await this.countTabs(countWhere, current);
+    if (!dto.tab && !dto.tabs?.length && !dto.conversationIds?.length) {
+      return { counts, departments: [], agents: [] };
+    }
+    const conversationIds = await this.resolveBulkConversationIds(dto, current);
     const conversations = await this.prisma.conversation.findMany({
       where: {
         AND: [
-          { tenantId: current.tenantId, archivedAt: null, id: { in: dto.conversationIds } },
+          { tenantId: current.tenantId, archivedAt: null, id: { in: conversationIds } },
           conversationVisibilityWhere(current),
         ],
       },
@@ -807,7 +815,7 @@ export class ConversationsController {
     const connectionIds = Array.from(
       new Set(conversations.map((conversation) => conversation.connectionId).filter(Boolean)),
     ) as string[];
-    if (connectionIds.length === 0) return { departments: [], agents: [] };
+    if (connectionIds.length === 0) return { counts, departments: [], agents: [] };
 
     const [departments, memberships] = await Promise.all([
       this.prisma.department.findMany({
@@ -839,6 +847,7 @@ export class ConversationsController {
       }),
     ]);
     return {
+      counts,
       departments: departments
         .filter((department) => {
           const available = new Set(
@@ -875,7 +884,8 @@ export class ConversationsController {
     if (dto.mode === "status" && !dto.status) {
       throw new BadRequestException("Selecione o status da transferência.");
     }
-    return this.runBulkConversationAction(dto.conversationIds, async (conversationId) => {
+    const conversationIds = await this.resolveBulkConversationIds(dto, current);
+    return this.runBulkConversationAction(conversationIds, async (conversationId) => {
       if (dto.mode === "department") {
         await this.transferDepartment(conversationId, { departmentId: dto.targetId! }, current);
         return;
@@ -1003,6 +1013,57 @@ export class ConversationsController {
       }
     }
     return { succeeded, failed };
+  }
+
+  private async resolveBulkConversationIds(
+    selection: BulkConversationSelectionDto,
+    current: AuthenticatedUser,
+  ) {
+    if (selection.conversationIds?.length) return selection.conversationIds;
+    if (!selection.tab && !selection.tabs?.length) {
+      throw new BadRequestException("Selecione ao menos uma aba de conversas.");
+    }
+    const where = await this.buildBulkSelectionWhere(selection, current);
+    const conversations = await this.prisma.conversation.findMany({
+      where,
+      select: { id: true },
+      orderBy: { id: "asc" },
+    });
+    return conversations.map((conversation) => conversation.id);
+  }
+
+  private async buildBulkSelectionWhere(
+    selection: BulkConversationSelectionDto,
+    current: AuthenticatedUser,
+    options: { omitTab?: boolean } = {},
+  ) {
+    const selectedTabs = selection.tabs?.length ? selection.tabs : undefined;
+    const baseWhere = await this.buildWhere(
+      current,
+      {
+        tab: selectedTabs ? undefined : selection.tab,
+        q: selection.q,
+        source: selection.source,
+        onlyUnread: selection.onlyUnread ? "true" : undefined,
+      },
+      { omitTab: options.omitTab || Boolean(selectedTabs) },
+    );
+    const filters: Prisma.ConversationWhereInput[] = [baseWhere];
+    if (!options.omitTab && selectedTabs) {
+      filters.push({ OR: selectedTabs.map((tab) => tabWhere(tab, current)) });
+    }
+    if (selection.customerIds?.length) {
+      filters.push({ contact: { customerId: { in: selection.customerIds } } });
+    }
+    if (selection.instances?.length) {
+      filters.push({
+        OR: [
+          { connectionId: { in: selection.instances } },
+          { connection: { externalReference: { in: selection.instances } } },
+        ],
+      });
+    }
+    return { AND: filters } satisfies Prisma.ConversationWhereInput;
   }
 
   private async buildWhere(
@@ -1391,6 +1452,7 @@ export class ConversationsController {
       connection_id: conversation.connectionId,
       department_id: conversation.departmentId,
       assigned_membership_id: conversation.assignedMembershipId,
+      assigned_membership_name_snapshot: conversation.assignedMembershipNameSnapshot,
       agent_id: conversation.assignedMembership?.user.id ?? null,
       status: serializeStatus(conversation.status),
       is_group: conversation.isGroup,

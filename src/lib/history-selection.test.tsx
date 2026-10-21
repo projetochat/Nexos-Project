@@ -9,18 +9,22 @@ const api = vi.hoisted(() => ({
   timeline: vi.fn(),
   messages: vi.fn(),
   bubble: vi.fn(),
+  navigate: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => ({}),
   lazyRouteComponent: () => () => null,
-  useNavigate: () => vi.fn(),
+  useNavigate: () => api.navigate,
 }));
 vi.mock("@/components/app-shell", () => ({
   AppShellFull: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }));
 vi.mock("@/components/dashboard-filters", () => ({ DashboardFiltersBar: () => null }));
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ id: "user", permissions: ["chat.phone.read"] }),
+  useSession: () => ({
+    id: "user",
+    permissions: ["chat.phone.read", "messages.send", "groups.read", "conversations.read"],
+  }),
 }));
 vi.mock("@/lib/realtime/client", () => ({ onRealtimeEvent: () => () => {} }));
 vi.mock("../routes/inbox.$conversationId", () => ({
@@ -75,7 +79,7 @@ it("selects a different conversation on one click and loads its messages without
         protocolo: "000124",
         lastMessagePreview: "Última mensagem do contato",
         contact: { nome: "Natã R", telefone: "5511999990000" },
-        connection: { name: "WhatsApp Principal" },
+        connection: { name: "WhatsApp Principal", color: "#8b5cf6" },
         department: { nome: "Suporte" },
         closed_by: { nome: "Ialle - Prima" },
       },
@@ -126,6 +130,15 @@ it("selects a different conversation on one click and loads its messages without
     expect(conversationList.className).toContain("overflow-hidden");
     expect(conversationList.querySelector("[data-radix-scroll-area-viewport]")).not.toBeNull();
     expect(conversationDetail.className).toContain("hidden lg:flex");
+    const newGroupConversation = host.querySelector(
+      '[aria-label="Nova conversa"]',
+    ) as HTMLButtonElement;
+    expect(newGroupConversation.disabled).toBe(false);
+    await act(async () => newGroupConversation.click());
+    expect(api.navigate).toHaveBeenCalledWith({
+      to: "/inbox/$conversationId",
+      params: { conversationId: "0" },
+    });
     const target = [...host.querySelectorAll("li button")].find((button) =>
       button.textContent?.includes("Natã R"),
     ) as HTMLButtonElement;
@@ -140,10 +153,19 @@ it("selects a different conversation on one click and loads its messages without
     expect(target.textContent).toContain("WhatsApp Principal");
     expect(target.textContent).toContain("Suporte");
     expect(target.textContent).toContain("Ialle - Prima");
+    const closureMetadata = target.querySelector(
+      '[aria-label="Instância, departamento e atendente do encerramento"]',
+    ) as HTMLElement;
+    const protocol = target.querySelector('[aria-label="protocolo 000124"]') as HTMLElement;
+    expect(protocol.parentElement?.textContent).toContain("(11) 99999-0000");
+    expect(protocol.parentElement?.textContent).toContain("#000124");
+    expect(closureMetadata.previousElementSibling).toBe(protocol.parentElement);
+    expect(closureMetadata.className).not.toContain("mt-2");
     expect(
-      target.querySelector('[aria-label="Instância, departamento e atendente do encerramento"]'),
-    ).not.toBeNull();
-    expect(target.querySelector('[aria-label*="protocolo 000124"]')).not.toBeNull();
+      (closureMetadata.querySelector('[aria-label="Cor da instância"]') as HTMLElement).style
+        .backgroundColor,
+    ).toBe("rgb(139, 92, 246)");
+    expect(host.querySelector("aside footer")?.className).toContain("bg-surface-2");
     expect(
       host.querySelector('[aria-label="Abrir informações do contato"]')?.textContent,
     ).toContain("Natã R");

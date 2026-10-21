@@ -35,6 +35,7 @@ import {
 import { fmtDate } from "@/lib/format";
 import { Switch } from "@/components/ui/switch";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   platformApi,
   type PlatformPlan,
@@ -752,12 +753,14 @@ function TenantCredentialsModal({
   const [newPassword, setNewPassword] = React.useState("");
   const [passwordUnlocked, setPasswordUnlocked] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [saving, setSaving] = React.useState(false);
   const [loadingAdministrator, setLoadingAdministrator] = React.useState(false);
   const [administratorLoadError, setAdministratorLoadError] = React.useState<string | null>(null);
   const passwordRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
+    setErrors({});
     setResponsibleName(tenant?.responsibleName ?? client?.responsibleName ?? "");
     setResponsibleEmail(
       (tenant?.responsibleEmail ?? client?.responsibleEmail ?? "").toLocaleLowerCase("en-US"),
@@ -800,16 +803,45 @@ function TenantCredentialsModal({
     };
   }, [client?.responsibleEmail, client?.responsibleName, tenant]);
 
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if (responsibleName.trim()) delete next.responsibleName;
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(responsibleEmail.trim())) delete next.responsibleEmail;
+      if (!passwordUnlocked || newPassword.length >= 6) delete next.newPassword;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [newPassword, passwordUnlocked, responsibleEmail, responsibleName]);
+
   const save = async () => {
     if (!tenant) return;
     if (loadingAdministrator || administratorLoadError) return;
     const name = responsibleName.trim();
     const email = responsibleEmail.trim().toLowerCase();
-    if (!name) return toast.error("Informe o nome do responsável.");
+    const nextErrors: Record<string, boolean> = {
+      ...(!name ? { responsibleName: true } : {}),
+      ...(!email ? { responsibleEmail: true } : {}),
+      ...(passwordUnlocked && !newPassword ? { newPassword: true } : {}),
+    };
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors);
+      showRequiredFieldsToast(
+        [
+          ["responsibleName", "Nome do responsável"],
+          ["responsibleEmail", "E-mail do responsável"],
+          ["newPassword", "Nova senha"],
+        ]
+          .filter(([key]) => nextErrors[key])
+          .map(([, label]) => label),
+      );
+      return;
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setErrors({ responsibleEmail: true });
       return toast.error("Informe um e-mail válido.");
     }
     if (passwordUnlocked && newPassword.length < 6) {
+      setErrors({ newPassword: true });
       return toast.error("A nova senha deve ter ao menos 6 caracteres.");
     }
     setSaving(true);
@@ -862,6 +894,8 @@ function TenantCredentialsModal({
             value={responsibleName}
             onChange={(event) => setResponsibleName(event.target.value)}
             disabled={saving || loadingAdministrator}
+            className={requiredFieldClassName(Boolean(errors.responsibleName))}
+            aria-invalid={Boolean(errors.responsibleName)}
           />
         </Field>
         <Field label="E-mail do responsável *">
@@ -870,6 +904,8 @@ function TenantCredentialsModal({
             value={responsibleEmail}
             onChange={(event) => setResponsibleEmail(event.target.value.toLocaleLowerCase("en-US"))}
             disabled={saving || loadingAdministrator}
+            className={requiredFieldClassName(Boolean(errors.responsibleEmail))}
+            aria-invalid={Boolean(errors.responsibleEmail)}
           />
         </Field>
         <Field label={passwordUnlocked ? "Nova senha *" : "Nova senha"}>
@@ -882,7 +918,8 @@ function TenantCredentialsModal({
               onChange={(event) => setNewPassword(event.target.value)}
               disabled={!passwordUnlocked || saving}
               placeholder={passwordUnlocked ? "Digite a nova senha" : "Senha protegida"}
-              className="pr-20"
+              className={`pr-20 ${requiredFieldClassName(Boolean(errors.newPassword))}`}
+              aria-invalid={Boolean(errors.newPassword)}
             />
             <button
               type="button"

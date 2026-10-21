@@ -46,9 +46,10 @@ describe("catálogos independentes do escopo do Chat", () => {
     expect(reports).toContain("organizationApi.listChatDepartments");
   });
 
-  it("intersecta as instâncias de Contatos com o escopo permitido no modal do Inbox", () => {
+  it("usa no modal do Inbox somente o catálogo já filtrado pelo escopo do Chat", () => {
     const source = readFileSync(new URL("../routes/inbox.index.tsx", import.meta.url), "utf8");
-    expect(source).toContain("new Set(availableConnections.map((connection) => connection.id))");
-    expect(source).toContain("filter((instance) => allowedIds.has(instance.id))");
+    expect(source).toContain("availableConnections.map((connection) => ({");
+    expect(source).toContain("instances={instances}");
+    expect(source).not.toContain("contactOptions.instances");
   });
 });

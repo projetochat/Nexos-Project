@@ -339,6 +339,94 @@ describe("MessagingOutboundService scheduled messages", () => {
     );
   });
 
+  it("keeps a captionless scheduled image free of an automatic signature", async () => {
+    const mediaStorage = {
+      storeDownloaded: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/image",
+        checksum: "checksum-image",
+        mimeType: "image/jpeg",
+        fileName: "foto.jpg",
+        sizeBytes: 4,
+      }),
+      deleteObject: vi.fn().mockResolvedValue(undefined),
+    };
+    const senderDisplayName = {
+      resolveForMembership: vi.fn().mockResolvedValue("Ana Atendimento"),
+    };
+    const { service, tx } = setup({ mediaStorage, senderDisplayName });
+
+    await service.queueScheduledMessage({
+      tenantId: "tenant-a",
+      scheduleId: "schedule-image",
+      claimedVersion: 2,
+      occurrenceAt,
+      conversationId: "conversation-a",
+      createdByMembershipId: "membership-a",
+      content: "",
+      attachment: {
+        fileName: "foto.jpg",
+        mimeType: "image/jpeg",
+        size: 4,
+        dataUrl: "data:image/jpeg;base64,VGVzdA==",
+      },
+    });
+
+    expect(senderDisplayName.resolveForMembership).not.toHaveBeenCalled();
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "IMAGE",
+          content: null,
+          mediaCaption: null,
+        }),
+      }),
+    );
+  });
+
+  it("adds the attendant signature once to a captioned scheduled image", async () => {
+    const mediaStorage = {
+      storeDownloaded: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/image-captioned",
+        checksum: "checksum-image-captioned",
+        mimeType: "image/jpeg",
+        fileName: "foto.jpg",
+        sizeBytes: 4,
+      }),
+      deleteObject: vi.fn().mockResolvedValue(undefined),
+    };
+    const senderDisplayName = {
+      resolveForMembership: vi.fn().mockResolvedValue("Ana Atendimento"),
+    };
+    const { service, tx } = setup({ mediaStorage, senderDisplayName });
+
+    await service.queueScheduledMessage({
+      tenantId: "tenant-a",
+      scheduleId: "schedule-image-captioned",
+      claimedVersion: 2,
+      occurrenceAt,
+      conversationId: "conversation-a",
+      createdByMembershipId: "membership-a",
+      content: "Legenda da imagem",
+      attachment: {
+        fileName: "foto.jpg",
+        mimeType: "image/jpeg",
+        size: 4,
+        dataUrl: "data:image/jpeg;base64,VGVzdA==",
+      },
+    });
+
+    expect(senderDisplayName.resolveForMembership).toHaveBeenCalledOnce();
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "IMAGE",
+          content: "*Ana Atendimento:*\n\nLegenda da imagem",
+          mediaCaption: "*Ana Atendimento:*\n\nLegenda da imagem",
+        }),
+      }),
+    );
+  });
+
   it("keeps scheduled audio enabled when the creator retains the send-message permission", async () => {
     const mediaStorage = {
       storeDownloaded: vi.fn().mockResolvedValue({

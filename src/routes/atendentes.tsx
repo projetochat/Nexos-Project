@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Ban,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -19,7 +18,6 @@ import {
   Pencil,
   Plus,
   Trash2,
-  Unlock,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -36,13 +34,14 @@ import {
   SearchInput,
   Select,
 } from "@/components/ui-kit";
-import { Modal, ConfirmDialog } from "@/components/modal";
+import { Modal } from "@/components/modal";
 import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { Switch } from "@/components/ui/switch";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import { organizationApi, type ApiUserMembership } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/atendentes")({ component: AtendentesPage });
@@ -114,7 +113,6 @@ function AtendentesPage() {
   const [editing, setEditing] = React.useState<Atendente | null>(null);
   const [viewing, setViewing] = React.useState<Atendente | null>(null);
   const [duplicating, setDuplicating] = React.useState<Atendente | null>(null);
-  const [deleting, setDeleting] = React.useState<Atendente | null>(null);
   const [removing, setRemoving] = React.useState<Atendente | null>(null);
   const hasFilters = Boolean(query.trim() || perfilFilter || ativoFilter);
   const clearFilters = () => {
@@ -168,19 +166,6 @@ function AtendentesPage() {
       syncSessionUserFromMembership(membership, sessionUser?.id);
       toast.success("Atendente atualizado");
       setEditing(null);
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
-
-  const remove = useMutation({
-    mutationFn: (atendente: Atendente) =>
-      atendente.ativo
-        ? organizationApi.deactivateUser(atendente.id)
-        : organizationApi.activateUser(atendente.id),
-    onSuccess: (_membership, atendente) => {
-      qc.invalidateQueries({ queryKey: ["trixus", "users"] });
-      toast.success(atendente.ativo ? "Atendente bloqueado" : "Atendente desbloqueado");
-      setDeleting(null);
     },
     onError: (error) => toast.error((error as Error).message),
   });
@@ -255,32 +240,16 @@ function AtendentesPage() {
               </Button>
             )}
             {a.perfilKey !== "tenant_admin" && canDelete && !isCurrentUser && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={a.ativo ? "action-hover-destructive" : "action-hover-success"}
-                  onClick={() => setDeleting(a)}
-                  title={a.ativo ? "Bloquear" : "Desbloquear"}
-                  aria-label={`${a.ativo ? "Bloquear" : "Desbloquear"} ${a.nome}`}
-                >
-                  {a.ativo ? (
-                    <Ban className="h-3.5 w-3.5" />
-                  ) : (
-                    <Unlock className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="action-hover-destructive"
-                  onClick={() => setRemoving(a)}
-                  title="Excluir"
-                  aria-label={`Excluir ${a.nome}`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="action-hover-destructive"
+                onClick={() => setRemoving(a)}
+                title="Excluir"
+                aria-label={`Excluir ${a.nome}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
             )}
           </div>
         )}
@@ -453,7 +422,7 @@ function AtendentesPage() {
                   <th className="w-[20%] px-3 py-3 font-medium sm:px-4">Perfil</th>
                   <th className="w-[24%] px-3 py-3 font-medium sm:px-4">E-mail</th>
                   <th className="w-[10%] px-3 py-3 font-medium sm:px-4">Ativo</th>
-                  <th className="w-[18%] rounded-tr-lg px-2 py-3 text-center font-medium">Ações</th>
+                  <th className="w-[16%] rounded-tr-lg px-2 py-3 text-center font-medium">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -491,7 +460,7 @@ function AtendentesPage() {
                           {(canView ||
                             (a.perfilKey !== "tenant_admin" &&
                               (canCreate || canUpdate || canDelete))) && (
-                            <div className="mx-auto grid w-[196px] grid-cols-5 gap-1">
+                            <div className="mx-auto grid w-[156px] grid-cols-4 gap-1">
                               {canView && (
                                 <Button
                                   variant="ghost"
@@ -526,36 +495,16 @@ function AtendentesPage() {
                                 </Button>
                               )}
                               {a.perfilKey !== "tenant_admin" && canDelete && !isCurrentUser && (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className={
-                                      a.ativo
-                                        ? "action-hover-destructive"
-                                        : "action-hover-success"
-                                    }
-                                    onClick={() => setDeleting(a)}
-                                    title={a.ativo ? "Bloquear" : "Desbloquear"}
-                                    aria-label={a.ativo ? "Bloquear" : "Desbloquear"}
-                                  >
-                                    {a.ativo ? (
-                                      <Ban className="h-3.5 w-3.5" />
-                                    ) : (
-                                      <Unlock className="h-3.5 w-3.5" />
-                                    )}
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="action-hover-destructive"
-                                    onClick={() => setRemoving(a)}
-                                    title="Excluir"
-                                    aria-label={`Excluir ${a.nome}`}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="action-hover-destructive"
+                                  onClick={() => setRemoving(a)}
+                                  title="Excluir"
+                                  aria-label={`Excluir ${a.nome}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
                               )}
                             </div>
                           )}
@@ -639,21 +588,6 @@ function AtendentesPage() {
             onSubmit={(data) => create.mutate(data)}
           />
         )}
-        <ConfirmDialog
-          open={!!deleting}
-          title={deleting?.ativo ? "Bloquear Atendente?" : "Desbloquear Atendente?"}
-          destructive={deleting?.ativo}
-          accent={deleting?.ativo ? "destructive" : "primary"}
-          description={
-            <p>
-              Deseja realmente {deleting?.ativo ? "bloquear" : "desbloquear"} o atendente{" "}
-              <strong className="font-semibold text-foreground">"{deleting?.nome ?? ""}"</strong>?
-            </p>
-          }
-          confirmLabel={deleting?.ativo ? "Bloquear" : "Desbloquear"}
-          onClose={() => setDeleting(null)}
-          onConfirm={() => deleting && remove.mutate(deleting)}
-        />
         <DeletionConfirmDialog
           open={!!removing}
           resourceKey={removing?.id ?? "attendant"}
@@ -774,19 +708,29 @@ export function AtendenteForm({
 
   const submit = () => {
     const errs: Record<string, string> = {};
-    if (!form.nome || form.nome.trim().length < 3) errs.nome = "Informe o nome.";
-    else if (duplicateName(form.nome)) errs.nome = "Já existe um atendente com este nome.";
-    if (!form.perfilId) errs.perfilId = "Selecione um perfil.";
-    if (!form.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email))
+    const requiredFields: string[] = [];
+    if (!form.nome || form.nome.trim().length < 3) {
+      errs.nome = "Informe o nome.";
+      requiredFields.push("Nome");
+    } else if (duplicateName(form.nome)) errs.nome = "Já existe um atendente com este nome.";
+    if (!form.perfilId) {
+      errs.perfilId = "Selecione um perfil.";
+      requiredFields.push("Perfil de acesso");
+    }
+    if (!form.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) {
       errs.email = "E-mail inválido.";
-    else if (duplicateEmail(form.email)) errs.email = "Já existe um atendente com este e-mail.";
-    if (passwordRequired && (!form.senha?.trim() || form.senha.length < 6))
+      requiredFields.push("E-mail (login)");
+    } else if (duplicateEmail(form.email)) errs.email = "Já existe um atendente com este e-mail.";
+    if (passwordRequired && (!form.senha?.trim() || form.senha.length < 6)) {
       errs.senha = "Senha mínima de 6 caracteres.";
+      requiredFields.push("Senha");
+    }
     if (form.senha && form.senha.length > 0 && form.senha.length < 6)
       errs.senha = "Senha mínima de 6 caracteres.";
     if (Object.keys(errs).length) {
       setErrors(errs);
-      toast.error("Verifique os campos.");
+      if (requiredFields.length) showRequiredFieldsToast(requiredFields);
+      else toast.error("Revise os campos inválidos.");
       return;
     }
     onSubmit({ ...form, senha: passwordLocked ? undefined : form.senha });
@@ -915,7 +859,10 @@ export function AtendenteForm({
                 <span>Ativo</span>
               </label>
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Nome *">
+                <Field
+                  label="Nome *"
+                  error={errors.nome?.startsWith("Já existe") ? errors.nome : undefined}
+                >
                   <Input
                     value={form.nome ?? ""}
                     onChange={(e) => {
@@ -923,19 +870,29 @@ export function AtendenteForm({
                       setForm({ ...form, nome });
                       setErrors((current) => ({
                         ...current,
-                        nome: duplicateName(nome) ? "Já existe um atendente com este nome." : "",
+                        nome:
+                          nome.trim().length < 3
+                            ? current.nome
+                            : duplicateName(nome)
+                              ? "Já existe um atendente com este nome."
+                              : "",
                       }));
                     }}
+                    aria-invalid={Boolean(errors.nome)}
+                    className={requiredFieldClassName(Boolean(errors.nome))}
                   />
-                  {errors.nome && (
-                    <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-                  )}
                 </Field>
                 <Field label="Perfil de acesso *">
                   <Select
                     value={form.perfilId ?? ""}
                     disabled={protectOwnAccess}
-                    onChange={(e) => setForm({ ...form, perfilId: e.target.value || undefined })}
+                    onChange={(e) => {
+                      const perfilId = e.target.value || undefined;
+                      setForm({ ...form, perfilId });
+                      if (perfilId) setErrors((current) => ({ ...current, perfilId: "" }));
+                    }}
+                    aria-invalid={Boolean(errors.perfilId)}
+                    className={requiredFieldClassName(Boolean(errors.perfilId))}
                   >
                     <option value="">Selecione...</option>
                     {perfis.map((p) => (
@@ -944,13 +901,11 @@ export function AtendenteForm({
                       </option>
                     ))}
                   </Select>
-                  {errors.perfilId && (
-                    <span className="mt-1 block text-[11px] text-destructive">
-                      {errors.perfilId}
-                    </span>
-                  )}
                 </Field>
-                <Field label="E-mail (login) *">
+                <Field
+                  label="E-mail (login) *"
+                  error={errors.email?.startsWith("Já existe") ? errors.email : undefined}
+                >
                   <Input
                     type="email"
                     value={form.email ?? ""}
@@ -959,15 +914,16 @@ export function AtendenteForm({
                       setForm({ ...form, email });
                       setErrors((current) => ({
                         ...current,
-                        email: duplicateEmail(email)
-                          ? "Já existe um atendente com este e-mail."
-                          : "",
+                        email: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+                          ? duplicateEmail(email)
+                            ? "Já existe um atendente com este e-mail."
+                            : ""
+                          : current.email,
                       }));
                     }}
+                    aria-invalid={Boolean(errors.email)}
+                    className={requiredFieldClassName(Boolean(errors.email))}
                   />
-                  {errors.email && (
-                    <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
-                  )}
                 </Field>
                 <Field label={passwordRequired ? "Senha *" : "Senha"} asLabel={false}>
                   <div className="relative">
@@ -985,8 +941,11 @@ export function AtendenteForm({
                       onChange={(e) => {
                         if (initial && !clone && !e.target.value) setShowPassword(false);
                         setForm({ ...form, senha: e.target.value });
+                        if (e.target.value.length >= 6)
+                          setErrors((current) => ({ ...current, senha: "" }));
                       }}
-                      className={isEditing ? "pr-20" : "pr-10"}
+                      className={`${isEditing ? "pr-20" : "pr-10"} ${requiredFieldClassName(Boolean(errors.senha))}`}
+                      aria-invalid={Boolean(errors.senha)}
                     />
                     {isEditing && (
                       <button
@@ -1034,9 +993,6 @@ export function AtendenteForm({
                       </button>
                     )}
                   </div>
-                  {errors.senha && (
-                    <span className="mt-1 block text-[11px] text-destructive">{errors.senha}</span>
-                  )}
                 </Field>
               </div>
             </div>

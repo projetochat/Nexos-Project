@@ -33,4 +33,8 @@ describe("Agendamentos grid shell", () => {
     );
     expect(source.match(/className="!h-7 !min-h-7 !w-7 !p-0"/g)).toHaveLength(2);
   });
+
+  it("omite os detalhes técnicos do registro no aviso de exclusão", () => {
+    expect(source).toContain("showRecordDetails={false}");
+  });
 });

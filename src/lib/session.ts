@@ -39,6 +39,7 @@ export type SessionUser = {
   customerBubbleColor?: string;
   customerBubbleTextColor?: string;
   chatBackgroundColor?: string;
+  chatBackgroundMode?: "IMAGE" | "COLOR";
   permissions?: string[];
 };
 

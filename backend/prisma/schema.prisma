@@ -574,6 +574,8 @@ model PlatformClient {
   responsibleEmail String
   city             String
   state            String
+  country          String               @default("Brasil")
+  cityId           String?              @map("city_id")
   registeredAt     DateTime             @default(now())
   status           PlatformClientStatus @default(ACTIVE)
   notes            String?
@@ -581,12 +583,83 @@ model PlatformClient {
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
   tenant           Tenant?              @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  cityReference    City?                @relation(fields: [cityId], references: [id], onDelete: SetNull)
   subscriptions    TenantSubscription[]
 
   @@index([name])
   @@index([city, state])
+  @@index([cityId])
   @@index([status])
   @@map("platform_clients")
+}
+
+model Country {
+  id         String                   @id @default(uuid())
+  code       String                   @unique @db.VarChar(2)
+  name       String
+  geonamesId String?                  @unique @map("geonames_id")
+  active     Boolean                  @default(true)
+  createdAt  DateTime                 @default(now()) @map("created_at")
+  updatedAt  DateTime                 @updatedAt @map("updated_at")
+  divisions  AdministrativeDivision[]
+  cities     City[]
+
+  @@index([active, name])
+  @@map("countries")
+}
+
+model AdministrativeDivision {
+  id         String   @id @default(uuid())
+  countryId  String   @map("country_id")
+  code       String
+  name       String
+  geonamesId String?  @unique @map("geonames_id")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  country    Country  @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  cities     City[]
+
+  @@unique([countryId, code])
+  @@index([countryId, active, name])
+  @@map("administrative_divisions")
+}
+
+model City {
+  id              String                  @id @default(uuid())
+  name            String
+  normalizedName  String                  @map("normalized_name")
+  dedupeKey       String                  @unique @map("dedupe_key")
+  countryId       String                  @map("country_id")
+  divisionId      String?                 @map("division_id")
+  ibgeCode        String?                 @unique @map("ibge_code")
+  geonamesId      String?                 @unique @map("geonames_id")
+  latitude        Float?
+  longitude       Float?
+  active          Boolean                 @default(true)
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+  country         Country                 @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  division        AdministrativeDivision? @relation(fields: [divisionId], references: [id], onDelete: Restrict)
+  customers       Customer[]
+  platformClients PlatformClient[]
+
+  @@index([countryId, divisionId, active, normalizedName])
+  @@index([normalizedName])
+  @@index([name])
+  @@map("cities")
+}
+
+model LocationCatalogVersion {
+  version        String   @id
+  artifactSha256 String   @unique @map("artifact_sha256") @db.VarChar(64)
+  status         String
+  countriesCount Int      @map("countries_count")
+  divisionsCount Int      @map("divisions_count")
+  citiesCount    Int      @map("cities_count")
+  loadedAt       DateTime @map("loaded_at")
+
+  @@map("location_catalog_versions")
 }
 
 model User {
@@ -600,6 +673,7 @@ model User {
   customerBubbleColor     String?                @map("customer_bubble_color")
   customerBubbleTextColor String?                @map("customer_bubble_text_color")
   chatBackgroundColor     String?                @map("chat_background_color")
+  chatBackgroundMode      String                 @default("IMAGE") @map("chat_background_mode")
   passwordHash            String
   status                  UserStatus             @default(ACTIVE)
   platformRole            PlatformRole           @default(USER)
@@ -1005,10 +1079,12 @@ model Customer {
   city                   String?
   state                  String?
   country                String?              @default("Brasil")
+  cityId                 String?              @map("city_id")
   archivedAt             DateTime?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
   tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cityReference          City?                @relation(fields: [cityId], references: [id], onDelete: SetNull)
   contacts               Contact[]
   campaignRecipients     CampaignRecipient[]
   tickets                Ticket[]
@@ -1021,6 +1097,7 @@ model Customer {
   @@index([tenantId, status, archivedAt])
   @@index([tenantId, personType, archivedAt])
   @@index([tenantId, document])
+  @@index([cityId])
   @@map("customers")
 }
 
@@ -1253,39 +1330,40 @@ model ConversationProtocolCounter {
 }
 
 model Conversation {
-  id                    String                    @id @default(uuid())
-  tenantId              String
-  contactId             String
-  departmentId          String?
-  assignedMembershipId  String?
-  connectionId          String?
-  status                ConversationStatus        @default(ABERTA)
-  protocol              String?
-  isGroup               Boolean                   @default(false)
-  conversationType      ConversationType          @default(DIRECT)
-  externalChatId        String?
-  externalGroupId       String?
-  groupName             String?
-  groupImageUrl         String?
-  groupSubjectUpdatedAt DateTime?
-  groupMetadataJson     Json?
-  unreadCount           Int                       @default(0)
-  lastMessagePreview    String?
-  lastMessageAt         DateTime?
-  inboxArchivedAt       DateTime?
-  archivedAt            DateTime?
-  closedAt              DateTime?
-  createdAt             DateTime                  @default(now())
-  updatedAt             DateTime                  @updatedAt
-  tenant                Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact               Contact                   @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  department            Department?               @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  assignedMembership    TenantMembership?         @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
-  connection            MessagingConnection?      @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
-  messages              Message[]
-  participants          ConversationParticipant[]
-  tickets               Ticket[]
-  lead                  Lead?
+  id                             String                    @id @default(uuid())
+  tenantId                       String
+  contactId                      String
+  departmentId                   String?
+  assignedMembershipId           String?
+  assignedMembershipNameSnapshot String?
+  connectionId                   String?
+  status                         ConversationStatus        @default(ABERTA)
+  protocol                       String?
+  isGroup                        Boolean                   @default(false)
+  conversationType               ConversationType          @default(DIRECT)
+  externalChatId                 String?
+  externalGroupId                String?
+  groupName                      String?
+  groupImageUrl                  String?
+  groupSubjectUpdatedAt          DateTime?
+  groupMetadataJson              Json?
+  unreadCount                    Int                       @default(0)
+  lastMessagePreview             String?
+  lastMessageAt                  DateTime?
+  inboxArchivedAt                DateTime?
+  archivedAt                     DateTime?
+  closedAt                       DateTime?
+  createdAt                      DateTime                  @default(now())
+  updatedAt                      DateTime                  @updatedAt
+  tenant                         Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact                        Contact                   @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  department                     Department?               @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignedMembership             TenantMembership?         @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  connection                     MessagingConnection?      @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
+  messages                       Message[]
+  participants                   ConversationParticipant[]
+  tickets                        Ticket[]
+  lead                           Lead?
 
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])

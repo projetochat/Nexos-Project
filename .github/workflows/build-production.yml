@@ -114,6 +114,8 @@ jobs:
           docker run --rm --entrypoint sh "trixus-pr/backend:$GITHUB_SHA" \
             -c 'command -v node && test -s /app/backend/dist/src/main.js'
           docker run --rm "trixus-pr/migrate:$GITHUB_SHA"
+          docker run --rm --entrypoint bun "trixus-pr/migrate:$GITHUB_SHA" \
+            run locations:catalog:verify
           docker run --rm --entrypoint sh "trixus-pr/frontend:$GITHUB_SHA" \
             -c 'command -v bun && test -s /app/.output/server/index.mjs'
 
@@ -165,6 +167,8 @@ jobs:
             -c 'command -v node && test -s /app/backend/dist/src/main.js'
           test "$(docker image inspect "trixus-release/migrate:$GITHUB_SHA" --format '{{json .Config.Cmd}}')" = '["bun","run","prisma:migrate:deploy","--help"]'
           docker run --rm "trixus-release/migrate:$GITHUB_SHA"
+          docker run --rm --entrypoint bun "trixus-release/migrate:$GITHUB_SHA" \
+            run locations:catalog:verify
           docker run --rm --entrypoint sh "trixus-release/frontend:$GITHUB_SHA" \
             -c 'command -v bun && test -s /app/.output/server/index.mjs'
       - name: Package images and checksums

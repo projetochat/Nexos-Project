@@ -4,8 +4,13 @@ import { readFile, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { promisify } from "node:util";
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  inspectLoadedLocationCatalog,
+  loadPackagedLocationCatalog,
+  verifyPackagedLocationCatalog,
+} from "./location-catalog.mjs";
 export const MIGRATION_NAME = "20261005210000_contact_custom_field_identity";
-export const WRAPPER_VERSION = "2";
+export const WRAPPER_VERSION = "3";
 const backendDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const migrationFile = resolve(backendDir, "prisma", "migrations", MIGRATION_NAME, "migration.sql");
 const reconciliationManifestFile = resolve(backendDir, "prisma", "migration-reconciliations.json");
@@ -780,6 +785,7 @@ export async function inspectContactCustomFieldIdentity(
 }
 
 async function inspectDatabase(expectedChecksum, options) {
+  const catalogManifest = verifyPackagedLocationCatalog();
   const { PrismaClient } = await import("../src/generated/prisma/index.js");
   const prisma = new PrismaClient();
   try {
@@ -790,7 +796,18 @@ async function inspectDatabase(expectedChecksum, options) {
       error.collisionReport = anonymizeCollisionRows(state.collisions);
       throw error;
     }
-    return { ...state, ...history };
+    const locationCatalog = await inspectLoadedLocationCatalog(prisma, catalogManifest);
+    return { ...state, ...history, locationCatalog, catalogManifest };
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+async function loadLocationCatalog() {
+  const { PrismaClient } = await import("../src/generated/prisma/index.js");
+  const prisma = new PrismaClient();
+  try {
+    return await loadPackagedLocationCatalog(prisma);
   } finally {
     await prisma.$disconnect();
   }
@@ -830,6 +847,12 @@ async function main() {
         forwardState: initial.forwardState,
         checksum: expectedChecksum,
         reconciliationRequired: initial.reconciliationRequired,
+        locationCatalog: {
+          status: initial.locationCatalog.status,
+          version: initial.catalogManifest.version,
+          sha256: initial.catalogManifest.catalogSha256,
+          counts: initial.catalogManifest.counts,
+        },
       }),
     );
     return;
@@ -846,12 +869,25 @@ async function main() {
     process.exitCode = result.status ?? 1;
     return;
   }
+  const catalogLoad = await loadLocationCatalog();
+  console.log(
+    JSON.stringify({
+      code: "LOCATION_CATALOG_LOAD_OK",
+      status: catalogLoad.status,
+      version: catalogLoad.manifest.version,
+      sha256: catalogLoad.manifest.catalogSha256,
+      counts: catalogLoad.manifest.counts,
+    }),
+  );
   const finalState = await inspectDatabase(expectedChecksum);
   if (
     !["COMPLETED_VALID", "COMPLETED_RECONCILED"].includes(finalState.migrationState) ||
     (finalState.reconciliationPolicy && finalState.forwardState !== "COMPLETED_VALID")
   ) {
     throw safeError("CONTACT_CUSTOM_FIELD_IDENTITY_POST_VALIDATION_FAILED");
+  }
+  if (finalState.locationCatalog.status !== "ACTIVE") {
+    throw safeError("LOCATION_CATALOG_POST_VALIDATION_FAILED");
   }
 }
 

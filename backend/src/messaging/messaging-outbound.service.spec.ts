@@ -436,9 +436,12 @@ describe("MessagingOutboundService", () => {
 
   it.each([
     ["image/png", "image", MessageType.IMAGE],
+    ["video/mp4", "video", MessageType.VIDEO],
+    ["audio/mpeg", "audio", MessageType.AUDIO],
     ["audio/webm", "voice", MessageType.VOICE],
+    ["application/pdf", "document", MessageType.DOCUMENT],
   ])(
-    "adds the attendant signature to captionless %s media",
+    "keeps captionless %s media free of an automatic signature",
     async (mimeType, mediaType, messageType) => {
       const prisma = prismaMock();
       prisma.conversation.findFirst.mockResolvedValue(conversation());
@@ -486,14 +489,64 @@ describe("MessagingOutboundService", () => {
       expect(prisma.message.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            content: "*Natã Rabelo:*",
-            mediaCaption: "*Natã Rabelo:*",
+            content: null,
+            mediaCaption: null,
           }),
         }),
       );
-      expect(senderName.resolve).toHaveBeenCalled();
+      expect(senderName.resolve).not.toHaveBeenCalled();
     },
   );
+
+  it("adds the attendant signature once when media has a caption", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue(message());
+    const mediaStorage = {
+      storeUpload: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/image",
+        body: Buffer.from("media"),
+        checksum: "checksum",
+        mimeType: "image/png",
+        fileName: "image.png",
+        sizeBytes: 5,
+        messageType: MessageType.IMAGE,
+        caption: "Legenda da imagem",
+        durationMs: null,
+      }),
+      deleteObject: vi.fn(),
+    };
+    const senderName = { resolve: vi.fn().mockResolvedValue("Natã Rabelo") };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      mediaStorage as never,
+      undefined,
+      undefined,
+      senderName as never,
+    );
+
+    await service.sendMedia(
+      "conversation-a",
+      { headers: { "content-type": "image/png", "x-media-type": "image" } } as never,
+      {
+        ...current,
+        permissions: ["messages.send", "chat.agent_name.show"],
+      } as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: "*Natã Rabelo:*\n\nLegenda da imagem",
+          mediaCaption: "*Natã Rabelo:*\n\nLegenda da imagem",
+        }),
+      }),
+    );
+    expect(senderName.resolve).toHaveBeenCalledOnce();
+  });
 
   it("keeps captionless media empty when the signature permission is disabled", async () => {
     const prisma = prismaMock();

@@ -17,6 +17,7 @@ dist-ssr
 # Runtime data
 **/.continuity/
 .trixus-storage/
+/trixus-storage/
 .local-storage/
 coverage/
 build/
@@ -60,3 +61,6 @@ backend/src/generated/prisma/
 
 # Local release packages
 .release-artifacts/
+
+# Local reference documents
+/docs/TRIXUS_MANUAL_DE_ESTUDOS_E_CONHECIMENTO_2026-10-13.docx

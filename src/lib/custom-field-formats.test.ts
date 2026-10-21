@@ -15,6 +15,7 @@ describe("custom contact field formats", () => {
     ["6233330000", "phone", "(62) 3333-0000"],
     ["+5562999990000", "phone", "+5562999990000"],
     ["  Ana@Example.COM  ", "email", "ana@example.com"],
+    [" 550e8400-e29b-41d4-a716-446655440000 ", "city", "550e8400-e29b-41d4-a716-446655440000"],
   ] as const)(
     "formats %s as %s and preserves an already formatted value",
     (raw, format, expected) => {
@@ -23,7 +24,7 @@ describe("custom contact field formats", () => {
     },
   );
   it("keeps formats on reload and leaves existing field types alone", () => {
-    for (const format of ["cpf_cnpj", "cep", "phone", "email"] as const) {
+    for (const format of ["cpf_cnpj", "cep", "phone", "email", "city"] as const) {
       expect(
         customFieldFormat({ type: "text", mask: JSON.stringify({ custom: { format } }) }),
       ).toBe(format);

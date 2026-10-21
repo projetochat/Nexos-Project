@@ -24,6 +24,7 @@ import { crmApi, type ApiTag } from "@/lib/trixus-api";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/etiquetas")({ component: Page });
 
@@ -344,7 +345,11 @@ export function EtiquetaForm({
 
   const submit = async () => {
     if (readOnly || !onSubmit) return;
-    if (name.trim().length < 2) return toast.error("Informe o nome.");
+    if (name.trim().length < 2) {
+      setNameError("Informe o nome.");
+      showRequiredFieldsToast(["Nome"]);
+      return;
+    }
     const duplicateError = duplicateNameError(name);
     if (duplicateError) {
       setNameError(duplicateError);
@@ -425,14 +430,19 @@ export function EtiquetaForm({
           />
         </label>
         <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
-          <Field label="Nome *" error={nameError || undefined}>
+          <Field
+            label="Nome *"
+            error={nameError && nameError !== "Informe o nome." ? nameError : undefined}
+          >
             <Input
               value={name}
               onChange={(event) => {
                 setName(event.target.value);
-                setNameError(duplicateNameError(event.target.value));
+                if (event.target.value.trim().length >= 2)
+                  setNameError(duplicateNameError(event.target.value));
               }}
               aria-invalid={!!nameError}
+              className={requiredFieldClassName(Boolean(nameError))}
             />
           </Field>
           <Field label="Cor">

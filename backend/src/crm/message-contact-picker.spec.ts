@@ -21,6 +21,8 @@ describe("message contact picker", () => {
             phone: "62999999999",
             normalizedPhone: "5562999999999",
             avatarUrl: null,
+            instance: "connection-a",
+            instanceIds: ["connection-a"],
           },
         ]),
         count: vi.fn().mockResolvedValue(1),
@@ -57,6 +59,8 @@ describe("message contact picker", () => {
           phone: true,
           normalizedPhone: true,
           avatarUrl: true,
+          instance: true,
+          instanceIds: true,
         },
       }),
     );
@@ -67,6 +71,9 @@ describe("message contact picker", () => {
         telefone: "62999999999",
         normalizedPhone: "5562999999999",
         avatar_url: null,
+        active: true,
+        instancia: "connection-a",
+        instanceIds: ["connection-a"],
       },
     ]);
     expect(result.items[0]).not.toHaveProperty("email");

@@ -49,6 +49,7 @@ import {
   type PlatformSubscription,
   type PlatformSubscriptionDetail,
 } from "@/lib/trixus-api";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/admin/assinaturas")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
@@ -782,9 +783,11 @@ function CreateForm({
   const [endsAt, setEndsAt] = React.useState("");
   const [indefinite, setIndefinite] = React.useState(true);
   const [notes, setNotes] = React.useState("");
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [saving, setSaving] = React.useState(false);
   React.useEffect(() => {
     if (!open) return;
+    setErrors({});
     const plan = activePlans[0];
     setClientId(eligibleClients[0]?.id ?? "");
     setPlanId(plan?.id ?? "");
@@ -800,19 +803,53 @@ function CreateForm({
   const grossCents = parsePlatformMoneyToCents(gross);
   const discountCents = coupon ? parsePlatformMoneyToCents(discount) : 0;
   const net = Math.max(0, grossCents - discountCents);
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if (client) delete next.clientId;
+      if (client?.responsibleName.trim()) delete next.responsibleName;
+      if (client?.responsibleEmail.trim()) delete next.responsibleEmail;
+      if (planId) delete next.planId;
+      if (startsAt) delete next.startsAt;
+      if (indefinite || endsAt) delete next.endsAt;
+      if (grossCents > 0) delete next.gross;
+      if (!coupon || discountCents > 0) delete next.discount;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [client, coupon, discountCents, endsAt, grossCents, indefinite, planId, startsAt]);
   async function save() {
-    if (
-      !client ||
-      !planId ||
-      !startsAt ||
-      !client.responsibleName.trim() ||
-      !client.responsibleEmail.trim()
-    )
-      return void toast.error(
-        "Informe cliente, contato responsável, e-mail, plano e início do período.",
+    const nextErrors: Record<string, boolean> = {
+      ...(!client ? { clientId: true } : {}),
+      ...(!client?.responsibleName.trim() ? { responsibleName: true } : {}),
+      ...(!client?.responsibleEmail.trim() ? { responsibleEmail: true } : {}),
+      ...(!planId ? { planId: true } : {}),
+      ...(!startsAt ? { startsAt: true } : {}),
+      ...(!indefinite && !endsAt ? { endsAt: true } : {}),
+    };
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors);
+      showRequiredFieldsToast(
+        [
+          ["clientId", "Cliente"],
+          ["responsibleName", "Contato responsável"],
+          ["responsibleEmail", "E-mail do responsável"],
+          ["planId", "Plano"],
+          ["startsAt", "Início do período"],
+          ["endsAt", "Fim do período"],
+        ]
+          .filter(([key]) => nextErrors[key])
+          .map(([, label]) => label),
       );
-    if (grossCents <= 0) return void toast.error("Informe um valor mensal válido.");
-    if (coupon && discountCents <= 0) return void toast.error("Informe o valor de desconto.");
+      return;
+    }
+    if (grossCents <= 0) {
+      setErrors({ gross: true });
+      return void toast.error("Informe um valor mensal válido.");
+    }
+    if (coupon && discountCents <= 0) {
+      setErrors({ discount: true });
+      return void toast.error("Informe o valor de desconto.");
+    }
     if (discountCents > grossCents)
       return void toast.error("O desconto não pode ser maior que o valor mensal.");
     if (!indefinite && !endsAt)
@@ -870,7 +907,12 @@ function CreateForm({
         </div>
         <div className="sm:col-span-4">
           <Field label="Cliente *">
-            <Select value={clientId} onChange={(e) => setClientId(e.target.value)}>
+            <Select
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              className={requiredFieldClassName(Boolean(errors.clientId))}
+              aria-invalid={Boolean(errors.clientId)}
+            >
               {!eligibleClients.length && <option value="">Nenhum cliente disponível</option>}
               {eligibleClients.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -882,18 +924,30 @@ function CreateForm({
         </div>
         <div className="sm:col-span-3">
           <Field label="Contato responsável *">
-            <Input disabled value={client?.responsibleName ?? ""} />
+            <Input
+              disabled
+              value={client?.responsibleName ?? ""}
+              className={requiredFieldClassName(Boolean(errors.responsibleName))}
+              aria-invalid={Boolean(errors.responsibleName)}
+            />
           </Field>
         </div>
         <div className="sm:col-span-3">
           <Field label="E-mail do responsável *">
-            <Input disabled value={client?.responsibleEmail ?? ""} />
+            <Input
+              disabled
+              value={client?.responsibleEmail ?? ""}
+              className={requiredFieldClassName(Boolean(errors.responsibleEmail))}
+              aria-invalid={Boolean(errors.responsibleEmail)}
+            />
           </Field>
         </div>
         <div className="sm:col-span-3">
           <Field label="Plano *">
             <Select
               value={planId}
+              className={requiredFieldClassName(Boolean(errors.planId))}
+              aria-invalid={Boolean(errors.planId)}
               onChange={(e) => {
                 const id = e.target.value;
                 setPlanId(id);
@@ -912,7 +966,7 @@ function CreateForm({
         </div>
         <div className="sm:col-span-3">
           <Field label="Valor mensal (bruto) *">
-            <Money value={gross} onChange={setGross} />
+            <Money value={gross} onChange={setGross} invalid={Boolean(errors.gross)} />
           </Field>
         </div>
         <div className="sm:col-span-2">
@@ -922,7 +976,12 @@ function CreateForm({
         </div>
         <div className="sm:col-span-2">
           <Field label={`Valor de desconto${coupon ? " *" : ""}`}>
-            <Money value={coupon ? discount : "0,00"} disabled={!coupon} onChange={setDiscount} />
+            <Money
+              value={coupon ? discount : "0,00"}
+              disabled={!coupon}
+              onChange={setDiscount}
+              invalid={Boolean(errors.discount)}
+            />
           </Field>
         </div>
         <div className="sm:col-span-2">
@@ -932,12 +991,22 @@ function CreateForm({
         </div>
         <div className="sm:col-span-2">
           <Field label="Início do período *">
-            <DashboardDateInput value={startsAt} readOnly={false} onChange={setStartsAt} />
+            <div
+              aria-invalid={Boolean(errors.startsAt)}
+              className={`rounded-lg border ${errors.startsAt ? `${requiredFieldClassName(true)} [&_input]:!border-transparent` : "border-transparent"}`}
+            >
+              <DashboardDateInput value={startsAt} readOnly={false} onChange={setStartsAt} />
+            </div>
           </Field>
         </div>
         <div className="sm:col-span-2">
           <Field label="Fim do período">
-            <DashboardDateInput value={endsAt} readOnly={indefinite} onChange={setEndsAt} />
+            <div
+              aria-invalid={Boolean(errors.endsAt)}
+              className={`rounded-lg border ${errors.endsAt ? `${requiredFieldClassName(true)} [&_input]:!border-transparent` : "border-transparent"}`}
+            >
+              <DashboardDateInput value={endsAt} readOnly={indefinite} onChange={setEndsAt} />
+            </div>
           </Field>
         </div>
         <div className="sm:col-span-2">
@@ -1150,8 +1219,15 @@ function ActionDialog({
   onSaved: () => void;
 }) {
   const [reason, setReason] = React.useState("");
+  const [reasonError, setReasonError] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
-  React.useEffect(() => setReason(""), [value]);
+  React.useEffect(() => {
+    setReason("");
+    setReasonError(false);
+  }, [value]);
+  React.useEffect(() => {
+    if (reason.trim()) setReasonError(false);
+  }, [reason]);
   if (!value) return null;
   const current = value;
   const status = normalizeSubscriptionStatus(current.row.status);
@@ -1163,7 +1239,11 @@ function ActionDialog({
           ? "O registro já se encontra suspenso e não pode ser suspenso novamente."
           : "A suspensão só é permitida para uma assinatura ativa.",
       );
-    if (suspend && !reason.trim()) return void toast.error("Informe o motivo da suspensão.");
+    if (suspend && !reason.trim()) {
+      setReasonError(true);
+      showRequiredFieldsToast(["Motivo da suspensão"]);
+      return;
+    }
     if (!suspend && status === "CANCELLED")
       return void toast.error(
         "O registro já se encontra cancelado e não pode ser cancelado novamente.",
@@ -1217,7 +1297,13 @@ function ActionDialog({
     >
       {suspend ? (
         <Field label="Motivo da suspensão *">
-          <Textarea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} />
+          <Textarea
+            rows={4}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className={requiredFieldClassName(reasonError)}
+            aria-invalid={reasonError}
+          />
         </Field>
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -1651,14 +1737,19 @@ function ToggleLine({ value, onChange }: { value: boolean; onChange: (value: boo
 function Money({
   value,
   disabled = false,
+  invalid = false,
   onChange,
 }: {
   value: string;
   disabled?: boolean;
+  invalid?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex overflow-hidden rounded-lg border border-border bg-surface-1">
+    <div
+      aria-invalid={invalid}
+      className={`flex overflow-hidden rounded-lg border border-border bg-surface-1 ${requiredFieldClassName(invalid)}`}
+    >
       <span className="flex items-center border-r border-border px-3 text-sm text-muted-foreground">
         R$
       </span>

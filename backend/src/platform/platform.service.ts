@@ -33,6 +33,7 @@ import {
   assertEvolutionConfigured,
 } from "../messaging/evolution/evolution.config";
 import { PrismaService } from "../prisma/prisma.service";
+import { LocationsService } from "../locations/locations.service";
 import { MessagingOutboundQueue } from "../queue/messaging-outbound.queue";
 import { RealtimeService } from "../realtime/realtime.service";
 import { FileStorageProvider } from "../tickets/storage/file-storage.provider";
@@ -212,6 +213,9 @@ export class PlatformService {
     @Optional()
     @Inject(TransactionalEmailService)
     private readonly email?: TransactionalEmailService,
+    @Optional()
+    @Inject(LocationsService)
+    private readonly locations?: LocationsService,
   ) {}
 
   async changeOwnPassword(dto: ChangePlatformPasswordDto, current: AuthenticatedUser) {
@@ -804,26 +808,43 @@ export class PlatformService {
   }
 
   async createClient(dto: CreatePlatformClientDto, current: AuthenticatedUser) {
+    const status = dto.status ?? "ACTIVE";
+    const responsibleName =
+      typeof dto.responsibleName === "string" ? dto.responsibleName.trim() : "";
+    const responsibleEmail =
+      typeof dto.responsibleEmail === "string" ? dto.responsibleEmail.toLowerCase().trim() : "";
     const documentDigits =
       typeof dto.document === "string" ? dto.document.replace(/\D/g, "") : undefined;
     const document = documentDigits ? documentDigits : null;
-    if (dto.status !== "PROSPECTING" && document?.length !== 14) {
+    if (status !== "PROSPECTING" && document?.length !== 14) {
       throw new BadRequestException("Informe um CNPJ válido para o cliente.");
+    }
+    if (status !== "PROSPECTING" && !responsibleName) {
+      throw new BadRequestException("Informe o responsável pelo cliente.");
+    }
+    if (status !== "PROSPECTING" && !responsibleEmail) {
+      throw new BadRequestException("Informe o e-mail do responsável pelo cliente.");
+    }
+    if (status !== "PROSPECTING" && !isValidRequiredEmail(responsibleEmail)) {
+      throw new BadRequestException("Informe um e-mail válido para o responsável pelo cliente.");
     }
     if (document) {
       const existing = await this.prisma.platformClient.findUnique({ where: { document } });
       if (existing) throw new ConflictException("Já existe um cliente cadastrado com este CNPJ.");
     }
+    const location = dto.cityId ? await this.locationService().resolveCity(dto.cityId) : null;
     const client = await this.prisma.platformClient.create({
       data: {
         name: dto.name.trim(),
         document,
-        responsibleName: dto.responsibleName.trim(),
-        responsibleEmail: dto.responsibleEmail.toLowerCase().trim(),
-        city: dto.city.trim(),
-        state: dto.state.toUpperCase(),
+        responsibleName,
+        responsibleEmail,
+        cityId: location?.cityId,
+        city: location?.city ?? dto.city!.trim(),
+        state: location?.state ?? dto.state!.toUpperCase(),
+        country: location?.country ?? dto.country?.trim() ?? "Brasil",
         registeredAt: dto.registeredAt ? new Date(dto.registeredAt) : new Date(),
-        status: dto.status ?? "ACTIVE",
+        status,
         notes: nullable(dto.notes),
       },
     });
@@ -847,22 +868,47 @@ export class PlatformService {
           ? nullable(dto.document.replace(/\D/g, ""))
           : null;
     const nextStatus = dto.status ?? existing.status;
+    const nextResponsibleName =
+      dto.responsibleName === undefined
+        ? existing.responsibleName
+        : typeof dto.responsibleName === "string"
+          ? dto.responsibleName.trim()
+          : "";
+    const nextResponsibleEmail =
+      dto.responsibleEmail === undefined
+        ? existing.responsibleEmail
+        : typeof dto.responsibleEmail === "string"
+          ? dto.responsibleEmail.toLowerCase().trim()
+          : "";
     if (nextStatus !== "PROSPECTING" && document?.length !== 14) {
       throw new BadRequestException("Informe um CNPJ válido para o cliente.");
+    }
+    if (nextStatus !== "PROSPECTING" && !nextResponsibleName) {
+      throw new BadRequestException("Informe o responsável pelo cliente.");
+    }
+    if (nextStatus !== "PROSPECTING" && !nextResponsibleEmail) {
+      throw new BadRequestException("Informe o e-mail do responsável pelo cliente.");
+    }
+    if (nextStatus !== "PROSPECTING" && !isValidRequiredEmail(nextResponsibleEmail)) {
+      throw new BadRequestException("Informe um e-mail válido para o responsável pelo cliente.");
     }
     if (document && document !== existing.document) {
       const duplicate = await this.prisma.platformClient.findUnique({ where: { document } });
       if (duplicate) throw new ConflictException("Já existe um cliente cadastrado com este CNPJ.");
     }
+    const location =
+      typeof dto.cityId === "string" ? await this.locationService().resolveCity(dto.cityId) : null;
     const client = await this.prisma.platformClient.update({
       where: { id },
       data: {
         name: dto.name?.trim(),
         document: dto.document === undefined ? undefined : document,
-        responsibleName: dto.responsibleName?.trim(),
-        responsibleEmail: dto.responsibleEmail?.toLowerCase().trim(),
-        city: dto.city?.trim(),
-        state: dto.state?.toUpperCase(),
+        responsibleName: dto.responsibleName === undefined ? undefined : nextResponsibleName,
+        responsibleEmail: dto.responsibleEmail === undefined ? undefined : nextResponsibleEmail,
+        cityId: dto.cityId === undefined ? undefined : (location?.cityId ?? null),
+        city: location?.city ?? dto.city?.trim(),
+        state: location?.state ?? dto.state?.toUpperCase(),
+        country: location?.country ?? dto.country?.trim(),
         registeredAt: dto.registeredAt ? new Date(dto.registeredAt) : undefined,
         status: dto.status,
         notes: nullable(dto.notes),
@@ -876,6 +922,13 @@ export class PlatformService {
       tenantId: client.tenantId ?? undefined,
     });
     return client;
+  }
+
+  private locationService() {
+    if (!this.locations) {
+      throw new Error("LocationsService não está disponível.");
+    }
+    return this.locations;
   }
 
   async cancelClient(id: string, current: AuthenticatedUser) {
@@ -3297,6 +3350,10 @@ function nullable(value?: string | null) {
 function normalizeNullableEmail(value?: string | null) {
   if (value === undefined) return undefined;
   return value?.trim().toLocaleLowerCase("en-US") || null;
+}
+
+function isValidRequiredEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function assertBcryptPasswordLength(value: string) {

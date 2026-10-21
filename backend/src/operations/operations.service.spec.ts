@@ -220,6 +220,7 @@ describe("conversation visibility in operational history", () => {
       contactId: "contact-a",
       departmentId: "department-a",
       assignedMembershipId: "membership-fallback",
+      assignedMembershipNameSnapshot: null,
       status: "FECHADA",
       protocol: "000123",
       createdAt: new Date("2026-10-20T15:00:00.000Z"),
@@ -260,8 +261,21 @@ describe("conversation visibility in operational history", () => {
             messages: [{ authorMembership: closureMembership }],
           },
           { ...baseConversation, id: "conversation-with-fallback", messages: [] },
+          {
+            ...baseConversation,
+            id: "conversation-with-deleted-assignee",
+            assignedMembershipId: null,
+            assignedMembershipNameSnapshot: "Atendente excluído",
+            assignedMembership: null,
+            messages: [{ authorMembership: null, participantName: "Encerrador excluído" }],
+          },
+          {
+            ...baseConversation,
+            id: "conversation-with-deleted-closer-and-active-assignee",
+            messages: [{ authorMembership: null, participantName: "Outro encerrador excluído" }],
+          },
         ]),
-        count: vi.fn().mockResolvedValue(2),
+        count: vi.fn().mockResolvedValue(4),
       },
       $transaction: vi.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
     };
@@ -303,6 +317,25 @@ describe("conversation visibility in operational history", () => {
       membershipId: "membership-fallback",
       nome: "Atendente atual",
       email: "fallback@example.com",
+    });
+    expect(result.items[2]).toEqual(
+      expect.objectContaining({
+        assigned_membership_id: null,
+        assigned_membership_name_snapshot: "Atendente excluído",
+        agent: null,
+        closed_by: {
+          id: null,
+          membershipId: null,
+          nome: "Encerrador excluído",
+          email: null,
+        },
+      }),
+    );
+    expect(result.items[3].closed_by).toEqual({
+      id: null,
+      membershipId: null,
+      nome: "Outro encerrador excluído",
+      email: null,
     });
   });
 

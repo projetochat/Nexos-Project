@@ -74,6 +74,7 @@ describe("DeletionConfirmDialog", () => {
       loadImpact?: (signal: AbortSignal) => Promise<DeletionImpactPreview>;
       onConfirm?: () => Promise<{ status: "deleted" }>;
       onOpenChange?: (open: boolean) => void;
+      showRecordDetails?: boolean;
     } = {},
   ) {
     const loadImpact = options.loadImpact ?? vi.fn().mockResolvedValue(impact);
@@ -85,6 +86,7 @@ describe("DeletionConfirmDialog", () => {
         <DeletionConfirmDialog
           open
           resourceKey="test:record-42"
+          showRecordDetails={options.showRecordDetails}
           onOpenChange={onOpenChange}
           loadImpact={loadImpact}
           onConfirm={onConfirm}
@@ -94,6 +96,37 @@ describe("DeletionConfirmDialog", () => {
     await React.act(async () => Promise.resolve());
     return { loadImpact, onConfirm, onOpenChange };
   }
+
+  it("closes when the user clicks outside the warning modal", async () => {
+    const onOpenChange = vi.fn();
+    await renderDialog(baseImpact, { onOpenChange });
+
+    const overlay = document.querySelector<HTMLElement>('[data-state="open"][aria-hidden="true"]')!;
+    await React.act(() => {
+      overlay.click();
+    });
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("highlights the deleted record name inside the warning prompt", async () => {
+    await renderDialog({
+      ...baseImpact,
+      prompt: `Deseja realmente excluir a etiqueta "${baseImpact.record.name}"?`,
+    });
+
+    const highlightedName = document.querySelector("strong");
+    expect(highlightedName?.textContent).toBe(baseImpact.record.name);
+  });
+
+  it("can hide record identifiers while preserving impacts and consequences", async () => {
+    await renderDialog(baseImpact, { showRecordDetails: false });
+
+    expect(document.body.textContent).not.toContain("Nome:");
+    expect(document.body.textContent).not.toContain("REG-42");
+    expect(document.body.textContent).toContain("Contatos vinculados");
+    expect(document.body.textContent).toContain("Esta consequência foi fornecida pelo backend.");
+  });
 
   it("renders only the compact identity, impact counts and consequence summary", async () => {
     await renderDialog();

@@ -20,6 +20,7 @@ describe("department physical deletion UI contract", () => {
 
     expect(source).toContain('ticket.department?.name ?? "Sem departamento"');
     expect(source).toContain('item.department?.name ?? "Sem departamento"');
-    expect(source).toContain('if (!departmentId) return toast.error("Selecione o departamento.")');
+    expect(source).toContain('pendingFields.push("Departamento responsável")');
+    expect(source).toContain("showRequiredFieldsToast(pendingFields)");
   });
 });

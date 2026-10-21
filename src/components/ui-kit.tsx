@@ -44,6 +44,7 @@ export function InstanceFilterSelect({
   allLabel = "Todas",
   showAllOption = true,
   className = "",
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -52,6 +53,7 @@ export function InstanceFilterSelect({
   allLabel?: string;
   showAllOption?: boolean;
   className?: string;
+  invalid?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -79,7 +81,8 @@ export function InstanceFilterSelect({
         onClick={() => setOpen((current) => !current)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm text-foreground transition hover:border-primary/50 focus:border-primary focus:outline-none"
+        aria-invalid={invalid}
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border bg-surface-1 px-3 py-2 text-left text-sm text-foreground transition hover:border-primary/50 focus:border-primary focus:outline-none ${invalid ? "border-destructive hover:border-destructive focus:border-destructive" : "border-border"}`}
       >
         <span className="flex min-w-0 items-center gap-2">
           {selected && (
@@ -239,7 +242,7 @@ export const Input = React.forwardRef<
       ref={ref}
       type={type}
       placeholder={resolvedPlaceholder}
-      className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${
+      className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary aria-invalid:!border-destructive focus:aria-invalid:!border-destructive ${
         showsCalendar
           ? `pr-10 ${
               isNativeDate
@@ -324,7 +327,7 @@ export function Textarea({
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`min-h-24 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
+      className={`min-h-24 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary aria-invalid:!border-destructive focus:aria-invalid:!border-destructive ${className}`}
       {...rest}
     />
   );
@@ -338,7 +341,7 @@ export function Select({
   return (
     <span className="relative block w-full">
       <select
-        className={`min-h-10 w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition focus:border-primary ${className}`}
+        className={`min-h-10 w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition focus:border-primary aria-invalid:!border-destructive focus:aria-invalid:!border-destructive ${className}`}
         {...rest}
       >
         {children}

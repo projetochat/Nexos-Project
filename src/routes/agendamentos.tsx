@@ -58,6 +58,7 @@ type ScheduleType = Schedule["type"];
 import { useSession } from "@/lib/session";
 import { connectRealtime, onRealtimeEvent } from "@/lib/realtime/client";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 const STORAGE_KEY = "trixus.schedules";
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
@@ -437,6 +438,7 @@ function SchedulingPage() {
         <DeletionConfirmDialog
           open={!!removing}
           resourceKey={`schedule:${removing?.id ?? "none"}`}
+          showRecordDetails={false}
           onOpenChange={(open) => {
             if (!open) setRemoving(null);
           }}
@@ -804,9 +806,13 @@ function ScheduleForm({
   readOnly?: boolean;
 }) {
   const [form, setForm] = React.useState<Schedule | null>(null);
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [contactSearch, setContactSearch] = React.useState("");
   const [multipleContacts, setMultipleContacts] = React.useState(false);
-  React.useEffect(() => setForm(item), [item]);
+  React.useEffect(() => {
+    setForm(item);
+    setErrors({});
+  }, [item]);
   React.useEffect(() => {
     setContactSearch("");
     setMultipleContacts((item?.recipientIds?.length ?? 0) > 1);
@@ -822,8 +828,19 @@ function ScheduleForm({
     enabled: !!form && !readOnly,
   });
   if (!form) return null;
-  const update = (patch: Partial<Schedule>) =>
+  const update = (patch: Partial<Schedule>) => {
     setForm((current) => (current ? { ...current, ...patch } : current));
+    setErrors((current) => {
+      const next = { ...current };
+      if (patch.identifier?.trim()) delete next.identifier;
+      if (patch.title?.trim()) delete next.title;
+      if (patch.scheduledAt) delete next.scheduledAt;
+      if (patch.content?.trim()) delete next.content;
+      if (patch.recipientIds?.length) delete next.recipients;
+      if (patch.recurrence !== "weekly" || patch.recurrenceDays?.length) delete next.recurrenceDays;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  };
   const selectedContacts = form.recipients ?? [];
   const selectContact = (contact: ApiContact) => {
     const recipientIds = multipleContacts
@@ -880,13 +897,37 @@ function ScheduleForm({
               className="save-action-button"
               disabled={busy}
               onClick={() => {
-                if (!form.identifier.trim() || !form.title.trim() || !form.scheduledAt)
-                  return toast.error("Preencha identificador, título e data de agendamento.");
-                if (!form.content.trim()) return toast.error("Informe o conteúdo do agendamento.");
-                if (form.type === "message" && !form.recipientIds.length)
-                  return toast.error("Selecione ao menos um contato destinatário.");
-                if (form.recurrence === "weekly" && !form.recurrenceDays.length)
-                  return toast.error("Selecione ao menos um dia da semana.");
+                const nextErrors: Record<string, boolean> = {};
+                const requiredFields: string[] = [];
+                if (!form.identifier.trim()) {
+                  nextErrors.identifier = true;
+                  requiredFields.push("Identificador");
+                }
+                if (!form.title.trim()) {
+                  nextErrors.title = true;
+                  requiredFields.push("Título");
+                }
+                if (!form.scheduledAt) {
+                  nextErrors.scheduledAt = true;
+                  requiredFields.push("Data e hora");
+                }
+                if (!form.content.trim()) {
+                  nextErrors.content = true;
+                  requiredFields.push(form.type === "message" ? "Mensagem" : "Descrição");
+                }
+                if (form.type === "message" && !form.recipientIds.length) {
+                  nextErrors.recipients = true;
+                  requiredFields.push("Contato destinatário");
+                }
+                if (form.recurrence === "weekly" && !form.recurrenceDays.length) {
+                  nextErrors.recurrenceDays = true;
+                  requiredFields.push("Dias da semana");
+                }
+                if (requiredFields.length) {
+                  setErrors(nextErrors);
+                  showRequiredFieldsToast(requiredFields);
+                  return;
+                }
                 onSave(form);
               }}
             >
@@ -905,6 +946,8 @@ function ScheduleForm({
                 value={form.identifier}
                 onChange={(e) => update({ identifier: e.target.value })}
                 placeholder="Ex.: AGD-001"
+                aria-invalid={Boolean(errors.identifier)}
+                className={requiredFieldClassName(Boolean(errors.identifier))}
               />
             </Field>
             <Field label="Tipo de agendamento *">
@@ -931,11 +974,12 @@ function ScheduleForm({
             <h3 className="mb-3 text-sm font-semibold">Destinatário</h3>
             <div className="flex items-end gap-3">
               <div className="min-w-0 flex-1">
-                <Field label="Contato">
+                <Field label="Contato *">
                   <SearchInput
                     value={contactSearch}
                     onChange={setContactSearch}
                     placeholder="Buscar contato..."
+                    className={requiredFieldClassName(Boolean(errors.recipients))}
                   />
                 </Field>
               </div>
@@ -1005,6 +1049,8 @@ function ScheduleForm({
                   ? "Digite a mensagem que será enviada..."
                   : "Descreva a tarefa..."
               }
+              aria-invalid={Boolean(errors.content)}
+              className={requiredFieldClassName(Boolean(errors.content))}
             />
           </Field>
           {form.type === "message" && (
@@ -1018,6 +1064,8 @@ function ScheduleForm({
                 value={form.title}
                 onChange={(e) => update({ title: e.target.value })}
                 placeholder="Informe um título para o agendamento"
+                aria-invalid={Boolean(errors.title)}
+                className={requiredFieldClassName(Boolean(errors.title))}
               />
             </Field>
           </div>
@@ -1030,6 +1078,8 @@ function ScheduleForm({
                 type="datetime-local"
                 value={form.scheduledAt}
                 onChange={(e) => update({ scheduledAt: e.target.value })}
+                aria-invalid={Boolean(errors.scheduledAt)}
+                className={requiredFieldClassName(Boolean(errors.scheduledAt))}
               />
             </Field>
             <Field label="Recorrência">
@@ -1059,7 +1109,10 @@ function ScheduleForm({
                   {form.recurrence === "weekly" ? "Dias da semana" : "Dia do mês"}
                 </p>
                 {form.recurrence === "weekly" ? (
-                  <div className="grid gap-2 sm:grid-cols-4">
+                  <div
+                    className={`grid gap-2 rounded-lg border border-transparent p-2 sm:grid-cols-4 ${requiredFieldClassName(Boolean(errors.recurrenceDays))}`}
+                    aria-invalid={Boolean(errors.recurrenceDays)}
+                  >
                     {[
                       ["mon", "Segunda-feira"],
                       ["tue", "Terça-feira"],

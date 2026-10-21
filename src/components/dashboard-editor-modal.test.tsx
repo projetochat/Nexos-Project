@@ -153,7 +153,12 @@ describe("DashboardEditorModal", () => {
     await click(buttonByText("Criar"));
 
     expect(onChange).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Informe o título do componente.");
+    expect(
+      document
+        .querySelector("[data-dashboard-component-title-field] input")
+        ?.getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(document.body.textContent).not.toContain("Informe o título do componente.");
   });
 
   it("does not allow deleting default components", async () => {

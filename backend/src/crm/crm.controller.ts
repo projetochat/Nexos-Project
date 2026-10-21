@@ -76,6 +76,7 @@ import {
   normalizeContactCustomFieldName,
 } from "./contact-custom-field-identity";
 import { ConversationPurgeService } from "../conversations/conversation-purge.service";
+import { LocationsService } from "../locations/locations.service";
 
 class ContactCatalogDto {
   @IsOptional()
@@ -259,6 +260,7 @@ export class CrmController {
     private readonly profilePictures: ContactProfilePictureSyncService,
     @Inject(EvolutionClient) private readonly evolution: EvolutionClient,
     @Inject(ConversationPurgeService) private readonly conversationPurge: ConversationPurgeService,
+    @Inject(LocationsService) private readonly locations: LocationsService,
   ) {}
 
   @Get("customers")
@@ -323,6 +325,7 @@ export class CrmController {
       dto.name,
     );
     await this.assertCustomerNameAvailable(name, current.tenantId);
+    const location = dto.cityId ? await this.locations.resolveCity(dto.cityId) : null;
     const customer = await this.prisma.customer.create({
       data: {
         tenantId: current.tenantId,
@@ -343,9 +346,10 @@ export class CrmController {
         addressWithoutNumber: dto.addressWithoutNumber,
         complement: cleanNullable(dto.complement),
         neighborhood: cleanNullable(dto.neighborhood),
-        city: cleanNullable(dto.city),
-        state: cleanNullable(dto.state)?.toUpperCase(),
-        country: cleanNullable(dto.country),
+        cityId: location?.cityId,
+        city: location?.city ?? cleanNullable(dto.city),
+        state: location?.state ?? cleanNullable(dto.state)?.toUpperCase(),
+        country: location?.country ?? cleanNullable(dto.country),
       },
       include: customerInclude,
     });
@@ -364,6 +368,8 @@ export class CrmController {
       ? await normalizeRegistrationText(this.prisma, current.tenantId, "contactCompanies", dto.name)
       : undefined;
     if (name) await this.assertCustomerNameAvailable(name, current.tenantId, id);
+    const location =
+      typeof dto.cityId === "string" ? await this.locations.resolveCity(dto.cityId) : null;
     const customer = await this.prisma.customer.update({
       where: { id },
       data: {
@@ -384,9 +390,12 @@ export class CrmController {
         addressWithoutNumber: dto.addressWithoutNumber,
         complement: nullableUpdate(dto.complement),
         neighborhood: nullableUpdate(dto.neighborhood),
-        city: nullableUpdate(dto.city),
-        state: dto.state === undefined ? undefined : cleanNullable(dto.state)?.toUpperCase(),
-        country: nullableUpdate(dto.country),
+        cityId: dto.cityId === undefined ? undefined : (location?.cityId ?? null),
+        city: location?.city ?? nullableUpdate(dto.city),
+        state:
+          location?.state ??
+          (dto.state === undefined ? undefined : cleanNullable(dto.state)?.toUpperCase()),
+        country: location?.country ?? nullableUpdate(dto.country),
       },
       include: customerInclude,
     });
@@ -832,7 +841,15 @@ export class CrmController {
     const [items, total, instance] = await this.prisma.$transaction([
       this.prisma.contact.findMany({
         where,
-        select: { id: true, name: true, phone: true, normalizedPhone: true, avatarUrl: true },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          normalizedPhone: true,
+          avatarUrl: true,
+          instance: true,
+          instanceIds: true,
+        },
         orderBy: { name: "asc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -862,6 +879,13 @@ export class CrmController {
           telefone: contact.phone,
           normalizedPhone: contact.normalizedPhone,
           avatar_url: contact.avatarUrl,
+          active: true,
+          instancia: contact.instance,
+          instanceIds: contact.instanceIds.length
+            ? contact.instanceIds
+            : contact.instance
+              ? [contact.instance]
+              : [],
         })),
         total,
         page,
@@ -2770,21 +2794,25 @@ export class CrmController {
         "Este agrupamento é reservado para os campos padrão do contato.",
       );
     }
+    const mask =
+      type === ContactCustomFieldType.NUMBER
+        ? (cleanNullable(dto.mask) ?? "0,00")
+        : type === ContactCustomFieldType.TEXT ||
+            type === ContactCustomFieldType.DATE ||
+            type === ContactCustomFieldType.LIST ||
+            type === ContactCustomFieldType.CHECKBOX
+          ? cleanNullable(dto.mask)
+          : null;
+    if (type === ContactCustomFieldType.TEXT && mask) {
+      assertSupportedContactCustomFieldFormat(mask);
+    }
     return {
       label: label || undefined,
       normalizedName: label ? normalizeContactCustomFieldName(label) : undefined,
       variableKey: !partial && label ? contactCustomFieldVariableKey(label) : undefined,
       type,
       required: dto.required,
-      mask:
-        type === ContactCustomFieldType.NUMBER
-          ? (cleanNullable(dto.mask) ?? "0,00")
-          : type === ContactCustomFieldType.TEXT ||
-              type === ContactCustomFieldType.DATE ||
-              type === ContactCustomFieldType.LIST ||
-              type === ContactCustomFieldType.CHECKBOX
-            ? cleanNullable(dto.mask)
-            : null,
+      mask,
       note: nullableUpdate(dto.note),
       tabName,
       groupName,
@@ -2861,6 +2889,9 @@ export class CrmController {
       ) {
         throw new BadRequestException(`Opcao invalida para ${field.label}.`);
       }
+      if (value && isCityContactCustomField(field.mask)) {
+        await this.locations.resolveCity(value);
+      }
       await tx.contactCustomFieldValue.upsert({
         where: { contactId_fieldId: { contactId, fieldId: field.id } },
         create: { tenantId, contactId, fieldId: field.id, value },
@@ -2905,6 +2936,9 @@ export class CrmController {
         !validContactListValue(field, value)
       ) {
         throw new BadRequestException(`Opcao invalida para ${field.label}.`);
+      }
+      if (value && isCityContactCustomField(field.mask)) {
+        await this.locations.resolveCity(value);
       }
       await tx.contactCustomFieldValue.upsert({
         where: { contactId_fieldId: { contactId, fieldId: field.id } },
@@ -2975,6 +3009,7 @@ export class CrmController {
       addressWithoutNumber: customer.addressWithoutNumber,
       complement: customer.complement,
       neighborhood: customer.neighborhood,
+      cityId: customer.cityId,
       city: customer.city,
       state: customer.state,
       country: customer.country,
@@ -3129,6 +3164,37 @@ function isEmailContactCustomField(mask: string | null) {
   try {
     const parsed = JSON.parse(mask) as { custom?: { format?: string } };
     return parsed.custom?.format === "email";
+  } catch {
+    return false;
+  }
+}
+
+const SUPPORTED_CONTACT_CUSTOM_FIELD_FORMATS = new Set([
+  "cpf_cnpj",
+  "cep",
+  "phone",
+  "email",
+  "city",
+]);
+
+function assertSupportedContactCustomFieldFormat(mask: string) {
+  if (!mask.trim().startsWith("{")) return;
+  try {
+    const parsed = JSON.parse(mask) as { custom?: { format?: unknown } };
+    const format = parsed.custom?.format;
+    if (format !== undefined && !SUPPORTED_CONTACT_CUSTOM_FIELD_FORMATS.has(String(format))) {
+      throw new BadRequestException("Formato de campo personalizado inválido.");
+    }
+  } catch (error) {
+    if (error instanceof BadRequestException) throw error;
+  }
+}
+
+function isCityContactCustomField(mask: string | null) {
+  if (!mask?.trim().startsWith("{")) return false;
+  try {
+    const parsed = JSON.parse(mask) as { custom?: { format?: string } };
+    return parsed.custom?.format === "city";
   } catch {
     return false;
   }

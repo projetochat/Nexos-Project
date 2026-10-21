@@ -33,6 +33,7 @@ import {
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
 import { Switch } from "@/components/ui/switch";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/configuracoes/campos-contato")({
   component: ContactFieldsSettings,
@@ -570,6 +571,7 @@ function ContactFieldFormModal({
   const isMobile = useIsMobile();
   const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
   const [labelError, setLabelError] = React.useState("");
+  const [requiredErrors, setRequiredErrors] = React.useState({ label: false, tabName: false });
   const [saving, setSaving] = React.useState(false);
   const [draggingOptionIndex, setDraggingOptionIndex] = React.useState<number | null>(null);
   const duplicateLabelError = (label: string) => {
@@ -595,23 +597,28 @@ function ContactFieldFormModal({
     if (!open) return;
     setForm(initial ? fieldToForm(initial, clone) : emptyFieldForm());
     setLabelError("");
+    setRequiredErrors({ label: false, tabName: false });
     setSaving(false);
     setDraggingOptionIndex(null);
   }, [clone, initial, open]);
 
   const save = async () => {
     if (saving) return;
-    if (form.label.trim().length < 2) {
-      toast.error("Informe o nome do campo.");
+    const nextRequiredErrors = {
+      label: form.label.trim().length < 2,
+      tabName: form.tabName.trim().length < 2,
+    };
+    if (nextRequiredErrors.label || nextRequiredErrors.tabName) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast([
+        ...(nextRequiredErrors.label ? ["Nome"] : []),
+        ...(nextRequiredErrors.tabName ? ["Aba"] : []),
+      ]);
       return;
     }
     const duplicateError = duplicateLabelError(form.label);
     if (duplicateError) {
       setLabelError(duplicateError);
-      return;
-    }
-    if (form.tabName.trim().length < 2) {
-      toast.error("Informe a aba do campo.");
       return;
     }
     if (isReservedContactTab(form.tabName)) {
@@ -680,8 +687,11 @@ function ContactFieldFormModal({
             onChange={(event) => {
               setForm({ ...form, label: event.target.value });
               setLabelError(duplicateLabelError(event.target.value));
+              if (event.target.value.trim().length >= 2)
+                setRequiredErrors((current) => ({ ...current, label: false }));
             }}
-            aria-invalid={!!labelError}
+            aria-invalid={requiredErrors.label || !!labelError}
+            className={requiredFieldClassName(requiredErrors.label || !!labelError)}
           />
         </Field>
         <Field label="Variável técnica">
@@ -898,8 +908,14 @@ function ContactFieldFormModal({
             <Field label="Aba *">
               <Input
                 value={form.tabName}
-                onChange={(event) => setForm({ ...form, tabName: event.target.value })}
+                onChange={(event) => {
+                  setForm({ ...form, tabName: event.target.value });
+                  if (event.target.value.trim().length >= 2)
+                    setRequiredErrors((current) => ({ ...current, tabName: false }));
+                }}
                 placeholder="Dados Adicionais"
+                aria-invalid={requiredErrors.tabName}
+                className={requiredFieldClassName(requiredErrors.tabName)}
               />
             </Field>
             {isReservedContactTab(form.tabName) && (

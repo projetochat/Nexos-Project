@@ -1,10 +1,12 @@
 import { customFieldFormat, formatCustomField, customFieldError } from "@/lib/custom-field-formats";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { CityAutocomplete } from "@/components/international-location-fields";
 import {
   ActiveConversationOrchestrator,
   type ActiveConversationRequest,
 } from "@/components/active-conversation-orchestrator";
 import { canStartActiveConversation } from "@/lib/active-conversation-permissions";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -95,6 +97,7 @@ import {
 } from "@/lib/contact-grid-preferences";
 import {
   crmApi,
+  locationApi,
   type ApiAgendaImportContact,
   type ApiAgendaImportIgnoredContact,
   type ApiContact,
@@ -2498,6 +2501,9 @@ function ContactGridValue({
     const value =
       contact.customFields?.[fieldId] ??
       contact.customFieldValues?.find((item) => item.fieldId === fieldId)?.value;
+    if (field && customFieldFormat(field) === "city") {
+      return <CityReferenceLabel cityId={String(value ?? "")} />;
+    }
     return <span className="block truncate text-xs">{formatContactGridValue(value, field)}</span>;
   }
 
@@ -2578,6 +2584,25 @@ function formatContactGridValue(value: unknown, field?: ContactCustomField) {
   if (field?.type === "date") return formatContactGridDate(String(value));
   if (Array.isArray(value)) return value.join(", ") || "-";
   return String(value);
+}
+
+function CityReferenceLabel({ cityId }: { cityId: string }) {
+  const city = useQuery({
+    queryKey: ["locations", "city", cityId],
+    queryFn: () => locationApi.city(cityId),
+    enabled: Boolean(cityId),
+    staleTime: 60 * 60 * 1000,
+  });
+  if (!cityId) return <span className="text-xs">-</span>;
+  if (city.isPending) return <span className="text-xs text-muted-foreground">Carregando...</span>;
+  if (!city.data) return <span className="text-xs text-destructive">Cidade indisponível</span>;
+  return (
+    <span className="block truncate text-xs">
+      {[city.data.name, city.data.divisionName || city.data.divisionCode, city.data.countryName]
+        .filter(Boolean)
+        .join(" — ")}
+    </span>
+  );
 }
 
 function formatContactGridDate(value?: string | null) {
@@ -3469,6 +3494,24 @@ export function ContactFormModal({
     }
   }, [canReadAdditionalFields, defaultInstanceId, initial, instances, open, tags]);
 
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if (nome.trim().length >= 2) delete next.nome;
+      if (isValidPhoneForCountry(telefone, countryCode)) delete next.telefone;
+      if (!email.trim() || /^\S+@\S+\.\S+$/.test(email.trim())) delete next.email;
+      for (const field of customFieldDefinitions) {
+        const errorKey = `custom_${field.id}`;
+        const value = String(customFields[field.id] ?? "");
+        const format = customFieldFormat(field);
+        if ((!field.required || value.trim()) && (!format || !customFieldError(value, format))) {
+          delete next[errorKey];
+        }
+      }
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [countryCode, customFieldDefinitions, customFields, email, nome, telefone]);
+
   const contactTabs = React.useMemo(
     () => uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),
     [customFieldDefinitions],
@@ -3501,8 +3544,15 @@ export function ContactFormModal({
 
   const handle = () => {
     const errs: Record<string, string> = {};
-    if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
-    if (!isValidPhoneForCountry(telefone, countryCode)) errs.telefone = "WhatsApp inválido.";
+    const requiredFields: string[] = [];
+    if (!nome.trim() || nome.trim().length < 2) {
+      errs.nome = "Informe o nome.";
+      requiredFields.push("Nome");
+    }
+    if (!isValidPhoneForCountry(telefone, countryCode)) {
+      errs.telefone = "WhatsApp inválido.";
+      requiredFields.push("WhatsApp");
+    }
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail inválido.";
     const normalizedCustomFields = normalizeCustomFieldValues(customFields, customFieldDefinitions);
     for (const field of customFieldDefinitions) {
@@ -3511,12 +3561,15 @@ export function ContactFormModal({
         ? customFieldError(String(normalizedCustomFields[field.id] ?? ""), format)
         : null;
       if (formatError) errs[`custom_${field.id}`] = formatError;
-      if (field.required && !String(normalizedCustomFields[field.id] ?? "").trim())
+      if (field.required && !String(normalizedCustomFields[field.id] ?? "").trim()) {
         errs[`custom_${field.id}`] = "Campo obrigatório.";
+        requiredFields.push(field.label);
+      }
     }
     if (Object.keys(errs).length) {
       setErrors(errs);
-      toast.error("Preencha os campos obrigatórios.");
+      if (requiredFields.length) showRequiredFieldsToast(requiredFields);
+      else toast.error("Revise os campos inválidos.");
       return;
     }
     const validInstanceIds = canonicalContactInstanceIds(instanceIds, instances);
@@ -3638,15 +3691,17 @@ export function ContactFormModal({
                         </div>
                       </div>
                       <Field label="Nome *">
-                        <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-                        {errors.nome && (
-                          <span className="mt-1 block text-[11px] text-destructive">
-                            {errors.nome}
-                          </span>
-                        )}
+                        <Input
+                          value={nome}
+                          onChange={(e) => setNome(e.target.value)}
+                          aria-invalid={Boolean(errors.nome)}
+                          className={requiredFieldClassName(Boolean(errors.nome))}
+                        />
                       </Field>
                       <Field label="WhatsApp *">
-                        <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
+                        <div
+                          className={`flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary ${requiredFieldClassName(Boolean(errors.telefone))}`}
+                        >
                           <CountryCodeSelect
                             value={countryCode}
                             onChange={handleCountryCodeChange}
@@ -3659,13 +3714,9 @@ export function ContactFormModal({
                             onBlur={handlePhoneBlur}
                             placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
                             className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
+                            aria-invalid={Boolean(errors.telefone)}
                           />
                         </div>
-                        {errors.telefone && (
-                          <span className="mt-1 block text-[11px] text-destructive">
-                            {errors.telefone}
-                          </span>
-                        )}
                       </Field>
                     </div>
                     <Field label="E-mail">
@@ -3674,12 +3725,9 @@ export function ContactFormModal({
                         value={email}
                         onChange={(e) => setEmail(e.target.value.toLocaleLowerCase("en-US"))}
                         placeholder="email@exemplo.com"
+                        aria-invalid={Boolean(errors.email)}
+                        className={requiredFieldClassName(Boolean(errors.email))}
                       />
-                      {errors.email && (
-                        <span className="mt-1 block text-[11px] text-destructive">
-                          {errors.email}
-                        </span>
-                      )}
                     </Field>
                     <div className="hidden md:block">
                       <Field label="Instâncias">
@@ -3813,7 +3861,7 @@ export function ContactFormModal({
                     return (
                       <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
                         <div>
-                          {field.type !== "checkbox" && (
+                          {field.type !== "checkbox" && format !== "city" && (
                             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
                               <span>
                                 {field.label}
@@ -3843,11 +3891,6 @@ export function ContactFormModal({
                               }}
                             />
                           </div>
-                          {fieldError && (
-                            <span className="mt-1 block text-[11px] text-destructive">
-                              {fieldError}
-                            </span>
-                          )}
                         </div>
                       </div>
                     );
@@ -4343,7 +4386,7 @@ function DepartmentFormModal({
   const save = async () => {
     if (!form.name || form.name.trim().length < 2) {
       setError("Informe o nome.");
-      toast.error("Nome obrigatório.");
+      showRequiredFieldsToast(["Nome"]);
       return;
     }
     await onSubmit({ ...form, name: form.name.trim() });
@@ -4374,9 +4417,13 @@ function DepartmentFormModal({
           <Field label="Nome *">
             <Input
               value={form.name ?? ""}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
+              onChange={(event) => {
+                setForm({ ...form, name: event.target.value });
+                if (event.target.value.trim().length >= 2) setError("");
+              }}
+              aria-invalid={Boolean(error)}
+              className={requiredFieldClassName(Boolean(error))}
             />
-            {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
           </Field>
           <Field label="Cor">
             <ColorField
@@ -4945,6 +4992,24 @@ function CustomContactFieldInput({
 }) {
   const format = customFieldFormat(field);
   if (format) {
+    if (format === "city")
+      return (
+        <CityAutocomplete
+          value={String(value ?? "")}
+          onChange={(cityId) => onChange(cityId)}
+          cityFieldLabel={
+            <>
+              <span>
+                {field.label}
+                {field.required && <span className="text-destructive"> *</span>}
+              </span>
+              {field.note && <InfoTooltip label={field.label}>{field.note}</InfoTooltip>}
+            </>
+          }
+          disabled={readOnly}
+          invalid={Boolean(error)}
+        />
+      );
     if (format === "phone")
       return (
         <CustomContactPhoneInput
@@ -6426,13 +6491,23 @@ function CustomerFormModal({
     setErrors({});
   }, [initial, open]);
 
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if ((form.nome?.trim().length ?? 0) >= 2) delete next.nome;
+      if (!form.email?.trim() || isValidEmail(form.email)) delete next.email;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [form.email, form.nome]);
+
   const save = async () => {
     const errs: Record<string, string> = {};
     if (!form.nome || form.nome.trim().length < 2) errs.nome = "Informe o nome.";
     if (form.email?.trim() && !isValidEmail(form.email)) errs.email = "E-mail inválido.";
     if (Object.keys(errs).length) {
       setErrors(errs);
-      toast.error("Preencha os campos obrigatórios.");
+      if (errs.nome) showRequiredFieldsToast(["Nome"]);
+      else toast.error("Revise os campos inválidos.");
       return;
     }
     void onSubmit({ ...form, nome: form.nome!.trim() });
@@ -6463,10 +6538,9 @@ function CustomerFormModal({
             <Input
               value={form.nome ?? ""}
               onChange={(event) => setForm({ ...form, nome: event.target.value })}
+              aria-invalid={Boolean(errors.nome)}
+              className={requiredFieldClassName(Boolean(errors.nome))}
             />
-            {errors.nome && (
-              <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-            )}
           </Field>
           <Field label="Cor">
             <ColorField
@@ -6499,10 +6573,9 @@ function CustomerFormModal({
               setForm({ ...form, email: event.target.value.toLocaleLowerCase("en-US") })
             }
             placeholder="email@exemplo.com"
+            aria-invalid={Boolean(errors.email)}
+            className={requiredFieldClassName(Boolean(errors.email))}
           />
-          {errors.email && (
-            <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
-          )}
         </Field>
         <Field label="Notas">
           <Textarea

@@ -36,6 +36,11 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import {
+  CityAutocomplete,
+  InternationalLocationFields,
+} from "@/components/international-location-fields";
+import type { InternationalLocationValue } from "@/components/international-location-value";
 import { Switch } from "@/components/ui/switch";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -46,9 +51,11 @@ import {
   onlyDigits,
 } from "@/lib/input-masks";
 import { formatPhoneForSubmit, splitPhoneByCountry } from "@/lib/phone-country";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import { CountryCodeSelect } from "@/routes/contatos";
 import {
   crmApi,
+  locationApi,
   ticketApi,
   TrixusApiError,
   type ApiContact,
@@ -102,6 +109,9 @@ type CustomerForm = {
   addressWithoutNumber: boolean;
   addressComplement: string;
   neighborhood: string;
+  cityId: string;
+  addressCountryCode: string;
+  addressDivisionId: string;
   city: string;
   state: string;
   country: string;
@@ -114,7 +124,7 @@ const STATUS_OPTIONS: Array<{
   color: string;
 }> = [
   { value: "ACTIVE", label: "Ativo", tone: "success", color: "var(--color-success)" },
-  { value: "PROSPECT", label: "Prospecção", tone: "info", color: "var(--color-info)" },
+  { value: "PROSPECT", label: "Prospect", tone: "info", color: "var(--color-info)" },
   { value: "SUSPENDED", label: "Suspenso", tone: "warning", color: "var(--color-warning)" },
   {
     value: "CANCELLED",
@@ -122,36 +132,6 @@ const STATUS_OPTIONS: Array<{
     tone: "destructive",
     color: "var(--color-destructive)",
   },
-];
-
-const STATES = [
-  "AC",
-  "AL",
-  "AP",
-  "AM",
-  "BA",
-  "CE",
-  "DF",
-  "ES",
-  "GO",
-  "MA",
-  "MT",
-  "MS",
-  "MG",
-  "PA",
-  "PB",
-  "PR",
-  "PE",
-  "PI",
-  "RJ",
-  "RN",
-  "RS",
-  "RO",
-  "RR",
-  "SC",
-  "SP",
-  "SE",
-  "TO",
 ];
 
 const EMPTY_FORM: CustomerForm = {
@@ -172,10 +152,26 @@ const EMPTY_FORM: CustomerForm = {
   addressWithoutNumber: false,
   addressComplement: "",
   neighborhood: "",
+  cityId: "",
+  addressCountryCode: "BR",
+  addressDivisionId: "",
   city: "",
   state: "",
   country: "Brasil",
 };
+
+const REQUIRED_CUSTOMER_FIELDS = [
+  ["name", "Nome do cliente"],
+  ["legalName", "Razão Social"],
+  ["responsibleContactName", "Responsável"],
+  ["phone", "Telefone do responsável"],
+  ["email", "E-mail do responsável"],
+  ["zipCode", "Código Postal (CEP)"],
+  ["address", "Endereço"],
+  ["addressNumber", "Número"],
+  ["neighborhood", "Bairro"],
+  ["city", "Cidade"],
+] as const;
 
 function ClientesPage() {
   const queryClient = useQueryClient();
@@ -726,18 +722,58 @@ function CustomerFormModal({
       setForm(initial ? formFromCustomer(initial) : EMPTY_FORM);
     }
   }, [initial, open]);
+  React.useEffect(() => {
+    const satisfiedErrors = new Set<string>();
+    const isProspect = form.status === "PROSPECT";
+    if (form.name.trim().length >= 2) satisfiedErrors.add("name");
+    if (isProspect || form.personType !== "LEGAL" || form.legalName.trim())
+      satisfiedErrors.add("legalName");
+    if (isProspect || form.personType !== "LEGAL" || form.responsibleContactName.trim())
+      satisfiedErrors.add("responsibleContactName");
+    if (onlyDigits(form.phone)) satisfiedErrors.add("phone");
+    if (isProspect || isValidEmail(form.email)) satisfiedErrors.add("email");
+    if (form.city.trim() && (initial || form.cityId)) satisfiedErrors.add("city");
+    if (!form.fullAddress || onlyDigits(form.zipCode).length === 8) satisfiedErrors.add("zipCode");
+    if (!form.fullAddress || form.address.trim()) satisfiedErrors.add("address");
+    if (!form.fullAddress || form.addressWithoutNumber || form.addressNumber.trim())
+      satisfiedErrors.add("addressNumber");
+    if (!form.fullAddress || form.neighborhood.trim()) satisfiedErrors.add("neighborhood");
+
+    setErrors((current) => {
+      const keysToClear = [...satisfiedErrors].filter((key) => current[key]);
+      if (!keysToClear.length) return current;
+      const next = { ...current };
+      keysToClear.forEach((key) => delete next[key]);
+      return next;
+    });
+  }, [form, initial]);
   const save = async () => {
     const nextErrors: Record<string, string> = {};
+    const isProspect = form.status === "PROSPECT";
     if (form.name.trim().length < 2) nextErrors.name = "Informe o nome do cliente.";
-    if (form.email && !isValidEmail(form.email)) nextErrors.email = "Informe um e-mail válido.";
+    if (!isProspect && form.personType === "LEGAL" && !form.legalName.trim())
+      nextErrors.legalName = "Informe a razão social.";
+    if (!isProspect && form.personType === "LEGAL" && !form.responsibleContactName.trim())
+      nextErrors.responsibleContactName = "Informe o responsável.";
+    if (!onlyDigits(form.phone)) nextErrors.phone = "Informe o telefone.";
+    if (!isProspect && !form.email.trim()) nextErrors.email = "Informe o e-mail.";
+    else if (form.email.trim() && !isValidEmail(form.email))
+      nextErrors.email = "Informe um e-mail válido.";
     if (!form.city.trim()) nextErrors.city = "Informe a cidade.";
-    if (!form.state) nextErrors.state = "Informe a UF.";
+    if (!initial && !form.cityId) nextErrors.city = "Selecione uma cidade da lista.";
+    if (form.fullAddress && onlyDigits(form.zipCode).length !== 8)
+      nextErrors.zipCode = "Informe um CEP válido.";
     if (form.fullAddress && !form.address.trim()) nextErrors.address = "Informe o endereço.";
     if (form.fullAddress && !form.addressWithoutNumber && !form.addressNumber.trim())
-      nextErrors.addressNumber = "Informe o número ou marque S/N.";
+      nextErrors.addressNumber = "Informe o número.";
+    if (form.fullAddress && !form.neighborhood.trim())
+      nextErrors.neighborhood = "Informe o bairro.";
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
-      toast.error("Preencha os campos obrigatórios.");
+      const pendingFields = REQUIRED_CUSTOMER_FIELDS.filter(([key]) => nextErrors[key]).map(
+        ([, label]) => label,
+      );
+      showRequiredFieldsToast(pendingFields);
       return;
     }
     setSaving(true);
@@ -827,6 +863,8 @@ function GeneralForm({
   errors: Record<string, string>;
 }) {
   const company = form.personType === "LEGAL";
+  const isProspect = form.status === "PROSPECT";
+  const validationBorder = (key: string) => requiredFieldClassName(Boolean(errors[key]));
   const set = <K extends keyof CustomerForm>(key: K, value: CustomerForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
   const setAddressWithoutNumber = (addressWithoutNumber: boolean) =>
@@ -840,6 +878,24 @@ function GeneralForm({
           : current.addressNumber,
     }));
   const [loadingPostalCode, setLoadingPostalCode] = React.useState(false);
+  const locationValue: InternationalLocationValue = {
+    cityId: form.cityId,
+    city: form.city,
+    divisionId: form.addressDivisionId,
+    state: form.state,
+    countryCode: form.addressCountryCode,
+    country: form.country,
+  };
+  const setLocation = (location: InternationalLocationValue) =>
+    setForm((current) => ({
+      ...current,
+      cityId: location.cityId,
+      city: location.city,
+      addressDivisionId: location.divisionId,
+      state: location.state,
+      addressCountryCode: location.countryCode,
+      country: location.country,
+    }));
   const lookupPostalCode = async () => {
     const postalCode = onlyDigits(form.zipCode);
     if (postalCode.length !== 8 || loadingPostalCode) return;
@@ -855,13 +911,40 @@ function GeneralForm({
         uf?: string;
       };
       if (address.erro) throw new Error("CEP não encontrado.");
+      let canonicalLocation: InternationalLocationValue | null = null;
+      if (address.localidade && address.uf) {
+        const result = await locationApi.cities({
+          q: address.localidade,
+          countryCode: "BR",
+          page: 1,
+          pageSize: 20,
+        });
+        const city = result.items.find(
+          (item) =>
+            normalizeLocationName(item.name) === normalizeLocationName(address.localidade ?? "") &&
+            item.divisionCode?.toUpperCase() === address.uf?.toUpperCase(),
+        );
+        if (city) {
+          canonicalLocation = {
+            cityId: city.id,
+            city: city.name,
+            divisionId: city.divisionId ?? "",
+            state: city.divisionCode || city.divisionName || address.uf,
+            countryCode: city.countryCode,
+            country: city.countryName,
+          };
+        }
+      }
       setForm((current) => ({
         ...current,
         address: address.logradouro ?? current.address,
         neighborhood: address.bairro ?? current.neighborhood,
-        city: address.localidade ?? current.city,
-        state: address.uf ?? current.state,
-        country: "Brasil",
+        cityId: canonicalLocation?.cityId ?? "",
+        city: canonicalLocation?.city ?? address.localidade ?? current.city,
+        addressDivisionId: canonicalLocation?.divisionId ?? "",
+        state: canonicalLocation?.state ?? address.uf ?? current.state,
+        addressCountryCode: "BR",
+        country: canonicalLocation?.country ?? "Brasil",
       }));
     } catch (error) {
       toast.error((error as Error).message);
@@ -883,18 +966,25 @@ function GeneralForm({
           <option value="PHYSICAL">Física</option>
         </Select>
       </Field>
-      <Field label="Nome do cliente *" error={errors.name}>
-        <Input value={form.name} onChange={(event) => set("name", event.target.value)} />
+      <Field label="Nome do cliente *">
+        <Input
+          value={form.name}
+          aria-invalid={Boolean(errors.name)}
+          className={validationBorder("name")}
+          onChange={(event) => set("name", event.target.value)}
+        />
       </Field>
       {company ? (
-        <Field label="Razão Social *">
+        <Field label={`Razão Social${isProspect ? "" : " *"}`}>
           <Input
             value={form.legalName}
+            aria-invalid={Boolean(errors.legalName)}
+            className={validationBorder("legalName")}
             onChange={(event) => set("legalName", event.target.value)}
           />
         </Field>
       ) : (
-        <Field label="CPF *">
+        <Field label="CPF">
           <Input
             value={maskDocument(form.document, "PHYSICAL")}
             onChange={(event) => set("document", onlyDigits(event.target.value))}
@@ -902,7 +992,7 @@ function GeneralForm({
         </Field>
       )}
       {company && (
-        <Field label="CNPJ *">
+        <Field label="CNPJ">
           <Input
             value={maskDocument(form.document, "LEGAL")}
             onChange={(event) => set("document", onlyDigits(event.target.value))}
@@ -910,15 +1000,19 @@ function GeneralForm({
         </Field>
       )}
       {company && (
-        <Field label="Responsável *">
+        <Field label={`Responsável${isProspect ? "" : " *"}`}>
           <Input
             value={form.responsibleContactName}
+            aria-invalid={Boolean(errors.responsibleContactName)}
+            className={validationBorder("responsibleContactName")}
             onChange={(event) => set("responsibleContactName", event.target.value)}
           />
         </Field>
       )}
       <Field label={company ? "Telefone do responsável *" : "Telefone *"}>
-        <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
+        <div
+          className={`flex h-9 overflow-hidden rounded-md border bg-transparent transition-colors ${errors.phone ? "border-destructive focus-within:border-destructive" : "border-input focus-within:border-primary"}`}
+        >
           <CountryCodeSelect
             value={form.countryCode}
             onChange={(value) => set("countryCode", value)}
@@ -928,6 +1022,7 @@ function GeneralForm({
           <Input
             type="tel"
             inputMode="tel"
+            aria-invalid={Boolean(errors.phone)}
             value={form.countryCode === "55" ? maskBrazilPhone(form.phone) : form.phone}
             onChange={(event) =>
               set(
@@ -942,10 +1037,18 @@ function GeneralForm({
           />
         </div>
       </Field>
-      <Field label={company ? "E-mail do responsável *" : "E-mail *"} error={errors.email}>
+      <Field
+        label={
+          company
+            ? `E-mail do responsável${isProspect ? "" : " *"}`
+            : `E-mail${isProspect ? "" : " *"}`
+        }
+      >
         <Input
           type="email"
           value={form.email}
+          aria-invalid={Boolean(errors.email)}
+          className={validationBorder("email")}
           onChange={(event) => set("email", event.target.value.toLocaleLowerCase("en-US"))}
           placeholder="email@exemplo.com"
         />
@@ -973,88 +1076,90 @@ function GeneralForm({
           </label>
         </div>
         {form.fullAddress && (
-          <div className="mb-4 grid gap-4 sm:grid-cols-3">
-            <Field label="Código Postal (CEP) *">
-              <div className="flex gap-2">
+          <div className="mb-4 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-[minmax(8.5rem,0.6fr)_minmax(0,2.1fr)_minmax(8rem,0.3fr)]">
+              <Field label="Código Postal (CEP) *">
+                <div className="relative">
+                  <Input
+                    value={maskZipCode(form.zipCode)}
+                    aria-invalid={Boolean(errors.zipCode)}
+                    onChange={(event) => set("zipCode", maskZipCode(event.target.value))}
+                    onBlur={() => void lookupPostalCode()}
+                    placeholder="00000-000"
+                    className={`pl-10 ${validationBorder("zipCode")}`}
+                  />
+                  <button
+                    type="button"
+                    disabled={onlyDigits(form.zipCode).length !== 8 || loadingPostalCode}
+                    onClick={() => void lookupPostalCode()}
+                    aria-label="Buscar CEP"
+                    className="absolute inset-y-0 left-0 flex w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Search className="h-4 w-4" />
+                  </button>
+                </div>
+              </Field>
+              <Field label="Endereço *">
                 <Input
-                  value={form.zipCode}
-                  onChange={(event) => set("zipCode", maskZipCode(event.target.value))}
-                  onBlur={() => void lookupPostalCode()}
-                  placeholder="00000-000"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  disabled={onlyDigits(form.zipCode).length !== 8 || loadingPostalCode}
-                  onClick={() => void lookupPostalCode()}
-                  aria-label="Buscar CEP"
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
-              </div>
-            </Field>
-            <Field label="Endereço *" error={errors.address}>
-              <Input
-                value={form.address}
-                onChange={(event) => set("address", event.target.value)}
-                placeholder="Rua, Avenida, etc..."
-              />
-            </Field>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-              <Field label="Número *" error={errors.addressNumber}>
-                <Input
-                  value={form.addressNumber}
-                  disabled={form.addressWithoutNumber}
-                  onChange={(event) => set("addressNumber", event.target.value)}
+                  value={form.address}
+                  aria-invalid={Boolean(errors.address)}
+                  className={validationBorder("address")}
+                  onChange={(event) => set("address", event.target.value)}
+                  placeholder="Rua, Avenida, etc..."
                 />
               </Field>
-              <div className="shrink-0">
-                <span className="relative top-2 mb-1.5 block text-center text-xs font-medium text-muted-foreground">
-                  S/N
-                </span>
-                <div className="flex min-h-10 items-center justify-center">
-                  <Switch
-                    checked={form.addressWithoutNumber}
-                    onCheckedChange={setAddressWithoutNumber}
-                    aria-label="Endereço sem número"
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                <Field label="Número *">
+                  <Input
+                    value={form.addressNumber}
+                    disabled={form.addressWithoutNumber}
+                    aria-invalid={Boolean(errors.addressNumber)}
+                    className={validationBorder("addressNumber")}
+                    onChange={(event) => set("addressNumber", event.target.value)}
                   />
+                </Field>
+                <div className="shrink-0">
+                  <span className="relative top-2 mb-1.5 block text-center text-xs font-medium text-muted-foreground">
+                    S/N
+                  </span>
+                  <div className="flex min-h-10 items-center justify-center">
+                    <Switch
+                      checked={form.addressWithoutNumber}
+                      onCheckedChange={setAddressWithoutNumber}
+                      aria-label="Endereço sem número"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-            <Field label="Complemento">
-              <Input
-                value={form.addressComplement}
-                onChange={(event) => set("addressComplement", event.target.value)}
-              />
-            </Field>
-            <Field label="Bairro *">
-              <Input
-                value={form.neighborhood}
-                onChange={(event) => set("neighborhood", event.target.value)}
-              />
-            </Field>
-            <Field label="País *">
-              <Input
-                value={form.country}
-                onChange={(event) => set("country", event.target.value)}
-              />
-            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Complemento">
+                <Input
+                  value={form.addressComplement}
+                  onChange={(event) => set("addressComplement", event.target.value)}
+                />
+              </Field>
+              <Field label="Bairro *">
+                <Input
+                  value={form.neighborhood}
+                  aria-invalid={Boolean(errors.neighborhood)}
+                  className={validationBorder("neighborhood")}
+                  onChange={(event) => set("neighborhood", event.target.value)}
+                />
+              </Field>
+            </div>
           </div>
         )}
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
-          <Field label="Cidade *" error={errors.city}>
-            <Input value={form.city} onChange={(event) => set("city", event.target.value)} />
-          </Field>
-          <Field label="UF *" error={errors.state}>
-            <Select value={form.state} onChange={(event) => set("state", event.target.value)}>
-              <option value="">Selecione</option>
-              {STATES.map((state) => (
-                <option key={state}>{state}</option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+        <InternationalLocationFields
+          value={locationValue}
+          onChange={setLocation}
+          cityError={errors.city}
+          cityResultsPlacement="top"
+          lockDivisionAndCountry
+          divisionCodeOnly
+          errorPresentation="border"
+          className="grid gap-4 sm:grid-cols-[minmax(0,2.8225fr)_minmax(5rem,0.2625fr)_minmax(10.2rem,0.765fr)]"
+        />
       </div>
     </div>
   );
@@ -1739,6 +1844,7 @@ function BranchFormModal({
   onSaved: () => void | Promise<void>;
 }) {
   const [name, setName] = React.useState("");
+  const [cityId, setCityId] = React.useState("");
   const [city, setCity] = React.useState("");
   const [state, setState] = React.useState("");
   const [status, setStatus] = React.useState<"ACTIVE" | "INACTIVE">("ACTIVE");
@@ -1746,6 +1852,7 @@ function BranchFormModal({
   React.useEffect(() => {
     if (open) {
       setName(initial?.name ?? "");
+      setCityId("");
       setCity(initial?.city ?? "");
       setState(initial?.state ?? "");
       setStatus(initial?.status ?? "ACTIVE");
@@ -1801,19 +1908,21 @@ function BranchFormModal({
         <Field label="Nome da filial *">
           <Input value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
-        <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-3">
-          <Field label="Cidade">
-            <Input value={city} onChange={(event) => setCity(event.target.value)} />
-          </Field>
-          <Field label="UF">
-            <Select value={state} onChange={(event) => setState(event.target.value)}>
-              <option value="">-</option>
-              {STATES.map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+        <CityAutocomplete
+          value={cityId}
+          initialLabel={city}
+          initialDivision={state}
+          selectionLabel="name"
+          onChange={setCityId}
+          onSearchChange={(value) => {
+            setCity(value);
+            setState("");
+          }}
+          onCitySelect={(selectedCity) => {
+            setCity(selectedCity.name);
+            setState(selectedCity.divisionCode || selectedCity.divisionName || "");
+          }}
+        />
       </div>
     </Modal>
   );
@@ -2229,6 +2338,13 @@ function maskZipCode(value: string) {
     .slice(0, 8)
     .replace(/(\d{5})(\d)/, "$1-$2");
 }
+function normalizeLocationName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+}
 function formFromCustomer(customer: TicketCustomer): CustomerForm {
   const parsedPhone = splitPhoneByCountry(customer.telefone ?? "");
   return {
@@ -2244,12 +2360,15 @@ function formFromCustomer(customer: TicketCustomer): CustomerForm {
     email: customer.email ?? "",
     notes: customer.notas ?? "",
     fullAddress: customer.addressFullEnabled ?? !!(customer.postalCode || customer.street),
-    zipCode: customer.postalCode ?? "",
+    zipCode: maskZipCode(customer.postalCode ?? ""),
     address: customer.street ?? "",
     addressNumber: customer.addressWithoutNumber ? "SN" : (customer.addressNumber ?? ""),
     addressWithoutNumber: customer.addressWithoutNumber ?? false,
     addressComplement: customer.complement ?? "",
     neighborhood: customer.neighborhood ?? "",
+    cityId: customer.cityId ?? "",
+    addressCountryCode: (customer.country ?? "Brasil") === "Brasil" ? "BR" : "",
+    addressDivisionId: "",
     city: customer.city ?? "",
     state: customer.state ?? "",
     country: customer.country ?? "Brasil",
@@ -2276,6 +2395,7 @@ function customerPayload(form: CustomerForm): Parameters<typeof crmApi.createCus
     addressWithoutNumber: form.addressWithoutNumber,
     complement: form.addressComplement.trim() || null,
     neighborhood: form.neighborhood.trim() || null,
+    cityId: form.cityId || null,
     country: form.country.trim() || "Brasil",
   } as Parameters<typeof crmApi.createCustomer>[0];
 }

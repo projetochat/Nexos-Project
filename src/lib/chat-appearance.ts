@@ -26,6 +26,17 @@ export function normalizeHexColor(value: string | null | undefined, fallback: st
   return normalized && /^#[0-9A-F]{6}$/.test(normalized) ? normalized : fallback;
 }
 
+export function chatBackgroundStyle(
+  value: string | null | undefined,
+  mode: "IMAGE" | "COLOR" | undefined = "IMAGE",
+) {
+  if (!value || mode !== "COLOR") return undefined;
+  return {
+    backgroundColor: normalizeHexColor(value, DEFAULT_CHAT_BACKGROUND_COLOR),
+    backgroundImage: "none" as const,
+  };
+}
+
 export function contrastingTextColor(background: string) {
   const color = normalizeHexColor(background, DEFAULT_CHAT_BUBBLE_COLOR).slice(1);
   const channels = [0, 2, 4].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));

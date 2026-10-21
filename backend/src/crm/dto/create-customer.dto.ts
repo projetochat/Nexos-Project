@@ -5,6 +5,7 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   MaxLength,
 } from "class-validator";
@@ -13,6 +14,10 @@ export const CUSTOMER_PERSON_TYPES = ["PHYSICAL", "LEGAL"] as const;
 export const CUSTOMER_STATUSES = ["ACTIVE", "PROSPECT", "SUSPENDED", "CANCELLED"] as const;
 
 export class CreateCustomerDto {
+  @IsOptional()
+  @IsUUID()
+  cityId?: string;
+
   @IsOptional()
   @IsIn(CUSTOMER_PERSON_TYPES)
   personType?: (typeof CUSTOMER_PERSON_TYPES)[number];

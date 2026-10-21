@@ -57,6 +57,7 @@ import {
   groupsApi,
   type ApiConversation,
   type ApiContact,
+  type ApiMessageContactPickerItem,
   type ApiConversationStatus as ConvStatus,
   type ApiWhatsappGroupSummary,
 } from "@/lib/trixus-api";
@@ -131,17 +132,13 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const newConv = useDisclosure();
   const [bulkAction, setBulkAction] = React.useState<BulkConversationAction | null>(null);
-  const [selectedConversationIds, setSelectedConversationIds] = React.useState<Set<string>>(
-    new Set(),
-  );
   const queuePrefs = useQueuePrefs();
   const perms = useChatPerms();
   const user = useSession((state) => state.user);
   const permissions = user?.permissions ?? [];
   const conversationScope = conversationAuthorizationScope(user);
-  const canStartConversation =
-    permissions.includes("messages.send") && permissions.includes("contacts.read");
-  const canBulkClose = permissions.includes("chat.bulk_actions.execute");
+  const canStartConversation = canStartActiveConversation(permissions);
+  const canBulkActions = permissions.includes("chat.bulk_actions.execute");
   const activeTabs = React.useMemo(
     () => queuePrefs.filter((p) => p.enabled && (perms.visualiza_leads || p.id !== "leads")),
     [queuePrefs, perms.visualiza_leads],
@@ -183,6 +180,16 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
     inboxListMemory.selectedInstancias = [...selectedInstancias];
     inboxListMemory.selectedClientes = [...selectedClientes];
   }, [onlyUnread, query, selectedClientes, selectedInstancias]);
+  const bulkSelection = React.useMemo(
+    () => ({
+      q: query || undefined,
+      source,
+      onlyUnread,
+      customerIds: selectedClientes.size ? [...selectedClientes] : undefined,
+      instances: selectedInstancias.size ? [...selectedInstancias] : undefined,
+    }),
+    [onlyUnread, query, selectedClientes, selectedInstancias, source],
+  );
   const selectedCliente = selectedClientes.size === 1 ? [...selectedClientes][0] : undefined;
   const selectedInstancia = selectedInstancias.size === 1 ? [...selectedInstancias][0] : undefined;
   const realtime = useRealtimeInbox(activeId);
@@ -272,22 +279,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
     });
   }, [conversas, selectedClientes, selectedInstancias]);
 
-  React.useEffect(() => {
-    const visibleIds = new Set(list.map((conversation) => conversation.id));
-    setSelectedConversationIds((current) => {
-      const next = new Set([...current].filter((id) => visibleIds.has(id)));
-      return next.size === current.size ? current : next;
-    });
-  }, [list]);
-
   const counts = conversationsPage?.counts ?? { ativas: 0, standby: 0, fila: 0, leads: 0 };
-
-  const toggle = (set: Set<string>, key: string, setter: (s: Set<string>) => void) => {
-    const next = new Set(set);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    setter(next);
-  };
 
   return (
     <AppShellFull>
@@ -339,7 +331,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   <MessageSquarePlus className="h-4 w-4" />
                 </Button>
               )}
-              {canBulkClose && (
+              {canBulkActions && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -353,21 +345,18 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      disabled={selectedConversationIds.size === 0}
                       onSelect={() => setBulkAction("start")}
                       className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
                     >
                       <Play className="h-4 w-4" /> Iniciar em Massa
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      disabled={selectedConversationIds.size === 0}
                       onSelect={() => setBulkAction("transfer")}
                       className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
                     >
                       <ArrowLeftRight className="h-4 w-4" /> Transferência em Massa
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      disabled={selectedConversationIds.size === 0}
                       onSelect={() => setBulkAction("close")}
                       className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
                     >
@@ -487,27 +476,6 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 });
                 return (
                   <li key={c.id} className="flex border-b border-border/60">
-                    {canBulkClose && (
-                      <label
-                        className="flex shrink-0 items-center pl-3"
-                        title="Selecionar conversa"
-                      >
-                        <input
-                          type="checkbox"
-                          aria-label={`Selecionar conversa de ${c.contact?.nome ?? "Contato"}`}
-                          checked={selectedConversationIds.has(c.id)}
-                          onChange={() =>
-                            setSelectedConversationIds((current) => {
-                              const next = new Set(current);
-                              if (next.has(c.id)) next.delete(c.id);
-                              else next.add(c.id);
-                              return next;
-                            })
-                          }
-                          className="h-4 w-4 accent-primary"
-                        />
-                      </label>
-                    )}
                     <Link
                       to="/inbox/$conversationId"
                       params={{ conversationId: c.id }}
@@ -597,17 +565,13 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {canStartConversation && <NewConversationModal open={newConv.open} onClose={newConv.hide} />}
-      {canBulkClose && bulkAction && selectedConversationIds.size > 0 && (
+      {canBulkActions && bulkAction && (
         <BulkConversationActionModal
           action={bulkAction}
-          conversationIds={[...selectedConversationIds]}
+          selection={bulkSelection}
+          queues={activeTabs.map(({ id, label }) => ({ id, label }))}
           onClose={() => setBulkAction(null)}
-          onSuccess={(succeededIds) => {
-            setSelectedConversationIds((current) => {
-              const next = new Set(current);
-              succeededIds.forEach((id) => next.delete(id));
-              return next;
-            });
+          onSuccess={() => {
             if (bulkAction === "close") void navigate({ to: "/inbox" });
             setBulkAction(null);
           }}
@@ -707,8 +671,7 @@ function InboxIndex() {
 export function NewConversationModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const user = useSession((s) => s.user);
   const permissions = user?.permissions ?? [];
-  const canStartConversation =
-    canStartActiveConversation(permissions) && permissions.includes("contacts.read");
+  const canStartConversation = canStartActiveConversation(permissions);
   const canCreateContact = permissions.includes("contacts.create");
   const canEditContact = permissions.includes("contacts.update");
   const canViewGroups = permissions.includes("groups.read");
@@ -722,7 +685,9 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const [groupQuery, setGroupQuery] = React.useState("");
   const [groupPage, setGroupPage] = React.useState(1);
   const [createGroupOpen, setCreateGroupOpen] = React.useState(false);
-  const [selectedContact, setSelectedContact] = React.useState<ApiContact | null>(null);
+  const [selectedContact, setSelectedContact] = React.useState<ApiMessageContactPickerItem | null>(
+    null,
+  );
   const [conversationRequest, setConversationRequest] =
     React.useState<ActiveConversationRequest | null>(null);
   const conversationRequestKey = React.useRef(0);
@@ -737,7 +702,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   } = useQuery({
     queryKey: ["trixus", "contacts", "conversation-modal", q.trim(), page],
     queryFn: () =>
-      crmApi.listContacts({
+      crmApi.listContactsForMessagePicker({
         q: q.trim() || undefined,
         page,
         pageSize: 10,
@@ -766,17 +731,28 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const { data: contactOptions, error: optionsError } = useQuery({
     queryKey: ["trixus", "contacts", "conversation-options"],
     queryFn: crmApi.contactOptions,
-    enabled: open && canStartConversation,
+    enabled: open && canCreateContact,
   });
   const { data: customersPage, error: customersError } = useQuery({
     queryKey: ["trixus", "customers", "conversation-options"],
     queryFn: () => crmApi.listCustomers({ pageSize: 10000 }),
-    enabled: open && canStartConversation,
+    enabled: open && canCreateContact,
   });
-  const instances = React.useMemo(() => {
-    const allowedIds = new Set(availableConnections.map((connection) => connection.id));
-    return (contactOptions?.instances ?? []).filter((instance) => allowedIds.has(instance.id));
-  }, [availableConnections, contactOptions?.instances]);
+  const instances = React.useMemo(
+    () =>
+      availableConnections.map((connection) => ({
+        id: connection.id,
+        value: connectionInstanceValue(connection),
+        name: connection.name,
+        color: connection.color ?? null,
+        logoUrl: connection.logoUrl ?? null,
+        externalReference: connection.externalReference,
+        ownerPhone: connection.ownerPhone ?? null,
+        instanceName: connection.name,
+        status: connection.status.toUpperCase(),
+      })),
+    [availableConnections],
+  );
   const contacts = contactsPage?.items ?? [];
   const groups = groupsPage?.items ?? [];
   const formReady = !!contactOptions && !!customersPage;
@@ -795,7 +771,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     }
   }, [open]);
 
-  const selectContact = (contact: ApiContact) => {
+  const selectContact = (contact: ApiMessageContactPickerItem) => {
     setSelectedContact(contact);
     conversationRequestKey.current += 1;
     setConversationRequest({ key: conversationRequestKey.current, contact });
@@ -872,7 +848,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
               </Button>
             </div>
           )}
-          {tab === "contacts" && (optionsError || customersError) && (
+          {tab === "contacts" && canCreateContact && (optionsError || customersError) && (
             <p className="text-xs text-destructive">
               Não foi possível carregar o cadastro de contatos. Tente abrir novamente.
             </p>
@@ -925,7 +901,6 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                       title="Nova conversa"
                       aria-label={`Nova conversa com ${contact.nome}`}
                       aria-pressed={selectedContact?.id === contact.id}
-                      disabled={!contactOptions}
                       onClick={() => selectContact(contact)}
                     >
                       <MessageSquarePlus className="h-4 w-4" />

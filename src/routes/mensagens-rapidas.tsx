@@ -33,6 +33,7 @@ import { assertQuickReplySaved, quickReplyMessages } from "@/lib/quick-reply-seq
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   CONNECTION_MESSAGE_VARIABLES,
   mergeMessageVariables,
@@ -329,6 +330,10 @@ export function QuickReplyEditor({
   const [active, setActive] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [shortcutError, setShortcutError] = React.useState("");
+  const [requiredErrors, setRequiredErrors] = React.useState({
+    shortcut: false,
+    messageIndexes: [] as number[],
+  });
   const [customVariables, setCustomVariables] = React.useState<
     Array<{ name: string; description: string }>
   >([]);
@@ -399,6 +404,7 @@ export function QuickReplyEditor({
     setCloseOnSend(initial?.close_on_send ?? false);
     setActive(clone ? true : initial?.active !== false);
     setShortcutError("");
+    setRequiredErrors({ shortcut: false, messageIndexes: [] });
   }, [clone, open, initial]);
 
   const save = async () => {
@@ -410,9 +416,20 @@ export function QuickReplyEditor({
       .join("\n")
       .slice(0, 2000);
     const attachment = messages[0]?.attachment;
-    if (!shortcut) return toast.error("Informe o atalho.");
-    if (messages.some((message) => !message.text.trim() && !message.attachment))
-      return toast.error("Preencha o texto ou anexe um arquivo em cada mensagem.");
+    const missingMessageIndexes = messages.flatMap((message, index) =>
+      !message.text.trim() && !message.attachment ? [index] : [],
+    );
+    const requiredFields = [
+      ...(!shortcut ? ["Atalho"] : []),
+      ...missingMessageIndexes.map((index) =>
+        messages.length === 1 ? "Mensagem" : `Mensagem ${index + 1}`,
+      ),
+    ];
+    if (requiredFields.length) {
+      setRequiredErrors({ shortcut: !shortcut, messageIndexes: missingMessageIndexes });
+      showRequiredFieldsToast(requiredFields);
+      return;
+    }
     if (
       messages.reduce((total, message) => total + (message.attachment?.dataUrl.length ?? 0), 0) >
       40 * 1024 * 1024
@@ -521,6 +538,7 @@ export function QuickReplyEditor({
               const value = sanitizeQuickReplyShortcut(event.target.value);
               setAtalho(value);
               setShortcutError(duplicateShortcutError(value));
+              if (value) setRequiredErrors((current) => ({ ...current, shortcut: false }));
             }}
             onBlur={() => {
               setAtalho((value) => sanitizeQuickReplyShortcut(value));
@@ -528,7 +546,8 @@ export function QuickReplyEditor({
             }}
             placeholder="bd"
             maxLength={40}
-            aria-invalid={!!shortcutError}
+            aria-invalid={Boolean(shortcutError || requiredErrors.shortcut)}
+            className={requiredFieldClassName(Boolean(shortcutError || requiredErrors.shortcut))}
           />
         </Field>
         <div className="space-y-3">
@@ -557,7 +576,7 @@ export function QuickReplyEditor({
           {messages.map((message, index) => (
             <div
               key={index}
-              className="overflow-hidden rounded-xl border border-border bg-card focus-within:border-primary/50"
+              className={`overflow-hidden rounded-xl border border-border bg-card focus-within:border-primary/50 ${requiredFieldClassName(requiredErrors.messageIndexes.includes(index))}`}
             >
               <textarea
                 rows={3}
@@ -572,13 +591,19 @@ export function QuickReplyEditor({
                 }}
                 aria-label={`Texto da mensagem ${index + 1}`}
                 aria-required={!message.attachment}
-                onChange={(event) =>
+                aria-invalid={requiredErrors.messageIndexes.includes(index)}
+                onChange={(event) => {
                   setMessages((items) =>
                     items.map((item, position) =>
                       position === index ? { ...item, text: event.target.value } : item,
                     ),
-                  )
-                }
+                  );
+                  if (event.target.value.trim())
+                    setRequiredErrors((current) => ({
+                      ...current,
+                      messageIndexes: current.messageIndexes.filter((item) => item !== index),
+                    }));
+                }}
                 className="block min-h-24 w-full resize-y border-0 bg-transparent px-3 py-3 text-sm outline-none"
                 placeholder="Texto da mensagem ou legenda do arquivo"
               />
@@ -619,13 +644,17 @@ export function QuickReplyEditor({
                       ),
                     )
                   }
-                  onAttachment={(attachment) =>
+                  onAttachment={(attachment) => {
                     setMessages((items) =>
                       items.map((item, position) =>
                         position === index ? { ...item, attachment } : item,
                       ),
-                    )
-                  }
+                    );
+                    setRequiredErrors((current) => ({
+                      ...current,
+                      messageIndexes: current.messageIndexes.filter((item) => item !== index),
+                    }));
+                  }}
                 />
                 <div className="ml-auto flex gap-1">
                   <Button
@@ -634,9 +663,10 @@ export function QuickReplyEditor({
                     className="h-7 w-7"
                     aria-label="Remover mensagem"
                     disabled={busy || messages.length === 1}
-                    onClick={() =>
-                      setMessages((items) => items.filter((_, position) => position !== index))
-                    }
+                    onClick={() => {
+                      setMessages((items) => items.filter((_, position) => position !== index));
+                      setRequiredErrors((current) => ({ ...current, messageIndexes: [] }));
+                    }}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

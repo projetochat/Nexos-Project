@@ -475,7 +475,10 @@ export class MessagesService {
       author_id: message.authorMembership?.user.id ?? null,
       author_membership_id: message.authorMembershipId,
       author_name:
-        message.authorMembership?.presentationName ?? message.authorMembership?.user.name ?? null,
+        message.authorMembership?.presentationName ??
+        message.authorMembership?.user.name ??
+        message.participantName ??
+        null,
       author_avatar_url: message.authorMembership?.user.avatarUrl ?? null,
       outbound_origin: outboundMessageOrigin(message),
       content: message.content ?? "",

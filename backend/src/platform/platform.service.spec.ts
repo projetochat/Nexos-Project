@@ -861,8 +861,6 @@ describe("PlatformService health", () => {
       service.createClient(
         {
           name: "Cliente em prospecção",
-          responsibleName: "Responsável",
-          responsibleEmail: "responsavel@example.com",
           city: "Goiânia",
           state: "GO",
           status: "PROSPECTING",
@@ -874,9 +872,75 @@ describe("PlatformService health", () => {
     expect(prisma.platformClient.findUnique).not.toHaveBeenCalled();
     expect(prisma.platformClient.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ document: null, status: "PROSPECTING" }),
+        data: expect.objectContaining({
+          document: null,
+          responsibleName: "",
+          responsibleEmail: "",
+          status: "PROSPECTING",
+        }),
       }),
     );
+  });
+
+  it("requires responsible contact data when creating a non-prospect client", async () => {
+    const prisma = { platformClient: { findUnique: vi.fn(), create: vi.fn() } };
+    const service = platformService(prisma, { record: vi.fn() });
+
+    await expect(
+      service.createClient(
+        {
+          name: "Cliente ativo",
+          document: "00000000000000",
+          city: "Goiânia",
+          state: "GO",
+          status: "ACTIVE",
+        },
+        actor(),
+      ),
+    ).rejects.toThrow("Informe o responsável pelo cliente.");
+    expect(prisma.platformClient.create).not.toHaveBeenCalled();
+  });
+
+  it("blocks changing a prospect to active while responsible contact data is missing", async () => {
+    const prisma = {
+      platformClient: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "client-1",
+          document: "00000000000000",
+          responsibleName: "",
+          responsibleEmail: "",
+          status: "PROSPECTING",
+        }),
+        update: vi.fn(),
+      },
+    };
+    const service = platformService(prisma, { record: vi.fn() });
+
+    await expect(service.updateClient("client-1", { status: "ACTIVE" }, actor())).rejects.toThrow(
+      "Informe o responsável pelo cliente.",
+    );
+    expect(prisma.platformClient.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks changing a prospect to active with an invalid responsible e-mail", async () => {
+    const prisma = {
+      platformClient: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "client-1",
+          document: "00000000000000",
+          responsibleName: "Responsável",
+          responsibleEmail: "invalido",
+          status: "PROSPECTING",
+        }),
+        update: vi.fn(),
+      },
+    };
+    const service = platformService(prisma, { record: vi.fn() });
+
+    await expect(service.updateClient("client-1", { status: "ACTIVE" }, actor())).rejects.toThrow(
+      "Informe um e-mail válido para o responsável pelo cliente.",
+    );
+    expect(prisma.platformClient.update).not.toHaveBeenCalled();
   });
 
   it("keeps CNPJ required for clients outside prospecting", async () => {

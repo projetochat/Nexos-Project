@@ -52,6 +52,7 @@ import { Route as ConfiguracoesIntegracoesRouteImport } from './routes/configura
 import { Route as ConfiguracoesGeralRouteImport } from './routes/configuracoes.geral'
 import { Route as ConfiguracoesFinanceiroRouteImport } from './routes/configuracoes.financeiro'
 import { Route as ConfiguracoesEmpresaRouteImport } from './routes/configuracoes.empresa'
+import { Route as ConfiguracoesControleNumeracaoRouteImport } from './routes/configuracoes.controle-numeracao'
 import { Route as ConfiguracoesCamposContatoRouteImport } from './routes/configuracoes.campos-contato'
 import { Route as AtendimentoPerfilRouteImport } from './routes/atendimento.perfil'
 import { Route as AtendimentoInboxRouteImport } from './routes/atendimento.inbox'
@@ -288,6 +289,12 @@ const ConfiguracoesEmpresaRoute = ConfiguracoesEmpresaRouteImport.update({
   path: '/empresa',
   getParentRoute: () => ConfiguracoesRoute,
 } as any)
+const ConfiguracoesControleNumeracaoRoute =
+  ConfiguracoesControleNumeracaoRouteImport.update({
+    id: '/controle-numeracao',
+    path: '/controle-numeracao',
+    getParentRoute: () => ConfiguracoesRoute,
+  } as any)
 const ConfiguracoesCamposContatoRoute =
   ConfiguracoesCamposContatoRouteImport.update({
     id: '/campos-contato',
@@ -426,6 +433,7 @@ export interface FileRoutesByFullPath {
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
   '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
+  '/configuracoes/controle-numeracao': typeof ConfiguracoesControleNumeracaoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
@@ -485,6 +493,7 @@ export interface FileRoutesByTo {
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
   '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
+  '/configuracoes/controle-numeracao': typeof ConfiguracoesControleNumeracaoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
@@ -549,6 +558,7 @@ export interface FileRoutesById {
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
   '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
+  '/configuracoes/controle-numeracao': typeof ConfiguracoesControleNumeracaoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
@@ -614,6 +624,7 @@ export interface FileRouteTypes {
     | '/atendimento/inbox'
     | '/atendimento/perfil'
     | '/configuracoes/campos-contato'
+    | '/configuracoes/controle-numeracao'
     | '/configuracoes/empresa'
     | '/configuracoes/financeiro'
     | '/configuracoes/geral'
@@ -673,6 +684,7 @@ export interface FileRouteTypes {
     | '/atendimento/inbox'
     | '/atendimento/perfil'
     | '/configuracoes/campos-contato'
+    | '/configuracoes/controle-numeracao'
     | '/configuracoes/empresa'
     | '/configuracoes/financeiro'
     | '/configuracoes/geral'
@@ -736,6 +748,7 @@ export interface FileRouteTypes {
     | '/atendimento/inbox'
     | '/atendimento/perfil'
     | '/configuracoes/campos-contato'
+    | '/configuracoes/controle-numeracao'
     | '/configuracoes/empresa'
     | '/configuracoes/financeiro'
     | '/configuracoes/geral'
@@ -1089,6 +1102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracoesEmpresaRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
+    '/configuracoes/controle-numeracao': {
+      id: '/configuracoes/controle-numeracao'
+      path: '/controle-numeracao'
+      fullPath: '/configuracoes/controle-numeracao'
+      preLoaderRoute: typeof ConfiguracoesControleNumeracaoRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
     '/configuracoes/campos-contato': {
       id: '/configuracoes/campos-contato'
       path: '/campos-contato'
@@ -1286,6 +1306,7 @@ const AtendimentoRouteWithChildren = AtendimentoRoute._addFileChildren(
 
 interface ConfiguracoesRouteChildren {
   ConfiguracoesCamposContatoRoute: typeof ConfiguracoesCamposContatoRoute
+  ConfiguracoesControleNumeracaoRoute: typeof ConfiguracoesControleNumeracaoRoute
   ConfiguracoesEmpresaRoute: typeof ConfiguracoesEmpresaRoute
   ConfiguracoesFinanceiroRoute: typeof ConfiguracoesFinanceiroRoute
   ConfiguracoesGeralRoute: typeof ConfiguracoesGeralRoute
@@ -1300,6 +1321,7 @@ interface ConfiguracoesRouteChildren {
 
 const ConfiguracoesRouteChildren: ConfiguracoesRouteChildren = {
   ConfiguracoesCamposContatoRoute: ConfiguracoesCamposContatoRoute,
+  ConfiguracoesControleNumeracaoRoute: ConfiguracoesControleNumeracaoRoute,
   ConfiguracoesEmpresaRoute: ConfiguracoesEmpresaRoute,
   ConfiguracoesFinanceiroRoute: ConfiguracoesFinanceiroRoute,
   ConfiguracoesGeralRoute: ConfiguracoesGeralRoute,

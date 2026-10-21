@@ -44,6 +44,7 @@ import { num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   connectionsApi,
   crmApi,
@@ -607,9 +608,9 @@ function ConnectionForm({
   const [serviceEnabled, setServiceEnabled] = React.useState(true);
   const [importHistory, setImportHistory] = React.useState(false);
   const [historyStartDate, setHistoryStartDate] = React.useState("");
+  const [requiredErrors, setRequiredErrors] = React.useState<Record<string, boolean>>({});
   const missingImportDate = serviceEnabled && importHistory && !historyStartDate;
   const duplicateName = instanceNameAlreadyExists(name, connections);
-  const canCreate = name.trim().length >= 2 && !missingImportDate && !duplicateName;
 
   React.useEffect(() => {
     if (!open) {
@@ -619,12 +620,37 @@ function ConnectionForm({
       setServiceEnabled(true);
       setImportHistory(false);
       setHistoryStartDate("");
+      setRequiredErrors({});
     }
   }, [open]);
 
+  React.useEffect(() => {
+    setRequiredErrors((current) => {
+      const next = { ...current };
+      if (name.trim().length >= 2) delete next.name;
+      if (!missingImportDate) delete next.historyStartDate;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [missingImportDate, name]);
+
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canCreate || busy) return;
+    const nextErrors: Record<string, boolean> = {};
+    const pendingFields: string[] = [];
+    if (name.trim().length < 2) {
+      nextErrors.name = true;
+      pendingFields.push("Nome da instância");
+    }
+    if (missingImportDate) {
+      nextErrors.historyStartDate = true;
+      pendingFields.push("Data inicial da importação");
+    }
+    if (pendingFields.length) {
+      setRequiredErrors(nextErrors);
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
+    if (duplicateName || busy) return;
     onSubmit({
       name: name.trim(),
       color: completeHexColor(color, "#22c55e"),
@@ -658,7 +684,7 @@ function ConnectionForm({
               size="sm"
               type="submit"
               form="new-whatsapp-instance-form"
-              disabled={busy || !canCreate}
+              disabled={busy || duplicateName}
             >
               Criar
             </Button>
@@ -711,7 +737,7 @@ function ConnectionForm({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Digite o nome da instância"
-                aria-invalid={duplicateName}
+                aria-invalid={duplicateName || Boolean(requiredErrors.name)}
                 className={
                   duplicateName ? "border-destructive focus:border-destructive" : undefined
                 }
@@ -785,6 +811,7 @@ function ConnectionForm({
                   value={historyStartDate}
                   onChange={setHistoryStartDate}
                   disabled={!serviceEnabled}
+                  invalid={Boolean(requiredErrors.historyStartDate)}
                 />
               )}
             </div>
@@ -886,12 +913,14 @@ function ImportDate({
   value,
   onChange,
   disabled,
+  invalid = false,
 }: {
   label: string;
   required?: boolean;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
+  invalid?: boolean;
 }) {
   const nativeDateInputRef = React.useRef<HTMLInputElement>(null);
   const [draft, setDraft] = React.useState(() => formatImportDate(value));
@@ -938,9 +967,10 @@ function ImportDate({
             onChange(parsed.iso);
           }}
           disabled={disabled}
+          aria-invalid={invalid}
           aria-label={label}
           placeholder="dd/mm/aaaa"
-          className="h-11 w-full rounded-xl border border-border bg-surface-1 px-3 pr-10 text-center text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className={`h-11 w-full rounded-xl border bg-surface-1 px-3 pr-10 text-center text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60 ${invalid ? "border-destructive focus:border-destructive" : "border-border"}`}
         />
         <button
           type="button"

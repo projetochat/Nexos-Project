@@ -229,7 +229,14 @@ it("revalidates the deletion impact and submits its snapshot token", async () =>
     snapshotToken: "schedule-revision-1",
     title: "Excluir mensagem agendada?",
     prompt: "Confira o impacto antes de excluir.",
-    record: { name: "Mensagem que pode ser excluída", identifiers: [] },
+    record: {
+      name: "Mensagem que pode ser excluída",
+      identifiers: [
+        { label: "Identificador", value: "composer-1" },
+        { label: "Data programada", value: "2099-10-01T15:00:00.000Z" },
+        { label: "Estado", value: "PENDING" },
+      ],
+    },
     dependencies: [],
     consequences: [{ id: "delete", text: "O agendamento será excluído.", irreversible: true }],
     confirmation: { level: "standard" as const, confirmLabel: "Excluir" },
@@ -273,6 +280,10 @@ it("revalidates the deletion impact and submits its snapshot token", async () =>
     expect(confirmationDialog?.className).toContain("max-w-sm");
     expect(confirmationDialog?.className).not.toContain("max-w-xl");
     expect(document.body.textContent).not.toContain("Confira o impacto");
+    expect(confirmationDialog?.textContent).not.toContain("Nome:");
+    expect(confirmationDialog?.textContent).not.toContain("Identificador:");
+    expect(confirmationDialog?.textContent).not.toContain("Data programada:");
+    expect(confirmationDialog?.textContent).not.toContain("Estado:");
 
     const confirm = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "Excluir",

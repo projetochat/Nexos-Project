@@ -37,6 +37,7 @@ import {
   type DashboardVisualization,
   type DashboardValueMode,
 } from "@/lib/dashboard-components";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 const VISUALIZATION_LABELS: Record<DashboardVisualization, string> = {
   columns: "Colunas",
@@ -529,6 +530,7 @@ function DashboardComponentConfigModal({
               const title = draft.title.trim();
               if (!title) {
                 setError("Informe o título do componente.");
+                showRequiredFieldsToast(["Título do componente"]);
                 return;
               }
               onSave({ ...draft, title });
@@ -546,10 +548,11 @@ function DashboardComponentConfigModal({
 
       <div className="mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 sm:gap-3">
         <div className="min-w-0" data-dashboard-component-title-field>
-          <Field label="Título do componente *" error={error}>
+          <Field label="Título do componente *">
             <Input
               required
               aria-invalid={!!error}
+              className={requiredFieldClassName(Boolean(error))}
               value={draft.title}
               onChange={(event) => {
                 patch({ title: event.target.value });

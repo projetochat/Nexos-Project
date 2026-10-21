@@ -7,7 +7,7 @@ const current = {
   membershipId: "membership-admin",
   tenantId: "tenant-a",
   roleKey: "tenant_admin",
-  platformRole: "NONE",
+  platformRole: "USER",
   permissions: ["users.delete"],
 };
 
@@ -28,7 +28,7 @@ function membership(overrides: Record<string, unknown> = {}) {
       passwordHash: "hash",
       keepSidebarCollapsed: false,
       status: "ACTIVE",
-      platformRole: "NONE",
+      platformRole: "USER",
     },
     role: { id: "role-agent", key: "agent", name: "Atendente" },
     departments: [],
@@ -47,6 +47,7 @@ function fixture(counts: Partial<Record<string, number>> = {}) {
     approvals: 0,
     attachments: 0,
     campaigns: 0,
+    otherMemberships: 0,
     ...counts,
   };
   const conversationCount = vi
@@ -57,9 +58,14 @@ function fixture(counts: Partial<Record<string, number>> = {}) {
   const tx = {
     tenantMembership: {
       findFirst: vi.fn().mockResolvedValue(membership()),
+      count: vi.fn().mockImplementation(() => Promise.resolve(values.otherMemberships)),
       delete: vi.fn().mockResolvedValue({}),
     },
-    conversation: { count: conversationCount },
+    user: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    conversation: {
+      count: conversationCount,
+      updateMany: vi.fn().mockResolvedValue({ count: values.conversations }),
+    },
     message: {
       count: vi.fn().mockResolvedValue(values.messages),
       updateMany: vi.fn().mockResolvedValue({ count: values.messages }),
@@ -217,7 +223,7 @@ describe("physical attendant deletion", () => {
     expect(tx.platformAuditLog.create).not.toHaveBeenCalled();
   });
 
-  it("snapshots authorship, preserves notifications and deletes only the tenant membership", async () => {
+  it("snapshots authorship, preserves notifications and physically deletes an orphan account", async () => {
     const { prisma, tx } = fixture();
     const controller = new UsersController(prisma as never, {} as never);
     const impact = await controller.deletionPreview("membership-agent", current as never);
@@ -233,6 +239,13 @@ describe("physical attendant deletion", () => {
     expect(tx.message.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { participantName: "Agente Local" } }),
     );
+    expect(tx.conversation.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        assignedMembershipId: "membership-agent",
+      },
+      data: { assignedMembershipNameSnapshot: "Agente Local" },
+    });
     expect(tx.ticketHistory.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: {
@@ -259,7 +272,55 @@ describe("physical attendant deletion", () => {
     expect(tx.tenantMembership.delete).toHaveBeenCalledWith({
       where: { id: "membership-agent" },
     });
-    expect(prisma).not.toHaveProperty("user.delete");
+    expect(tx.user.deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: "user-agent",
+        platformRole: "USER",
+        memberships: { none: {} },
+      },
+    });
+    expect(tx.platformAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadataJson: expect.objectContaining({ globalUserDeleted: true }),
+        }),
+      }),
+    );
+  });
+
+  it("preserves the global account when another tenant membership exists", async () => {
+    const { prisma, tx } = fixture({ otherMemberships: 1 });
+    tx.user.deleteMany.mockResolvedValueOnce({ count: 0 });
+    const controller = new UsersController(prisma as never, {} as never);
+    const impact = await controller.deletionPreview("membership-agent", current as never);
+
+    expect(impact.consequences).toContainEqual(
+      expect.objectContaining({
+        id: "attendant-account",
+        text: expect.stringContaining("outro vínculo"),
+      }),
+    );
+    await expect(
+      controller.remove(
+        "membership-agent",
+        { snapshotToken: impact.snapshotToken },
+        current as never,
+      ),
+    ).resolves.toEqual({ status: "deleted" });
+
+    expect(tx.tenantMembership.delete).toHaveBeenCalled();
+    expect(tx.user.deleteMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ memberships: { none: {} } }),
+      }),
+    );
+    expect(tx.platformAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadataJson: expect.objectContaining({ globalUserDeleted: false }),
+        }),
+      }),
+    );
   });
 });
 
@@ -285,5 +346,20 @@ describe("attendant historical authorship migration", () => {
     expect(sql.indexOf('UPDATE "tickets"')).toBeLessThan(
       sql.indexOf('ALTER TABLE "tickets" ALTER COLUMN "createdByMembershipId" DROP NOT NULL'),
     );
+  });
+
+  it("backfills the conversation assignee snapshot before a membership can be removed", () => {
+    const sql = readFileSync(
+      new URL(
+        "../../prisma/migrations/20261021180000_conversation_assignee_name_snapshot/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(sql).toContain('ADD COLUMN "assignedMembershipNameSnapshot" TEXT');
+    expect(sql).toContain('UPDATE "conversations" AS conversation');
+    expect(sql).toContain('membership."presentation_name"');
+    expect(sql).toContain('account."name"');
   });
 });

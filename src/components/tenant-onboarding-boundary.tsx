@@ -60,6 +60,7 @@ import {
 } from "@/lib/trixus-api";
 import { signOut, useSession } from "@/lib/session";
 import { formatPhoneForDisplay } from "@/lib/input-masks";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   ATTENDANT_DEFAULT_PERMISSIONS,
   DEFAULT_DEPARTMENTS,
@@ -1543,6 +1544,12 @@ function UsersStep({ onServerChange }: { onServerChange: () => Promise<unknown> 
     avatarUrl?: string;
   }>({ name: "", email: "", password: "", roleId: "" });
   const [creating, setCreating] = React.useState(false);
+  const [requiredErrors, setRequiredErrors] = React.useState({
+    name: false,
+    email: false,
+    password: false,
+    roleId: false,
+  });
   const [editing, setEditing] = React.useState<ApiUserMembership | null>(null);
   const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
   const [cameraOpen, setCameraOpen] = React.useState(false);
@@ -1555,6 +1562,7 @@ function UsersStep({ onServerChange }: { onServerChange: () => Promise<unknown> 
   );
   React.useEffect(() => {
     if (creating) return;
+    setRequiredErrors({ name: false, email: false, password: false, roleId: false });
     setPhotoMenuOpen(false);
     setCameraOpen(false);
     setPhotoPreviewOpen(false);
@@ -1579,6 +1587,25 @@ function UsersStep({ onServerChange }: { onServerChange: () => Promise<unknown> 
     },
     onError: (error) => toast.error((error as Error).message),
   });
+  const submitCreate = () => {
+    const nextRequiredErrors = {
+      name: form.name.trim().length < 3,
+      email: !form.email.includes("@"),
+      password: form.password.length < 6,
+      roleId: !form.roleId,
+    };
+    if (Object.values(nextRequiredErrors).some(Boolean)) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast([
+        ...(nextRequiredErrors.name ? ["Nome"] : []),
+        ...(nextRequiredErrors.email ? ["E-mail"] : []),
+        ...(nextRequiredErrors.password ? ["Senha"] : []),
+        ...(nextRequiredErrors.roleId ? ["Perfil"] : []),
+      ]);
+      return;
+    }
+    create.mutate();
+  };
   const toggle = useMutation({
     mutationFn: (item: ApiUserMembership) =>
       item.status === "ACTIVE"
@@ -1671,14 +1698,8 @@ function UsersStep({ onServerChange }: { onServerChange: () => Promise<unknown> 
                 </Button>
                 <Button
                   className="save-action-button"
-                  disabled={
-                    form.name.trim().length < 3 ||
-                    !form.email.includes("@") ||
-                    form.password.length < 6 ||
-                    !form.roleId ||
-                    create.isPending
-                  }
-                  onClick={() => create.mutate()}
+                  disabled={create.isPending}
+                  onClick={submitCreate}
                 >
                   {create.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Salvar
                 </Button>
@@ -1765,29 +1786,52 @@ function UsersStep({ onServerChange }: { onServerChange: () => Promise<unknown> 
                 <Field label="Nome *">
                   <Input
                     value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    onChange={(e) => {
+                      setForm({ ...form, name: e.target.value });
+                      if (e.target.value.trim().length >= 3)
+                        setRequiredErrors((current) => ({ ...current, name: false }));
+                    }}
+                    aria-invalid={requiredErrors.name}
+                    className={requiredFieldClassName(requiredErrors.name)}
                   />
                 </Field>
                 <Field label="E-mail *">
                   <Input
                     type="email"
                     value={form.email}
-                    onChange={(e) =>
-                      setForm({ ...form, email: e.target.value.toLocaleLowerCase("en-US") })
-                    }
+                    onChange={(e) => {
+                      const email = e.target.value.toLocaleLowerCase("en-US");
+                      setForm({ ...form, email });
+                      if (email.includes("@"))
+                        setRequiredErrors((current) => ({ ...current, email: false }));
+                    }}
+                    aria-invalid={requiredErrors.email}
+                    className={requiredFieldClassName(requiredErrors.email)}
                   />
                 </Field>
                 <Field label="Senha *">
                   <Input
                     type="password"
                     value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    onChange={(e) => {
+                      setForm({ ...form, password: e.target.value });
+                      if (e.target.value.length >= 6)
+                        setRequiredErrors((current) => ({ ...current, password: false }));
+                    }}
+                    aria-invalid={requiredErrors.password}
+                    className={requiredFieldClassName(requiredErrors.password)}
                   />
                 </Field>
                 <Field label="Perfil *">
                   <Select
                     value={form.roleId}
-                    onChange={(e) => setForm({ ...form, roleId: e.target.value })}
+                    onChange={(e) => {
+                      setForm({ ...form, roleId: e.target.value });
+                      if (e.target.value)
+                        setRequiredErrors((current) => ({ ...current, roleId: false }));
+                    }}
+                    aria-invalid={requiredErrors.roleId}
+                    className={requiredFieldClassName(requiredErrors.roleId)}
                   >
                     {assignable.map((role) => (
                       <option key={role.id} value={role.id}>
@@ -2264,14 +2308,25 @@ function CatalogEditDialog({
   const [name, setName] = React.useState(initialName);
   const [detail, setDetail] = React.useState(initialDetail ?? "");
   const [busy, setBusy] = React.useState(false);
+  const [requiredErrors, setRequiredErrors] = React.useState({ name: false, detail: false });
   React.useEffect(() => {
     setName(initialName);
     setDetail(initialDetail ?? "");
+    setRequiredErrors({ name: false, detail: false });
   }, [initialDetail, initialName, open]);
   const save = async () => {
-    if (name.trim().length < 2) return toast.error("Informe um nome válido.");
-    if (detailRequired && !detail.trim())
-      return toast.error(`Informe ${detailLabel.toLowerCase()}.`);
+    const nextRequiredErrors = {
+      name: name.trim().length < 2,
+      detail: detailRequired && !detail.trim(),
+    };
+    if (nextRequiredErrors.name || nextRequiredErrors.detail) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast([
+        ...(nextRequiredErrors.name ? [nameLabel.replace(/\s*\*\s*$/, "")] : []),
+        ...(nextRequiredErrors.detail ? [detailLabel] : []),
+      ]);
+      return;
+    }
     setBusy(true);
     try {
       await onSave({ name: name.trim(), detail: detail.trim() });
@@ -2306,10 +2361,28 @@ function CatalogEditDialog({
     >
       <div className="space-y-4">
         <Field label={nameLabel}>
-          <Input value={name} onChange={(event) => setName(event.target.value)} />
+          <Input
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              if (event.target.value.trim().length >= 2)
+                setRequiredErrors((current) => ({ ...current, name: false }));
+            }}
+            aria-invalid={requiredErrors.name}
+            className={requiredFieldClassName(requiredErrors.name)}
+          />
         </Field>
         <Field label={`${detailLabel}${detailRequired ? " *" : ""}`}>
-          <Input value={detail} onChange={(event) => setDetail(event.target.value)} />
+          <Input
+            value={detail}
+            onChange={(event) => {
+              setDetail(event.target.value);
+              if (event.target.value.trim())
+                setRequiredErrors((current) => ({ ...current, detail: false }));
+            }}
+            aria-invalid={requiredErrors.detail}
+            className={requiredFieldClassName(requiredErrors.detail)}
+          />
         </Field>
       </div>
     </Modal>

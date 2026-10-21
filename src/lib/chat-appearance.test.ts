@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CHAT_BUBBLE_COLOR,
+  chatBackgroundStyle,
   contrastingTextColor,
   contrastRatio,
   normalizeHexColor,
@@ -17,5 +18,14 @@ describe("chat appearance", () => {
     expect(contrastingTextColor("#111827")).toBe("#FFFFFF");
     expect(contrastRatio("#FFFFFF", "#000000")).toBeGreaterThan(20);
     expect(contrastRatio("#FFFFFF", "#F8FAFC")).toBeLessThan(4.5);
+  });
+
+  it("mantém a imagem oficial sem cor e desliga a imagem para fundo sólido", () => {
+    expect(chatBackgroundStyle(null)).toBeUndefined();
+    expect(chatBackgroundStyle("#abcdef", "IMAGE")).toBeUndefined();
+    expect(chatBackgroundStyle("#abcdef", "COLOR")).toEqual({
+      backgroundColor: "#ABCDEF",
+      backgroundImage: "none",
+    });
   });
 });

@@ -656,16 +656,21 @@ export class MessagingOutboundService {
         }
 
         const connection = await this.resolveConnection(tx, input.tenantId, conversation);
-        const content =
-          resolvedContent && authorMembership && authorPermissions.includes("chat.agent_name.show")
+        const content = resolvedContent
+          ? authorMembership && authorPermissions.includes("chat.agent_name.show")
             ? await this.prepareScheduledOutboundText(tx, resolvedContent, {
                 tenantId: input.tenantId,
                 membershipId: authorMembership.id,
                 roleKey: authorMembership.role.key,
               })
+            : resolvedContent
+          : stored
+            ? null
             : resolvedContent;
         const now = new Date();
-        const preview = stored ? mediaPreview(messageType, content, stored.fileName) : content;
+        const preview = stored
+          ? mediaPreview(messageType, content, stored.fileName)
+          : (content ?? "");
         const message = await tx.message.create({
           data: {
             tenantId: input.tenantId,
@@ -796,7 +801,6 @@ export class MessagingOutboundService {
       const caption = await this.prepareOutboundMediaCaption(
         tx,
         stored.caption,
-        stored.messageType,
         conversation,
         current,
         effectiveAt,
@@ -1576,7 +1580,6 @@ export class MessagingOutboundService {
   private async prepareOutboundMediaCaption(
     tx: Prisma.TransactionClient,
     caption: string | null,
-    messageType: MessageType,
     conversation: { id: string; protocol?: string | null },
     current: AuthenticatedUser,
     effectiveAt: Date,
@@ -1593,22 +1596,13 @@ export class MessagingOutboundService {
           ),
         )
       : null;
+    if (!resolvedCaption) return null;
     if (!current.permissions?.includes("chat.agent_name.show")) return resolvedCaption;
-    if (
-      !resolvedCaption &&
-      messageType !== MessageType.IMAGE &&
-      messageType !== MessageType.AUDIO &&
-      messageType !== MessageType.VOICE
-    ) {
-      return null;
-    }
     const agentName = this.senderDisplayName
       ? await this.senderDisplayName.resolve(tx, current)
       : null;
     if (!agentName) return resolvedCaption;
-    return cleanMessageContent(
-      resolvedCaption ? `*${agentName}:*\n\n${resolvedCaption}` : `*${agentName}:*`,
-    );
+    return cleanMessageContent(`*${agentName}:*\n\n${resolvedCaption}`);
   }
 
   private async resolveConversationTemplate(
@@ -1702,7 +1696,7 @@ export class MessagingOutboundService {
       ? await this.senderDisplayName.resolveForMembership(tx, author)
       : null;
     if (!agentName) return content;
-    return cleanMessageContent(`*${agentName}:*\n\n${content}`);
+    return cleanMessageContent(content ? `*${agentName}:*\n\n${content}` : `*${agentName}:*`);
   }
 
   private async resolveMentionTargets(tenantId: string, conversationId: string, content: string) {

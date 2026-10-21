@@ -14,6 +14,52 @@ function controller() {
 }
 
 describe("bulk conversation actions", () => {
+  it("resolves every visible conversation in the chosen tab with the current filters", async () => {
+    const rows = Array.from({ length: 125 }, (_, index) => ({ id: `conversation-${index}` }));
+    const findMany = vi.fn().mockResolvedValue(rows);
+    const subject = new ConversationsController(
+      { conversation: { findMany } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const assign = vi.spyOn(subject, "assign").mockResolvedValue({} as never);
+    const customerId = "00000000-0000-4000-8000-000000000001";
+
+    await expect(
+      subject.bulkStart(
+        {
+          tabs: ["fila", "standby"],
+          q: "Maria",
+          source: "privado",
+          onlyUnread: true,
+          customerIds: [customerId],
+          instances: ["instance-a"],
+        },
+        user,
+      ),
+    ).resolves.toEqual({
+      succeeded: rows.map((row) => row.id),
+      failed: [],
+    });
+
+    expect(assign).toHaveBeenCalledTimes(125);
+    expect(findMany).toHaveBeenCalledWith({
+      where: expect.any(Object),
+      select: { id: true },
+      orderBy: { id: "asc" },
+    });
+    const where = JSON.stringify(findMany.mock.calls[0][0].where);
+    expect(where).toContain('"tenantId":"tenant-a"');
+    expect(where).toContain('"status":"ABERTA"');
+    expect(where).toContain('"status":"AGUARDANDO"');
+    expect(where).toContain('"unreadCount":{"gt":0}');
+    expect(where).toContain('"isGroup":false');
+    expect(where).toContain(customerId);
+    expect(where).toContain("instance-a");
+    expect(where).toContain("Maria");
+  });
+
   it("starts each selected conversation through the existing assignment validation", async () => {
     const subject = controller();
     const assign = vi.spyOn(subject, "assign").mockResolvedValue({} as never);

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { CaseUpper, Info } from "lucide-react";
+import { CaseSensitive, Info } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/modal";
 import { Card } from "@/components/ui-kit";
@@ -74,7 +74,7 @@ function RegistrationCasePage() {
       <Card>
         <div className="mb-4 flex items-start gap-3">
           <div className="rounded-lg bg-primary/10 p-2 text-primary">
-            <CaseUpper className="h-5 w-5" />
+            <CaseSensitive className="h-5 w-5" />
           </div>
           <div>
             <h2 className="text-base font-semibold">Padrão de Cadastros em Maiúsculas</h2>
@@ -130,7 +130,7 @@ function RegistrationCasePage() {
           </ul>
         )}
 
-        <div className="mt-4 flex gap-2 rounded-lg bg-surface-2 p-3 text-xs text-muted-foreground">
+        <div className="mt-4 flex gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             Ao desativar, registros já convertidos permanecem em maiúsculas. Fluxo de Bot e Agente

@@ -24,14 +24,14 @@ import {
   onboardingApi,
   organizationApi,
   type ApiConversation,
-  type ApiContact,
   type ApiContactInstanceOption,
+  type ApiMessageContactPickerItem,
 } from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 
 export type ActiveConversationRequest = {
   key: number;
-  contact: ApiContact;
+  contact: ApiMessageContactPickerItem;
   firstMessagePreview?: string | null;
 };
 
@@ -69,7 +69,7 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
   const instanceCatalogQuery = useQuery({
     queryKey: ["trixus", "contact-options"],
     queryFn: crmApi.contactOptions,
-    enabled: !!request && canStart,
+    enabled: !!request && canStart && (user?.permissions?.includes("contacts.read") ?? false),
     staleTime: 30_000,
   });
   const existingConversationsQuery = useQuery({
@@ -304,7 +304,6 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
       !request ||
       connectionsLoading ||
       departmentsQuery.isLoading ||
-      instanceCatalogQuery.isLoading ||
       existingConversationsQuery.isLoading
     )
       return;
@@ -384,7 +383,6 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
     instances,
     isTenantAdmin,
     instanceCatalogQuery.data?.instances,
-    instanceCatalogQuery.isLoading,
     request,
   ]);
 

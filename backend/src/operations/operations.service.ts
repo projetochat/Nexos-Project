@@ -450,6 +450,15 @@ export class OperationsService {
         orderBy: { createdAt: "asc" },
       }),
     ]);
+    const closureMessage = [...messages]
+      .reverse()
+      .find(
+        (message) =>
+          message.direction === MessageDirection.SYSTEM &&
+          message.type === MessageType.SYSTEM &&
+          (message.content?.startsWith("Conversa encerrada") ||
+            message.content?.startsWith("Atendimento encerrado")),
+      );
     const events = [
       {
         at: conversation.createdAt,
@@ -478,7 +487,7 @@ export class OperationsService {
               ? "message.inbound"
               : "message.outbound",
         origin: message.direction.toLowerCase(),
-        user: message.authorMembership?.user.name ?? null,
+        user: message.authorMembership?.user.name ?? message.participantName ?? null,
         description:
           message.direction === MessageDirection.SYSTEM
             ? (message.content ?? "")
@@ -497,7 +506,12 @@ export class OperationsService {
               at: conversation.closedAt,
               event: "conversation.closed",
               origin: "system",
-              user: conversation.assignedMembership?.user.name ?? null,
+              user:
+                closureMessage?.authorMembership?.user.name ??
+                closureMessage?.participantName ??
+                conversation.assignedMembership?.user.name ??
+                conversation.assignedMembershipNameSnapshot ??
+                null,
               description: "Conversa encerrada",
             },
           ]
@@ -977,6 +991,10 @@ function conversationWhere(
           { contact: { name: { contains: q, mode: "insensitive" } } },
           { contact: { phone: { contains: q, mode: "insensitive" } } },
           { groupName: { contains: q, mode: "insensitive" } },
+          {
+            assignedMembershipId: null,
+            assignedMembershipNameSnapshot: { contains: q, mode: "insensitive" },
+          },
           { assignedMembership: { user: { name: { contains: q, mode: "insensitive" } } } },
           { department: { name: { contains: q, mode: "insensitive" } } },
         ],
@@ -1016,6 +1034,7 @@ function serializeConversation(
     contact_id: conversation.contactId,
     department_id: conversation.departmentId,
     assigned_membership_id: conversation.assignedMembershipId,
+    assigned_membership_name_snapshot: conversation.assignedMembershipNameSnapshot,
     status: conversation.status.toLowerCase(),
     protocolo: conversation.protocol,
     created_at: conversation.createdAt.toISOString(),
@@ -1069,8 +1088,10 @@ function serializeHistoryConversation(
   current: Pick<AuthenticatedUser, "roleKey" | "permissions">,
 ) {
   const serialized = serializeConversation(conversation, current);
-  const closureMembership =
-    conversation.messages?.[0]?.authorMembership ?? conversation.assignedMembership;
+  const closureMessage = conversation.messages?.[0];
+  const closureMembership = closureMessage?.authorMembership;
+  const preservedCloserName = closureMessage?.participantName?.trim();
+  const fallbackMembership = conversation.assignedMembership;
   return {
     ...serialized,
     closed_by: closureMembership
@@ -1080,7 +1101,21 @@ function serializeHistoryConversation(
           nome: closureMembership.presentationName?.trim() || closureMembership.user.name,
           email: closureMembership.user.email,
         }
-      : null,
+      : preservedCloserName
+        ? {
+            id: null,
+            membershipId: null,
+            nome: preservedCloserName,
+            email: null,
+          }
+        : fallbackMembership
+          ? {
+              id: fallbackMembership.user.id,
+              membershipId: fallbackMembership.id,
+              nome: fallbackMembership.presentationName?.trim() || fallbackMembership.user.name,
+              email: fallbackMembership.user.email,
+            }
+          : null,
   };
 }
 

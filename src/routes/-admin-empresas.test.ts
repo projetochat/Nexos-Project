@@ -5,9 +5,19 @@ const source = readFileSync(new URL("./admin.empresas.tsx", import.meta.url), "u
 
 describe("cadastro administrativo de clientes", () => {
   it("torna o CNPJ opcional somente durante a prospecção", () => {
-    expect(source).toContain('const requiresDocument = form.status !== "PROSPECTING";');
-    expect(source).toContain("(requiresDocument && document.length !== 14)");
+    expect(source).toContain(
+      'const requiresRequiredRegistrationData = form.status !== "PROSPECTING";',
+    );
+    expect(source).toContain("requiresRequiredRegistrationData && document.length !== 14");
     expect(source).toContain('form.status === "PROSPECTING" ? "" : " *"');
+  });
+
+  it("torna responsável e e-mail opcionais no Prospect e volta a exigi-los ao ativar", () => {
+    expect(source).toContain("requiresRequiredRegistrationData && !form.responsibleName.trim()");
+    expect(source).toContain('label={`Responsável${form.status === "PROSPECTING" ? "" : " *"}`}');
+    expect(source).toContain(
+      'label={`E-mail do responsável${form.status === "PROSPECTING" ? "" : " *"}`}',
+    );
   });
 
   it("exclui definitivamente apenas clientes nunca usados e cancela os que têm histórico", () => {

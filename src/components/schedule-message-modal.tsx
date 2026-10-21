@@ -13,6 +13,7 @@ import {
   mergeMessageVariables,
 } from "@/lib/message-variable-options";
 import { onRealtimeEvent } from "@/lib/realtime/client";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 export function ScheduleMessageModal({
   open,
@@ -39,6 +40,10 @@ export function ScheduleMessageModal({
   const [removing, setRemoving] = React.useState<ApiSchedule | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  const [requiredErrors, setRequiredErrors] = React.useState({
+    message: false,
+    scheduleAt: false,
+  });
 
   const schedules = useQuery({
     queryKey: ["trixus", "schedules", "conversation", conversationId],
@@ -74,6 +79,7 @@ export function ScheduleMessageModal({
     setAttachment(null);
     setScheduleAt("");
     setError("");
+    setRequiredErrors({ message: false, scheduleAt: false });
   }, [initialContent, open]);
 
   const resetForm = React.useCallback(() => {
@@ -82,6 +88,7 @@ export function ScheduleMessageModal({
     setAttachment(null);
     setScheduleAt("");
     setError("");
+    setRequiredErrors({ message: false, scheduleAt: false });
   }, [initialContent]);
 
   const refresh = async () => {
@@ -90,8 +97,16 @@ export function ScheduleMessageModal({
 
   const save = async () => {
     const trimmedContent = content.trim();
-    if ((!trimmedContent && !attachment) || !scheduleAt) {
-      setError("Informe a mensagem ou um anexo, além da data e do horário.");
+    const nextRequiredErrors = {
+      message: !trimmedContent && !attachment,
+      scheduleAt: !scheduleAt,
+    };
+    if (nextRequiredErrors.message || nextRequiredErrors.scheduleAt) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast([
+        ...(nextRequiredErrors.message ? ["Mensagem ou anexo"] : []),
+        ...(nextRequiredErrors.scheduleAt ? ["Data e horário"] : []),
+      ]);
       return;
     }
     if (trimmedContent.length > 1000) {
@@ -176,13 +191,15 @@ export function ScheduleMessageModal({
                 attachment={attachment}
                 variables={variables}
                 disabled={busy}
-                invalid={content.trim().length > 1000}
+                invalid={requiredErrors.message || content.trim().length > 1000}
                 placeholder="Escreva a mensagem"
                 showEmoji
                 attachmentLayout="segmented"
                 onChange={(nextContent, nextAttachment) => {
                   setContent(nextContent);
                   setAttachment(nextAttachment);
+                  if (nextContent.trim() || nextAttachment)
+                    setRequiredErrors((current) => ({ ...current, message: false }));
                   setError("");
                 }}
               />
@@ -192,9 +209,13 @@ export function ScheduleMessageModal({
                 <Input
                   type="datetime-local"
                   value={scheduleAt}
-                  onChange={(event) => setScheduleAt(event.target.value)}
-                  className="block w-full min-w-0 max-w-full bg-card"
-                  required
+                  onChange={(event) => {
+                    setScheduleAt(event.target.value);
+                    if (event.target.value)
+                      setRequiredErrors((current) => ({ ...current, scheduleAt: false }));
+                  }}
+                  aria-invalid={requiredErrors.scheduleAt}
+                  className={`block w-full min-w-0 max-w-full bg-card ${requiredFieldClassName(requiredErrors.scheduleAt)}`}
                 />
               </div>
             </Field>

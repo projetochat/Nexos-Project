@@ -46,6 +46,7 @@ import { sortByOptionLabel } from "@/lib/sort-options";
 import { organizationApi, type ApiRole, type ApiUserMembership } from "@/lib/trixus-api";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/lib/session";
+import { showRequiredFieldsToast } from "@/lib/required-fields";
 import { reconcileRoleChatScopes } from "@/lib/role-chat-scopes";
 import { Switch } from "@/components/ui/switch";
 import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
@@ -108,11 +109,6 @@ const PERMISSION_GROUPS: Array<{
         description: "Permite visualizar as conversas.",
       },
       {
-        id: "leads.read",
-        label: "Ver leads",
-        description: "Permite visualizar a fila de leads.",
-      },
-      {
         id: "messages.send",
         label: "Enviar mensagens",
         description: "Permite enviar mensagens para os contatos.",
@@ -151,6 +147,11 @@ const PERMISSION_GROUPS: Array<{
         id: "chat.conversations.view_all_active",
         label: "Ver todas as conversas",
         description: "Permite visualizar conversas de outros atendentes.",
+      },
+      {
+        id: "leads.read",
+        label: "Ver leads",
+        description: "Permite visualizar a fila de leads.",
       },
       {
         id: "chat.bulk_actions.execute",
@@ -903,6 +904,7 @@ export function PerfilForm({
     workSchedule: defaultWorkSchedule(),
   });
   const [error, setError] = React.useState("");
+  const [nameRequired, setNameRequired] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<PerfilTab>("geral");
   const duplicateNameError = (name: string) => {
     const normalizedName = normalizeRoleName(name);
@@ -980,12 +982,16 @@ export function PerfilForm({
           },
     );
     setError("");
+    setNameRequired(false);
     setActiveTab(initialTab);
   }, [clone, connections, grantablePermissionIds, initial, initialTab, open, permissionGroups]);
 
   const submit = () => {
     if (!form.name || form.name.trim().length < 2) {
-      setError("Informe o nome.");
+      setError("");
+      setNameRequired(true);
+      setActiveTab("geral");
+      showRequiredFieldsToast(["Nome"]);
       return;
     }
     const duplicateError = duplicateNameError(form.name);
@@ -1105,9 +1111,13 @@ export function PerfilForm({
             <GeneralTab
               form={form}
               error={error}
+              nameRequired={nameRequired}
               onChange={(patch) => {
                 setForm((current) => ({ ...current, ...patch }));
-                if (patch.name !== undefined) setError(duplicateNameError(patch.name));
+                if (patch.name !== undefined) {
+                  setError(duplicateNameError(patch.name));
+                  if (patch.name.trim().length >= 2) setNameRequired(false);
+                }
               }}
             />
           )}
@@ -1201,10 +1211,12 @@ function PerfilTabs({
 function GeneralTab({
   form,
   error,
+  nameRequired,
   onChange,
 }: {
   form: PerfilFormData;
   error: string;
+  nameRequired: boolean;
   onChange: (patch: Partial<PerfilFormData>) => void;
 }) {
   return (
@@ -1215,6 +1227,7 @@ function GeneralTab({
             value={form.name}
             onChange={(event) => onChange({ name: event.target.value })}
             placeholder="Ex: Atendente Senior"
+            aria-invalid={nameRequired || Boolean(error)}
           />
         </Field>
         <Field label="Cor">

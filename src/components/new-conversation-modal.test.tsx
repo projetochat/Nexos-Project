@@ -20,6 +20,16 @@ const mocks = vi.hoisted(() => ({
   groupInstances: vi.fn(),
   createGroup: vi.fn(),
   role: "operator",
+  permissions: [
+    "conversations.assign",
+    "messages.send",
+    "contacts.read",
+    "contacts.create",
+    "contacts.update",
+    "conversations.read",
+    "groups.read",
+    "groups.create",
+  ],
   connections: [
     { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
     { id: "b", name: "Instância B", status: "connected", providerType: "evolution" },
@@ -45,16 +55,7 @@ vi.mock("@/lib/session", () => ({
         nome: "Usuário de teste",
         email: "user@trixus.test",
         role: mocks.role,
-        permissions: [
-          "conversations.assign",
-          "messages.send",
-          "contacts.read",
-          "contacts.create",
-          "contacts.update",
-          "conversations.read",
-          "groups.read",
-          "groups.create",
-        ],
+        permissions: mocks.permissions,
       },
     }),
 }));
@@ -75,7 +76,7 @@ vi.mock("../routes/contatos", () => ({
 }));
 vi.mock("@/lib/trixus-api", () => ({
   crmApi: {
-    listContacts: (...args: unknown[]) => mocks.list(...args),
+    listContactsForMessagePicker: (...args: unknown[]) => mocks.list(...args),
     contactOptions: async () => ({
       instances: [
         { id: "a", value: "a", name: "Instância A", color: "#22c55e", status: "CONNECTED" },
@@ -135,6 +136,16 @@ async function mount() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.role = "operator";
+  mocks.permissions = [
+    "conversations.assign",
+    "messages.send",
+    "contacts.read",
+    "contacts.create",
+    "contacts.update",
+    "conversations.read",
+    "groups.read",
+    "groups.create",
+  ];
   mocks.connections = [
     { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
     { id: "b", name: "Instância B", status: "connected", providerType: "evolution" },
@@ -207,6 +218,23 @@ afterEach(async () => {
 });
 
 describe("new conversation contact picker", () => {
+  it("loads contacts and starts a conversation with messages.send even without contacts.read", async () => {
+    mocks.permissions = ["messages.send", "conversations.read"];
+    mocks.connections = [
+      { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
+    ];
+
+    await mount();
+
+    expect(mocks.list).toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Contato 000");
+    await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
+    await flush();
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: "0", connectionId: "a" }),
+    );
+  });
+
   it("shows all contacts, searches beyond the first 100 and clears the search", async () => {
     await mount();
     const dialog = document.querySelector('[role="dialog"]')!;

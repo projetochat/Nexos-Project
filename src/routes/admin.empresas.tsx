@@ -18,9 +18,12 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { InternationalLocationFields } from "@/components/international-location-fields";
+import type { InternationalLocationValue } from "@/components/international-location-value";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { formatPlatformDateTime } from "@/lib/format";
-import { maskCnpj, onlyDigits } from "@/lib/input-masks";
+import { isValidEmail, maskCnpj, onlyDigits } from "@/lib/input-masks";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import { platformApi, type PlatformClient, type PlatformClientPayload } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/empresas")({
@@ -57,13 +60,23 @@ const STATES = [
   "SE",
   "TO",
 ];
-const EMPTY_FORM: PlatformClientPayload = {
+
+type PlatformClientForm = PlatformClientPayload & {
+  addressCountryCode: string;
+  addressDivisionId: string;
+};
+
+const EMPTY_FORM: PlatformClientForm = {
   name: "",
   document: "",
   responsibleName: "",
   responsibleEmail: "",
   city: "",
   state: "",
+  country: "Brasil",
+  cityId: null,
+  addressCountryCode: "BR",
+  addressDivisionId: "",
   registeredAt: toLocalDateTimeValue(new Date()),
   status: "ACTIVE",
   notes: "",
@@ -99,8 +112,8 @@ const CLIENT_STATUS_OPTIONS: Array<{
   },
   {
     value: "PROSPECTING",
-    label: "Prospecção",
-    badgeLabel: "PROSPECÇÃO",
+    label: "Prospect",
+    badgeLabel: "PROSPECT",
     tone: "warning",
     color: "var(--color-warning)",
   },
@@ -251,7 +264,7 @@ function ClientesAdmin() {
                 <option value="ACTIVE">Ativo</option>
                 <option value="SUSPENDED">Suspenso</option>
                 <option value="CANCELLED">Cancelado</option>
-                <option value="PROSPECTING">Prospecção</option>
+                <option value="PROSPECTING">Prospect</option>
               </Select>
             </Field>
           </div>
@@ -518,9 +531,12 @@ function ClientForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [form, setForm] = React.useState<PlatformClientPayload>(EMPTY_FORM);
+  const [form, setForm] = React.useState<PlatformClientForm>(EMPTY_FORM);
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [saving, setSaving] = React.useState(false);
+  const isEditing = Boolean(initial?.id) && !forceCreate;
   React.useEffect(() => {
+    setErrors({});
     setForm(
       initial
         ? {
@@ -530,6 +546,10 @@ function ClientForm({
             responsibleEmail: initial.responsibleEmail.toLocaleLowerCase("en-US"),
             city: initial.city,
             state: initial.state,
+            country: initial.country ?? "Brasil",
+            cityId: initial.cityId ?? null,
+            addressCountryCode: (initial.country ?? "Brasil") === "Brasil" ? "BR" : "",
+            addressDivisionId: "",
             registeredAt: toLocalDateTimeValue(new Date(initial.registeredAt)),
             status: initial.status,
             notes: initial.notes ?? "",
@@ -537,28 +557,71 @@ function ClientForm({
         : { ...EMPTY_FORM, registeredAt: toLocalDateTimeValue(new Date()) },
     );
   }, [initial, open]);
-  const isEditing = Boolean(initial?.id) && !forceCreate;
-  const update = (key: keyof PlatformClientPayload, value: string) =>
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      const isProspect = form.status === "PROSPECTING";
+      if (form.name.trim()) delete next.name;
+      if (isProspect || onlyDigits(form.document).length === 14) delete next.document;
+      if (isProspect || form.responsibleName.trim()) delete next.responsibleName;
+      if ((isProspect && !form.responsibleEmail.trim()) || isValidEmail(form.responsibleEmail))
+        delete next.responsibleEmail;
+      if (form.city.trim() && (isEditing || form.cityId)) delete next.city;
+      if (form.registeredAt) delete next.registeredAt;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [form, isEditing]);
+  const update = (key: keyof PlatformClientForm, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
   async function save() {
     const document = onlyDigits(form.document);
-    const requiresDocument = form.status !== "PROSPECTING";
-    if (
-      !form.name.trim() ||
-      (requiresDocument && document.length !== 14) ||
-      !form.responsibleName.trim() ||
-      !form.responsibleEmail.includes("@") ||
-      !form.city.trim() ||
-      !form.state ||
-      !form.registeredAt
-    ) {
-      toast.error("Preencha corretamente todos os campos obrigatórios.");
+    const requiresRequiredRegistrationData = form.status !== "PROSPECTING";
+    const hasInvalidOptionalEmail = Boolean(
+      form.responsibleEmail.trim() && !isValidEmail(form.responsibleEmail),
+    );
+    const nextErrors: Record<string, boolean> = {
+      ...(!form.name.trim() ? { name: true } : {}),
+      ...(requiresRequiredRegistrationData && document.length !== 14 ? { document: true } : {}),
+      ...(requiresRequiredRegistrationData && !form.responsibleName.trim()
+        ? { responsibleName: true }
+        : {}),
+      ...(requiresRequiredRegistrationData && !form.responsibleEmail.includes("@")
+        ? { responsibleEmail: true }
+        : {}),
+      ...(hasInvalidOptionalEmail ? { responsibleEmail: true } : {}),
+      ...(!form.city.trim() || (!form.cityId && !form.state) || (!isEditing && !form.cityId)
+        ? { city: true }
+        : {}),
+      ...(!form.registeredAt ? { registeredAt: true } : {}),
+    };
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors);
+      const requiredFields = [
+        ["name", "Nome do cliente"],
+        ["document", "CNPJ"],
+        ["responsibleName", "Responsável"],
+        ["responsibleEmail", "E-mail do responsável"],
+        ["city", "Cidade"],
+        ["registeredAt", "Data de cadastro"],
+      ]
+        .filter(
+          ([key]) =>
+            nextErrors[key] && !(key === "responsibleEmail" && !requiresRequiredRegistrationData),
+        )
+        .map(([, label]) => label);
+      if (requiredFields.length) showRequiredFieldsToast(requiredFields);
+      else if (hasInvalidOptionalEmail)
+        toast.error("Informe um e-mail válido para o responsável.", {
+          position: "top-right",
+        });
       return;
     }
+    if (!form.registeredAt) return;
     setSaving(true);
     try {
-      const payload = {
-        ...form,
+      const { addressCountryCode: _countryCode, addressDivisionId: _divisionId, ...fields } = form;
+      const payload: PlatformClientPayload = {
+        ...fields,
         document,
         registeredAt: new Date(form.registeredAt).toISOString(),
       };
@@ -595,6 +658,8 @@ function ClientForm({
             value={form.name}
             onChange={(event) => update("name", event.target.value)}
             placeholder="Digite o nome do cliente..."
+            className={requiredFieldClassName(Boolean(errors.name))}
+            aria-invalid={Boolean(errors.name)}
           />
         </Field>
         <Field label="Situação *">
@@ -612,16 +677,20 @@ function ClientForm({
             onChange={(event) => update("document", maskCnpj(event.target.value))}
             placeholder="00.000.000/0000-00"
             inputMode="numeric"
+            className={requiredFieldClassName(Boolean(errors.document))}
+            aria-invalid={Boolean(errors.document)}
           />
         </Field>
-        <Field label="Responsável *">
+        <Field label={`Responsável${form.status === "PROSPECTING" ? "" : " *"}`}>
           <Input
             value={form.responsibleName}
             onChange={(event) => update("responsibleName", event.target.value)}
             placeholder="Nome do contato responsável..."
+            className={requiredFieldClassName(Boolean(errors.responsibleName))}
+            aria-invalid={Boolean(errors.responsibleName)}
           />
         </Field>
-        <Field label="E-mail do responsável *">
+        <Field label={`E-mail do responsável${form.status === "PROSPECTING" ? "" : " *"}`}>
           <Input
             type="email"
             value={form.responsibleEmail}
@@ -629,28 +698,44 @@ function ClientForm({
               update("responsibleEmail", event.target.value.toLocaleLowerCase("en-US"))
             }
             placeholder="exemplo@empresa.com.br"
+            className={requiredFieldClassName(Boolean(errors.responsibleEmail))}
+            aria-invalid={Boolean(errors.responsibleEmail)}
           />
         </Field>
-        <Field label="Cidade *">
-          <Input
-            value={form.city}
-            onChange={(event) => update("city", event.target.value)}
-            placeholder="Digite a cidade..."
+        <div className="sm:col-span-2">
+          <InternationalLocationFields
+            value={{
+              cityId: form.cityId ?? "",
+              city: form.city,
+              divisionId: form.addressDivisionId,
+              state: form.state,
+              countryCode: form.addressCountryCode,
+              country: form.country,
+            }}
+            onChange={(location: InternationalLocationValue) =>
+              setForm((current) => ({
+                ...current,
+                cityId: location.cityId || null,
+                city: location.city,
+                addressDivisionId: location.divisionId,
+                state: location.state,
+                addressCountryCode: location.countryCode,
+                country: location.country,
+              }))
+            }
+            cityError={errors.city ? "Cidade obrigatória" : undefined}
+            errorPresentation="border"
+            cityResultsPlacement="top"
+            lockDivision
           />
-        </Field>
-        <Field label="UF *">
-          <Select value={form.state} onChange={(event) => update("state", event.target.value)}>
-            <option value="">Selecione...</option>
-            {STATES.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </Select>
-        </Field>
+        </div>
         <Field label="Data de cadastro *">
           <Input
             type="datetime-local"
             value={form.registeredAt}
             onChange={(event) => update("registeredAt", event.target.value)}
+            className={requiredFieldClassName(Boolean(errors.registeredAt))}
+            aria-invalid={Boolean(errors.registeredAt)}
           />
         </Field>
         <div className="sm:col-span-2">

@@ -57,6 +57,7 @@ import {
 } from "@/lib/group-contact-presentation";
 import { onlyDigits } from "@/lib/input-masks";
 import { useSession } from "@/lib/session";
+import { showRequiredFieldsToast } from "@/lib/required-fields";
 
 export const Route = createFileRoute("/grupos")({ component: GroupsPage });
 
@@ -616,12 +617,14 @@ function InstanceSelect({
   instances,
   emptyLabel,
   extraOptions = [],
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   instances: ApiContactInstanceOption[];
   emptyLabel: string;
   extraOptions?: Array<{ value: string; label: string }>;
+  invalid?: boolean;
 }) {
   return (
     <InstanceFilterSelect
@@ -634,6 +637,7 @@ function InstanceSelect({
       }))}
       extraOptions={extraOptions}
       allLabel={emptyLabel}
+      invalid={invalid}
     />
   );
 }
@@ -667,6 +671,7 @@ export function CreateGroupModal({
   const imageInputRef = React.useRef<HTMLInputElement | null>(null);
   const descriptionRef = React.useRef<HTMLTextAreaElement | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [requiredErrors, setRequiredErrors] = React.useState<Record<string, boolean>>({});
   const picker = useGroupContactPicker(open, availableQuery);
 
   React.useEffect(() => {
@@ -680,7 +685,18 @@ export function CreateGroupModal({
     setDescription("");
     setImageDataUrl(null);
     setBusy(false);
+    setRequiredErrors({});
   }, [instances, open]);
+
+  React.useEffect(() => {
+    setRequiredErrors((current) => {
+      const next = { ...current };
+      if (name.trim().length >= 2) delete next.name;
+      if (connectionId) delete next.connectionId;
+      if (selectedContacts.length) delete next.participants;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [connectionId, name, selectedContacts.length]);
 
   const filteredContacts = React.useMemo(() => {
     const selected = new Set(selectedContacts.map((contact) => contact.id));
@@ -713,9 +729,25 @@ export function CreateGroupModal({
   };
 
   const goToDetails = () => {
-    if (name.trim().length < 2) return toast.error("Informe o nome do grupo.");
-    if (!connectionId) return toast.error("Selecione uma instância.");
-    if (!selectedContacts.length) return toast.error("Selecione ao menos um participante.");
+    const nextErrors: Record<string, boolean> = {};
+    const pendingFields: string[] = [];
+    if (name.trim().length < 2) {
+      nextErrors.name = true;
+      pendingFields.push("Nome do grupo");
+    }
+    if (!connectionId) {
+      nextErrors.connectionId = true;
+      pendingFields.push("Instância");
+    }
+    if (!selectedContacts.length) {
+      nextErrors.participants = true;
+      pendingFields.push("Participantes");
+    }
+    if (pendingFields.length) {
+      setRequiredErrors(nextErrors);
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
     setStep("details");
   };
 
@@ -765,6 +797,7 @@ export function CreateGroupModal({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Digite o nome do grupo"
+                aria-invalid={Boolean(requiredErrors.name)}
               />
             </Field>
             <Field label="Instância *">
@@ -773,6 +806,7 @@ export function CreateGroupModal({
                 onChange={setConnectionId}
                 instances={instances}
                 emptyLabel="Selecione uma instância"
+                invalid={Boolean(requiredErrors.connectionId)}
               />
             </Field>
           </div>
@@ -822,8 +856,11 @@ export function CreateGroupModal({
               />
             </section>
 
-            {selectedContacts.length > 0 && (
-              <section className="order-1 min-w-0 rounded-xl border border-border p-3 sm:p-4 lg:order-2">
+            {(selectedContacts.length > 0 || requiredErrors.participants) && (
+              <section
+                aria-invalid={Boolean(requiredErrors.participants)}
+                className={`order-1 min-w-0 rounded-xl border p-3 sm:p-4 lg:order-2 ${requiredErrors.participants ? "border-destructive" : "border-border"}`}
+              >
                 <div className="mb-3 flex items-center gap-2">
                   <div className="flex items-center gap-2">
                     <h3 className="text-lg font-semibold">Contatos selecionados</h3>
@@ -955,6 +992,7 @@ function GroupDetailModal({
   const [busy, setBusy] = React.useState<string | null>(null);
   const viewMode = React.useMemo(() => Boolean(group?.id), [group?.id]);
   const [editingName, setEditingName] = React.useState(false);
+  const [editNameRequired, setEditNameRequired] = React.useState(false);
   const [editingDescription, setEditingDescription] = React.useState(false);
   const initializedGroupIdRef = React.useRef<string | null>(null);
   const descriptionRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -974,6 +1012,7 @@ function GroupDetailModal({
     setSelectedQuery("");
     setBusy(null);
     setEditingName(false);
+    setEditNameRequired(false);
     setEditingDescription(false);
   }, [group]);
 
@@ -1033,7 +1072,11 @@ function GroupDetailModal({
 
   const saveName = () => {
     if (!group) return;
-    if (name.trim().length < 2) return toast.error("Informe o nome do grupo.");
+    if (name.trim().length < 2) {
+      setEditNameRequired(true);
+      showRequiredFieldsToast(["Nome do grupo"]);
+      return;
+    }
     void run("name", async () => {
       const updated = await groupsApi.updateName(group.id, { name: name.trim() });
       onGroupChange(updated);
@@ -1057,6 +1100,7 @@ function GroupDetailModal({
   const cancelNameEdit = () => {
     setName(group?.name ?? "");
     setEditingName(false);
+    setEditNameRequired(false);
   };
 
   const cancelDescriptionEdit = () => {
@@ -1174,10 +1218,14 @@ function GroupDetailModal({
                           <Input
                             autoFocus
                             value={name}
-                            onChange={(event) => setName(event.target.value)}
+                            onChange={(event) => {
+                              setName(event.target.value);
+                              if (event.target.value.trim().length >= 2) setEditNameRequired(false);
+                            }}
                             disabled={busy === "name"}
                             className="min-h-9 pr-9"
                             placeholder="Nome do grupo"
+                            aria-invalid={editNameRequired}
                           />
                           <button
                             type="button"

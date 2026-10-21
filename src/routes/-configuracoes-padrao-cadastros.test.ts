@@ -13,6 +13,8 @@ describe("D29 registration uppercase settings", () => {
     expect(layoutSource.indexOf('label: "Padrão de Cadastros"')).toBeLessThan(
       layoutSource.indexOf('label: "Campos Adicionais"'),
     );
+    expect(layoutSource).toContain("CaseSensitive");
+    expect(layoutSource).toContain("lg:grid-cols-[264px_minmax(0,1fr)]");
   });
 
   it("exposes all twelve independent toggles with accessible switch semantics", () => {
@@ -42,5 +44,7 @@ describe("D29 registration uppercase settings", () => {
     expect(routeSource).toContain(
       "Ao desativar, registros já convertidos permanecem em maiúsculas.",
     );
+    expect(routeSource).toContain("border-blue-200 bg-blue-50");
+    expect(routeSource).toContain("text-blue-800");
   });
 });

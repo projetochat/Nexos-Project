@@ -21,10 +21,10 @@ describe("contratos visuais de clientes da plataforma", () => {
     expect(clientsSource).toContain('type="datetime-local"');
   });
 
-  it("oferece prospecção no filtro, formulário e badge", () => {
-    expect(clientsSource).toContain('<option value="PROSPECTING">Prospecção</option>');
+  it("oferece Prospect no filtro, formulário e badge", () => {
+    expect(clientsSource).toContain('<option value="PROSPECTING">Prospect</option>');
     expect(clientsSource).toContain('value: "PROSPECTING"');
-    expect(clientsSource).toContain('badgeLabel: "PROSPECÇÃO"');
+    expect(clientsSource).toContain('badgeLabel: "PROSPECT"');
     expect(clientsSource).toContain('tone: "warning"');
   });
 });

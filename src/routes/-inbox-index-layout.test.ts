@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(new URL("./inbox.index.tsx", import.meta.url), "utf8");
+const source = readFileSync(resolve(process.cwd(), "src/routes/inbox.index.tsx"), "utf8");
 
 describe("Inbox visual requirements", () => {
   it("keeps the new-conversation modal and its result area at stable sizes", () => {
@@ -15,7 +16,10 @@ describe("Inbox visual requirements", () => {
     expect(source).toContain("Transferência em Massa");
     expect(source).toContain("Fechar Conversas em Massa");
     expect(source).toContain('permissions.includes("chat.bulk_actions.execute")');
-    expect(source).toContain("selectedConversationIds.size === 0");
+    expect(source).not.toContain("selectedConversationIds");
+    expect(source).not.toContain("Selecionar conversa de");
+    expect(source).toContain("selection={bulkSelection}");
+    expect(source).toContain("queues={activeTabs.map");
     expect(source).toContain("data-[highlighted]:bg-surface-2");
   });
 
@@ -26,5 +30,15 @@ describe("Inbox visual requirements", () => {
     expect(source).not.toContain("px-1 font-mono text-[9px]");
     expect(source).toContain("text-primary-foreground");
     expect(source).toContain("{counts[t.id]}");
+  });
+
+  it("associates Nova Conversa only with the Chat send permission", () => {
+    expect(
+      source.match(/const canStartConversation = canStartActiveConversation\(permissions\);/g),
+    ).toHaveLength(2);
+    expect(source).not.toContain(
+      'canStartActiveConversation(permissions) && permissions.includes("contacts.read")',
+    );
+    expect(source).toContain("crmApi.listContactsForMessagePicker");
   });
 });

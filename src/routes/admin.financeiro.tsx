@@ -39,6 +39,7 @@ import {
   maskPlatformMoney,
   parsePlatformMoneyToCents,
 } from "@/lib/platform-field-formats";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   platformApi,
   type OperationalPeriod,
@@ -553,6 +554,7 @@ function InvoiceForm({
   const [referenceDate, setReferenceDate] = React.useState("");
   const [reference, setReference] = React.useState("");
   const [notes, setNotes] = React.useState("");
+  const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [saving, setSaving] = React.useState(false);
   const availableSubscriptions = subscriptions.filter((rawItem) => {
     const item = rawItem as unknown as FinanceSubscription;
@@ -561,6 +563,7 @@ function InvoiceForm({
 
   React.useEffect(() => {
     if (!open) return;
+    setErrors({});
     const first = initial?.subscription
       ? subscriptions.find((item) => item.id === initial.subscription?.id)
       : subscriptions[0];
@@ -591,6 +594,19 @@ function InvoiceForm({
   const paidCents = parsePlatformMoneyToCents(paid);
   const totalCents = Math.max(0, subtotalCents - discountCents);
 
+  React.useEffect(() => {
+    setErrors((current) => {
+      const next = { ...current };
+      if (tenantId) delete next.tenantId;
+      if (subscriptionId) delete next.subscriptionId;
+      if (dueAt) delete next.dueAt;
+      if (referenceDate) delete next.referenceDate;
+      if (reference.trim()) delete next.reference;
+      if (subtotalCents > 0) delete next.amount;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [dueAt, reference, referenceDate, subscriptionId, subtotalCents, tenantId]);
+
   function changeTenant(nextTenantId: string) {
     const firstSubscription = subscriptions.find((rawItem) => {
       const item = rawItem as unknown as FinanceSubscription;
@@ -602,17 +618,36 @@ function InvoiceForm({
 
   async function save() {
     const subscription = subscriptions.find((item) => item.id === subscriptionId);
-    if (
-      !subscription ||
-      !dueAt ||
-      !referenceDate ||
-      !reference.trim() ||
-      subtotalCents <= 0 ||
-      discountCents < 0 ||
-      discountCents > subtotalCents ||
-      paidCents > totalCents
-    ) {
-      toast.error("Informe cliente, plano, valores e vencimento válidos.");
+    const nextErrors: Record<string, boolean> = {
+      ...(!tenantId ? { tenantId: true } : {}),
+      ...(!subscription ? { subscriptionId: true } : {}),
+      ...(!dueAt ? { dueAt: true } : {}),
+      ...(!referenceDate ? { referenceDate: true } : {}),
+      ...(!reference.trim() ? { reference: true } : {}),
+    };
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors);
+      showRequiredFieldsToast(
+        [
+          ["tenantId", "Cliente"],
+          ["subscriptionId", "Plano"],
+          ["dueAt", "Data de vencimento"],
+          ["referenceDate", "Data de referência"],
+          ["reference", "Referência"],
+        ]
+          .filter(([key]) => nextErrors[key])
+          .map(([, label]) => label),
+      );
+      return;
+    }
+    if (!subscription) return;
+    if (subtotalCents <= 0) {
+      setErrors({ amount: true });
+      toast.error("Informe um valor original válido.");
+      return;
+    }
+    if (discountCents < 0 || discountCents > subtotalCents || paidCents > totalCents) {
+      toast.error("Informe valores válidos para desconto e pagamento.");
       return;
     }
 
@@ -677,6 +712,8 @@ function InvoiceForm({
             disabled={Boolean(initial)}
             value={tenantId}
             onChange={(event) => changeTenant(event.target.value)}
+            className={requiredFieldClassName(Boolean(errors.tenantId))}
+            aria-invalid={Boolean(errors.tenantId)}
           >
             {!clients.length && <option value="">Nenhum cliente disponível</option>}
             {clients.map((client) => (
@@ -691,6 +728,8 @@ function InvoiceForm({
             disabled={Boolean(initial)}
             value={subscriptionId}
             onChange={(event) => setSubscriptionId(event.target.value)}
+            className={requiredFieldClassName(Boolean(errors.subscriptionId))}
+            aria-invalid={Boolean(errors.subscriptionId)}
           >
             {!availableSubscriptions.length && <option value="">Nenhum plano disponível</option>}
             {availableSubscriptions.map((item) => (
@@ -701,10 +740,24 @@ function InvoiceForm({
           </Select>
         </Field>
         <Field label="Data de vencimento *">
-          <DashboardDateInput value={dueAt} readOnly={false} onChange={setDueAt} />
+          <div
+            aria-invalid={Boolean(errors.dueAt)}
+            className={`rounded-lg border ${errors.dueAt ? `${requiredFieldClassName(true)} [&_input]:!border-transparent` : "border-transparent"}`}
+          >
+            <DashboardDateInput value={dueAt} readOnly={false} onChange={setDueAt} />
+          </div>
         </Field>
         <Field label="Data de referência *">
-          <DashboardDateInput value={referenceDate} readOnly={false} onChange={setReferenceDate} />
+          <div
+            aria-invalid={Boolean(errors.referenceDate)}
+            className={`rounded-lg border ${errors.referenceDate ? `${requiredFieldClassName(true)} [&_input]:!border-transparent` : "border-transparent"}`}
+          >
+            <DashboardDateInput
+              value={referenceDate}
+              readOnly={false}
+              onChange={setReferenceDate}
+            />
+          </div>
         </Field>
         <div className="sm:col-span-2">
           <Field label="Referência *">
@@ -712,6 +765,8 @@ function InvoiceForm({
               value={reference}
               onChange={(event) => setReference(event.target.value)}
               placeholder="Ex.: 10/2026, SET/2026..."
+              className={requiredFieldClassName(Boolean(errors.reference))}
+              aria-invalid={Boolean(errors.reference)}
             />
           </Field>
         </div>
@@ -724,7 +779,7 @@ function InvoiceForm({
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <Field label="Valor original (R$) *">
-            <CurrencyInput value={amount} onChange={setAmount} />
+            <CurrencyInput value={amount} onChange={setAmount} invalid={Boolean(errors.amount)} />
           </Field>
           <Field label="Tem cupom de desconto? *">
             <Select
@@ -851,13 +906,18 @@ function CurrencyInput({
   value,
   onChange,
   disabled = false,
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  invalid?: boolean;
 }) {
   return (
-    <div className="flex min-h-10 overflow-hidden rounded-lg border border-border bg-surface-1 focus-within:border-primary">
+    <div
+      aria-invalid={invalid}
+      className={`flex min-h-10 overflow-hidden rounded-lg border border-border bg-surface-1 focus-within:border-primary ${requiredFieldClassName(invalid)}`}
+    >
       <span className="flex items-center border-r border-border px-3 text-sm text-muted-foreground">
         R$
       </span>

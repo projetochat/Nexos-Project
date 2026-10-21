@@ -137,6 +137,31 @@ describe("Clientes do módulo Chamados — PACK 11", () => {
     expect(source).toContain('color: "var(--color-info)"');
     expect(source).toContain('color: "var(--color-warning)"');
     expect(source).toContain('color: "var(--color-destructive)"');
+    expect(source).toContain('{ value: "PROSPECT", label: "Prospect"');
+  });
+
+  it("torna razão social, responsável e e-mail opcionais somente para Prospect", () => {
+    expect(source).toContain('const isProspect = form.status === "PROSPECT";');
+    expect(source).toContain(
+      '!isProspect && form.personType === "LEGAL" && !form.legalName.trim()',
+    );
+    expect(source).toContain(
+      '!isProspect && form.personType === "LEGAL" && !form.responsibleContactName.trim()',
+    );
+    expect(source).toContain("!isProspect && !form.email.trim()");
+    expect(source).toContain('`Razão Social${isProspect ? "" : " *"}`');
+    expect(source).toContain('`Responsável${isProspect ? "" : " *"}`');
+  });
+
+  it("usa busca centralizada de cidade nas filiais e deriva a UF sem lista fixa", () => {
+    const branchForm = source.slice(
+      source.indexOf("function BranchFormModal("),
+      source.indexOf("function DepartmentsTab("),
+    );
+    expect(branchForm).toContain("<CityAutocomplete");
+    expect(branchForm).toContain("onCitySelect={(selectedCity) =>");
+    expect(branchForm).toContain("initialDivision={state}");
+    expect(branchForm).not.toContain("STATES.map");
   });
 
   it("usa toggle S/N com título acima e preenche o número automaticamente", () => {
@@ -150,9 +175,68 @@ describe("Clientes do módulo Chamados — PACK 11", () => {
     expect(source).toContain("onCheckedChange={setAddressWithoutNumber}");
     expect(source).toContain('aria-label="Endereço sem número"');
     expect(source).toContain(
+      "sm:grid-cols-[minmax(8.5rem,0.6fr)_minmax(0,2.1fr)_minmax(8rem,0.3fr)]",
+    );
+    expect(source).toContain('className="grid gap-4 sm:grid-cols-2"');
+    expect(source).toContain('className="relative"');
+    expect(source).toContain('className={`pl-10 ${validationBorder("zipCode")}`}');
+    expect(source).toContain('className="absolute inset-y-0 left-0 flex w-10');
+    expect(source).toContain(
       'addressNumber: customer.addressWithoutNumber ? "SN" : (customer.addressNumber ?? "")',
     );
     expect(source).not.toContain('onChange={(event) => set("addressWithoutNumber"');
+  });
+
+  it("remove em tempo real os erros de endereço e número depois do preenchimento", () => {
+    expect(source).toContain('nextErrors.addressNumber = "Informe o número."');
+    expect(source).not.toContain("Informe o número ou marque S/N.");
+    expect(source).toContain('satisfiedErrors.add("address")');
+    expect(source).toContain('satisfiedErrors.add("addressNumber")');
+    expect(source).toContain("keysToClear.forEach((key) => delete next[key])");
+  });
+
+  it("bloqueia o salvamento quando faltam campos obrigatórios do cliente e do endereço completo", () => {
+    expect(source).toContain('nextErrors.legalName = "Informe a razão social."');
+    expect(source).toContain('nextErrors.responsibleContactName = "Informe o responsável."');
+    expect(source).toContain('nextErrors.phone = "Informe o telefone."');
+    expect(source).toContain('nextErrors.email = "Informe o e-mail."');
+    expect(source).toContain('nextErrors.zipCode = "Informe um CEP válido."');
+    expect(source).toContain('nextErrors.neighborhood = "Informe o bairro."');
+    expect(source).toContain('<Field label="Bairro *">');
+    expect(source).toContain('<Field label="Código Postal (CEP) *">');
+    expect(source).not.toContain("nextErrors.state");
+  });
+
+  it("indica campos obrigatórios com borda vermelha sem mensagens abaixo", () => {
+    expect(source).toContain(
+      "const validationBorder = (key: string) => requiredFieldClassName(Boolean(errors[key]))",
+    );
+    expect(source).toContain("aria-invalid={Boolean(errors.name)}");
+    expect(source).toContain("aria-invalid={Boolean(errors.email)}");
+    expect(source).toContain("aria-invalid={Boolean(errors.zipCode)}");
+    expect(source).toContain("aria-invalid={Boolean(errors.address)}");
+    expect(source).toContain("aria-invalid={Boolean(errors.addressNumber)}");
+    expect(source).toContain("aria-invalid={Boolean(errors.neighborhood)}");
+    expect(source).toContain('errorPresentation="border"');
+    expect(source).not.toContain("error={errors.name}");
+    expect(source).not.toContain("error={errors.neighborhood}");
+  });
+
+  it("lista no aviso todos os campos obrigatórios pendentes alinhados à esquerda", () => {
+    expect(source).toContain("const REQUIRED_CUSTOMER_FIELDS");
+    expect(source).toContain("showRequiredFieldsToast(pendingFields)");
+    expect(source).toContain("REQUIRED_CUSTOMER_FIELDS.filter(([key]) => nextErrors[key]).map(");
+    expect(source).toContain(
+      'import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields"',
+    );
+  });
+
+  it("mantém CPF e CNPJ opcionais e apresenta o CEP com máscara", () => {
+    expect(source).toContain('<Field label="CPF">');
+    expect(source).toContain('<Field label="CNPJ">');
+    expect(source).not.toContain('nextErrors.document = form.personType === "LEGAL"');
+    expect(source).toContain("value={maskZipCode(form.zipCode)}");
+    expect(source).toContain('zipCode: maskZipCode(customer.postalCode ?? "")');
   });
 
   it("oculta o rodapé dos cards de clientes somente no mobile", () => {

@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "version": "geonames-cities500-2026-10-21_ibge-dtb-2025",
+  "snapshotDate": "2026-10-21",
+  "catalogSha256": "e00d7f6b6eeab51765584d08033246153eab59fa2f4a32b2d2f2b768f2800a27",
+  "counts": {
+    "countries": 252,
+    "divisions": 3865,
+    "cities": 230044,
+    "brazilianMunicipalities": 5571
+  },
+  "sources": [
+    {
+      "name": "GeoNames countryInfo",
+      "file": "countryInfo.txt",
+      "url": "https://download.geonames.org/export/dump/countryInfo.txt",
+      "license": "CC BY 4.0",
+      "sha256": "c55f638cfaafb4fe45a9aa15120a0f1f78e8a34a8e1847d7b9320cf740fbc9ab"
+    },
+    {
+      "name": "GeoNames admin1CodesASCII",
+      "file": "admin1CodesASCII.txt",
+      "url": "https://download.geonames.org/export/dump/admin1CodesASCII.txt",
+      "license": "CC BY 4.0",
+      "sha256": "b577baa3476bbe94f0454545e517e1835401d79c5b1105c8e02cf1d4a505e8ec"
+    },
+    {
+      "name": "GeoNames cities500",
+      "file": "cities500.txt",
+      "url": "https://download.geonames.org/export/dump/cities500.zip",
+      "license": "CC BY 4.0",
+      "sha256": "6a0eefe627468d5aa19f5a6e1e0ec74a50bf84ffc330593917a1068ffe2bfe9d",
+      "archiveFile": "cities500.zip",
+      "archiveSha256": "f1cc7e34c7a3a65195a545221521b8e11c63b2c473d6d01c72158ce33a9611e6"
+    },
+    {
+      "name": "IBGE DTB 2025 municípios",
+      "file": "RELATORIO_DTB_BRASIL_2025_MUNICIPIOS.xls",
+      "url": "https://geoftp.ibge.gov.br/organizacao_do_territorio/estrutura_territorial/divisao_territorial/2025/DTB_2025.zip",
+      "license": "Arquivo público do IBGE",
+      "sha256": "b93bf9220ab84f72ff1066981f6aad2817b3d1c44405800209b1577034fece10",
+      "archiveFile": "DTB_2025.zip",
+      "archiveSha256": "d077a0e48c36cf18bcc96268b4a436200c014c6b8522c1a62d894acaf39dad27"
+    }
+  ],
+  "files": [
+    {
+      "name": "countries-001.jsonl.gz",
+      "kind": "countries",
+      "rows": 252,
+      "bytes": 3554,
+      "sha256": "3b8879b3a4c8e61aa3c0cada40a6acf61ea409c9be8e1e0861359690dc73b1a9"
+    },
+    {
+      "name": "divisions-001.jsonl.gz",
+      "kind": "divisions",
+      "rows": 3865,
+      "bytes": 50861,
+      "sha256": "91997cf9bf475d4279f16bb4308a3bf5ecbfbd6940c518656b99ccc957c3a8e6"
+    },
+    {
+      "name": "cities-001.jsonl.gz",
+      "kind": "cities",
+      "rows": 25000,
+      "bytes": 607161,
+      "sha256": "6d4277d786fdcea7a9569b45a2be182fc1aae467af69088d53f01b370d0e4b1b"
+    },
+    {
+      "name": "cities-002.jsonl.gz",
+      "kind": "cities",
+      "rows": 25000,
+      "bytes": 612167,
+      "sha256": "c342c7f7df1d24328a2775fae2459a8a81b6dd567794023467a0b8a8a46e257e"
+    },
+    {
+      "name": "cities-003.jsonl.gz",
+      "kind": "cities",
+      "rows": 25000,
+      "bytes": 630872,
+      "sha256": "4b21d86d27302806c18419f36d22f39dd96b07e6a0554d2f28f35f27bb17a4c4"
+    },
+    {
+      "name": "cities-004.jsonl.gz",
+      "kind": "cities",
+      "rows": 25000,
+      "bytes": 644174,
+      "sha256": "34237fc7974ac451aae7b031b7336808884025eb42e2be2a1531dd931b65a44d"
+    },
+    {
+      "name": "cities-005.jsonl.gz",
+      "kind": "cities",
+      "rows": 25000,
+      "bytes": 634350,
+      "sha256": "f24dc3ed38899146f999cc26f4696439b6930df0a3f434477c60cd8f25959935"
+    },
+    {
+      "name": "cities-006.jsonl.gz",
+      "kind": "cities",
+      "rows": 25000,
+      "bytes": 679109,
+      "sha256": "bd402dc4b55e01c0c530ba4e2a45f66f30f8b925ace22f9dba40715e757fc351"
+    },
+    {
+      "name": "cities-007.jsonl.gz",
+      "kind": "cities",
+      "rows": 25000,
+      "bytes": 655603,
+      "sha256": "79d7f05ec8eb86abe49a2aba1b4e6167468becc23482c753c0a2e6cd59ec37cd"
+    },
+    {
+      "name": "cities-008.jsonl.gz",
+      "kind": "cities",
+      "rows": 25000,
+      "bytes": 653477,
+      "sha256": "d13afafe9781aa6b77d11585f766dc85dfa59f5e3c07b98335b93f505e5e1e26"
+    },
+    {
+      "name": "cities-009.jsonl.gz",
+      "kind": "cities",
+      "rows": 25000,
+      "bytes": 635872,
+      "sha256": "349aae18d66c08a1cef6fed7ed141efcdfbc4934e34b7ac9ce59ffd442237c06"
+    },
+    {
+      "name": "cities-010.jsonl.gz",
+      "kind": "cities",
+      "rows": 5044,
+      "bytes": 138599,
+      "sha256": "5983e68183ea956ef6e4f414ae1b3ff40245c78c9114a0124f64f551e9bab333"
+    }
+  ]
+}

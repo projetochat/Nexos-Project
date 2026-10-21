@@ -39,6 +39,7 @@ import {
 } from "@/lib/trixus-api";
 import { fmtDate, num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { showRequiredFieldsToast } from "@/lib/required-fields";
 import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/campanhas")({ component: Page });
@@ -681,6 +682,7 @@ function CampaignEditor({
   const [tagSearch, setTagSearch] = React.useState("");
   const [customerSearch, setCustomerSearch] = React.useState("");
   const [contactSearch, setContactSearch] = React.useState("");
+  const [requiredErrors, setRequiredErrors] = React.useState<Record<string, boolean>>({});
   const tagsQuery = useQuery({
     queryKey: ["campaigns.tags"],
     queryFn: crmApi.listTags,
@@ -717,6 +719,7 @@ function CampaignEditor({
     if (!open) return;
     setStep(1);
     setPreview(null);
+    setRequiredErrors({});
     setForm((current) => ({
       ...current,
       connectionId:
@@ -786,11 +789,66 @@ function CampaignEditor({
       toast.error(error instanceof Error ? error.message : "Não foi possível criar a campanha."),
   });
 
-  const canPreview =
-    form.name.trim().length >= 3 &&
-    form.messageText.trim() &&
-    form.connectionId &&
-    audienceComplete(audience);
+  React.useEffect(() => {
+    setRequiredErrors((current) => {
+      const next = { ...current };
+      if (form.name.trim().length >= 3) delete next.name;
+      if (form.messageText.trim()) delete next.messageText;
+      if (audienceComplete(audience)) delete next.audience;
+      if (form.connectionId) delete next.connectionId;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [audience, form.connectionId, form.messageText, form.name]);
+
+  const validateStep = (targetStep: number) => {
+    const nextErrors: Record<string, boolean> = {};
+    const pendingFields: string[] = [];
+    if (targetStep === 1 && form.name.trim().length < 3) {
+      nextErrors.name = true;
+      pendingFields.push("Nome");
+    }
+    if (targetStep === 2 && !form.messageText.trim()) {
+      nextErrors.messageText = true;
+      pendingFields.push("Texto WhatsApp");
+    }
+    if (targetStep === 3 && !audienceComplete(audience)) {
+      nextErrors.audience = true;
+      pendingFields.push("Público");
+    }
+    if (targetStep === 4 && !form.connectionId) {
+      nextErrors.connectionId = true;
+      pendingFields.push("Conexão");
+    }
+    if (pendingFields.length) {
+      setRequiredErrors((current) => ({ ...current, ...nextErrors }));
+      showRequiredFieldsToast(pendingFields);
+      return false;
+    }
+    return true;
+  };
+
+  const advance = () => {
+    if (validateStep(step)) setStep(step + 1);
+  };
+
+  const previewCampaign = () => {
+    const pendingFields: string[] = [];
+    if (form.name.trim().length < 3) pendingFields.push("Nome");
+    if (!form.messageText.trim()) pendingFields.push("Texto WhatsApp");
+    if (!audienceComplete(audience)) pendingFields.push("Público");
+    if (!form.connectionId) pendingFields.push("Conexão");
+    if (pendingFields.length) {
+      setRequiredErrors({
+        name: form.name.trim().length < 3,
+        messageText: !form.messageText.trim(),
+        audience: !audienceComplete(audience),
+        connectionId: !form.connectionId,
+      });
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
+    previewMutation.mutate();
+  };
 
   return (
     <Modal
@@ -809,20 +867,12 @@ function CampaignEditor({
             </Button>
           )}
           {step < 4 && (
-            <Button
-              size="sm"
-              onClick={() => setStep(step + 1)}
-              disabled={!canAdvance(step, form, audience)}
-            >
+            <Button size="sm" onClick={advance}>
               Proximo
             </Button>
           )}
           {step === 4 && (
-            <Button
-              size="sm"
-              onClick={() => previewMutation.mutate()}
-              disabled={!canPreview || previewMutation.isPending}
-            >
+            <Button size="sm" onClick={previewCampaign} disabled={previewMutation.isPending}>
               <Eye className="h-3.5 w-3.5" /> Preview
             </Button>
           )}
@@ -851,10 +901,11 @@ function CampaignEditor({
 
       {step === 1 && (
         <div className="grid gap-4">
-          <Field label="Nome">
+          <Field label="Nome *">
             <Input
               value={form.name}
               onChange={(event) => setForm({ ...form, name: event.target.value })}
+              aria-invalid={Boolean(requiredErrors.name)}
             />
           </Field>
           <Field label="Descrição">
@@ -869,13 +920,14 @@ function CampaignEditor({
       {step === 2 && (
         <div className="grid gap-4">
           <Field
-            label="Texto WhatsApp"
+            label="Texto WhatsApp *"
             hint="Variaveis permitidas: {{contact.name}} e {{customer.name}}."
           >
             <Textarea
               rows={7}
               value={form.messageText}
               onChange={(event) => setForm({ ...form, messageText: event.target.value })}
+              aria-invalid={Boolean(requiredErrors.messageText)}
             />
           </Field>
           <p className="text-xs text-muted-foreground">
@@ -902,43 +954,56 @@ function CampaignEditor({
             </Select>
           </Field>
           {form.audienceType === "TAGS" && (
-            <Selector
-              title="Tags"
-              mode={form.tagMatchMode}
-              onMode={(tagMatchMode) => setForm({ ...form, tagMatchMode })}
-              items={sortedTags}
-              search={tagSearch}
-              onSearch={setTagSearch}
-              selected={form.tagIds}
-              onChange={(tagIds) => setForm({ ...form, tagIds })}
-            />
+            <div
+              className={`rounded-lg border p-1 ${requiredErrors.audience ? "border-destructive" : "border-transparent"}`}
+            >
+              <Selector
+                title="Tags"
+                mode={form.tagMatchMode}
+                onMode={(tagMatchMode) => setForm({ ...form, tagMatchMode })}
+                items={sortedTags}
+                search={tagSearch}
+                onSearch={setTagSearch}
+                selected={form.tagIds}
+                onChange={(tagIds) => setForm({ ...form, tagIds })}
+              />
+            </div>
           )}
           {form.audienceType === "CUSTOMERS" && (
-            <CustomerSelector
-              items={sortedCustomers}
-              search={customerSearch}
-              onSearch={setCustomerSearch}
-              selected={form.customerIds}
-              onChange={(customerIds) => setForm({ ...form, customerIds })}
-            />
+            <div
+              className={`rounded-lg border p-1 ${requiredErrors.audience ? "border-destructive" : "border-transparent"}`}
+            >
+              <CustomerSelector
+                items={sortedCustomers}
+                search={customerSearch}
+                onSearch={setCustomerSearch}
+                selected={form.customerIds}
+                onChange={(customerIds) => setForm({ ...form, customerIds })}
+              />
+            </div>
           )}
           {form.audienceType === "CONTACTS" && (
-            <ContactSelector
-              items={sortedContacts}
-              search={contactSearch}
-              onSearch={setContactSearch}
-              selected={form.contactIds}
-              onChange={(contactIds) => setForm({ ...form, contactIds })}
-            />
+            <div
+              className={`rounded-lg border p-1 ${requiredErrors.audience ? "border-destructive" : "border-transparent"}`}
+            >
+              <ContactSelector
+                items={sortedContacts}
+                search={contactSearch}
+                onSearch={setContactSearch}
+                selected={form.contactIds}
+                onChange={(contactIds) => setForm({ ...form, contactIds })}
+              />
+            </div>
           )}
         </div>
       )}
       {step === 4 && (
         <div className="grid gap-4">
-          <Field label="Connection">
+          <Field label="Conexão *">
             <Select
               value={form.connectionId}
               onChange={(event) => setForm({ ...form, connectionId: event.target.value })}
+              aria-invalid={Boolean(requiredErrors.connectionId)}
             >
               <option value="">Selecione uma connection</option>
               {selectableConnections(connections).map((connection) => (
@@ -1175,17 +1240,6 @@ function audienceComplete(audience: ApiCampaignAudience) {
   if (audience.type === "TAGS") return audience.tagIds.length > 0;
   if (audience.type === "CUSTOMERS") return audience.customerIds.length > 0;
   return audience.contactIds.length > 0;
-}
-
-function canAdvance(
-  step: number,
-  form: { name: string; messageText: string; connectionId: string },
-  audience: ApiCampaignAudience,
-) {
-  if (step === 1) return form.name.trim().length >= 3;
-  if (step === 2) return form.messageText.trim().length > 0 && form.messageText.length <= 4000;
-  if (step === 3) return audienceComplete(audience);
-  return !!form.connectionId;
 }
 
 function confirmationText(action: "start" | "cancel", campaign: ApiCampaign) {

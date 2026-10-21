@@ -30,6 +30,7 @@ import { useTheme } from "./theme-context";
 import { isCurrentAdminNavRoute } from "../lib/admin-route";
 import { clearTrixusApiSession, platformApi } from "@/lib/trixus-api";
 import { useSession, ROLE_META } from "@/lib/session";
+import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
 
 /* ============================================================
    Trixus · Admin Shell (Painel Super Admin — Plataforma SaaS)
@@ -288,12 +289,18 @@ function ChangePlatformPasswordModal({
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  const [requiredErrors, setRequiredErrors] = React.useState({
+    currentPassword: false,
+    newPassword: false,
+    confirmPassword: false,
+  });
 
   React.useEffect(() => {
     if (open) return;
     setCurrentPassword("");
     setNewPassword("");
     setConfirmPassword("");
+    setRequiredErrors({ currentPassword: false, newPassword: false, confirmPassword: false });
     setSubmitting(false);
   }, [open]);
 
@@ -303,7 +310,20 @@ function ChangePlatformPasswordModal({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!currentPassword) return void toast.error("Informe sua senha atual.");
+    const nextRequiredErrors = {
+      currentPassword: !currentPassword,
+      newPassword: !newPassword,
+      confirmPassword: !confirmPassword,
+    };
+    if (Object.values(nextRequiredErrors).some(Boolean)) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast([
+        ...(nextRequiredErrors.currentPassword ? ["Senha atual"] : []),
+        ...(nextRequiredErrors.newPassword ? ["Nova senha"] : []),
+        ...(nextRequiredErrors.confirmPassword ? ["Confirmar nova senha"] : []),
+      ]);
+      return;
+    }
     if (newPassword.length < 6) {
       return void toast.error("A nova senha deve ter ao menos 6 caracteres.");
     }
@@ -346,29 +366,41 @@ function ChangePlatformPasswordModal({
         </>
       }
     >
-      <form id="platform-password-form" className="space-y-4" onSubmit={submit}>
+      <form id="platform-password-form" className="space-y-4" onSubmit={submit} noValidate>
         <Field label="Senha atual *">
           <PlatformPasswordInput
             id="platform-current-password"
             value={currentPassword}
-            onChange={setCurrentPassword}
+            onChange={(value) => {
+              setCurrentPassword(value);
+              if (value) setRequiredErrors((current) => ({ ...current, currentPassword: false }));
+            }}
             autoComplete="current-password"
+            invalid={requiredErrors.currentPassword}
           />
         </Field>
         <Field label="Nova senha *" hint="Use pelo menos 6 caracteres.">
           <PlatformPasswordInput
             id="platform-new-password"
             value={newPassword}
-            onChange={setNewPassword}
+            onChange={(value) => {
+              setNewPassword(value);
+              if (value) setRequiredErrors((current) => ({ ...current, newPassword: false }));
+            }}
             autoComplete="new-password"
+            invalid={requiredErrors.newPassword}
           />
         </Field>
         <Field label="Confirmar nova senha *">
           <PlatformPasswordInput
             id="platform-confirm-password"
             value={confirmPassword}
-            onChange={setConfirmPassword}
+            onChange={(value) => {
+              setConfirmPassword(value);
+              if (value) setRequiredErrors((current) => ({ ...current, confirmPassword: false }));
+            }}
             autoComplete="new-password"
+            invalid={requiredErrors.confirmPassword}
           />
         </Field>
       </form>
@@ -381,11 +413,13 @@ function PlatformPasswordInput({
   value,
   onChange,
   autoComplete,
+  invalid = false,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   autoComplete: "current-password" | "new-password";
+  invalid?: boolean;
 }) {
   const [visible, setVisible] = React.useState(false);
   return (
@@ -397,8 +431,8 @@ function PlatformPasswordInput({
         onChange={(event) => onChange(event.target.value)}
         autoComplete={autoComplete}
         maxLength={72}
-        className="pr-11"
-        required
+        aria-invalid={invalid}
+        className={`pr-11 ${requiredFieldClassName(invalid)}`}
       />
       <button
         type="button"

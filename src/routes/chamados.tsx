@@ -48,6 +48,7 @@ import { useDisclosure } from "@/hooks/use-disclosure";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { num } from "@/lib/format";
 import { formatPhoneForDisplay } from "@/lib/input-masks";
+import { showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   conversationApi,
   crmApi,
@@ -1004,6 +1005,7 @@ function TicketEditor({
   const [conversationId, setConversationId] = React.useState("");
   const [assignedMembershipId, setAssignedMembershipId] = React.useState("");
   const [attachments, setAttachments] = React.useState<File[]>([]);
+  const [requiredErrors, setRequiredErrors] = React.useState<Record<string, boolean>>({});
   const [busy, setBusy] = React.useState(false);
   const submittingRef = React.useRef(false);
   const initializedSessionRef = React.useRef<string | null>(null);
@@ -1068,7 +1070,20 @@ function TicketEditor({
     setConversationId(initialTicket?.conversation?.id ?? initialConversationId ?? "");
     setAssignedMembershipId(initialTicket?.assignedMembership?.id ?? "");
     setAttachments([]);
+    setRequiredErrors({});
   }, [clone, customerPortal, initialConversationId, initialTicket, open, sessionKey]);
+
+  React.useEffect(() => {
+    setRequiredErrors((current) => {
+      const next = { ...current };
+      if (title.trim()) delete next.title;
+      if (description.trim()) delete next.description;
+      if (departmentId) delete next.departmentId;
+      if (customerDepartmentId) delete next.customerDepartmentId;
+      if (originBranchId) delete next.originBranchId;
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [customerDepartmentId, departmentId, description, originBranchId, title]);
 
   React.useEffect(() => {
     if (!open || initialTicket || initialConversationId || departmentId || !defaultDepartmentId)
@@ -1117,13 +1132,33 @@ function TicketEditor({
   }, [initialConversation.data, initialMessages.data, initialTicket, open, sessionKey]);
 
   const submit = async () => {
-    if (!title.trim()) return toast.error("Informe o título.");
-    if (!description.trim()) return toast.error("Informe a descrição.");
-    if (!departmentId) return toast.error("Selecione o departamento.");
-    if (customerDepartments.data?.length && !customerDepartmentId)
-      return toast.error("Selecione o departamento do cliente.");
-    if (customerBranches.data?.length && !originBranchId)
-      return toast.error("Selecione a filial de origem.");
+    const nextRequiredErrors: Record<string, boolean> = {};
+    const pendingFields: string[] = [];
+    if (!title.trim()) {
+      nextRequiredErrors.title = true;
+      pendingFields.push("Título");
+    }
+    if (!description.trim()) {
+      nextRequiredErrors.description = true;
+      pendingFields.push("Descrição");
+    }
+    if (!departmentId) {
+      nextRequiredErrors.departmentId = true;
+      pendingFields.push("Departamento responsável");
+    }
+    if (customerDepartments.data?.length && !customerDepartmentId) {
+      nextRequiredErrors.customerDepartmentId = true;
+      pendingFields.push("Departamento do cliente");
+    }
+    if (customerBranches.data?.length && !originBranchId) {
+      nextRequiredErrors.originBranchId = true;
+      pendingFields.push("Filial de origem");
+    }
+    if (pendingFields.length) {
+      setRequiredErrors(nextRequiredErrors);
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
     if (submittingRef.current) return;
     submittingRef.current = true;
     setBusy(true);
@@ -1270,6 +1305,7 @@ function TicketEditor({
                 value={customerDepartmentId}
                 onChange={(event) => setCustomerDepartmentId(event.target.value)}
                 disabled={!customerId}
+                aria-invalid={Boolean(requiredErrors.customerDepartmentId)}
               >
                 <option value="">Selecione...</option>
                 {(customerDepartments.data ?? []).map((item) => (
@@ -1348,6 +1384,7 @@ function TicketEditor({
                 onChange={(event) => setOriginBranchId(event.target.value)}
                 disabled={!customerId}
                 aria-label="Filial de origem"
+                aria-invalid={Boolean(requiredErrors.originBranchId)}
               >
                 <option value="">Selecione...</option>
                 {(customerBranches.data ?? []).map((item) => (
@@ -1396,6 +1433,7 @@ function TicketEditor({
               setTitle(event.target.value);
             }}
             maxLength={180}
+            aria-invalid={Boolean(requiredErrors.title)}
           />
         </Field>
         <Field label="Descrição *" asLabel={false}>
@@ -1405,6 +1443,7 @@ function TicketEditor({
               dirtyFieldsRef.current.description = true;
               setDescription(value);
             }}
+            invalid={Boolean(requiredErrors.description)}
           />
         </Field>
         <div className="rounded-lg border border-dashed border-border bg-surface-1 p-3">
