@@ -31,6 +31,43 @@ class ProductionWorkflowTest(unittest.TestCase):
         self.assertNotIn("upload-artifact", section)
         self.assertNotIn("DEPLOY_", section)
 
+    def test_production_frontend_uses_one_canonical_login_origin(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        pull_request_section = workflow.split("pr-images:", 1)[1].split("\n  build:", 1)[0]
+        build_section = workflow.split("\n  build:", 1)[1].split("\n  release:", 1)[0]
+
+        self.assertIn(
+            "--build-arg VITE_TRIXUS_PLATFORM_APP_URL=https://app.ci.invalid",
+            pull_request_section,
+        )
+        self.assertIn(
+            "--build-arg VITE_TRIXUS_TENANT_APP_URL=https://app.ci.invalid",
+            pull_request_section,
+        )
+        self.assertNotIn("chat.ci.invalid", pull_request_section)
+
+        canonical = "https://app.trixus.com.br"
+        self.assertIn(f"VITE_TRIXUS_PLATFORM_APP_URL: {canonical}", build_section)
+        self.assertIn(f"VITE_TRIXUS_TENANT_APP_URL: {canonical}", build_section)
+        self.assertNotIn("${{ vars.VITE_TRIXUS_PLATFORM_APP_URL }}", build_section)
+        self.assertNotIn("${{ vars.VITE_TRIXUS_TENANT_APP_URL }}", build_section)
+        self.assertIn(
+            'test "$VITE_TRIXUS_PLATFORM_APP_URL" = "https://app.trixus.com.br"',
+            build_section,
+        )
+        self.assertIn(
+            'test "$VITE_TRIXUS_TENANT_APP_URL" = "https://app.trixus.com.br"',
+            build_section,
+        )
+        self.assertIn(
+            "VITE_TRIXUS_PLATFORM_APP_URL=https://app.trixus.com.br",
+            build_section,
+        )
+        self.assertIn(
+            "VITE_TRIXUS_TENANT_APP_URL=https://app.trixus.com.br",
+            build_section,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
