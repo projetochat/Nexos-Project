@@ -41,6 +41,19 @@ describe("app surface routing", () => {
     expect(surfaceRedirect({ hostname: "hom.trixus.com.br", pathname: "/inbox" })).toBeNull();
   });
 
+  it("keeps production on the unified app login and redirects the legacy chat host", () => {
+    vi.stubEnv("VITE_APP_MODE", "production");
+    vi.stubEnv("VITE_TRIXUS_PLATFORM_APP_URL", "https://app.trixus.com.br");
+    vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "https://app.trixus.com.br");
+
+    expect(appSurfaceForHostname("app.trixus.com.br")).toBe("unified");
+    expect(loginEndpointForSurface(appSurfaceForHostname("app.trixus.com.br"))).toBe("/auth/login");
+    expect(surfaceRedirect({ hostname: "app.trixus.com.br", pathname: "/login" })).toBeNull();
+    expect(surfaceRedirect({ hostname: "chat.trixus.com.br", pathname: "/login" })).toBe(
+      "https://app.trixus.com.br/login",
+    );
+  });
+
   it("keeps the fixed app title and adds only a positive unread conversation count", () => {
     expect(appTitleWithUnreadConversations(3)).toBe("(3) Trixus | App");
     expect(appTitleWithUnreadConversations(0)).toBe("Trixus | App");
