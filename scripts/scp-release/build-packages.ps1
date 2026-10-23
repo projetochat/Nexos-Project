@@ -207,7 +207,7 @@ try {
   if ($Sha -notmatch '^[0-9a-f]{40}$' -or $Tree -notmatch '^[0-9a-f]{40}$') {
     throw "Commit ou tree invalido"
   }
-  if ((& git status --porcelain --untracked-files=all).Count -ne 0) {
+  if (@(& git status --porcelain --untracked-files=all).Count -ne 0) {
     throw "A arvore precisa estar limpa e inteiramente commitada antes do empacotamento."
   }
 
