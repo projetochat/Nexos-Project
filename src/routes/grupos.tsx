@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
+  Smartphone,
   Trash2,
   UserMinus,
   UserPlus,
@@ -23,6 +24,7 @@ import {
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { GridPaginationFooter } from "@/components/grid-pagination-footer";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import { DeletionConfirmDialog } from "@/components/deletion-confirm-dialog";
 import { MessageEmojiPicker } from "@/components/message-emoji-picker";
@@ -295,9 +297,12 @@ function GroupsPage() {
       const result = await groupsApi.sync({
         connectionId: instanceFilter || undefined,
       });
-      toast.success("Grupos atualizados", {
-        description: `${num(result.synced)} grupo(s) sincronizado(s), ${num(result.participants)} participante(s) atualizado(s).`,
-      });
+      const description = `${num(result.synced)} grupo(s) sincronizado(s), ${num(result.unavailable)} indisponibilizado(s) e ${num(result.participants)} participante(s) atualizado(s).`;
+      if (result.failed > 0) {
+        toast.warning("Grupos atualizados parcialmente", { description });
+      } else {
+        toast.success("Grupos atualizados", { description });
+      }
       await load();
     } catch (error) {
       toast.error("Falha ao atualizar grupos", { description: (error as Error).message });
@@ -372,8 +377,8 @@ function GroupsPage() {
           </div>
         </Card>
 
-        <Card padding={false} className="min-w-0 overflow-hidden">
-          <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="min-w-0 space-y-3">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {loading &&
               Array.from({ length: 6 }).map((_, index) => (
                 <div
@@ -400,46 +405,20 @@ function GroupsPage() {
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0">
-                Mostrando {num(groups.length)} de {num(total)}
-              </span>
-              <Select
-                value={String(pageSize)}
-                onChange={(event) => changePageSize(Number(event.target.value))}
-                className="h-8 w-20 text-xs sm:w-24"
-              >
-                {PAGE_SIZE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => changePage((current) => Math.max(1, current - 1))}
-                disabled={pageSafe <= 1}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-              <span>
-                {pageSafe} / {totalPages}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => changePage((current) => Math.min(totalPages, current + 1))}
-                disabled={pageSafe >= totalPages}
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </div>
+          <div className="overflow-hidden rounded-xl border border-border">
+            <GridPaginationFooter
+              visible={groups.length}
+              total={total}
+              page={pageSafe}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              onPage={(nextPage) => changePage(nextPage)}
+              onPageSize={changePageSize}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              ariaLabelPrefix="grupos"
+            />
           </div>
-        </Card>
+        </div>
 
         {canCreate && (
           <CreateGroupModal
@@ -1147,7 +1126,7 @@ function GroupDetailModal({
   const removeAllParticipants = () => {
     if (!group) return;
     const participantIds = group.participants
-      .filter((participant) => !participant.isSuperAdmin)
+      .filter((participant) => !participant.isSuperAdmin && !participant.isCurrentInstance)
       .map((participant) => participant.externalParticipantId);
     if (!participantIds.length) return;
     void run("remove-all", async () => {
@@ -1164,7 +1143,7 @@ function GroupDetailModal({
     <Modal
       open={!!group}
       onClose={onClose}
-      title={canManage ? "Editar Grupo" : "Visualizar Grupo"}
+      title={canManageGroupParticipants ? "Editar Grupo" : "Visualizar Grupo"}
       size="xl"
       footer={
         group ? (
@@ -1172,7 +1151,7 @@ function GroupDetailModal({
             <EntityFormLog createdAt={group.createdAt} updatedAt={group.updatedAt} />
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <Button variant="ghost" size="sm" onClick={onClose} disabled={!!busy}>
-                {canManage ? "Cancelar" : "Fechar"}
+                {canManageGroupParticipants ? "Cancelar" : "Fechar"}
               </Button>
               {onOpenChat && (
                 <Button
@@ -1243,7 +1222,7 @@ function GroupDetailModal({
                         </p>
                       )}
                     </div>
-                    {canManage && (
+                    {canManageGroupParticipants && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1312,7 +1291,7 @@ function GroupDetailModal({
                         </p>
                       )}
                     </div>
-                    {canManage && (
+                    {canManageGroupParticipants && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1434,13 +1413,7 @@ function GroupDetailModal({
                             )}
                           </p>
                         </div>
-                        {(participant.isAdmin || participant.isSuperAdmin) && (
-                          <Badge tone="success">
-                            <ShieldCheck className="h-3 w-3" />
-                            {participant.isSuperAdmin ? "Criador" : "Admin"}
-                          </Badge>
-                        )}
-                        {participant.isCurrentInstance && <Badge tone="default">Meu número</Badge>}
+                        <GroupParticipantRoleBadge participant={participant} />
                         {!viewMode && (
                           <div className="flex shrink-0 gap-1">
                             <Button
@@ -1525,7 +1498,7 @@ function GroupDetailModal({
                             {formatGroupContactPhone(contact.normalizedPhone || contact.telefone)}
                           </span>
                         </span>
-                        {canManage && (
+                        {canManageGroupParticipants && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1557,13 +1530,16 @@ function GroupDetailModal({
                       <h3 className="text-sm font-semibold sm:text-lg">Contatos selecionados</h3>
                       <Badge tone="default">{num(group.participantsCount)}</Badge>
                     </div>
-                    {canManage && (
+                    {canManageGroupParticipants && (
                       <Button
                         variant="ghost"
                         size="sm"
                         className="trash-action h-7 min-h-7 px-2 text-[11px] sm:h-auto sm:min-h-8 sm:px-2.5 sm:text-xs"
                         disabled={
-                          !group.participants.some((participant) => !participant.isSuperAdmin) ||
+                          !group.participants.some(
+                            (participant) =>
+                              !participant.isSuperAdmin && !participant.isCurrentInstance,
+                          ) ||
                           !!busy ||
                           !canManageGroupParticipants
                         }
@@ -1597,14 +1573,8 @@ function GroupDetailModal({
                             )}
                           </span>
                         </span>
-                        {(participant.isAdmin || participant.isSuperAdmin) && (
-                          <Badge tone={participant.isSuperAdmin ? "brand" : "success"}>
-                            <ShieldCheck className="h-3 w-3" />
-                            {participant.isSuperAdmin ? "Criador" : "Admin"}
-                          </Badge>
-                        )}
-                        {participant.isCurrentInstance && <Badge tone="default">Meu número</Badge>}
-                        {canManage && (
+                        <GroupParticipantRoleBadge participant={participant} />
+                        {canManageGroupParticipants && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1631,7 +1601,7 @@ function GroupDetailModal({
                             <Crown className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {canManage && (
+                        {canManageGroupParticipants && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1669,6 +1639,33 @@ function GroupDetailModal({
         </div>
       )}
     </Modal>
+  );
+}
+
+function GroupParticipantRoleBadge({ participant }: { participant: ApiWhatsappGroupParticipant }) {
+  const roleBadge = participant.isSuperAdmin ? (
+    <Badge tone="brand">
+      <ShieldCheck className="h-3 w-3" /> Criador
+    </Badge>
+  ) : participant.isAdmin ? (
+    <Badge tone="success">
+      <ShieldCheck className="h-3 w-3" /> Admin
+    </Badge>
+  ) : null;
+  const instanceBadge = participant.isCurrentInstance ? (
+    <span title="Número conectado ao Trixus">
+      <Badge tone="default">
+        <Smartphone className="h-3 w-3" /> Você
+      </Badge>
+    </span>
+  ) : null;
+
+  if (!roleBadge && !instanceBadge) return null;
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+      {instanceBadge}
+      {roleBadge}
+    </div>
   );
 }
 

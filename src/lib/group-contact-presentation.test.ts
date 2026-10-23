@@ -16,4 +16,12 @@ describe("group contact presentation", () => {
     expect(formatGroupContactPhone(phone)).toBe("+55 62 98114-7652");
     expect(phone).toBe("5562981147652");
   });
+
+  it("restores the ninth digit for an old-format Brazilian WhatsApp mobile number", () => {
+    expect(formatGroupContactPhone("556296171414")).toBe("+55 62 99617-1414");
+  });
+
+  it("does not add a ninth digit to Brazilian landlines", () => {
+    expect(formatGroupContactPhone("556232341414")).toBe("+55 62 3234-1414");
+  });
 });

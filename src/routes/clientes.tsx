@@ -36,6 +36,7 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { InfoTooltip } from "@/components/info-tooltip";
 import {
   CityAutocomplete,
   InternationalLocationFields,
@@ -52,7 +53,11 @@ import {
 } from "@/lib/input-masks";
 import { formatPhoneForSubmit, splitPhoneByCountry } from "@/lib/phone-country";
 import { requiredFieldClassName, showRequiredFieldsToast } from "@/lib/required-fields";
-import { CountryCodeSelect } from "@/routes/contatos";
+import {
+  ContactFormModal as ContactRegistryFormModal,
+  CountryCodeSelect,
+  contactPayload,
+} from "@/routes/contatos";
 import {
   crmApi,
   locationApi,
@@ -62,6 +67,7 @@ import {
   type ApiCustomer,
   type ApiCustomerBranch,
   type ApiCustomerDepartment,
+  type ApiCustomerPortalUser,
 } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/clientes")({
@@ -267,14 +273,16 @@ function ClientesPage() {
           }
         />
         <Card className="mb-4" padding={false}>
-          <div className="grid gap-3 p-4 lg:grid-cols-[minmax(0,2.4fr)_minmax(12rem,1fr)_minmax(12rem,1fr)_auto]">
-            <Field label="Busca">
-              <SearchInput
-                value={query}
-                onChange={setQuery}
-                placeholder="Buscar por nome, CNPJ, CPF ou responsável..."
-              />
-            </Field>
+          <div className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-[minmax(0,2.4fr)_minmax(12rem,1fr)_minmax(12rem,1fr)_auto]">
+            <div className="col-span-2 lg:col-span-1">
+              <Field label="Busca">
+                <SearchInput
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Buscar por nome, CNPJ, CPF ou responsável..."
+                />
+              </Field>
+            </div>
             <Field label="Tipo de pessoa">
               <Select value={personType} onChange={(event) => setPersonType(event.target.value)}>
                 <option value="">Todas</option>
@@ -456,7 +464,7 @@ function ClientesPage() {
           </>
         )}
         {items.length > 0 && viewMode === "cards" && (
-          <div className="mt-3 hidden overflow-hidden rounded-xl border border-border md:block">
+          <div className="mt-3 overflow-hidden rounded-xl border border-border">
             <Pagination
               total={items.length}
               visible={visibleItems.length}
@@ -700,9 +708,9 @@ function CustomerFormModal({
   const [form, setForm] = React.useState<CustomerForm>(EMPTY_FORM);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [saving, setSaving] = React.useState(false);
-  const contacts = useQuery({
-    queryKey: ["tickets", "customer-contacts", initial?.id],
-    queryFn: () => crmApi.listCustomerContacts(initial!.id),
+  const portalUsers = useQuery({
+    queryKey: ["tickets", "customer-portal-users", initial?.id],
+    queryFn: () => ticketApi.listCustomerPortalUsers(initial!.id),
     enabled: open && !!initial?.id,
   });
   const branches = useQuery({
@@ -770,6 +778,7 @@ function CustomerFormModal({
       nextErrors.neighborhood = "Informe o bairro.";
     if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
+      setTab("general");
       const pendingFields = REQUIRED_CUSTOMER_FIELDS.filter(([key]) => nextErrors[key]).map(
         ([, label]) => label,
       );
@@ -837,16 +846,15 @@ function CustomerFormModal({
         <DepartmentsTab
           customer={initial}
           items={departments.data ?? []}
-          contacts={contacts.data ?? []}
           loading={departments.isPending}
         />
       ) : tab === "contacts" ? (
         <ContactsTab
           customer={initial}
-          contacts={contacts.data ?? []}
+          users={portalUsers.data ?? []}
           branches={branches.data ?? []}
           departments={departments.data ?? []}
-          loading={contacts.isPending && !!initial}
+          loading={portalUsers.isPending && !!initial}
         />
       ) : null}
     </Modal>
@@ -1166,9 +1174,9 @@ function GeneralForm({
 }
 
 const CUSTOMER_ACCESS_PROFILES = [
-  { value: "COLLABORATOR", label: "Colaborador" },
+  { value: "FULL_ACCESS", label: "Acesso Full" },
   { value: "MANAGER", label: "Gerente" },
-  { value: "FULL_ACCESS", label: "Acesso full" },
+  { value: "COLLABORATOR", label: "Colaborador" },
 ] as const;
 
 type CustomerAccessProfile = (typeof CUSTOMER_ACCESS_PROFILES)[number]["value"];
@@ -1212,7 +1220,757 @@ function customerAccessProfileLabel(value: ApiContact["customerAccessProfile"]) 
   return CUSTOMER_ACCESS_PROFILES.find((item) => item.value === value)?.label ?? "Colaborador";
 }
 
+function PortalLoginField({
+  id,
+  value,
+  disabled = false,
+  autoFocus = false,
+  invalid = false,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  disabled?: boolean;
+  autoFocus?: boolean;
+  invalid?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <label htmlFor={id}>
+          Login <span className="text-destructive">*</span>
+        </label>
+        <InfoTooltip label="Login">
+          O e-mail é sugerido automaticamente. Você pode substituí-lo por um login como
+          nome.sobrenome.
+        </InfoTooltip>
+      </div>
+      <Input
+        id={id}
+        value={value}
+        disabled={disabled}
+        aria-invalid={invalid}
+        onChange={(event) => onChange(event.target.value.toLocaleLowerCase("en-US"))}
+        placeholder="email@exemplo.com ou nome.sobrenome"
+        autoComplete="off"
+        autoFocus={autoFocus}
+      />
+    </div>
+  );
+}
+
 function ContactsTab({
+  customer,
+  users,
+  branches,
+  departments,
+  loading,
+}: {
+  customer: TicketCustomer | null;
+  users: ApiCustomerPortalUser[];
+  branches: ApiCustomerBranch[];
+  departments: ApiCustomerDepartment[];
+  loading: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [linkOpen, setLinkOpen] = React.useState(false);
+  const [newContactOpen, setNewContactOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [resultsOpen, setResultsOpen] = React.useState(false);
+  const [selected, setSelected] = React.useState<ApiContact | null>(null);
+  const [login, setLogin] = React.useState("");
+  const [profile, setProfile] = React.useState<CustomerAccessProfile>("COLLABORATOR");
+  const [departmentId, setDepartmentId] = React.useState("");
+  const [branchId, setBranchId] = React.useState("");
+  const [linkValidationVisible, setLinkValidationVisible] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [editing, setEditing] = React.useState<ApiCustomerPortalUser | null>(null);
+  const [editingContactDetails, setEditingContactDetails] = React.useState<ApiContact | null>(null);
+  const [loadingContactDetails, setLoadingContactDetails] = React.useState(false);
+  const [editLogin, setEditLogin] = React.useState("");
+  const [editProfile, setEditProfile] = React.useState<CustomerAccessProfile>("COLLABORATOR");
+  const [editDepartmentId, setEditDepartmentId] = React.useState("");
+  const [editBranchId, setEditBranchId] = React.useState("");
+  const [editActive, setEditActive] = React.useState(false);
+  const [editValidationVisible, setEditValidationVisible] = React.useState(false);
+  const [updatingLogin, setUpdatingLogin] = React.useState(false);
+  const [revoking, setRevoking] = React.useState<ApiCustomerPortalUser | null>(null);
+  const candidates = useQuery({
+    queryKey: ["crm", "portal-contact-candidates", query],
+    queryFn: () => crmApi.listContacts({ q: query.trim() || undefined, page: 1, pageSize: 50 }),
+    enabled: linkOpen && resultsOpen && query.trim().length >= 1,
+  });
+  const contactOptions = useQuery({
+    queryKey: ["crm", "contact-options", "customer-portal"],
+    queryFn: () => crmApi.contactOptions(),
+    enabled: newContactOpen,
+  });
+  const activeBranches = React.useMemo(
+    () => branches.filter((branch) => branch.status === "ACTIVE"),
+    [branches],
+  );
+  const activeDepartments = React.useMemo(
+    () => departments.filter((department) => department.active),
+    [departments],
+  );
+  React.useEffect(() => {
+    if (linkOpen && !branchId && activeBranches.length === 1) {
+      setBranchId(activeBranches[0].id);
+    }
+  }, [activeBranches, branchId, linkOpen]);
+  React.useEffect(() => {
+    if (linkOpen && profile !== "FULL_ACCESS" && !departmentId && activeDepartments.length === 1) {
+      setDepartmentId(activeDepartments[0].id);
+    }
+  }, [activeDepartments, departmentId, linkOpen, profile]);
+  const refresh = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["tickets", "customer-portal-users", customer?.id],
+    });
+  };
+  const closeLink = () => {
+    setLinkOpen(false);
+    setQuery("");
+    setResultsOpen(false);
+    setSelected(null);
+    setLogin("");
+    setProfile("COLLABORATOR");
+    setDepartmentId("");
+    setBranchId("");
+    setLinkValidationVisible(false);
+  };
+  const choose = (contact: ApiContact) => {
+    setSelected(contact);
+    setQuery(contact.nome);
+    setResultsOpen(false);
+    setLogin(contact.email?.trim().toLocaleLowerCase("en-US") ?? "");
+    setProfile("COLLABORATOR");
+    setDepartmentId(activeDepartments.length === 1 ? activeDepartments[0].id : "");
+    setBranchId(activeBranches.length === 1 ? activeBranches[0].id : "");
+    setLinkValidationVisible(false);
+  };
+  const link = async (
+    contact: ApiContact,
+    requestedLogin: string,
+    accessProfile: CustomerAccessProfile,
+    requestedDepartmentId: string,
+    requestedBranchId: string,
+  ) => {
+    if (!customer) return;
+    const invitation = await ticketApi.linkCustomerPortalUser(customer.id, {
+      contactId: contact.id,
+      login: requestedLogin,
+      accessProfile,
+      customerDepartmentId: accessProfile === "FULL_ACCESS" ? null : requestedDepartmentId,
+      customerBranchId: requestedBranchId,
+    });
+    await refresh();
+    return invitation;
+  };
+  const submitLink = async () => {
+    setLinkValidationVisible(true);
+    const pendingFields = [
+      ...(!selected ? ["Contato"] : []),
+      ...(login.trim().length < 3 ? ["Login"] : []),
+      ...(!branchId ? ["Filial"] : []),
+      ...(!profile ? ["Perfil de acesso"] : []),
+      ...(profile !== "FULL_ACCESS" && !departmentId ? ["Departamento"] : []),
+    ];
+    if (pendingFields.length) {
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
+    setSaving(true);
+    try {
+      const invitation = await link(
+        selected!,
+        login.trim().toLocaleLowerCase("en-US"),
+        profile,
+        departmentId,
+        branchId,
+      );
+      if (invitation?.delivery?.provider === "whatsapp" && invitation.delivery.queued) {
+        toast.success("Contato vinculado e acesso encaminhado pelo WhatsApp.");
+      } else if (invitation?.delivery?.delivered === false) {
+        toast.info("Contato vinculado. O envio por e-mail está desativado neste ambiente.");
+      } else {
+        toast.success("Contato vinculado e convite de acesso enviado.");
+      }
+      closeLink();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const closeEdit = () => {
+    setEditingContactDetails(null);
+    setEditing(null);
+    setEditLogin("");
+    setEditProfile("COLLABORATOR");
+    setEditDepartmentId("");
+    setEditBranchId("");
+    setEditActive(false);
+    setEditValidationVisible(false);
+  };
+  const openLinkedContactEditor = async () => {
+    if (!editing) return;
+    setLoadingContactDetails(true);
+    try {
+      const [contact, options] = await Promise.all([
+        crmApi.getContact(editing.contact.id),
+        contactOptions.refetch(),
+      ]);
+      if (options.error) throw options.error;
+      setEditingContactDetails(contact);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setLoadingContactDetails(false);
+    }
+  };
+  const submitAccessUpdate = async () => {
+    setEditValidationVisible(true);
+    if (!customer || !editing) return;
+    const pendingFields = [
+      ...(editLogin.trim().length < 3 ? ["Login"] : []),
+      ...(!editBranchId ? ["Filial"] : []),
+      ...(!editProfile ? ["Perfil de acesso"] : []),
+      ...(editProfile !== "FULL_ACCESS" && !editDepartmentId ? ["Departamento"] : []),
+    ];
+    if (pendingFields.length) {
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
+    setUpdatingLogin(true);
+    try {
+      const updatedAccess = await ticketApi.updateCustomerPortalUser(
+        customer.id,
+        editing.contact.id,
+        {
+          login: editLogin.trim().toLocaleLowerCase("en-US"),
+          active: editActive,
+          accessProfile: editProfile,
+          customerDepartmentId: editProfile === "FULL_ACCESS" ? null : editDepartmentId,
+          customerBranchId: editBranchId,
+        },
+      );
+      await refresh();
+      closeEdit();
+      if (!editActive) toast.success("Acesso ao portal desativado.");
+      else if (updatedAccess.delivery || updatedAccess.deliveries)
+        toast.success("Acesso ativado e credenciais reenviadas.");
+      else toast.success("Acesso do contato atualizado.");
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setUpdatingLogin(false);
+    }
+  };
+  const status = (value: ApiCustomerPortalUser["accessStatus"]) => {
+    if (value === "ACTIVE") return { label: "Ativo", tone: "success" as const };
+    if (value === "PENDING") return { label: "Link enviado", tone: "warning" as const };
+    if (value === "EXPIRED") return { label: "Link expirado", tone: "destructive" as const };
+    return { label: "Inativo", tone: "destructive" as const };
+  };
+  return (
+    <>
+      <RelationshipSection
+        title="Contatos"
+        count={users.length}
+        actionLabel="Novo"
+        disabled={!customer}
+        onAdd={() => setLinkOpen(true)}
+      >
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Carregando...</p>
+        ) : users.length ? (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <div className="hidden grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_8rem_10rem] gap-x-3 bg-surface-1 px-3 py-2 text-xs uppercase tracking-widest text-muted-foreground lg:grid">
+              <span>Nome</span>
+              <span>Login</span>
+              <span>Situação</span>
+              <span className="text-center">Ações</span>
+            </div>
+            {users.map((user) => {
+              const accessStatus = status(user.accessStatus);
+              return (
+                <div
+                  key={user.contact.id}
+                  className="grid gap-2 border-t border-border px-3 py-3 first:border-t-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_8rem_10rem] lg:items-center lg:gap-x-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{user.contact.name}</p>
+                    <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                      <Building2 className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {[user.branch?.name, user.department?.name].filter(Boolean).join(" · ") ||
+                          "Sem filial definida"}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-muted-foreground">{user.login}</p>
+                    <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                      <ShieldCheck className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {customerAccessProfileLabel(user.accessProfile)}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="whitespace-nowrap">
+                    <Badge tone={accessStatus.tone}>{accessStatus.label}</Badge>
+                  </div>
+                  <div className="flex justify-center gap-1">
+                    {user.accessStatus !== "ACTIVE" && (
+                      <Action
+                        icon={<SendHorizontal />}
+                        label={`Reenviar convite para ${user.contact.name}`}
+                        success
+                        onClick={() => {
+                          if (!customer) return;
+                          void ticketApi
+                            .inviteCustomerContact(user.contact.id, customer.id)
+                            .then(async (invitation) => {
+                              await refresh();
+                              if (
+                                invitation.delivery?.provider === "whatsapp" &&
+                                invitation.delivery.queued
+                              ) {
+                                toast.success("Acesso encaminhado novamente pelo WhatsApp.");
+                              } else if (invitation.delivery?.delivered === false) {
+                                toast.info(
+                                  "Convite gerado. O envio por e-mail está desativado neste ambiente.",
+                                );
+                              } else {
+                                toast.success("Convite reenviado.");
+                              }
+                            })
+                            .catch((error: Error) => toast.error(error.message));
+                        }}
+                      />
+                    )}
+                    <Action
+                      icon={<Pencil />}
+                      label={`Editar login de ${user.contact.name}`}
+                      onClick={() => {
+                        setEditing(user);
+                        setEditLogin(user.login);
+                        setEditProfile(user.accessProfile);
+                        setEditDepartmentId(user.department?.id ?? "");
+                        setEditBranchId(user.branch?.id ?? "");
+                        setEditActive(user.accessStatus !== "DISABLED");
+                        setEditValidationVisible(false);
+                      }}
+                    />
+                    <Action
+                      icon={<Trash2 />}
+                      label={`Remover acesso de ${user.contact.name}`}
+                      danger
+                      onClick={() => setRevoking(user)}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyRows
+            label={
+              customer
+                ? "Nenhum usuário do portal vinculado."
+                : "Salve o cliente para liberar acessos."
+            }
+          />
+        )}
+      </RelationshipSection>
+      <Modal
+        open={linkOpen}
+        onClose={closeLink}
+        title="Vincular contato ao portal"
+        description="Busque um contato já cadastrado e defina o login de acesso."
+        size="md"
+        footer={
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={closeLink}>
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={() => void submitLink()} disabled={saving}>
+              {saving ? "Vinculando..." : "Vincular e convidar"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-2">
+            <div
+              className="relative flex-1"
+              onFocusCapture={() => {
+                if (query.trim().length >= 1) setResultsOpen(true);
+              }}
+            >
+              <SearchInput
+                value={query}
+                invalid={linkValidationVisible && !selected}
+                onChange={(value) => {
+                  setQuery(value);
+                  setResultsOpen(value.trim().length >= 1);
+                  if (selected) {
+                    setSelected(null);
+                    setLogin("");
+                  }
+                }}
+                placeholder="Pesquisar contato..."
+              />
+              {resultsOpen && query.trim().length >= 1 ? (
+                <div className="absolute inset-x-0 top-[calc(100%+0.375rem)] z-20 max-h-56 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
+                  {candidates.isPending ? (
+                    <p className="p-3 text-sm text-muted-foreground">Carregando contatos...</p>
+                  ) : candidates.data?.items.length ? (
+                    candidates.data.items.map((contact) => {
+                      const alreadyLinked = users.some((user) => user.contact.id === contact.id);
+                      return (
+                        <button
+                          key={contact.id}
+                          type="button"
+                          disabled={alreadyLinked}
+                          onClick={() => choose(contact)}
+                          className="flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left last:border-b-0 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium">
+                              {contact.nome}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {contact.email ?? "Sem e-mail cadastrado"}
+                            </span>
+                          </span>
+                          {alreadyLinked ? (
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              Já vinculado
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <p className="p-3 text-sm text-muted-foreground">Nenhum contato encontrado.</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setLinkValidationVisible(true);
+                const pendingFields = [
+                  ...(!branchId ? ["Filial"] : []),
+                  ...(!profile ? ["Perfil de acesso"] : []),
+                  ...(profile !== "FULL_ACCESS" && !departmentId ? ["Departamento"] : []),
+                ];
+                if (pendingFields.length) {
+                  showRequiredFieldsToast(pendingFields);
+                  return;
+                }
+                setNewContactOpen(true);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" /> Novo
+            </Button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <PortalLoginField
+              id="customer-portal-login"
+              value={login}
+              disabled={!selected}
+              invalid={linkValidationVisible && login.trim().length < 3}
+              onChange={setLogin}
+            />
+            <Field label="Filial *">
+              <Select
+                value={branchId}
+                aria-invalid={linkValidationVisible && !branchId}
+                onChange={(event) => setBranchId(event.target.value)}
+              >
+                <option value="">Selecione...</option>
+                {branches
+                  .filter((branch) => branch.status === "ACTIVE" || branch.id === branchId)
+                  .map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+            <Field label="Perfil de acesso *">
+              <Select
+                value={profile}
+                aria-invalid={linkValidationVisible && !profile}
+                onChange={(event) => {
+                  const next = event.target.value as CustomerAccessProfile;
+                  setProfile(next);
+                  if (next === "FULL_ACCESS") setDepartmentId("");
+                }}
+              >
+                {CUSTOMER_ACCESS_PROFILES.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {profile !== "FULL_ACCESS" ? (
+              <Field label="Departamento *">
+                <Select
+                  value={departmentId}
+                  aria-invalid={linkValidationVisible && !departmentId}
+                  onChange={(event) => setDepartmentId(event.target.value)}
+                >
+                  <option value="">Selecione...</option>
+                  {departments
+                    .filter((department) => department.active || department.id === departmentId)
+                    .map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.name}
+                      </option>
+                    ))}
+                </Select>
+              </Field>
+            ) : null}
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        open={!!editing}
+        onClose={closeEdit}
+        title="Editar acesso ao portal"
+        description={editing ? `Altere o login e o perfil de ${editing.contact.name}.` : undefined}
+        size="md"
+        footer={
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={closeEdit}>
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={() => void submitAccessUpdate()} disabled={updatingLogin}>
+              {updatingLogin ? "Salvando..." : "Salvar alterações"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="mb-4 flex items-center gap-2">
+          <Switch
+            id="customer-portal-access-active"
+            checked={editActive}
+            onCheckedChange={setEditActive}
+            aria-label={editActive ? "Acesso ativo" : "Acesso inativo"}
+          />
+          <label htmlFor="customer-portal-access-active" className="text-sm text-foreground">
+            {editActive ? "Ativo" : "Inativo"}
+          </label>
+        </div>
+        <div className="mb-4 flex items-start gap-2">
+          <div
+            role="textbox"
+            aria-label="Contato vinculado"
+            aria-readonly="true"
+            className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 text-sm text-foreground"
+          >
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="truncate">{editing?.contact.name ?? "Contato não identificado"}</span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!editing || loadingContactDetails}
+            onClick={() => void openLinkedContactEditor()}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            {loadingContactDetails ? "Abrindo..." : "Editar"}
+          </Button>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <PortalLoginField
+            id="customer-portal-edit-login"
+            value={editLogin}
+            invalid={editValidationVisible && editLogin.trim().length < 3}
+            onChange={setEditLogin}
+            autoFocus
+          />
+          <Field label="Filial *">
+            <Select
+              value={editBranchId}
+              aria-invalid={editValidationVisible && !editBranchId}
+              onChange={(event) => setEditBranchId(event.target.value)}
+            >
+              <option value="">Selecione...</option>
+              {branches
+                .filter((branch) => branch.status === "ACTIVE" || branch.id === editBranchId)
+                .map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+          <Field label="Perfil de acesso *">
+            <Select
+              value={editProfile}
+              aria-invalid={editValidationVisible && !editProfile}
+              onChange={(event) => {
+                const next = event.target.value as CustomerAccessProfile;
+                setEditProfile(next);
+                if (next === "FULL_ACCESS") setEditDepartmentId("");
+              }}
+            >
+              {CUSTOMER_ACCESS_PROFILES.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {editProfile !== "FULL_ACCESS" ? (
+            <Field label="Departamento *">
+              <Select
+                value={editDepartmentId}
+                aria-invalid={editValidationVisible && !editDepartmentId}
+                onChange={(event) => setEditDepartmentId(event.target.value)}
+              >
+                <option value="">Selecione...</option>
+                {departments
+                  .filter((department) => department.active || department.id === editDepartmentId)
+                  .map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+          ) : null}
+        </div>
+      </Modal>
+      <ContactRegistryFormModal
+        open={newContactOpen}
+        onClose={() => setNewContactOpen(false)}
+        customers={customer ? [customer] : []}
+        tags={contactOptions.data?.tags ?? []}
+        departments={contactOptions.data?.departments ?? []}
+        profiles={contactOptions.data?.profiles ?? []}
+        instances={contactOptions.data?.instances ?? []}
+        defaultCustomerId={customer?.id}
+        lockCustomer
+        onCustomerCreated={() => undefined}
+        onDepartmentSaved={() => undefined}
+        onProfileSaved={() => undefined}
+        onSubmit={async (data) => {
+          if (!customer) return;
+          try {
+            const created = await crmApi.createContact(
+              contactPayload({ ...data, customer_id: customer.id }),
+            );
+            const requestedLogin = login.trim() || data.email?.trim().toLocaleLowerCase("en-US");
+            if (!requestedLogin) {
+              choose(created);
+              setNewContactOpen(false);
+              toast.info("Contato cadastrado. Informe o login para liberar o acesso ao portal.");
+              return;
+            }
+            const invitation = await link(created, requestedLogin, profile, departmentId, branchId);
+            setNewContactOpen(false);
+            closeLink();
+            if (invitation?.delivery?.delivered === false) {
+              toast.info(
+                "Contato cadastrado e vinculado. O envio por e-mail está desativado neste ambiente.",
+              );
+            } else {
+              toast.success("Contato cadastrado, vinculado e convidado para o portal.");
+            }
+          } catch (error) {
+            toast.error((error as Error).message);
+          }
+        }}
+      />
+      <ContactRegistryFormModal
+        open={!!editingContactDetails}
+        initial={editingContactDetails ?? undefined}
+        onClose={() => setEditingContactDetails(null)}
+        customers={customer ? [customer] : []}
+        tags={contactOptions.data?.tags ?? []}
+        departments={contactOptions.data?.departments ?? []}
+        profiles={contactOptions.data?.profiles ?? []}
+        instances={contactOptions.data?.instances ?? []}
+        defaultCustomerId={customer?.id}
+        lockCustomer
+        onCustomerCreated={() => undefined}
+        onDepartmentSaved={() => undefined}
+        onProfileSaved={() => undefined}
+        onSubmit={async (data) => {
+          if (!editingContactDetails) return;
+          try {
+            const updated = await crmApi.updateContact(
+              editingContactDetails.id,
+              contactPayload(data),
+            );
+            setEditing((current) =>
+              current
+                ? {
+                    ...current,
+                    contact: {
+                      ...current.contact,
+                      name: updated.nome,
+                      email: updated.email,
+                      phone: updated.telefone,
+                      active: updated.active,
+                    },
+                  }
+                : current,
+            );
+            setEditBranchId(updated.customerBranchId ?? "");
+            setEditDepartmentId(updated.customerDepartmentId ?? "");
+            setEditingContactDetails(null);
+            await refresh();
+            toast.success("Contato atualizado.");
+          } catch (error) {
+            toast.error((error as Error).message);
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={!!revoking}
+        title="Remover acesso ao portal?"
+        description="O contato continuará vinculado ao cliente, mas não poderá mais acessar o portal."
+        confirmLabel="Remover acesso"
+        destructive
+        onClose={() => setRevoking(null)}
+        onConfirm={() => {
+          if (!customer || !revoking) return;
+          void ticketApi
+            .revokeCustomerPortalUser(customer.id, revoking.contact.id)
+            .then(async (result) => {
+              await refresh();
+              return result;
+            })
+            .then((result) => {
+              setRevoking(null);
+              if (result.delivery.queued || result.delivery.delivered) {
+                toast.success("Acesso removido e aviso encaminhado pelo WhatsApp.");
+              } else {
+                toast.info(
+                  "Acesso removido, mas não foi possível encaminhar o aviso pelo WhatsApp.",
+                );
+              }
+            })
+            .catch((error: Error) => toast.error(error.message));
+        }}
+      />
+    </>
+  );
+}
+
+function LegacyContactsTab({
   customer,
   contacts,
   branches,
@@ -1414,6 +2172,7 @@ function ContactFormModal({
   const [profile, setProfile] = React.useState<CustomerAccessProfile>("COLLABORATOR");
   const [branchId, setBranchId] = React.useState("");
   const [departmentId, setDepartmentId] = React.useState("");
+  const [validationAttempted, setValidationAttempted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [pendingTransfer, setPendingTransfer] = React.useState<{
     details: ContactCustomerTransferDetails;
@@ -1435,6 +2194,7 @@ function ContactFormModal({
     setProfile(initial?.customerAccessProfile ?? "COLLABORATOR");
     setBranchId(initial?.customerBranchId ?? "");
     setDepartmentId(initial?.customerDepartmentId ?? "");
+    setValidationAttempted(false);
   }, [initial, open]);
 
   const completeSave = async (saved: ApiContact, sendAccess: boolean) => {
@@ -1475,10 +2235,16 @@ function ContactFormModal({
 
   const save = async (sendAccess: boolean) => {
     if (!customer) return;
-    if (!name.trim()) return toast.error("Informe o nome do contato.");
-    if (onlyDigits(phone).length < 10) return toast.error("Informe um WhatsApp válido.");
-    if (!email.trim() || !isValidEmail(email.trim()))
-      return toast.error("Informe um e-mail válido.");
+    setValidationAttempted(true);
+    const pendingFields = [
+      ...(!name.trim() ? ["Nome"] : []),
+      ...(onlyDigits(phone).length < 10 ? ["WhatsApp"] : []),
+      ...(!email.trim() || !isValidEmail(email.trim()) ? ["E-mail"] : []),
+    ];
+    if (pendingFields.length) {
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
     const payload: CustomerContactPayload = {
       name: name.trim(),
       active,
@@ -1589,10 +2355,20 @@ function ContactFormModal({
             </label>
           </div>
           <Field label="Nome *">
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
+            <Input
+              value={name}
+              aria-invalid={validationAttempted && !name.trim()}
+              onChange={(event) => setName(event.target.value)}
+            />
           </Field>
           <Field label="WhatsApp *">
-            <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
+            <div
+              className={`flex h-9 overflow-hidden rounded-md border bg-transparent transition-colors ${
+                validationAttempted && onlyDigits(phone).length < 10
+                  ? "border-destructive focus-within:border-destructive"
+                  : "border-input focus-within:border-primary"
+              }`}
+            >
               <CountryCodeSelect
                 value={countryCode}
                 onChange={(value) => setCountryCode(value)}
@@ -1602,6 +2378,7 @@ function ContactFormModal({
               <Input
                 type="tel"
                 inputMode="tel"
+                aria-invalid={validationAttempted && onlyDigits(phone).length < 10}
                 value={countryCode === "55" ? maskBrazilPhone(phone) : phone}
                 onChange={(event) =>
                   setPhone(
@@ -1619,6 +2396,7 @@ function ContactFormModal({
             <Input
               type="email"
               value={email}
+              aria-invalid={validationAttempted && (!email.trim() || !isValidEmail(email.trim()))}
               onChange={(event) => setEmail(event.target.value.toLocaleLowerCase("en-US"))}
               placeholder="email@exemplo.com"
             />
@@ -1847,6 +2625,8 @@ function BranchFormModal({
   const [cityId, setCityId] = React.useState("");
   const [city, setCity] = React.useState("");
   const [state, setState] = React.useState("");
+  const [nameMissing, setNameMissing] = React.useState(false);
+  const [cityMissing, setCityMissing] = React.useState(false);
   const [status, setStatus] = React.useState<"ACTIVE" | "INACTIVE">("ACTIVE");
   const isEditing = Boolean(initial) && !forceCreate;
   React.useEffect(() => {
@@ -1855,16 +2635,30 @@ function BranchFormModal({
       setCityId("");
       setCity(initial?.city ?? "");
       setState(initial?.state ?? "");
+      setNameMissing(false);
+      setCityMissing(false);
       setStatus(initial?.status ?? "ACTIVE");
     }
   }, [initial, open]);
   const save = async () => {
-    if (!customer || !name.trim()) return toast.error("Informe o nome da filial.");
+    if (!customer) return;
+    const missingName = !name.trim();
+    const missingCity = !city.trim() || !state.trim();
+    setNameMissing(missingName);
+    setCityMissing(missingCity);
+    const pendingFields = [
+      ...(missingName ? ["Nome da filial"] : []),
+      ...(missingCity ? ["Cidade"] : []),
+    ];
+    if (pendingFields.length) {
+      showRequiredFieldsToast(pendingFields);
+      return;
+    }
     try {
       const payload = {
         name: name.trim(),
-        city: city.trim() || null,
-        state: state || null,
+        city: city.trim(),
+        state: state.trim(),
         status,
       };
       if (isEditing && initial) await crmApi.updateCustomerBranch(customer.id, initial.id, payload);
@@ -1906,12 +2700,25 @@ function BranchFormModal({
           </label>
         </div>
         <Field label="Nome da filial *">
-          <Input value={name} onChange={(event) => setName(event.target.value)} />
+          <Input
+            value={name}
+            aria-invalid={nameMissing}
+            onChange={(event) => {
+              setName(event.target.value);
+              if (event.target.value.trim()) setNameMissing(false);
+            }}
+          />
         </Field>
         <CityAutocomplete
           value={cityId}
           initialLabel={city}
           initialDivision={state}
+          cityFieldLabel={
+            <span>
+              Cidade <span className="text-destructive">*</span>
+            </span>
+          }
+          invalid={cityMissing}
           selectionLabel="name"
           onChange={setCityId}
           onSearchChange={(value) => {
@@ -1921,6 +2728,7 @@ function BranchFormModal({
           onCitySelect={(selectedCity) => {
             setCity(selectedCity.name);
             setState(selectedCity.divisionCode || selectedCity.divisionName || "");
+            setCityMissing(false);
           }}
         />
       </div>
@@ -1930,12 +2738,10 @@ function BranchFormModal({
 function DepartmentsTab({
   customer,
   items,
-  contacts,
   loading,
 }: {
   customer: TicketCustomer | null;
   items: ApiCustomerDepartment[];
-  contacts: ApiContact[];
   loading: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -1964,22 +2770,17 @@ function DepartmentsTab({
           <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : items.length ? (
           <div className="overflow-hidden rounded-xl border border-border">
-            <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_8rem] bg-surface-1 px-3 py-2 text-xs uppercase tracking-widest text-muted-foreground sm:grid">
+            <div className="hidden grid-cols-[minmax(0,1fr)_7rem_8rem] bg-surface-1 px-3 py-2 text-xs uppercase tracking-widest text-muted-foreground sm:grid">
               <span>Departamento</span>
-              <span>Gestor</span>
               <span>Situação</span>
               <span className="text-center">Ações</span>
             </div>
             {items.map((item) => (
               <div
                 key={item.id}
-                className="grid gap-2 border-t border-border px-3 py-3 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_8rem] sm:items-center"
+                className="grid gap-2 border-t border-border px-3 py-3 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_7rem_8rem] sm:items-center"
               >
                 <p className="font-medium">{item.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  <span className="sm:hidden">Gestor: </span>
-                  {item.managerContact?.name ?? item.manager?.name ?? "Sem gestor"}
-                </p>
                 <div className="justify-self-start">
                   <Badge tone={item.active ? "success" : "destructive"}>
                     {item.active ? "Ativo" : "Inativo"}
@@ -2021,7 +2822,6 @@ function DepartmentsTab({
       </RelationshipSection>
       <DepartmentFormModal
         customer={customer}
-        contacts={contacts}
         initial={editing ?? null}
         forceCreate={forceCreate}
         open={editing !== undefined}
@@ -2065,7 +2865,6 @@ function DepartmentsTab({
 
 function DepartmentFormModal({
   customer,
-  contacts,
   initial,
   forceCreate = false,
   open,
@@ -2073,7 +2872,6 @@ function DepartmentFormModal({
   onSaved,
 }: {
   customer: TicketCustomer | null;
-  contacts: ApiContact[];
   initial: ApiCustomerDepartment | null;
   forceCreate?: boolean;
   open: boolean;
@@ -2081,21 +2879,26 @@ function DepartmentFormModal({
   onSaved: () => void | Promise<void>;
 }) {
   const [name, setName] = React.useState("");
-  const [managerContactId, setManagerContactId] = React.useState("");
   const [active, setActive] = React.useState(true);
+  const [nameMissing, setNameMissing] = React.useState(false);
   const isEditing = Boolean(initial) && !forceCreate;
   React.useEffect(() => {
     if (open) {
       setName(initial?.name ?? "");
-      setManagerContactId(initial?.managerContactId ?? "");
       setActive(initial?.active ?? true);
+      setNameMissing(false);
     }
   }, [initial, open]);
   const save = async () => {
-    if (!customer || !name.trim()) return toast.error("Informe o nome do departamento.");
-    if (!managerContactId) return toast.error("Selecione o gestor do departamento.");
+    if (!customer) return;
+    const missingName = !name.trim();
+    setNameMissing(missingName);
+    if (missingName) {
+      showRequiredFieldsToast(["Departamento"]);
+      return;
+    }
     try {
-      const payload = { name: name.trim(), managerContactId, active };
+      const payload = { name: name.trim(), active };
       if (isEditing && initial)
         await crmApi.updateCustomerDepartment(customer.id, initial.id, payload);
       else await crmApi.createCustomerDepartment(customer.id, payload);
@@ -2136,20 +2939,14 @@ function DepartmentFormModal({
           </label>
         </div>
         <Field label="Departamento *">
-          <Input value={name} onChange={(event) => setName(event.target.value)} />
-        </Field>
-        <Field label="Gestor *">
-          <Select
-            value={managerContactId}
-            onChange={(event) => setManagerContactId(event.target.value)}
-          >
-            <option value="">Selecione</option>
-            {contacts.map((contact) => (
-              <option key={contact.id} value={contact.id}>
-                {contact.nome}
-              </option>
-            ))}
-          </Select>
+          <Input
+            value={name}
+            aria-invalid={nameMissing}
+            onChange={(event) => {
+              setName(event.target.value);
+              if (event.target.value.trim()) setNameMissing(false);
+            }}
+          />
         </Field>
       </div>
     </Modal>
@@ -2386,7 +3183,7 @@ function customerPayload(form: CustomerForm): Parameters<typeof crmApi.createCus
     status: form.status,
     document: onlyDigits(form.document) || null,
     legalName: form.legalName.trim() || null,
-    city: form.city.trim(),
+    city: normalizeCustomerCity(form.city, form.state),
     state: form.state,
     addressFullEnabled: form.fullAddress,
     postalCode: onlyDigits(form.zipCode) || null,
@@ -2398,4 +3195,12 @@ function customerPayload(form: CustomerForm): Parameters<typeof crmApi.createCus
     cityId: form.cityId || null,
     country: form.country.trim() || "Brasil",
   } as Parameters<typeof crmApi.createCustomer>[0];
+}
+
+export function normalizeCustomerCity(city: string, state: string) {
+  const normalizedCity = city.trim();
+  const normalizedState = state.trim();
+  if (!normalizedState) return normalizedCity;
+  const escapedState = normalizedState.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return normalizedCity.replace(new RegExp(`\\s+-\\s+${escapedState}$`, "i"), "").trim();
 }

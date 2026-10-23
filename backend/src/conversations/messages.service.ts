@@ -549,7 +549,16 @@ export class MessagesService {
             inline_url: `/conversations/${message.conversationId}/messages/${message.id}/media/inline`,
           }
         : message.mediaState
-          ? { state: message.mediaState.toLowerCase() }
+          ? {
+              state: message.mediaState.toLowerCase(),
+              mime_type: message.mediaMimeType,
+              file_name: message.mediaFileName,
+              size: message.mediaSize,
+              caption: message.mediaCaption,
+              width: message.mediaWidth,
+              height: message.mediaHeight,
+              checksum: message.mediaChecksum,
+            }
           : null,
       duration_ms: message.mediaDurationMs,
       reactions: message.reactions

@@ -627,7 +627,7 @@ export function DepartamentoForm({
             </div>
           </Field>
         </div>
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_7.5rem]">
+        <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-3 sm:gap-4">
           <Field label="Instâncias">
             <DepartmentInstanceMultiSelect
               connections={connections}
@@ -645,7 +645,7 @@ export function DepartamentoForm({
         </div>
         <Field label="Nota">
           <Textarea
-            rows={3}
+            rows={1}
             value={form.description ?? ""}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
@@ -672,7 +672,8 @@ export function DepartamentoForm({
           </div>
           {form.inactivityClosureEnabled && (
             <div className="mt-3 space-y-3">
-              <Field label="Tempo sem resposta do cliente *">
+              <div className="w-full">
+                <Field label="Tempo sem resposta do cliente *">
                 <div
                   className={`flex overflow-hidden rounded-lg border border-border bg-surface-1 ${requiredFieldClassName(inactivityErrors.timeout)}`}
                 >
@@ -698,7 +699,8 @@ export function DepartamentoForm({
                     minutos
                   </span>
                 </div>
-              </Field>
+                </Field>
+              </div>
               <Field label="Mensagem *">
                 <GreetingMessageEditor
                   value={form.inactivityClosureMessage ?? ""}
@@ -724,9 +726,9 @@ export function DepartamentoForm({
               <div
                 role="note"
                 data-department-inactivity-notice
-                className="flex gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
               >
-                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                <Info className="h-4 w-4 shrink-0" />
                 <span>
                   O prazo começa após a mensagem do atendente. Se o cliente responder, a contagem é
                   interrompida.

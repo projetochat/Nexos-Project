@@ -27,7 +27,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
-import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Avatar, Badge, Button, Field, Input, SearchInput, Select } from "@/components/ui-kit";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { CreateGroupModal } from "./grupos";
@@ -164,16 +163,6 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const [selectedClientes, setSelectedClientes] = React.useState<Set<string>>(
     () => new Set(inboxListMemory.selectedClientes),
   );
-  const hasListFilters = Boolean(
-    query || selectedInstancias.size || selectedClientes.size || source !== "todos" || onlyUnread,
-  );
-  const clearListFilters = () => {
-    setQuery("");
-    setSelectedInstancias(new Set());
-    setSelectedClientes(new Set());
-    setSource("todos");
-    setOnlyUnread(false);
-  };
   React.useEffect(() => {
     inboxListMemory.onlyUnread = onlyUnread;
     inboxListMemory.query = query;
@@ -285,7 +274,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
     <AppShellFull>
       <div className="flex h-full min-h-0 w-full">
         <aside
-          className={`${activeId ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-border md:w-[380px] xl:w-[440px]`}
+          className={`${activeId ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-border md:w-[440px] xl:w-[480px]`}
         >
           <div className="space-y-3 border-b border-border p-4">
             <div className="flex items-center gap-2">
@@ -295,7 +284,6 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 placeholder="Buscar cliente..."
                 className="flex-1"
               />
-              {hasListFilters && <ClearFiltersButton onClick={clearListFilters} />}
               <Button
                 variant="ghost"
                 size="icon"
@@ -389,7 +377,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Tabs */}
-            <div className="flex items-center gap-1 rounded-lg border border-border bg-surface-1 p-1">
+            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-1 p-0.5 sm:gap-1 sm:p-1">
               {activeTabs.map((t) => {
                 const Icon = TAB_ICONS[t.id];
                 const active = tab === t.id;
@@ -397,14 +385,14 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   <button
                     key={t.id}
                     onClick={() => setTab(t.id)}
-                    className={`flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1.5 text-xs font-medium transition ${
+                    className={`flex h-10 min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-md border px-1 py-1.5 text-[11px] font-medium leading-none transition sm:gap-1.5 sm:px-2 sm:text-xs ${
                       active
                         ? "border-primary bg-primary/10 text-primary"
                         : "border-transparent text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <Icon className="h-3.5 w-3.5 shrink-0" />
-                    <span className="whitespace-nowrap">{t.label}</span>
+                    <Icon className="hidden h-3.5 w-3.5 shrink-0 min-[360px]:block" />
+                    <span className="min-w-0 truncate">{t.label}</span>
                     <span className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 font-sans text-[9px] font-semibold leading-none tabular-nums text-primary-foreground">
                       {counts[t.id]}
                     </span>
@@ -496,8 +484,8 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                           </span>
                         )}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
+                      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2">
+                        <div className="min-w-0">
                           <p
                             className={`truncate text-sm ${u > 0 ? "font-semibold" : "font-medium"}`}
                           >
@@ -508,44 +496,44 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                               </span>
                             )}
                           </p>
-                          <ConversationListTimestamp
-                            value={c.last_message_at}
-                            unread={u > 0}
-                            hasPendingScheduledMessage={Boolean(c.hasPendingScheduledMessage)}
-                          />
+                          {metadataLabel && (
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {metadataLabel}
+                            </p>
+                          )}
+                          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: c.connection?.color ?? "var(--muted-foreground)",
+                              }}
+                              aria-hidden="true"
+                            />
+                            <span className="truncate">
+                              {[
+                                instanceLabel || "Sem instância",
+                                c.department?.nome,
+                                c.agent?.nome || "sem atendente",
+                              ]
+                                .filter(Boolean)
+                                .join(" - ")}
+                            </span>
+                          </div>
+                          <div
+                            className={`mt-0.5 truncate text-xs ${u > 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                          >
+                            <ConversationMessagePreview
+                              value={c.lastMessagePreview}
+                              type={c.lastMessageType}
+                              durationMs={c.lastMessageDurationMs}
+                            />
+                          </div>
                         </div>
-                        {metadataLabel && (
-                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {metadataLabel}
-                          </p>
-                        )}
-                        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                          <span
-                            className="h-2 w-2 shrink-0 rounded-full"
-                            style={{
-                              backgroundColor: c.connection?.color ?? "var(--muted-foreground)",
-                            }}
-                            aria-hidden="true"
-                          />
-                          <span className="truncate">
-                            {[
-                              instanceLabel || "Sem instância",
-                              c.department?.nome,
-                              c.agent?.nome || "sem atendente",
-                            ]
-                              .filter(Boolean)
-                              .join(" - ")}
-                          </span>
-                        </div>
-                        <div
-                          className={`mt-0.5 truncate text-xs ${u > 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}
-                        >
-                          <ConversationMessagePreview
-                            value={c.lastMessagePreview}
-                            type={c.lastMessageType}
-                            durationMs={c.lastMessageDurationMs}
-                          />
-                        </div>
+                        <ConversationListTimestamp
+                          value={c.last_message_at}
+                          unread={u > 0}
+                          hasPendingScheduledMessage={Boolean(c.hasPendingScheduledMessage)}
+                        />
                       </div>
                     </Link>
                   </li>
@@ -636,7 +624,7 @@ function ConversationListTimestamp({
       <span className="block">{timestamp.time}</span>
       {hasPendingScheduledMessage && (
         <CalendarClock
-          className="ml-auto mt-0.5 h-3.5 w-3.5 text-primary"
+          className="mx-auto mt-0.5 h-3.5 w-3.5 text-primary"
           aria-label="Mensagem agendada pendente"
         />
       )}
@@ -674,9 +662,9 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const canStartConversation = canStartActiveConversation(permissions);
   const canCreateContact = permissions.includes("contacts.create");
   const canEditContact = permissions.includes("contacts.update");
-  const canViewGroups = permissions.includes("groups.read");
-  const canCreateGroup = canViewGroups && permissions.includes("groups.create");
-  const canOpenGroup = canViewGroups && permissions.includes("conversations.read");
+  const canViewGroups = canStartConversation;
+  const canCreateGroup = permissions.includes("groups.read") && permissions.includes("groups.create");
+  const canOpenGroup = canStartConversation;
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [tab, setTab] = React.useState<"contacts" | "groups">("contacts");
@@ -777,13 +765,23 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     setConversationRequest({ key: conversationRequestKey.current, contact });
   };
 
-  const openGroup = (group: ApiWhatsappGroupSummary) => {
+  const openGroup = async (group: ApiWhatsappGroupSummary) => {
     if (!canOpenGroup) return;
-    navigate({
-      to: "/inbox/$conversationId",
-      params: { conversationId: group.conversationId },
+    conversationRequestKey.current += 1;
+    setConversationRequest({
+      key: conversationRequestKey.current,
+      group,
+      contact: {
+        id: group.contactId,
+        nome: group.name,
+        telefone: group.externalChatId ?? "",
+        normalizedPhone: group.externalChatId ? `group:${group.externalChatId}` : "group:",
+        avatar_url: group.imageUrl,
+        active: true,
+        instancia: group.connection?.id ?? null,
+        instanceIds: group.connection?.id ? [group.connection.id] : [],
+      },
     });
-    onClose();
   };
 
   return (
@@ -982,7 +980,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                       title="Nova conversa"
                       aria-label={`Nova conversa com o grupo ${group.name}`}
                       disabled={!canOpenGroup}
-                      onClick={() => openGroup(group)}
+                       onClick={() => void openGroup(group)}
                     >
                       <MessageSquarePlus className="h-4 w-4" />
                     </Button>

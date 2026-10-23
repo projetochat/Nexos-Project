@@ -6,9 +6,9 @@ import {
   Building2,
   CreditCard,
   MessageSquareText,
-  Pencil,
   Phone,
   RefreshCw,
+  Settings,
   ShieldAlert,
   Users,
 } from "lucide-react";
@@ -236,12 +236,12 @@ function AdminDashboard() {
                 variant="secondary"
                 size="sm"
                 className="max-sm:!w-9 max-sm:!px-0"
-                title="Editar Dashboard"
-                aria-label="Editar Dashboard"
+                title="Config. Dashboard"
+                aria-label="Config. Dashboard"
                 onClick={() => setEditingDashboard(true)}
               >
-                <Pencil className="h-4 w-4" />
-                <span className="hidden sm:inline">Editar Dashboard</span>
+                <Settings className="h-4 w-4" />
+                <span className="hidden sm:inline">Config. Dashboard</span>
               </Button>
             )}
           </div>
@@ -281,7 +281,7 @@ function AdminDashboard() {
           {visibleComponents.length === 0 && (
             <Card className="md:col-span-4">
               <p className="py-8 text-center text-sm text-muted-foreground">
-                Nenhum componente visível. Use “Editar Dashboard” para configurar a tela.
+                Nenhum componente visível. Use “Config. Dashboard” para configurar a tela.
               </p>
             </Card>
           )}

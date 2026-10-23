@@ -34,6 +34,13 @@ export function protocolPeriodKey(reset: ProtocolReset, at: Date) {
   return "GLOBAL";
 }
 
+export function effectiveProtocolReset(format: ProtocolFormat, reset: ProtocolReset) {
+  if (format === ProtocolFormat.YEAR_SEQUENCE) return ProtocolReset.YEARLY;
+  if (format === ProtocolFormat.YEAR_MONTH_SEQUENCE) return ProtocolReset.MONTHLY;
+  if (format === ProtocolFormat.CUSTOM) return reset;
+  return ProtocolReset.NEVER;
+}
+
 export function formatProtocol(config: ProtocolNumberingConfig, sequence: number, at: Date) {
   const year = String(at.getUTCFullYear());
   const month = String(at.getUTCMonth() + 1).padStart(2, "0");
@@ -77,7 +84,7 @@ export async function readProtocolConfig(
         module,
         format: saved.format,
         digits: saved.digits,
-        reset: saved.reset,
+        reset: effectiveProtocolReset(saved.format, saved.reset),
         customPattern: saved.customPattern,
       }
     : defaultProtocolConfig(module);
@@ -129,7 +136,7 @@ export async function previewNextProtocol(
   config: ProtocolNumberingConfig,
   at = new Date(),
 ) {
-  const periodKey = protocolPeriodKey(config.reset, at);
+  const periodKey = protocolPeriodKey(effectiveProtocolReset(config.format, config.reset), at);
   const counter = await tx.protocolSequenceCounter.findUnique({
     where: { tenantId_module_periodKey: { tenantId, module: config.module, periodKey } },
     select: { lastNumber: true },

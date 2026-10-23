@@ -11,6 +11,7 @@ describe("UsersController protocol settings", () => {
       },
       conversation: { count: vi.fn().mockResolvedValue(1) },
       ticket: { count: vi.fn() },
+      protocolSequenceCounter: { findUnique: vi.fn().mockResolvedValue(null) },
     };
     const controller = new UsersController(prisma as never, {} as never);
 
@@ -30,5 +31,35 @@ describe("UsersController protocol settings", () => {
       where: { tenantId: "tenant-a", protocol: { not: null } },
     });
     expect(prisma.tenantProtocolConfiguration.upsert).not.toHaveBeenCalled();
+  });
+
+  it("enforces the reset period for predefined formats", async () => {
+    const prisma = {
+      tenantProtocolConfiguration: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockImplementation(({ create }) => Promise.resolve(create)),
+      },
+      conversation: { count: vi.fn().mockResolvedValue(0) },
+      ticket: { count: vi.fn() },
+      protocolSequenceCounter: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    const controller = new UsersController(prisma as never, {} as never);
+
+    await controller.updateProtocolSettings(
+      {
+        module: ProtocolModule.CHAT,
+        format: ProtocolFormat.YEAR_MONTH_SEQUENCE,
+        digits: 2,
+        reset: ProtocolReset.NEVER,
+      },
+      { tenantId: "tenant-a" } as never,
+    );
+
+    expect(prisma.tenantProtocolConfiguration.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ digits: 2, reset: ProtocolReset.MONTHLY }),
+        update: expect.objectContaining({ digits: 2, reset: ProtocolReset.MONTHLY }),
+      }),
+    );
   });
 });

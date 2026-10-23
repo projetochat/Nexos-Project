@@ -18,7 +18,7 @@ export async function refreshInboxData(
           queryClient.refetchQueries(
             {
               queryKey: ["trixus", "conversations", activeId],
-              exact: true,
+              exact: false,
               type: "active",
             },
             { throwOnError: true },
@@ -26,7 +26,7 @@ export async function refreshInboxData(
           queryClient.refetchQueries(
             {
               queryKey: ["trixus", "messages", activeId],
-              exact: true,
+              exact: false,
               type: "active",
             },
             { throwOnError: true },

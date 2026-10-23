@@ -14,11 +14,9 @@ describe("visualização card/lista do Financeiro Platform", () => {
     expect(source).toContain('aria-label="Visualizar faturas em cards"');
     expect(source).toContain('aria-label="Visualizar faturas em lista"');
     expect(source).toContain("data-platform-card-shell");
-    expect(source).toContain(
-      '? "mt-4 md:overflow-hidden md:rounded-xl md:border md:border-border md:bg-card md:shadow-card"',
-    );
+    expect(source).toContain('? "mt-4 space-y-3"');
     expect(source).toContain('className={viewMode === "list" ? "mt-4" : "hidden"}');
-    expect(source).toContain("sm:grid-cols-2 md:p-4 xl:grid-cols-3");
+    expect(source).toContain("sm:grid-cols-2 xl:grid-cols-3");
   });
 
   it("remove os checkboxes dos cards e da tabela sem alterar as ações", () => {
@@ -43,13 +41,15 @@ describe("visualização card/lista do Financeiro Platform", () => {
     expect(source).toContain("return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`");
   });
 
-  it("padroniza a grade e integra o mesmo rodapé aos cards", () => {
+  it("padroniza a grade sem balão externo e mantém o rodapé separado", () => {
     expect(source).toContain('<thead className="bg-surface-2">');
     expect(source).toContain("<GridPaginationFooter");
     expect(source).toContain("visible={pagedRows.length}");
     expect(source).toContain("total={filtered.length}");
     expect(source.match(/\{paginationFooter\}/g)).toHaveLength(2);
     expect(source.match(/pagedRows\.map/g)).toHaveLength(2);
+    expect(source).toContain('className="overflow-hidden rounded-xl border border-border"');
+    expect(source).not.toContain("md:bg-card md:shadow-card");
     expect(source).toContain('<col className="w-[13%]" />');
     expect(source).toContain('<col className="w-[12%]" />');
     expect(source.match(/<col className="w-\[/g)).toHaveLength(9);

@@ -528,6 +528,7 @@ function ContactFieldsSettings() {
           />
           <DeletionConfirmDialog
             open={!!deleting}
+            initialFocus="confirm"
             resourceKey={`contact-custom-field:${deleting?.id ?? "none"}`}
             onOpenChange={(open) => {
               if (!open) setDeleting(null);

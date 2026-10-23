@@ -12,6 +12,8 @@ export class ListTicketsQueryDto {
   @IsOptional() @IsString() requesterContactId?: string;
   @IsOptional() @IsString() customerId?: string;
   @IsOptional() @IsString() conversationId?: string;
+  @IsOptional() @IsString() originBranchId?: string;
+  @IsOptional() @IsString() customerDepartmentId?: string;
   @IsOptional() @IsISO8601() createdFrom?: string;
   @IsOptional() @IsISO8601() createdTo?: string;
   @IsOptional() @IsString() sort?: string;

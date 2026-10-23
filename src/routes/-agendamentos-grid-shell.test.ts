@@ -22,7 +22,7 @@ describe("Agendamentos grid shell", () => {
     expect(source).toContain('className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"');
   });
 
-  it("usa rodapé integrado e compacto com contagem, lista e paginação", () => {
+  it("usa rodapé independente e compacto com contagem, lista e paginação", () => {
     expect(source).toContain("data-schedules-grid-footer");
     expect(source).toContain(
       'className="flex items-center justify-between gap-2 border-t border-border bg-surface-2 px-3 py-1.5 text-xs text-muted-foreground sm:px-4"',
@@ -32,6 +32,7 @@ describe("Agendamentos grid shell", () => {
       'className="!h-6 !min-h-6 !w-16 !rounded-md !px-2 !py-0 !pr-6 text-xs"',
     );
     expect(source.match(/className="!h-7 !min-h-7 !w-7 !p-0"/g)).toHaveLength(2);
+    expect(source).toContain('<div className="overflow-hidden rounded-xl border border-border">');
   });
 
   it("omite os detalhes técnicos do registro no aviso de exclusão", () => {

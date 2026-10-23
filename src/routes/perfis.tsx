@@ -855,12 +855,14 @@ function RoleMetric({
   label: string;
 }) {
   return (
-    <div className="flex min-w-0 items-start gap-2">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0">
+    <div className="flex min-w-0 flex-col items-center text-center">
+      <div className="flex items-center justify-center gap-2">
+        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
         <p className="text-sm font-semibold leading-none">{value}</p>
-        <p className="mt-1 truncate text-[11px] text-muted-foreground">{label}</p>
       </div>
+      <p className="mt-1 min-h-7 break-words text-[11px] leading-tight text-muted-foreground">
+        {label}
+      </p>
     </div>
   );
 }

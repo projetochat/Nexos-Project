@@ -7,8 +7,10 @@ import {
 } from "../generated/prisma";
 import { lockActiveDepartmentForConversation } from "../departments/department-conversation-lock";
 import { EvolutionClient } from "../messaging/evolution/evolution.client";
+import type { EvolutionContact } from "../messaging/evolution/evolution.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { contactPhoneDuplicateCandidates, normalizePhone } from "../crm/phone-normalization";
+import { groupConversationLockKey } from "./group-conversation-identity";
 
 type EvolutionGroupSnapshot = Awaited<ReturnType<EvolutionClient["fetchGroups"]>>[number];
 type GroupSyncInput = {
@@ -138,6 +140,7 @@ export class GroupsSyncService implements OnModuleDestroy {
       participants: 0,
       inactiveParticipants: 0,
       participantNamesUpdated: 0,
+      unavailable: 0,
       includeParticipants,
     };
 
@@ -153,6 +156,9 @@ export class GroupsSyncService implements OnModuleDestroy {
           getParticipants: includeParticipants,
         });
         result.groups += groups.length;
+        const providerParticipantNames = includeParticipants
+          ? await this.safeProviderParticipantNames(connection.externalReference)
+          : new Map<string, string>();
 
         const groupResults = await mapWithConcurrency(
           groups,
@@ -171,7 +177,7 @@ export class GroupsSyncService implements OnModuleDestroy {
                 ownerPhoneNormalized: connection.ownerPhoneNormalized,
               },
               departmentId,
-              detailedGroup,
+              enrichGroupParticipantNames(detailedGroup, providerParticipantNames),
             );
           },
         );
@@ -196,6 +202,13 @@ export class GroupsSyncService implements OnModuleDestroy {
               }`,
             );
           }
+        }
+        if (!connectionFailed) {
+          result.unavailable += await this.archiveUnavailableGroups(
+            input.tenantId,
+            connection.id,
+            groups.map((group) => group.groupJid),
+          );
         }
       } catch (error) {
         connectionFailed = true;
@@ -264,13 +277,21 @@ export class GroupsSyncService implements OnModuleDestroy {
         createdAt: group.createdAt ?? detail.createdAt,
         descriptionPresent: detail.descriptionPresent || group.descriptionPresent,
         description: detail.descriptionPresent ? detail.description : group.description,
-        participants:
-          detailParticipants.length > group.participants.length
-            ? detailParticipants
-            : group.participants,
+        participants: mergeGroupParticipants(group.participants, detailParticipants),
       };
     } catch {
       return group;
+    }
+  }
+
+  private async safeProviderParticipantNames(instanceName: string) {
+    try {
+      return providerParticipantNamesByIdentity(await this.evolution.findContacts({ instanceName }));
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel consultar nomes de contatos da instancia ${instanceName}: ${errorMessage(error)}`,
+      );
+      return new Map<string, string>();
     }
   }
 
@@ -369,6 +390,26 @@ export class GroupsSyncService implements OnModuleDestroy {
     });
   }
 
+  private async archiveUnavailableGroups(
+    tenantId: string,
+    connectionId: string,
+    activeGroupJids: string[],
+  ) {
+    const result = await this.prisma.conversation.updateMany({
+      where: {
+        tenantId,
+        connectionId,
+        conversationType: ConversationType.GROUP,
+        archivedAt: null,
+        externalChatId: activeGroupJids.length
+          ? { not: null, notIn: activeGroupJids }
+          : { not: null },
+      },
+      data: { archivedAt: new Date() },
+    });
+    return result.count;
+  }
+
   private async markConnectionSyncFinished(
     tenantId: string,
     connectionId: string,
@@ -401,6 +442,13 @@ export class GroupsSyncService implements OnModuleDestroy {
   ) {
     const now = new Date();
     const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${groupConversationLockKey(
+        {
+          tenantId,
+          connectionId: connection.id,
+          externalChatId: group.groupJid,
+        },
+      )}, 0))`;
       const existingConversation = await tx.conversation.findFirst({
         where: {
           tenantId,
@@ -408,6 +456,7 @@ export class GroupsSyncService implements OnModuleDestroy {
           externalChatId: group.groupJid,
           conversationType: ConversationType.GROUP,
         },
+        orderBy: { createdAt: "desc" },
       });
       let conversationDepartmentId = existingConversation?.departmentId ?? null;
       if (
@@ -529,14 +578,15 @@ export class GroupsSyncService implements OnModuleDestroy {
           });
         }
         const incomingName = meaningfulParticipantName(participant.displayName);
+        const existingName = meaningfulParticipantName(existingParticipant?.displayName);
         const data = {
           externalParticipantId: participant.externalParticipantId,
-          phone: existingParticipant?.phone ?? participant.phone ?? undefined,
-          lid: existingParticipant?.lid ?? participant.lid ?? undefined,
+          phone: participant.phone ?? existingParticipant?.phone ?? undefined,
+          lid: participant.lid ?? existingParticipant?.lid ?? undefined,
           displayName:
             (isCurrentInstance ? connection.name : null) ??
-            existingParticipant?.displayName ??
             incomingName ??
+            existingName ??
             undefined,
           isAdmin: participant.isAdmin,
           isSuperAdmin: participant.isSuperAdmin,
@@ -660,6 +710,94 @@ function participantPhoneCandidates(...values: Array<string | null | undefined>)
     }
   }
   return [...candidates];
+}
+
+function mergeGroupParticipants(
+  listed: EvolutionGroupSnapshot["participants"],
+  detailed: EvolutionGroupSnapshot["participants"],
+) {
+  const merged = [...listed];
+  for (const participant of detailed) {
+    const incomingKeys = participantIdentityKeys(participant);
+    const existingIndex = merged.findIndex((existing) =>
+      participantIdentityKeys(existing).some((key) => incomingKeys.includes(key)),
+    );
+    if (existingIndex < 0) {
+      merged.push(participant);
+      continue;
+    }
+    const existing = merged[existingIndex];
+    merged[existingIndex] = {
+      ...existing,
+      ...participant,
+      phone: participant.phone ?? existing.phone,
+      lid: participant.lid ?? existing.lid,
+      displayName: participant.displayName ?? existing.displayName,
+    };
+  }
+  return merged;
+}
+
+function participantIdentityKeys(participant: EvolutionGroupSnapshot["participants"][number]) {
+  const keys = new Set<string>();
+  for (const value of [participant.externalParticipantId, participant.lid]) {
+    const normalized = value?.trim().toLowerCase();
+    if (normalized) keys.add(`id:${normalized}`);
+  }
+  for (const phone of participantPhoneCandidates(
+    participant.phone,
+    participant.externalParticipantId,
+  )) {
+    keys.add(`phone:${phone}`);
+  }
+  return [...keys];
+}
+
+function enrichGroupParticipantNames(
+  group: EvolutionGroupSnapshot,
+  providerNames: Map<string, string>,
+): EvolutionGroupSnapshot {
+  return {
+    ...group,
+    participants: group.participants.map((participant) => {
+      if (meaningfulParticipantName(participant.displayName)) return participant;
+      const providerName = participantIdentityKeys(participant)
+        .map((key) => providerNames.get(key))
+        .find((name): name is string => Boolean(name));
+      return providerName ? { ...participant, displayName: providerName } : participant;
+    }),
+  };
+}
+
+function providerParticipantNamesByIdentity(contacts: EvolutionContact[]) {
+  const names = new Map<string, string>();
+  for (const contact of contacts) {
+    if (contact.isGroup || contact.type === "group") continue;
+    const name = [
+      contact.pushName,
+      contact.verifiedName,
+      contact.notify,
+      contact.profileName,
+      contact.displayName,
+      contact.name,
+      contact.contactName,
+      contact.shortName,
+    ]
+      .map((value) => meaningfulParticipantName(value))
+      .find((value): value is string => Boolean(value));
+    if (!name) continue;
+
+    const keys = new Set<string>();
+    for (const value of [contact.id, contact.remoteJid]) {
+      const normalized = value?.trim().toLowerCase();
+      if (normalized) keys.add(`id:${normalized}`);
+    }
+    for (const phone of participantPhoneCandidates(contact.number, contact.remoteJid, contact.id)) {
+      keys.add(`phone:${phone}`);
+    }
+    for (const key of keys) names.set(key, name);
+  }
+  return names;
 }
 
 function resolveParticipantDisplayName(

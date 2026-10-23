@@ -53,6 +53,7 @@ import {
 } from "../common/deletion-impact";
 import {
   defaultProtocolConfig,
+  effectiveProtocolReset,
   previewNextProtocol,
   type ProtocolNumberingConfig,
 } from "../common/protocol-numbering";
@@ -181,7 +182,7 @@ class UpdateProtocolSettingsDto {
   format!: ProtocolFormat;
 
   @IsInt()
-  @Min(4)
+  @Min(2)
   @Max(10)
   digits!: number;
 
@@ -570,7 +571,7 @@ export class UsersController {
               module,
               format: row.format,
               digits: row.digits,
-              reset: row.reset,
+              reset: effectiveProtocolReset(row.format, row.reset),
               customPattern: row.customPattern,
             }
           : defaultProtocolConfig(module);
@@ -596,10 +597,11 @@ export class UsersController {
     const existing = await this.prisma.tenantProtocolConfiguration.findUnique({
       where: { tenantId_module: { tenantId: current.tenantId, module: dto.module } },
     });
+    const reset = effectiveProtocolReset(dto.format, dto.reset);
     const next = {
       format: dto.format,
       digits: dto.digits,
-      reset: dto.reset,
+      reset,
       customPattern: dto.format === ProtocolFormat.CUSTOM ? customPattern : null,
     };
     const currentConfig = existing ?? defaultProtocolConfig(dto.module);

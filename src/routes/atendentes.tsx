@@ -387,6 +387,9 @@ function AtendentesPage() {
           {!isLoading && filtered.length === 0 && (
             <Card className="p-8 text-center text-sm text-muted-foreground">Nenhum resultado.</Card>
           )}
+          <div className="flex items-center justify-between gap-2 overflow-hidden rounded-xl border border-border bg-surface-2 px-3 py-1.5 text-xs text-muted-foreground sm:px-4">
+            {paginationControls}
+          </div>
         </div>
 
         {viewMode === "cards" && (
@@ -543,7 +546,13 @@ function AtendentesPage() {
           <AtendenteForm
             open={!!viewing}
             atendentes={atendentes}
-            perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
+            perfis={sortByOptionLabel(
+              perfis.filter(
+                (p) =>
+                  p.active !== false && (p.key !== "tenant_admin" || p.id === viewing?.perfilId),
+              ),
+              (p) => p.name,
+            ).map((p) => ({
               id: p.id,
               nome: p.name,
             }))}
@@ -557,7 +566,13 @@ function AtendentesPage() {
           <AtendenteForm
             open={!!editing}
             atendentes={atendentes}
-            perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
+            perfis={sortByOptionLabel(
+              perfis.filter(
+                (p) =>
+                  p.active !== false && (p.key !== "tenant_admin" || p.id === editing?.perfilId),
+              ),
+              (p) => p.name,
+            ).map((p) => ({
               id: p.id,
               nome: p.name,
             }))}

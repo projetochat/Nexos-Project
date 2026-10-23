@@ -13,6 +13,7 @@ export type JwtPayload = {
   iatMs?: number;
   exp?: number;
   sid?: string;
+  portalAccessId?: string;
   impersonationSessionId?: string;
   actorPlatformUserId?: string;
 };
@@ -34,6 +35,7 @@ export type AuthenticatedUser = {
   chatScopes?: ChatScope[] | null;
   iatMs?: number;
   sid?: string;
+  portalAccessId?: string;
   impersonationSessionId?: string;
   actorPlatformUserId?: string;
 };

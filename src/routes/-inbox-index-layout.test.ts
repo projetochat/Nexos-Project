@@ -24,6 +24,10 @@ describe("Inbox visual requirements", () => {
   });
 
   it("renders every queue counter as a blue badge with contrasting text", () => {
+    expect(source).toContain(
+      "flex h-10 min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden whitespace-nowrap",
+    );
+    expect(source).toContain('<span className="min-w-0 truncate">{t.label}</span>');
     expect(source).toContain("inline-flex h-4 min-w-4 shrink-0");
     expect(source).toContain("rounded-full bg-primary");
     expect(source).toContain("font-sans text-[9px] font-semibold leading-none tabular-nums");
@@ -40,5 +44,13 @@ describe("Inbox visual requirements", () => {
       'canStartActiveConversation(permissions) && permissions.includes("contacts.read")',
     );
     expect(source).toContain("crmApi.listContactsForMessagePicker");
+  });
+
+  it("separa o horário da coluna de conteúdo dos cards de conversa", () => {
+    expect(source).toContain(
+      'grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2',
+    );
+    expect(source).not.toContain('className="flex items-center justify-between gap-2"');
+    expect(source).toContain('className="mx-auto mt-0.5 h-3.5 w-3.5 text-primary"');
   });
 });

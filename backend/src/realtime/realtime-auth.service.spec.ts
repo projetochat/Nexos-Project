@@ -21,6 +21,17 @@ describe("RealtimeAuthService", () => {
     });
   });
 
+  it("does not inherit internal permissions in a customer portal socket", async () => {
+    const service = serviceWith({ portalAccessId: "access-a" });
+    await expect(service.authenticate("access-token")).resolves.toMatchObject({
+      portalAccessId: "access-a",
+      roleId: "role-portal",
+      roleKey: "customer_portal",
+      departmentIds: [],
+      permissions: ["tickets.read"],
+    });
+  });
+
   it("rejects platform access tokens on the tenant realtime surface", async () => {
     const service = serviceWith({ surface: "platform", aud: "trixus-platform" });
     await expect(service.authenticate("platform-access-token")).rejects.toMatchObject({
@@ -130,6 +141,7 @@ function serviceWith(
     surface?: "platform" | "tenant";
     aud?: "trixus-platform" | "trixus-tenant";
     onboardingStatus?: "PENDING" | "COMPLETED";
+    portalAccessId?: string;
   } = {},
 ) {
   const jwt = {
@@ -148,6 +160,7 @@ function serviceWith(
       impersonationSessionId: options.impersonationSessionId,
       actorPlatformUserId: options.impersonationSessionId ? "actor-a" : undefined,
       iatMs: options.iatMs,
+      portalAccessId: options.portalAccessId,
     }),
   };
   const config = { get: vi.fn().mockReturnValue("test-access-secret-minimum-32-chars") };
@@ -177,6 +190,15 @@ function serviceWith(
       }),
     },
     impersonationSession: { findFirst: vi.fn().mockResolvedValue({ id: "impersonation-a" }) },
+    customerPortalAccess: { findFirst: vi.fn().mockResolvedValue({ id: "access-a" }) },
+    role: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: "role-portal",
+        key: "customer_portal",
+        active: true,
+        permissions: [{ permissionId: "tickets.read" }],
+      }),
+    },
   };
   return new RealtimeAuthService(jwt as never, config as never, prisma as never);
 }

@@ -447,7 +447,11 @@ export class OperationsMetricsService {
       byCustomer: [...customerCounts.values()],
       byConnection: byConnection.map((row) => {
         const connection = row.connectionId ? connectionById.get(row.connectionId) : undefined;
-        return { nome: connection?.name ?? "Sem instância", total: row._count._all };
+        return {
+          nome: connection?.name ?? "Sem instância",
+          cor: connection?.color ?? "#64748b",
+          total: row._count._all,
+        };
       }),
       byTag: [...tagCounts.values()].map((item) => ({
         ...item,

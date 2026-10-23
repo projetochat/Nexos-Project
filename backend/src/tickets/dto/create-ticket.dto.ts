@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
 import { TicketCategory, TicketPriority } from "../../generated/prisma";
 
 export class CreateTicketDto {
@@ -12,6 +12,7 @@ export class CreateTicketDto {
   @IsOptional() @IsString() customerDepartmentId?: string;
   @IsOptional() @IsString() originBranchId?: string;
   @IsOptional() @IsString() conversationId?: string;
+  @IsOptional() @IsUUID() aiExecutionId?: string;
   @IsOptional() @IsString() departmentId?: string;
   @IsOptional() @IsString() assignedMembershipId?: string | null;
 }

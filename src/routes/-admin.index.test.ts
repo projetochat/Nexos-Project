@@ -123,7 +123,7 @@ describe("Platform dashboard presentation contract", () => {
     expect(resolvePlatformData(kpis, dashboard)).toContainEqual({ nome: "Instâncias", total: 4 });
   });
 
-  it("exposes consolidated volumetry data to Editar Dashboard", () => {
+  it("exposes consolidated volumetry data to the Dashboard configuration", () => {
     const volumetry = DEFAULT_PLATFORM_DASHBOARD_COMPONENTS.find(
       (item) => item.id === "clientVolumetry",
     )!;
@@ -134,10 +134,11 @@ describe("Platform dashboard presentation contract", () => {
     expect(dashboardSource).toContain('className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"');
   });
 
-  it("shows only the edit dashboard pencil on mobile and keeps the desktop label", () => {
+  it("shows only the dashboard settings gear on mobile and keeps the desktop label", () => {
     expect(dashboardSource).toContain('className="max-sm:!w-9 max-sm:!px-0"');
-    expect(dashboardSource).toContain('aria-label="Editar Dashboard"');
-    expect(dashboardSource).toContain('<span className="hidden sm:inline">Editar Dashboard</span>');
+    expect(dashboardSource).toContain('aria-label="Config. Dashboard"');
+    expect(dashboardSource).toContain('<Settings className="h-4 w-4" />');
+    expect(dashboardSource).toContain('<span className="hidden sm:inline">Config. Dashboard</span>');
   });
 
   it("wraps visible dashboard components with the hover-only maximize control", () => {

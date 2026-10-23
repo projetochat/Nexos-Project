@@ -40,6 +40,13 @@ def config():
                 "build": {"context": "."},
                 "environment": {
                     "DATABASE_URL": "postgresql://trixus:placeholder@postgres:5432/trixus_homolog?schema=public",
+                    "TRIXUS_ENVIRONMENT": "homologation",
+                    "FRONTEND_ORIGIN": "https://hom.trixus.com.br",
+                    "TRIXUS_REALTIME_CORS_ORIGIN": "https://hom.trixus.com.br",
+                    "TRIXUS_PLATFORM_APP_URL": "https://hom.trixus.com.br",
+                    "TRIXUS_TENANT_APP_URL": "https://hom.trixus.com.br",
+                    "TRIXUS_PUBLIC_APP_URL": "https://hom.trixus.com.br",
+                    "AI_CREDENTIALS_ENCRYPTION_KEY": "ab" * 32,
                     "EVOLUTION_BASE_URL": "http://evolution-api:8080/",
                     "EVOLUTION_WEBHOOK_PUBLIC_URL": release.WEBHOOK_URL,
                     "TRIXUS_HISTORY_IMPORT_WORKER_ENABLED": "false",
@@ -181,6 +188,10 @@ class HomologationReleaseTest(unittest.TestCase):
                 source="/srv/trixus-data"),
             lambda value: value["services"]["backend"]["environment"].update(
                 TRIXUS_HISTORY_IMPORT_WORKER_ENABLED="true"),
+            lambda value: value["services"]["backend"]["environment"].update(
+                TRIXUS_TENANT_APP_URL="https://app.trixus.com.br"),
+            lambda value: value["services"]["backend"]["environment"].update(
+                AI_CREDENTIALS_ENCRYPTION_KEY="invalid"),
         )
         for mutation in mutations:
             changed = copy.deepcopy(good)

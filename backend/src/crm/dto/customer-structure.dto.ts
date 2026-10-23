@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
+import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Length, Matches } from "class-validator";
 
 const BRANCH_STATUSES = ["ACTIVE", "INACTIVE"] as const;
 
@@ -8,11 +8,12 @@ export class CustomerBranchDto {
   name!: string;
 
   @IsString()
-  @MaxLength(120)
+  @Length(2, 120)
+  @Matches(/\S/, { message: "city must contain visible characters" })
   city!: string;
 
   @IsString()
-  @MaxLength(2)
+  @Length(2, 2)
   state!: string;
 
   @IsOptional()

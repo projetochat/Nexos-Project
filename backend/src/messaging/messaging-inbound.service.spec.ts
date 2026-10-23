@@ -57,6 +57,55 @@ describe("MessagingInboundService", () => {
     );
   });
 
+  it("replaces an existing phone placeholder with the provider contact name", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue({ ...contact(), name: "5511987654321" });
+    prisma.contact.update.mockResolvedValue({ ...contact(), name: "Douglas Rezende" });
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+      createdAt: new Date("2026-10-01T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
+    const realtime = {
+      publishMessageCreated: vi.fn(),
+      publishConversationUpdated: vi.fn(),
+      publishContactUpdated: vi.fn(),
+      publishUnreadUpdated: vi.fn(),
+    };
+
+    await new MessagingInboundService(prisma as never, undefined, realtime as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-upgrade-contact-name",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: {
+        phone: "5511987654321",
+        normalizedPhone: "+5511987654321",
+        displayName: "Douglas Rezende",
+      },
+      type: MessageType.TEXT,
+      content: "Oi",
+      occurredAt: new Date("2026-10-01T12:00:00.000Z"),
+    });
+
+    expect(prisma.contact.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ name: "Douglas Rezende" }),
+      }),
+    );
+    expect(realtime.publishContactUpdated).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      contactId: "contact-a",
+    });
+  });
+
   it("rejects required retained media failures before the transaction can commit a message", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -1687,6 +1736,7 @@ function contact() {
     name: "Cliente",
     instance: "tenant-a-suporte",
     departmentId: "department-a",
+    customerDepartmentId: "customer-department-a",
     contactDepartmentId: "contact-department-a",
     departmentName: "Legado",
     customerId: "customer-a",
@@ -1729,6 +1779,7 @@ function prismaMock() {
     },
     department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
     contactDepartment: { findFirst: vi.fn().mockResolvedValue({ name: "Financeiro" }) },
+    customerDepartment: { findFirst: vi.fn().mockResolvedValue({ name: "Financeiro" }) },
     customer: { findFirst: vi.fn().mockResolvedValue({ name: "Cliente XPTO" }) },
     contactTag: { count: vi.fn().mockResolvedValue(0) },
     tenantMembership: {

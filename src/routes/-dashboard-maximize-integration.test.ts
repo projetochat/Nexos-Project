@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(new URL("./index.tsx", import.meta.url), "utf8");
 
 describe("maximização dos componentes do dashboard principal", () => {
+  it("usa engrenagem no botão de configuração do Dashboard da tenant", () => {
+    expect(source).toContain('<Settings className="h-3.5 w-3.5" />');
+    expect(source).toContain('aria-label="Config. Dashboard"');
+  });
+
   it("reutiliza o frame de maximização em cada componente configurável", () => {
     expect(source).toContain(
       'import { DashboardMaximizeFrame } from "@/components/dashboard-maximize-frame";',

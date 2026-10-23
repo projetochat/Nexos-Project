@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync(new URL("./chamados.tsx", import.meta.url), "utf8");
+const inboxSource = readFileSync(new URL("./inbox.$conversationId.tsx", import.meta.url), "utf8");
 const api = readFileSync(new URL("../lib/trixus-api.ts", import.meta.url), "utf8");
+const ticketsService = readFileSync(
+  new URL("../../backend/src/tickets/tickets.service.ts", import.meta.url),
+  "utf8",
+);
 
 describe("PACK 11 · interface de chamados", () => {
   it("apresenta os filtros e indicadores definidos para a listagem", () => {
@@ -72,15 +77,32 @@ describe("PACK 11 · interface de chamados", () => {
     expect(source).toContain('"Desenvolvimento (DEV)"');
   });
 
-  it("aceita vários anexos, permite removê-los e impede criação duplicada", () => {
-    expect(source).toContain("const maxAttachmentCount = 10");
+  it("oferece as quatro prioridades com os rótulos e cores definidos", () => {
+    expect(source).toContain(
+      'const priorities: ApiTicketPriority[] = ["BAIXA", "NORMAL", "ALTA", "ALTISSIMA"]',
+    );
+    expect(source).not.toContain('.filter((item) => item !== "BAIXA")');
+    expect(source).toContain('BAIXA: "#86efac"');
+    expect(source).toContain('NORMAL: "#9ca3af"');
+    expect(source).toContain('ALTA: "#ef4444"');
+    expect(source).toContain('ALTISSIMA: "#111827"');
+    expect(source).toContain('NORMAL: "Média"');
+    expect(source).toContain('URGENTE: "Alta"');
+    expect(source).toContain('value={item.priority === "URGENTE" ? "ALTA" : item.priority}');
+    expect(inboxSource).toContain('suggestion.priority === "NORMAL"');
+    expect(inboxSource).toContain('? "Média"');
+  });
+
+  it("aceita até vinte anexos, permite removê-los e impede duplicação", () => {
+    expect(source).toContain("const maxAttachmentCount = 20;");
     expect(source).toContain("allowedAttachmentMimeTypes");
     expect(source).toContain('accept=".pdf,.png,.jpg,.jpeg,.webp,.txt"');
     expect(source).toContain("multiple");
     expect(source).toContain('aria-label="Arquivos selecionados"');
-    expect(source).toContain("max-h-28 grid-cols-1");
+    expect(source).toContain("max-h-40 grid-cols-1");
     expect(source).toContain("sm:grid-cols-2");
-    expect(source).toContain("{attachments.length}/{maxAttachmentCount} arquivos");
+    expect(source).toContain("lg:grid-cols-3");
+    expect(source).toContain("attachments.length}/{maxAttachmentCount} arquivos");
     expect(source).toContain('aria-live="polite"');
     expect(source).toContain('className="sr-only"');
     expect(source).toContain("Remover arquivo ${file.name}");
@@ -107,6 +129,56 @@ describe("PACK 11 · interface de chamados", () => {
     }
   });
 
+  it("centraliza todos os arquivos em uma aba de anexos funcional", () => {
+    const attachmentTabSource = source.slice(
+      source.indexOf("function Attachments"),
+      source.indexOf("function DialogAttachments"),
+    );
+    expect(source).toContain(
+      'const [detailTab, setDetailTab] = React.useState<"summary" | "attachments">',
+    );
+    expect(source).toContain('role="tablist"');
+    expect(source).toContain('aria-selected={detailTab === "attachments"}');
+    expect(source).toContain('onClick={() => setDetailTab("attachments")}');
+    expect(source).toContain('role="tabpanel" aria-label="Anexos do chamado"');
+    expect(source).toContain("Índice de todos os arquivos vinculados aos diálogos deste chamado.");
+    expect(source).toContain("ticketApi.uploadAttachment");
+    expect(source).toContain("ticketApi.preview");
+    expect(source).toContain("ticketApi.download");
+    expect(source).not.toContain("Atrixus privados");
+    expect(attachmentTabSource).not.toContain('type="file"');
+    expect(attachmentTabSource).not.toContain("uploadAttachment");
+    expect(attachmentTabSource).not.toContain("deleteAttachment");
+    expect(attachmentTabSource).toContain("Baixar todos");
+    expect(source).toContain("createStoredZip(entries)");
+    expect(source).toContain("Anexado");
+    expect(source).toContain("item.uploadedBy.name");
+    expect(api).toContain("uploadedBy: { id: string; name: string }");
+    expect(ticketsService).toContain("uploadedByMembership");
+    expect(source).toContain("Anexos deste diálogo");
+    expect(source).toContain("const maxAttachmentCount = 20;");
+    expect(source).toContain("lg:grid-cols-3");
+    expect(source).toContain("xl:grid-cols-3");
+    expect(source).toContain("ticketApi.uploadAttachment(ticketId, file, savedComment.id)");
+    expect(source).toContain("attachment.commentId === entry.id");
+    expect(source).toContain("!attachment.commentId");
+    expect(source).toContain("max-w-[50%]");
+    expect(source).toContain('className="max-h-[280px] overflow-hidden px-4 py-3"');
+    expect(source).toContain('aria-label="Abrir diálogo completo"');
+    expect(source).toContain('title="Diálogo completo"');
+    expect(source).toContain("preview.scrollHeight > preview.clientHeight + 1");
+    expect(source).toContain(
+      'side={entry.authorMembership.user.id === currentUserId ? "right" : "left"}',
+    );
+    expect(source).toContain('className="mt-3 border-t border-border/70 pt-3"');
+    expect(source).toContain('className="grid grid-cols-2 gap-2"');
+    expect(source).toContain('href="#"');
+    expect(source).toContain("void previewTicketAttachment(ticketId, attachment)");
+    expect(api).toContain('"X-Comment-Id": commentId');
+    expect(ticketsService).toContain('req.headers["x-comment-id"]');
+    expect(ticketsService).toContain("ticketId: ticket.id");
+  });
+
   it("usa os contratos persistentes do workflow", () => {
     for (const endpoint of [
       "/tickets/summary",
@@ -128,12 +200,21 @@ describe("PACK 11 · interface de chamados", () => {
   });
 
   it("restringe o portal do cliente ao próprio contexto e à validação", () => {
-    expect(source).toContain('roleKey === "customer_portal"');
+    expect(source).toContain('mode === "customer_portal"');
     expect(source).toContain('title={isCustomerPortal ? "Meus chamados" : "Chamados"}');
-    expect(source).toContain('value="Definido pelo seu acesso"');
-    expect(source).toContain('value="Definida pelo seu acesso"');
-    expect(source).toContain('value="Você"');
+    expect(source).toContain("ticketApi.portalCreateContext");
+    expect(source).toContain("portalCreateContext.data?.customer.name");
+    expect(source).toContain("portalCreateContext.data?.department.name");
+    expect(source).toContain("portalCreateContext.data?.contact.name");
+    expect(source).toContain("portalCreateContext.data?.branch.name");
+    expect(source).toContain('aria-readonly="true"');
+    expect(source).not.toContain('value="Definido pelo seu acesso"');
+    expect(source).not.toContain('value="Definida pelo seu acesso"');
     expect(source).toContain('item.status === "CONCLUIDA"');
     expect(source).toContain("ticketApi.validateSolution");
+    expect(source).toContain(
+      'queryKey: [...summaryKey, mode, portalAccessId ?? "internal", params]',
+    );
+    expect(source).not.toContain("enabled: !isCustomerPortal");
   });
 });

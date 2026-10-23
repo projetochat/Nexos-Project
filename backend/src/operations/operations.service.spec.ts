@@ -42,6 +42,37 @@ describe("tenant dashboard configuration", () => {
     ).rejects.toThrow("Identificação ou título");
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
+
+  it("migrates the native requester ranking to a one-column list only for old configurations", async () => {
+    const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([
+        { configuration: null, updatedAt: new Date("2026-10-23T00:00:00.000Z") },
+      ]),
+    };
+    const service = new OperationsService(prisma as never, {} as never);
+    const ranking = {
+      id: "ticketRequesterRanking",
+      title: "Top 10 contatos que abriram chamados",
+      visible: true,
+      visualization: "bars",
+      columns: 2,
+      dataSource: "records",
+      groupBy: "ticketRequesterContact",
+      valueMode: "count",
+    };
+
+    const result = await service.updateDashboardConfiguration({ tenantId: "tenant-a" } as never, {
+      version: 2,
+      components: [ranking],
+    });
+
+    expect(prisma.$queryRaw).toHaveBeenCalledOnce();
+    expect(result.configuration).toEqual({
+      version: 2,
+      nativeRevision: 4,
+      components: [{ ...ranking, visualization: "table", columns: 1 }],
+    });
+  });
 });
 
 describe("dashboard week ranges", () => {
@@ -439,7 +470,7 @@ describe("conversation visibility in operational history", () => {
 });
 
 describe("dashboard ticket requester ranking", () => {
-  it("returns the tenant-scoped top 10 contacts that opened non-archived tickets in the period", async () => {
+  it("returns the tenant-scoped global top 10 contacts regardless of the selected period", async () => {
     const prisma = {
       tenant: { findUnique: vi.fn().mockResolvedValue({ timezone: "America/Sao_Paulo" }) },
       ticket: {
@@ -476,10 +507,6 @@ describe("dashboard ticket requester ranking", () => {
       where: {
         tenantId: "tenant-a",
         archivedAt: null,
-        createdAt: {
-          gte: new Date("2026-10-01T03:00:00.000Z"),
-          lt: new Date("2026-10-08T03:00:00.000Z"),
-        },
         requesterContactId: { not: null },
         requesterContact: { is: { archivedAt: null } },
         customerId: "customer-a",
@@ -507,6 +534,50 @@ describe("dashboard ticket requester ranking", () => {
 });
 
 describe("dashboard configurable contact data", () => {
+  it("groups contact departments from the customer department source", async () => {
+    const prisma = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ timezone: "America/Sao_Paulo" }) },
+      contact: {
+        groupBy: vi
+          .fn()
+          .mockResolvedValueOnce([
+            { customerDepartmentId: "customer-department-a", _count: { _all: 2 } },
+          ])
+          .mockResolvedValueOnce([
+            { contactDepartmentId: "legacy-department-a", _count: { _all: 1 } },
+            { contactDepartmentId: null, _count: { _all: 1 } },
+          ]),
+      },
+      customerDepartment: {
+        findMany: vi.fn().mockResolvedValue([{ id: "customer-department-a", name: "Financeiro" }]),
+      },
+      contactDepartment: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "legacy-department-a", name: "Comercial", color: "#123456" }]),
+      },
+    };
+    const service = new OperationsService(prisma as never, {} as never);
+
+    const result = await service.dashboardComponentData(
+      { tenantId: "tenant-a", roleKey: "tenant_admin" } as never,
+      { period: "today", groupBy: "department" },
+    );
+
+    expect(prisma.contact.groupBy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ by: ["customerDepartmentId"] }),
+    );
+    expect(prisma.customerDepartment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: "tenant-a" }) }),
+    );
+    expect(result.items).toEqual([
+      { nome: "Financeiro", total: 2, cor: "#64748b" },
+      { nome: "Comercial", total: 1, cor: "#123456" },
+      { nome: "Sem departamento", total: 1, cor: "#64748b" },
+    ]);
+  });
+
   it("rejects custom-field grouping without the specific permission", async () => {
     const prisma = {
       tenant: { findUnique: vi.fn().mockResolvedValue({ timezone: "America/Sao_Paulo" }) },
@@ -523,7 +594,7 @@ describe("dashboard configurable contact data", () => {
     expect(prisma.contactCustomField.findFirst).not.toHaveBeenCalled();
   });
 
-  it("groups only tenant-scoped contacts allowed by the dashboard filters", async () => {
+  it("keeps operational chat departments separate from contact dashboard data", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-28T15:00:00.000Z"));
     const prisma = {
@@ -562,12 +633,12 @@ describe("dashboard configurable contact data", () => {
         where: expect.objectContaining({
           tenantId: "tenant-a",
           archivedAt: null,
-          departmentId: { in: ["department-a"] },
           instanceIds: { hasSome: ["connection-a"] },
         }),
         take: 20,
       }),
     );
+    expect(prisma.contact.groupBy.mock.calls[0]?.[0].where).not.toHaveProperty("departmentId");
     expect(result.items).toEqual([
       { nome: "Empresa A", total: 3, cor: "#2563eb" },
       { nome: "Sem empresa", total: 1, cor: "#64748b" },

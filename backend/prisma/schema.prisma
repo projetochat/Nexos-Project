@@ -415,6 +415,27 @@ enum AutomationActionType {
   NOTIFY_TEAM
 }
 
+enum AiProvider {
+  OPENAI
+  GEMINI
+  ANTHROPIC
+  DEEPSEEK
+  GROQ
+  OPENROUTER
+}
+
+enum AiAgentBehavior {
+  ATTENDANT
+  COPILOT
+  CONSULTATION
+}
+
+enum AiExecutionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
 model Tenant {
   schedules                   Schedule[]
   id                          String                          @id @default(uuid())
@@ -479,6 +500,7 @@ model Tenant {
   auditLogs                   PlatformAuditLog[]
   impersonationSessions       ImpersonationSession[]
   authSessions                AuthSession[]
+  customerPortalAccesses      CustomerPortalAccess[]
   invitations                 UserInvitation[]
   leads                       Lead[]
   notifications               Notification[]
@@ -489,9 +511,108 @@ model Tenant {
   protocolConfigurations      TenantProtocolConfiguration[]
   protocolSequenceCounters    ProtocolSequenceCounter[]
   registrationCaseSettings    TenantRegistrationCaseSettings?
+  aiConnections               AiConnection[]
+  aiAgents                    AiAgent[]
+  aiAgentUsages               AiAgentUsage[]
+  aiExecutions                AiExecution[]
 
   @@index([status])
   @@map("tenants")
+}
+
+model AiConnection {
+  id                   String     @id @default(uuid())
+  tenantId             String
+  provider             AiProvider
+  name                 String
+  active               Boolean    @default(true)
+  organization         String?
+  credentialCiphertext String     @map("credential_ciphertext")
+  credentialIv         String     @map("credential_iv")
+  credentialAuthTag    String     @map("credential_auth_tag")
+  credentialKeyVersion Int        @default(1) @map("credential_key_version")
+  credentialMasked     String     @map("credential_masked")
+  archivedAt           DateTime?  @map("archived_at")
+  createdAt            DateTime   @default(now()) @map("created_at")
+  updatedAt            DateTime   @updatedAt @map("updated_at")
+  tenant               Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agents               AiAgent[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId, active, archivedAt])
+  @@map("ai_connections")
+}
+
+model AiAgent {
+  id           String          @id @default(uuid())
+  tenantId     String
+  connectionId String
+  name         String
+  module       String
+  model        String
+  description  String
+  instructions String
+  behavior     AiAgentBehavior
+  active       Boolean         @default(true)
+  archivedAt   DateTime?       @map("archived_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection   AiConnection    @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
+  usages       AiAgentUsage[]
+  executions   AiExecution[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId, active, archivedAt])
+  @@index([tenantId, connectionId])
+  @@map("ai_agents")
+}
+
+model AiAgentUsage {
+  id            String   @id @default(uuid())
+  tenantId      String
+  agentId       String
+  functionality String
+  originModule  String   @map("origin_module")
+  action        String
+  targetModule  String   @map("target_module")
+  isDefault     Boolean  @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent         AiAgent  @relation(fields: [tenantId, agentId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, agentId, functionality, originModule, action, targetModule])
+  @@index([tenantId, functionality, originModule, action, targetModule, isDefault])
+  @@map("ai_agent_usages")
+}
+
+model AiExecution {
+  id                    String            @id @default(uuid())
+  tenantId              String
+  agentId               String
+  conversationId        String
+  createdByMembershipId String            @map("created_by_membership_id")
+  functionality         String
+  status                AiExecutionStatus @default(PENDING)
+  requestHash           String            @map("request_hash")
+  resultJson            Json?             @map("result_json")
+  warningsJson          Json?             @map("warnings_json")
+  errorCode             String?           @map("error_code")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  completedAt           DateTime?         @map("completed_at")
+  tenant                Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent                 AiAgent           @relation(fields: [tenantId, agentId], references: [tenantId, id], onDelete: Restrict)
+  conversation          Conversation      @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Restrict)
+  ticket                Ticket?           @relation("TicketAiExecution")
+
+  @@unique([tenantId, id])
+  @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, agentId, createdAt])
+  @@index([tenantId, requestHash])
+  @@map("ai_executions")
 }
 
 model TenantRegistrationCaseSettings {
@@ -686,6 +807,7 @@ model User {
   impersonationSessions   ImpersonationSession[]
   passwordResetTokens     PasswordResetToken[]
   authSessions            AuthSession[]
+  customerPortalAccesses  CustomerPortalAccess[]
 
   @@index([status])
   @@index([platformRole])
@@ -913,6 +1035,7 @@ model TenantMembership {
   decidedTicketApprovals   TicketApproval[]       @relation("TicketApprovalDecider")
   assignedTicketApprovals  TicketApproval[]       @relation("TicketApprovalAssignee")
   portalContacts           Contact[]              @relation("ContactPortalMembership")
+  customerPortalAccesses   CustomerPortalAccess[] @relation("CustomerPortalMembership")
   createdCampaigns         Campaign[]             @relation("CampaignCreator")
   cancelledCampaigns       Campaign[]             @relation("CampaignCanceller")
   sentInvitations          UserInvitation[]       @relation("InvitationSender")
@@ -935,6 +1058,7 @@ model AuthSession {
   tenantId               String?
   membershipId           String?
   impersonationSessionId String?
+  portalAccessId         String?
   expiresAt              DateTime
   revokedAt              DateTime?
   createdAt              DateTime              @default(now())
@@ -943,10 +1067,12 @@ model AuthSession {
   tenant                 Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   membership             TenantMembership?     @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   impersonationSession   ImpersonationSession? @relation(fields: [impersonationSessionId], references: [id], onDelete: Cascade)
+  portalAccess           CustomerPortalAccess? @relation(fields: [portalAccessId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt, expiresAt])
   @@index([tenantId, membershipId, revokedAt, expiresAt])
   @@index([impersonationSessionId])
+  @@index([portalAccessId, revokedAt, expiresAt])
   @@index([expiresAt])
   @@index([revokedAt])
   @@map("auth_sessions")
@@ -1057,39 +1183,40 @@ model RolePermission {
 }
 
 model Customer {
-  id                     String               @id @default(uuid())
+  id                     String                 @id @default(uuid())
   tenantId               String
   name                   String
   email                  String?
   phone                  String?
   notes                  String?
   responsibleContactName String?
-  color                  String               @default("#3B82F6")
-  personType             CustomerPersonType   @default(LEGAL)
-  status                 CustomerStatus       @default(ACTIVE)
+  color                  String                 @default("#3B82F6")
+  personType             CustomerPersonType     @default(LEGAL)
+  status                 CustomerStatus         @default(ACTIVE)
   legalName              String?
   document               String?
-  addressFullEnabled     Boolean              @default(false)
+  addressFullEnabled     Boolean                @default(false)
   postalCode             String?
   street                 String?
   addressNumber          String?
-  addressWithoutNumber   Boolean              @default(false)
+  addressWithoutNumber   Boolean                @default(false)
   complement             String?
   neighborhood           String?
   city                   String?
   state                  String?
-  country                String?              @default("Brasil")
-  cityId                 String?              @map("city_id")
+  country                String?                @default("Brasil")
+  cityId                 String?                @map("city_id")
   archivedAt             DateTime?
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @updatedAt
-  tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  cityReference          City?                @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  tenant                 Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cityReference          City?                  @relation(fields: [cityId], references: [id], onDelete: SetNull)
   contacts               Contact[]
   campaignRecipients     CampaignRecipient[]
   tickets                Ticket[]
   branches               CustomerBranch[]
   customerDepartments    CustomerDepartment[]
+  portalAccesses         CustomerPortalAccess[]
 
   @@unique([tenantId, id])
   @@index([tenantId, name])
@@ -1102,44 +1229,48 @@ model Customer {
 }
 
 model CustomerBranch {
-  id         String               @id @default(uuid())
-  tenantId   String
-  customerId String
-  name       String
-  city       String
-  state      String
-  status     CustomerBranchStatus @default(ACTIVE)
-  archivedAt DateTime?
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
-  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer   Customer             @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
-  contacts   Contact[]
-  tickets    Ticket[]
+  id             String                 @id @default(uuid())
+  tenantId       String
+  customerId     String
+  name           String
+  city           String
+  state          String
+  status         CustomerBranchStatus   @default(ACTIVE)
+  archivedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer       Customer               @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
+  contacts       Contact[]
+  tickets        Ticket[]
+  portalAccesses CustomerPortalAccess[]
 
   @@unique([tenantId, id])
+  @@unique([tenantId, customerId, id])
   @@unique([tenantId, customerId, name])
   @@index([tenantId, customerId, archivedAt])
   @@map("customer_branches")
 }
 
 model CustomerDepartment {
-  id               String    @id @default(uuid())
+  id               String                 @id @default(uuid())
   tenantId         String
   customerId       String
   name             String
   managerContactId String?
-  active           Boolean   @default(true)
+  active           Boolean                @default(true)
   archivedAt       DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer         Customer  @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
-  managerContact   Contact?  @relation("CustomerDepartmentManager", fields: [managerContactId], references: [id], onDelete: SetNull)
-  contacts         Contact[] @relation("CustomerDepartmentContacts")
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer         Customer               @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
+  managerContact   Contact?               @relation("CustomerDepartmentManager", fields: [managerContactId], references: [id], onDelete: SetNull)
+  contacts         Contact[]              @relation("CustomerDepartmentContacts")
   tickets          Ticket[]
+  portalAccesses   CustomerPortalAccess[]
 
   @@unique([tenantId, id])
+  @@unique([tenantId, customerId, id])
   @@unique([tenantId, customerId, name])
   @@index([tenantId, customerId, archivedAt])
   @@index([tenantId, managerContactId])
@@ -1167,6 +1298,7 @@ model Contact {
   customerAccessProfile      CustomerAccessProfile?
   active                     Boolean                      @default(true)
   portalMembershipId         String?                      @unique
+  portalLogin                String?                      @unique @map("portal_login")
   portalAccessActive         Boolean                      @default(false)
   archivedAt                 DateTime?
   createdAt                  DateTime                     @default(now())
@@ -1189,6 +1321,7 @@ model Contact {
   ticketApprovals            TicketApproval[]
   portalMembership           TenantMembership?            @relation("ContactPortalMembership", fields: [portalMembershipId], references: [id], onDelete: SetNull)
   portalInvitations          UserInvitation[]
+  customerPortalAccesses     CustomerPortalAccess[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedPhone])
@@ -1203,6 +1336,42 @@ model Contact {
   @@index([tenantId, customerBranchId])
   @@index([tenantId, customerDepartmentId])
   @@map("contacts")
+}
+
+model CustomerPortalAccess {
+  id            String                @id @default(uuid())
+  tenantId      String
+  customerId    String
+  contactId     String
+  membershipId  String?
+  login         String
+  accessProfile CustomerAccessProfile
+  branchId      String
+  departmentId  String?
+  active        Boolean               @default(true)
+  revokedAt     DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  tenant        Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer      Customer              @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: Cascade)
+  contact       Contact               @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  membership    TenantMembership?     @relation("CustomerPortalMembership", fields: [membershipId], references: [id], onDelete: SetNull)
+  branch        CustomerBranch        @relation(fields: [tenantId, customerId, branchId], references: [tenantId, customerId, id], onDelete: Restrict)
+  department    CustomerDepartment?   @relation(fields: [tenantId, customerId, departmentId], references: [tenantId, customerId, id], onDelete: Restrict)
+  sessions      AuthSession[]
+  invitations   UserInvitation[]
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId        String?
+
+  @@unique([tenantId, customerId, contactId])
+  @@unique([tenantId, id])
+  @@index([tenantId, login, active])
+  @@index([membershipId, active])
+  @@index([userId, active])
+  @@index([tenantId, customerId, active])
+  @@index([tenantId, customerId, revokedAt])
+  @@index([tenantId, contactId])
+  @@map("customer_portal_accesses")
 }
 
 model ContactDepartment {
@@ -1364,6 +1533,7 @@ model Conversation {
   participants                   ConversationParticipant[]
   tickets                        Ticket[]
   lead                           Lead?
+  aiExecutions                   AiExecution[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])
@@ -1657,6 +1827,8 @@ model Ticket {
   customerDepartmentId     String?
   originBranchId           String?
   conversationId           String?
+  aiExecutionId            String?
+  aiAssisted               Boolean             @default(false)
   departmentId             String?
   assignedMembershipId     String?
   createdByMembershipId    String?
@@ -1678,6 +1850,7 @@ model Ticket {
   customerDepartment       CustomerDepartment? @relation(fields: [customerDepartmentId], references: [id], onDelete: SetNull)
   originBranch             CustomerBranch?     @relation(fields: [originBranchId], references: [id], onDelete: SetNull)
   conversation             Conversation?       @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Restrict)
+  aiExecution              AiExecution?        @relation("TicketAiExecution", fields: [tenantId, aiExecutionId], references: [tenantId, id], onDelete: Restrict)
   department               Department?         @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: SetNull)
   assignedMembership       TenantMembership?   @relation("TicketAssignee", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
   createdByMembership      TenantMembership?   @relation("TicketCreator", fields: [createdByMembershipId], references: [id], onDelete: SetNull)
@@ -1690,6 +1863,7 @@ model Ticket {
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])
   @@unique([tenantId, number])
+  @@unique([tenantId, aiExecutionId])
   @@index([tenantId, status])
   @@index([tenantId, departmentId])
   @@index([tenantId, assignedMembershipId])
@@ -1796,12 +1970,14 @@ model TicketAttachment {
   scanStatus             AttachmentScanStatus   @default(NOT_SCANNED)
   createdAt              DateTime               @default(now())
   deletedAt              DateTime?
+  sourceMessageId        String?
   tenant                 Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ticket                 Ticket                 @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
   comment                TicketComment?         @relation(fields: [tenantId, commentId], references: [tenantId, id], onDelete: Restrict)
   uploadedByMembership   TenantMembership?      @relation(fields: [uploadedByMembershipId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, id])
+  @@unique([tenantId, ticketId, sourceMessageId])
   @@index([tenantId, ticketId, createdAt])
   @@index([tenantId, status])
   @@map("ticket_attachments")
@@ -1826,29 +2002,32 @@ model ContactMessagingPreference {
 }
 
 model UserInvitation {
-  id                    String               @id @default(uuid())
+  id                    String                @id @default(uuid())
   tenantId              String
   email                 String
   roleId                String
-  departmentIds         String[]             @default([])
+  departmentIds         String[]              @default([])
   tokenHash             String
-  status                UserInvitationStatus @default(PENDING)
+  status                UserInvitationStatus  @default(PENDING)
   expiresAt             DateTime
   invitedByMembershipId String?
   contactId             String?
+  portalAccessId        String?
   acceptedAt            DateTime?
   revokedAt             DateTime?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  tenant                Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  role                  Role                 @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Restrict)
-  invitedByMembership   TenantMembership?    @relation("InvitationSender", fields: [invitedByMembershipId], references: [id], onDelete: SetNull)
-  contact               Contact?             @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  tenant                Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role                  Role                  @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Restrict)
+  invitedByMembership   TenantMembership?     @relation("InvitationSender", fields: [invitedByMembershipId], references: [id], onDelete: SetNull)
+  contact               Contact?              @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  portalAccess          CustomerPortalAccess? @relation(fields: [portalAccessId], references: [id], onDelete: SetNull)
 
   @@unique([tokenHash])
   @@index([tenantId, status])
   @@index([expiresAt])
   @@index([tenantId, contactId, status])
+  @@index([tenantId, portalAccessId, status])
   @@map("user_invitations")
 }
 

@@ -36,8 +36,11 @@ import { LogoMark, Avatar, Badge, CloseButton } from "./ui-kit";
 import { OfflineBanner, TopProgress } from "./feedback";
 import { useTheme } from "./theme-context";
 import {
+  canAccessSessionRoute,
   canAccessTenantRoute,
-  tenantHomeForPermissions,
+  CUSTOMER_PORTAL_DASHBOARD_PATH,
+  CUSTOMER_PORTAL_TICKETS_PATH,
+  homeForSession,
   useSession,
   ROLE_META,
   signOut,
@@ -114,6 +117,16 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
   },
 ];
 
+const customerPortalGroups: { title: string; items: NavItem[] }[] = [
+  {
+    title: "Portal do Cliente",
+    items: [
+      { to: CUSTOMER_PORTAL_DASHBOARD_PATH, label: "Dashboard", icon: LayoutDashboard },
+      { to: CUSTOMER_PORTAL_TICKETS_PATH, label: "Chamados", icon: Ticket },
+    ],
+  },
+];
+
 function canSeeNavItem(item: NavItem, permissions?: string[]) {
   return canAccessTenantRoute(item.to, permissions);
 }
@@ -172,6 +185,8 @@ const LABELS: Record<string, string> = {
 
 function useBreadcrumbs() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const roleKey = useSession((state) => state.user?.roleKey);
+  const portalAccessProfile = useSession((state) => state.user?.portalAccessProfile);
   const parts = pathname.split("/").filter(Boolean);
   const conversationId = parts[0] === "inbox" && parts.length === 2 ? parts[1] : null;
   const conversation = useQuery({
@@ -181,7 +196,7 @@ function useBreadcrumbs() {
     retry: (failureCount, error) =>
       !(error instanceof TrixusApiError && error.status === 404) && failureCount < 3,
   });
-  const crumbs = [{ href: "/", label: "Trixus" }];
+  const crumbs = [{ href: homeForSession(roleKey, undefined, undefined, portalAccessProfile), label: "Trixus" }];
   let acc = "";
   for (const [index, part] of parts.entries()) {
     acc += "/" + part;
@@ -345,6 +360,7 @@ function SidebarBottomActions({
 function SidebarUser({ collapsed }: { collapsed: boolean }) {
   const user = useSession((s) => s.user);
   const logout = useSession((s) => s.logout);
+  const loginPath = useSession((s) => s.loginPath);
   const navigate = useNavigate();
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -423,7 +439,7 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
               if (!window.confirm("Deseja realmente sair do sistema?")) return;
               await signOut();
               logout();
-              navigate({ to: "/login" });
+              navigate({ to: loginPath });
             }}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive transition hover:bg-destructive/10"
           >
@@ -438,11 +454,30 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
 /* ---------- Sidebar ---------- */
 function Sidebar({ collapsed }: { collapsed: boolean }) {
   const permissions = useSession((s) => s.user?.permissions);
+  const roleKey = useSession((s) => s.user?.roleKey);
+  const portalAccessProfile = useSession((s) => s.user?.portalAccessProfile);
   const entitlements = useTenantEntitlements();
   const modules = tenantModules(entitlements.data?.features);
-  const sysNav = sistemaNav.filter((item) => canSeeNavItem(item, permissions));
-  const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
-  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions, modules);
+  const isCustomerPortal = roleKey === "customer_portal";
+  const sysNav = isCustomerPortal
+    ? []
+    : sistemaNav.filter((item) => canSeeNavItem(item, permissions));
+  const visibleTopNav = isCustomerPortal
+    ? []
+    : topNav.filter((item) => canSeeNavItem(item, permissions));
+  const visibleAdminGroups = filterAdminGroupsByPermissions(
+    isCustomerPortal
+      ? customerPortalGroups.map((group) => ({
+          ...group,
+          items: group.items.filter(
+            (item) =>
+              item.to !== CUSTOMER_PORTAL_DASHBOARD_PATH || portalAccessProfile === "FULL_ACCESS",
+          ),
+        }))
+      : adminGroups,
+    permissions,
+    modules,
+  );
   return (
     <aside
       className={`hidden shrink-0 border-r border-border bg-surface-1 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
@@ -455,7 +490,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
         }`}
       >
         <Link
-          to={tenantHomeForPermissions(permissions, modules)}
+          to={homeForSession(roleKey, permissions, modules, portalAccessProfile)}
           className="flex items-center gap-2"
         >
           <LogoMark size={36} />
@@ -498,6 +533,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
 function UserMenu() {
   const user = useSession((s) => s.user);
   const logout = useSession((s) => s.logout);
+  const loginPath = useSession((s) => s.loginPath);
   const navigate = useNavigate();
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -558,7 +594,7 @@ function UserMenu() {
               if (!window.confirm("Deseja realmente sair do sistema?")) return;
               await signOut();
               logout();
-              navigate({ to: "/login" });
+              navigate({ to: loginPath });
             }}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive transition hover:bg-destructive/10"
           >
@@ -793,13 +829,33 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
 /* ---------- Mobile side nav ---------- */
 function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const permissions = useSession((s) => s.user?.permissions);
+  const roleKey = useSession((s) => s.user?.roleKey);
+  const portalAccessProfile = useSession((s) => s.user?.portalAccessProfile);
   const entitlements = useTenantEntitlements();
   const modules = tenantModules(entitlements.data?.features);
   const logout = useSession((s) => s.logout);
+  const loginPath = useSession((s) => s.loginPath);
   const navigate = useNavigate();
-  const sysNav = sistemaNav.filter((item) => canSeeNavItem(item, permissions));
-  const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
-  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions, modules);
+  const isCustomerPortal = roleKey === "customer_portal";
+  const sysNav = isCustomerPortal
+    ? []
+    : sistemaNav.filter((item) => canSeeNavItem(item, permissions));
+  const visibleTopNav = isCustomerPortal
+    ? []
+    : topNav.filter((item) => canSeeNavItem(item, permissions));
+  const visibleAdminGroups = filterAdminGroupsByPermissions(
+    isCustomerPortal
+      ? customerPortalGroups.map((group) => ({
+          ...group,
+          items: group.items.filter(
+            (item) =>
+              item.to !== CUSTOMER_PORTAL_DASHBOARD_PATH || portalAccessProfile === "FULL_ACCESS",
+          ),
+        }))
+      : adminGroups,
+    permissions,
+    modules,
+  );
   return (
     <>
       {open && (
@@ -817,7 +873,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
           <Link
-            to={tenantHomeForPermissions(permissions, modules)}
+            to={homeForSession(roleKey, permissions, modules, portalAccessProfile)}
             className="flex items-center gap-2"
             onClick={onClose}
           >
@@ -864,7 +920,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
               await signOut();
               logout();
               onClose();
-              navigate({ to: "/login" });
+              navigate({ to: loginPath });
             }}
             className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10"
           >
@@ -901,6 +957,7 @@ function MobileNavLink({ item, onClose }: { item: NavItem; onClose: () => void }
 function useTenantAuthGate() {
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
+  const loginPath = useSession((s) => s.loginPath);
   const hydrated = useSession((s) => s.hydrated);
   const entitlements = useTenantEntitlements(hydrated && !!user && user.role !== "super_admin");
   const modules = React.useMemo(
@@ -912,18 +969,28 @@ function useTenantAuthGate() {
     (pathname === "/campanhas" ||
       pathname.startsWith("/campanhas/") ||
       pathname === "/chamados" ||
-      pathname.startsWith("/chamados/")) &&
+      pathname.startsWith("/chamados/") ||
+      pathname === CUSTOMER_PORTAL_TICKETS_PATH ||
+      pathname.startsWith(`${CUSTOMER_PORTAL_TICKETS_PATH}/`) ||
+      pathname === CUSTOMER_PORTAL_DASHBOARD_PATH ||
+      pathname.startsWith(`${CUSTOMER_PORTAL_DASHBOARD_PATH}/`)) &&
     entitlements.isPending;
   const authorized =
     hydrated &&
     !!user &&
     user.role !== "super_admin" &&
     !waitingForModule &&
-    canAccessTenantRoute(pathname, user.permissions, modules);
+    canAccessSessionRoute(
+      pathname,
+      user.roleKey,
+      user.permissions,
+      modules,
+      user.portalAccessProfile,
+    );
   React.useEffect(() => {
     if (!hydrated) return; // aguarda hidratação da sessão para não redirecionar em F5
     if (!user) {
-      navigate({ to: "/login" });
+      navigate({ to: loginPath });
       return;
     }
     if (user.role === "super_admin") {
@@ -931,10 +998,25 @@ function useTenantAuthGate() {
       return;
     }
     if (waitingForModule) return;
-    if (!canAccessTenantRoute(pathname, user.permissions, modules)) {
-      navigate({ to: tenantHomeForPermissions(user.permissions, modules) as never });
+    if (
+      !canAccessSessionRoute(
+        pathname,
+        user.roleKey,
+        user.permissions,
+        modules,
+        user.portalAccessProfile,
+      )
+    ) {
+      navigate({
+        to: homeForSession(
+          user.roleKey,
+          user.permissions,
+          modules,
+          user.portalAccessProfile,
+        ) as never,
+      });
     }
-  }, [user, hydrated, navigate, pathname, waitingForModule, modules]);
+  }, [user, hydrated, loginPath, navigate, pathname, waitingForModule, modules]);
   return authorized;
 }
 

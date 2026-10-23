@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
+import {
+  ConversationType,
+  MessagingConnectionStatus,
+  MessagingProviderType,
+} from "../generated/prisma";
 import { GroupsSyncService } from "./groups-sync.service";
 
 describe("GroupsSyncService", () => {
@@ -31,6 +35,7 @@ describe("GroupsSyncService", () => {
       }),
     );
     expect(evolution.fetchProfilePictureUrl).not.toHaveBeenCalled();
+    expect(prismaTx.$executeRaw).toHaveBeenCalledOnce();
     expect(result).toMatchObject({
       synced: 1,
       created: 1,
@@ -97,6 +102,103 @@ describe("GroupsSyncService", () => {
     });
   });
 
+  it("merges complementary participant snapshots returned by the group endpoints", async () => {
+    const prisma = prismaMock();
+    const evolution = evolutionMock({ imageUrl: null });
+    evolution.findGroupInfo.mockResolvedValue({
+      subject: "Grupo Suporte",
+      participants: [
+        {
+          externalParticipantId: "5562992728679@s.whatsapp.net",
+          phone: "5562992728679",
+          displayName: "Instância A",
+          isAdmin: false,
+          isSuperAdmin: false,
+        },
+      ],
+    });
+    const service = new GroupsSyncService(prisma as never, evolution as never);
+
+    const result = await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(result.participants).toBe(2);
+    expect(prismaTx.conversationParticipant.create).toHaveBeenCalledTimes(2);
+    expect(prismaTx.conversationParticipant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          externalParticipantId: "5562985125113@s.whatsapp.net",
+        }),
+      }),
+    );
+    expect(prismaTx.conversationParticipant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          externalParticipantId: "5562992728679@s.whatsapp.net",
+        }),
+      }),
+    );
+  });
+
+  it("archives only operational group links missing from a complete instance snapshot", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.updateMany.mockResolvedValueOnce({ count: 2 });
+    const service = new GroupsSyncService(
+      prisma as never,
+      evolutionMock({ imageUrl: null }) as never,
+    );
+
+    const result = await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(result.unavailable).toBe(2);
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        conversationType: ConversationType.GROUP,
+        archivedAt: null,
+        externalChatId: { not: null, notIn: ["120363@g.us"] },
+      },
+      data: { archivedAt: expect.any(Date) },
+    });
+  });
+
+  it("does not archive group links when one returned group fails to synchronize", async () => {
+    const prisma = prismaMock();
+    prismaTx.contact.upsert.mockRejectedValueOnce(new Error("write failed"));
+    const service = new GroupsSyncService(
+      prisma as never,
+      evolutionMock({ imageUrl: null }) as never,
+    );
+
+    const result = await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(result.failed).toBe(1);
+    expect(result.unavailable).toBe(0);
+    expect(prisma.conversation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid empty snapshot and archives all active group links for that instance", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.updateMany.mockResolvedValueOnce({ count: 3 });
+    const evolution = evolutionMock({ imageUrl: null });
+    evolution.fetchGroups.mockResolvedValue([]);
+    const service = new GroupsSyncService(prisma as never, evolution as never);
+
+    const result = await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(result.unavailable).toBe(3);
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        conversationType: ConversationType.GROUP,
+        archivedAt: null,
+        externalChatId: { not: null },
+      },
+      data: { archivedAt: expect.any(Date) },
+    });
+  });
+
   it("updates an existing tenant group without applying a caller department scope", async () => {
     const prisma = prismaMock();
     prismaTx.conversation.findFirst.mockResolvedValue({
@@ -114,6 +216,9 @@ describe("GroupsSyncService", () => {
     });
 
     expect(result.synced).toBe(1);
+    expect(prismaTx.conversation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { createdAt: "desc" } }),
+    );
     expect(prismaTx.conversation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { tenantId_id: { tenantId: "tenant-a", id: "conversation-hidden" } },
@@ -121,6 +226,48 @@ describe("GroupsSyncService", () => {
     );
     expect(prismaTx.conversation.create).not.toHaveBeenCalled();
     expect(prismaTx.conversationParticipant.create).toHaveBeenCalled();
+  });
+
+  it("updates a saved LID with the trusted phone returned by the provider", async () => {
+    const prisma = prismaMock();
+    prismaTx.conversationParticipant.findFirst.mockResolvedValue({
+      id: "participant-douglas",
+      phone: "556296171414",
+      lid: "186311537357054@lid",
+      displayName: "FLOWID-LOCALHOST",
+    });
+    const evolution = evolutionMock({ imageUrl: null });
+    evolution.fetchGroups.mockResolvedValue([
+      {
+        groupJid: "120363428331401226@g.us",
+        subject: "Trixus - MELHORIAS",
+        imageUrl: null,
+        createdAt: new Date("2026-10-23T09:01:00.000Z"),
+        participants: [
+          {
+            externalParticipantId: "186311537357054@lid",
+            phone: "556281147652",
+            lid: "186311537357054@lid",
+            displayName: null,
+            isAdmin: true,
+            isSuperAdmin: true,
+          },
+        ],
+      },
+    ]);
+    const service = new GroupsSyncService(prisma as never, evolution as never);
+
+    await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(prismaTx.conversationParticipant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "participant-douglas" },
+        data: expect.objectContaining({
+          phone: "556281147652",
+          lid: "186311537357054@lid",
+        }),
+      }),
+    );
   });
 
   it("preserves a saved description when the provider snapshot omits it", async () => {
@@ -175,9 +322,137 @@ describe("GroupsSyncService", () => {
       data: { displayName: "Douglas Rezende" },
     });
   });
+
+  it("uses the WhatsApp push name for a group participant missing from the CRM", async () => {
+    const prisma = prismaMock();
+    const evolution = evolutionMock({ imageUrl: null });
+    evolution.fetchGroups.mockResolvedValue([
+      {
+        groupJid: "120363@g.us",
+        subject: "Grupo Suporte",
+        imageUrl: null,
+        participants: [
+          {
+            externalParticipantId: "556281744102@s.whatsapp.net",
+            phone: "556281744102",
+            displayName: null,
+            isAdmin: false,
+            isSuperAdmin: false,
+          },
+        ],
+      },
+    ]);
+    evolution.findContacts.mockResolvedValue([
+      {
+        id: "contact-provider-id",
+        remoteJid: "556281744102@s.whatsapp.net",
+        pushName: "Amor ❤️⭐️🌙",
+      },
+    ]);
+    const service = new GroupsSyncService(prisma as never, evolution as never);
+
+    await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(evolution.findContacts).toHaveBeenCalledOnce();
+    expect(prismaTx.conversationParticipant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ displayName: "Amor ❤️⭐️🌙" }),
+      }),
+    );
+  });
+
+  it("keeps the CRM contact name above the WhatsApp push name", async () => {
+    const prisma = prismaMock();
+    prisma.conversationParticipant.findMany.mockResolvedValue([
+      participant({ id: "participant-local", phone: "556281744102" }),
+    ]);
+    prisma.contact.findMany.mockResolvedValue([
+      { normalizedPhone: "+5562981744102", name: "Nome cadastrado" },
+    ]);
+    const evolution = evolutionMock({ imageUrl: null });
+    evolution.fetchGroups.mockResolvedValue([
+      {
+        groupJid: "120363@g.us",
+        subject: "Grupo Suporte",
+        imageUrl: null,
+        participants: [
+          {
+            externalParticipantId: "556281744102@s.whatsapp.net",
+            phone: "556281744102",
+            displayName: null,
+            isAdmin: false,
+            isSuperAdmin: false,
+          },
+        ],
+      },
+    ]);
+    evolution.findContacts.mockResolvedValue([
+      { remoteJid: "556281744102@s.whatsapp.net", pushName: "Nome do WhatsApp" },
+    ]);
+    const service = new GroupsSyncService(prisma as never, evolution as never);
+
+    await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(prisma.conversationParticipant.updateMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", id: "participant-local" },
+      data: { displayName: "Nome cadastrado" },
+    });
+  });
+
+  it("replaces a numeric participant placeholder when WhatsApp later provides a name", async () => {
+    const prisma = prismaMock();
+    prismaTx.conversationParticipant.findFirst.mockResolvedValue({
+      id: "participant-external",
+      phone: "556281744102",
+      displayName: "556281744102",
+    });
+    const evolution = evolutionMock({ imageUrl: null });
+    evolution.fetchGroups.mockResolvedValue([
+      {
+        groupJid: "120363@g.us",
+        subject: "Grupo Suporte",
+        imageUrl: null,
+        participants: [
+          {
+            externalParticipantId: "556281744102@s.whatsapp.net",
+            phone: "556281744102",
+            displayName: null,
+            isAdmin: false,
+            isSuperAdmin: false,
+          },
+        ],
+      },
+    ]);
+    evolution.findContacts.mockResolvedValue([
+      { remoteJid: "556281744102@s.whatsapp.net", pushName: "Amor ❤️⭐️🌙" },
+    ]);
+    const service = new GroupsSyncService(prisma as never, evolution as never);
+
+    await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(prismaTx.conversationParticipant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "participant-external" },
+        data: expect.objectContaining({ displayName: "Amor ❤️⭐️🌙" }),
+      }),
+    );
+  });
+
+  it("keeps group synchronization available when the WhatsApp contact catalog fails", async () => {
+    const prisma = prismaMock();
+    const evolution = evolutionMock({ imageUrl: null });
+    evolution.findContacts.mockRejectedValue(new Error("contact catalog unavailable"));
+    const service = new GroupsSyncService(prisma as never, evolution as never);
+
+    const result = await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(result).toMatchObject({ synced: 1, failed: 0 });
+    expect(prismaTx.conversationParticipant.create).toHaveBeenCalled();
+  });
 });
 
 const prismaTx = {
+  $executeRaw: vi.fn(),
   $queryRaw: vi.fn(),
   contact: {
     upsert: vi.fn(),
@@ -196,6 +471,7 @@ const prismaTx = {
 };
 
 function prismaMock() {
+  prismaTx.$executeRaw.mockResolvedValue(1);
   prismaTx.$queryRaw.mockResolvedValue([{ id: "department-a" }]);
   prismaTx.contact.upsert.mockResolvedValue({ id: "contact-a" });
   prismaTx.conversation.findFirst.mockResolvedValue(null);
@@ -230,7 +506,7 @@ function prismaMock() {
     },
     conversation: {
       findMany: vi.fn().mockResolvedValue([]),
-      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     conversationParticipant: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -266,6 +542,7 @@ function evolutionMock(input: { imageUrl: string | null }) {
       },
     ]),
     findGroupInfo: vi.fn().mockResolvedValue(null),
+    findContacts: vi.fn().mockResolvedValue([]),
     fetchProfilePictureUrl: vi.fn().mockResolvedValue("https://image.test/group.jpg"),
   };
 }

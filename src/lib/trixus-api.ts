@@ -48,6 +48,14 @@ type LoginResponse = {
     role: string;
     roleId: string;
   };
+  portalAccess?: {
+    id: string;
+    customer: { id: string; name: string };
+    contactId: string;
+    branchId: string;
+    departmentId: string | null;
+    accessProfile: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS";
+  } | null;
   permissions: string[];
 };
 
@@ -61,13 +69,21 @@ export type RequiredPasswordChange = {
 export type TenantSelectionRequired = {
   tenantSelectionRequired: true;
   tenantSelectionToken: string;
-  tenants: Array<{ id: string; slug: string; name: string }>;
+  destinations?: Array<{
+    selectionId: string;
+    type: "tenant" | "customer_portal";
+    tenant: { id: string; slug: string; name: string };
+    customer?: { id: string; name: string };
+  }>;
+  /** Compatibilidade com respostas emitidas antes da seleção por destino. */
+  tenants?: Array<{ id: string; slug: string; name: string }>;
 };
 
 type MeResponse = {
   user: LoginResponse["user"] & { roleName: string };
   tenant: LoginResponse["tenant"];
   membership: LoginResponse["membership"];
+  portalAccess?: LoginResponse["portalAccess"];
   permissions: string[];
 };
 
@@ -282,8 +298,8 @@ export type ApiCustomerBranch = {
   tenantId: string;
   customerId: string;
   name: string;
-  city: string | null;
-  state: string | null;
+  city: string;
+  state: string;
   status: "ACTIVE" | "INACTIVE";
   createdAt: string;
   updatedAt: string;
@@ -298,6 +314,7 @@ export type ApiCustomerDepartment = {
   managerContact?: { id: string; name: string } | null;
   manager?: { id: string; name: string } | null;
   active: boolean;
+  contactCount?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -326,6 +343,9 @@ export type ApiContactCatalog = {
   createdAt?: string;
   updatedAt?: string;
   contactCount?: number;
+  customerId?: string;
+  customerName?: string;
+  active?: boolean;
 };
 
 export type ApiContactCustomField = {
@@ -369,14 +389,22 @@ export type ApiContact = {
   customerBranch?: Pick<ApiCustomerBranch, "id" | "name" | "city" | "state"> | null;
   customerDepartmentId?: string | null;
   customerDepartment?: Pick<ApiCustomerDepartment, "id" | "name"> | null;
+  effectiveDepartment?: {
+    id: string;
+    name: string;
+    source: "CUSTOMER" | "CONTACT_CATALOG";
+  } | null;
+  effectiveDepartmentId?: string | null;
   customerAccessProfile?: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS" | null;
+  portalLogin?: string | null;
+  portalAccessActive?: boolean;
   active: boolean;
   email: string | null;
-  /** Nome legado; use contactDepartment como fonte canônica do departamento cadastrado. */
+  /** Nome legado; use customerDepartment/effectiveDepartment para o departamento organizacional. */
   departamento: string | null;
   departmentId: string | null;
   contactDepartmentId: string | null;
-  /** Departamento cadastrado do contato, distinto do departamento operacional da conversa. */
+  /** Catálogo legado, preservado apenas para compatibilidade histórica. */
   contactDepartment: Pick<ApiContactCatalog, "id" | "nome" | "cor"> | null;
   contactProfileId: string | null;
   contactProfile: Pick<ApiContactCatalog, "id" | "nome" | "cor"> | null;
@@ -397,6 +425,30 @@ export type ApiContact = {
   createdAt?: string;
   updatedAt?: string;
   lifecycle?: "created" | "restored" | "linked";
+};
+
+export type ApiCustomerPortalUser = {
+  contact: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string;
+    active: boolean;
+  };
+  login: string;
+  accessProfile: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS";
+  branch: { id: string; name: string } | null;
+  department: { id: string; name: string } | null;
+  accessStatus: "PENDING" | "ACTIVE" | "EXPIRED" | "DISABLED";
+  invitation: { id: string; expiresAt: string } | null;
+};
+
+export type ApiCustomerPortalTicketContext = {
+  customer: { id: string; name: string };
+  department: { id: string; name: string };
+  contact: { id: string; name: string };
+  branch: { id: string; name: string };
+  serviceDepartment: { id: string; name: string };
 };
 
 export type ApiGroupContactPickerItem = Pick<
@@ -511,6 +563,7 @@ export type ApiWhatsappGroup = {
   id: string;
   tenantId: string;
   conversationId: string;
+  contactId: string;
   name: string;
   externalChatId: string | null;
   imageUrl: string | null;
@@ -899,6 +952,34 @@ export type ApiTicketSummary = {
   counts: Record<ApiTicketStatus, number>;
 };
 
+export type ApiCustomerPortalDashboard = {
+  filters: {
+    departments: Array<{ id: string; name: string }>;
+    branches: Array<{ id: string; name: string }>;
+  };
+  metrics: {
+    total: number;
+    open: number;
+    inProgress: number;
+    awaitingApproval: number;
+    awaitingValidation: number;
+    completed: number;
+    rejected: number;
+    canceled: number;
+    averageResolutionHours: number | null;
+  };
+  byDepartment: ApiTicketDashboardDimension[];
+  byBranch: ApiTicketDashboardDimension[];
+  byCategory: ApiTicketDashboardDimension[];
+  byPriority: ApiTicketDashboardDimension[];
+};
+
+export type ApiTicketDashboardDimension = {
+  id: string | null;
+  label: string;
+  count: number;
+};
+
 export type ApiTicketApproval = {
   id: string;
   kind: "SUPPORT" | "DEVELOPMENT" | "SOLUTION_VALIDATION";
@@ -911,6 +992,8 @@ export type ApiTicketApproval = {
 
 export type ApiTicketAttachment = {
   id: string;
+  commentId: string | null;
+  uploadedBy: { id: string; name: string };
   originalName: string;
   mimeType: string;
   sizeBytes: number;
@@ -918,6 +1001,83 @@ export type ApiTicketAttachment = {
   scanStatus: "NOT_SCANNED" | "CLEAN" | "BLOCKED";
   createdAt: string;
   deletedAt: string | null;
+};
+
+export type ApiAiProvider = "OPENAI" | "GEMINI" | "ANTHROPIC" | "DEEPSEEK" | "GROQ" | "OPENROUTER";
+export type ApiAiAgentBehavior = "ATTENDANT" | "COPILOT" | "CONSULTATION";
+export type ApiAiModule =
+  | "TICKETS"
+  | "CHAT"
+  | "GLOBAL"
+  | "CRM"
+  | "FINANCE"
+  | "OPERATIONS"
+  | "SALES"
+  | "SERVICE";
+
+export type ApiAiConnection = {
+  id: string;
+  provider: ApiAiProvider;
+  name: string;
+  active: boolean;
+  organization: string | null;
+  apiKeyMasked: string;
+  configured: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiAiAgent = {
+  id: string;
+  connectionId: string;
+  connection: Pick<ApiAiConnection, "id" | "name" | "provider" | "active">;
+  name: string;
+  module: ApiAiModule;
+  model: string;
+  description: string;
+  instructions: string;
+  behavior: ApiAiAgentBehavior;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiAiTicketEvidence = {
+  messageId: string;
+  ordinal: number;
+  type: string;
+  mimeType: string | null;
+  fileName: string | null;
+  caption: string | null;
+  interpreted: boolean;
+  reason: string | null;
+};
+
+export type ApiAiTicketDraft = {
+  executionId: string;
+  agent: {
+    id: string;
+    name: string;
+    provider: ApiAiProvider;
+    model: string;
+  };
+  title: string;
+  summary: string;
+  descriptionHtml: string;
+  suggested: {
+    customerId: string | null;
+    customerName: string | null;
+    departmentId: string | null;
+    departmentName: string | null;
+    requesterContactId: string | null;
+    requesterContactName: string | null;
+    originBranchId: string | null;
+    originBranchName: string | null;
+    priority: Extract<ApiTicketPriority, "NORMAL" | "ALTA" | "ALTISSIMA">;
+    category: Extract<ApiTicketCategory, "SUPORTE" | "DEV">;
+  };
+  evidence: ApiAiTicketEvidence[];
+  warnings: string[];
 };
 
 export type ApiCampaignStatus =
@@ -1165,6 +1325,7 @@ type ListContactsParams = ListParams & {
   instance?: string;
   priorityInstance?: string;
   department?: string;
+  customerDepartmentId?: string;
   customerId?: string;
   tagId?: string;
   sortBy?: "name" | "customer" | "instance";
@@ -1238,6 +1399,7 @@ type ConversationPayload = {
   assignToSelf?: boolean;
   reuseExistingOpen?: boolean;
   isGroup?: boolean;
+  sourceGroupConversationId?: string;
   firstMessagePreview?: string | null;
 };
 
@@ -1289,6 +1451,43 @@ export async function loginWithTrixusApi(
     | RequiredPasswordChange
     | TenantSelectionRequired;
   if ("passwordChangeRequired" in data || "tenantSelectionRequired" in data) return data;
+  if (data.user.roleKey === "customer_portal") {
+    throw new TrixusApiError(
+      "Seu usuário não possui acesso ao Trixus.",
+      403,
+      "INTERNAL_ACCESS_DENIED",
+    );
+  }
+  storeTrixusSession(data);
+  return loginResponseToSessionUser(data);
+}
+
+export async function loginCustomerPortalWithTrixusApi(login: string, password: string) {
+  const response = await fetchTrixus("/auth/portal/login", {
+    method: "POST",
+    body: JSON.stringify({ login, password }),
+  });
+  if (!response.ok) {
+    const status = response.status;
+    const error = await authErrorFromResponse(response);
+    if (status === 401) {
+      throw new TrixusApiError(
+        "Usuário, e-mail ou senha inválidos.",
+        status,
+        "INVALID_CREDENTIALS",
+      );
+    }
+    throw error;
+  }
+  const data = (await response.json()) as LoginResponse | TenantSelectionRequired;
+  if ("tenantSelectionRequired" in data) return data;
+  if (data.user.roleKey !== "customer_portal") {
+    throw new TrixusApiError(
+      "Seu usuário não possui acesso ao Portal do Cliente.",
+      403,
+      "PORTAL_ACCESS_DENIED",
+    );
+  }
   storeTrixusSession(data);
   return loginResponseToSessionUser(data);
 }
@@ -1311,7 +1510,8 @@ export async function completeRequiredPasswordChangeWithTrixusApi(input: {
 
 export async function selectTenantWithTrixusApi(input: {
   selectionToken: string;
-  tenantId: string;
+  selectionId?: string;
+  tenantId?: string;
 }) {
   const response = await fetchTrixus("/auth/tenant/select", {
     method: "POST",
@@ -1320,6 +1520,34 @@ export async function selectTenantWithTrixusApi(input: {
   if (!response.ok) throw await authErrorFromResponse(response);
   const data = (await response.json()) as LoginResponse | RequiredPasswordChange;
   if ("passwordChangeRequired" in data) return data;
+  if (data.user.roleKey === "customer_portal") {
+    throw new TrixusApiError(
+      "Este acesso deve ser realizado pelo Portal do Cliente.",
+      403,
+      "AUTH_CHANNEL_MISMATCH",
+    );
+  }
+  storeTrixusSession(data);
+  return loginResponseToSessionUser(data);
+}
+
+export async function selectCustomerPortalWithTrixusApi(input: {
+  selectionToken: string;
+  selectionId: string;
+}) {
+  const response = await fetchTrixus("/auth/portal/select", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await authErrorFromResponse(response);
+  const data = (await response.json()) as LoginResponse;
+  if (data.user.roleKey !== "customer_portal") {
+    throw new TrixusApiError(
+      "Seu usuário não possui acesso ao Portal do Cliente.",
+      403,
+      "PORTAL_ACCESS_DENIED",
+    );
+  }
   storeTrixusSession(data);
   return loginResponseToSessionUser(data);
 }
@@ -1342,6 +1570,7 @@ export async function acceptTenantInvitationWithTrixusApi(input: {
 
 export type ApiInvitationPreview = {
   email: string;
+  login: string;
   expiresAt: string;
   tenant: { id: string; name: string; slug: string };
   profile: string;
@@ -1378,6 +1607,8 @@ export async function hydrateWithTrixusApi() {
     customerBubbleTextColor: data.user.customerBubbleTextColor ?? undefined,
     chatBackgroundColor: data.user.chatBackgroundColor ?? undefined,
     chatBackgroundMode: data.user.chatBackgroundMode ?? "IMAGE",
+    portalAccessId: data.portalAccess?.id,
+    portalAccessProfile: data.portalAccess?.accessProfile,
     permissions: effectiveSessionPermissions(role, data.permissions),
   } satisfies SessionUser;
 }
@@ -1823,6 +2054,7 @@ export const crmApi = {
     allFiltered?: boolean;
     filters?: ListContactsParams;
     customerId?: string | null;
+    customerDepartmentId?: string | null;
     contactDepartmentId?: string | null;
     contactProfileId?: string | null;
     email?: string | null;
@@ -2012,6 +2244,7 @@ export const groupsApi = {
       participants: number;
       inactiveParticipants: number;
       participantNamesUpdated: number;
+      unavailable: number;
     }>("/groups/sync", {
       method: "POST",
       body: JSON.stringify(data),
@@ -2076,6 +2309,7 @@ export type BulkConversationResult = {
 };
 
 export type BulkConversationSelection = {
+  action?: "start" | "transfer" | "close";
   tab?: "ativas" | "standby" | "fila" | "leads";
   tabs?: Array<"ativas" | "standby" | "fila" | "leads">;
   q?: string;
@@ -2474,8 +2708,163 @@ export const connectionsApi = {
     }),
 };
 
+export const aiApi = {
+  listConnections: () => apiRequest<ApiAiConnection[]>("/ai/connections"),
+  createConnection: (data: {
+    active: boolean;
+    provider: ApiAiProvider;
+    name: string;
+    apiKey: string;
+    organization?: string | null;
+  }) =>
+    apiRequest<ApiAiConnection>("/ai/connections", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateConnection: (
+    id: string,
+    data: {
+      active: boolean;
+      provider: ApiAiProvider;
+      name: string;
+      apiKey?: string;
+      organization?: string | null;
+    },
+  ) =>
+    apiRequest<ApiAiConnection>(`/ai/connections/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteConnection: (id: string) =>
+    apiRequest<{ deleted: true }>(`/ai/connections/${id}`, { method: "DELETE" }),
+  providerModels: (provider: ApiAiProvider) =>
+    apiRequest<string[]>(`/ai/providers/${provider}/models`),
+  listAgents: (params: { connectionId?: string; all?: boolean } = {}) =>
+    apiRequest<ApiAiAgent[]>(`/ai/agents${queryString(params)}`),
+  createAgent: (data: {
+    active: boolean;
+    name: string;
+    module: ApiAiModule;
+    connectionId: string;
+    model: string;
+    description?: string;
+    instructions: string;
+    behavior: ApiAiAgentBehavior;
+  }) => apiRequest<ApiAiAgent>("/ai/agents", { method: "POST", body: JSON.stringify(data) }),
+  updateAgent: (
+    id: string,
+    data: {
+      active: boolean;
+      name: string;
+      module: ApiAiModule;
+      connectionId: string;
+      model: string;
+      description?: string;
+      instructions: string;
+      behavior: ApiAiAgentBehavior;
+    },
+  ) =>
+    apiRequest<ApiAiAgent>(`/ai/agents/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  duplicateAgent: (id: string) =>
+    apiRequest<ApiAiAgent>(`/ai/agents/${id}/duplicate`, { method: "POST" }),
+  deleteAgent: (id: string) =>
+    apiRequest<{ deleted: true }>(`/ai/agents/${id}`, { method: "DELETE" }),
+  createTicketDraft: (conversationId: string, agentId?: string) =>
+    apiRequest<ApiAiTicketDraft>("/ai/ticket-drafts", {
+      method: "POST",
+      body: JSON.stringify({ conversationId, agentId }),
+    }),
+  getExecution: (executionId: string) =>
+    apiRequest<ApiAiTicketDraft>(`/ai/executions/${executionId}`),
+};
+
 export const ticketApi = {
-  inviteCustomerContact: (contactId: string) =>
+  portalCreateContext: () =>
+    apiRequest<ApiCustomerPortalTicketContext>("/tickets/portal/create-context"),
+  listCustomerPortalUsers: (customerId: string) =>
+    apiRequest<ApiCustomerPortalUser[]>(`/tickets/portal/customers/${customerId}/users`),
+  linkCustomerPortalUser: (
+    customerId: string,
+    data: {
+      contactId: string;
+      login: string;
+      accessProfile: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS";
+      customerDepartmentId: string | null;
+      customerBranchId: string | null;
+    },
+  ) =>
+    apiRequest<{
+      id?: string;
+      contactId: string;
+      email?: string;
+      status: "pending" | "active";
+      delivery?: {
+        delivered: boolean;
+        queued?: boolean;
+        provider: string;
+        conversationId?: string;
+        messageId?: string;
+      };
+    }>(`/tickets/portal/customers/${customerId}/users`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateCustomerPortalUser: (
+    customerId: string,
+    contactId: string,
+    data: {
+      login: string;
+      active?: boolean;
+      accessProfile: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS";
+      customerDepartmentId: string | null;
+      customerBranchId: string | null;
+    },
+  ) =>
+    apiRequest<{
+      contactId: string;
+      login?: string;
+      active?: boolean;
+      status?: "active" | "pending" | "disabled";
+      delivery?: {
+        delivered: boolean;
+        queued?: boolean;
+        provider: string;
+        conversationId?: string;
+        messageId?: string;
+      };
+      deliveries?: {
+        email: { delivered: boolean; provider: string; error?: string } | null;
+        whatsapp: {
+          delivered: boolean;
+          queued?: boolean;
+          provider: string;
+          conversationId?: string;
+          messageId?: string;
+          error?: string;
+        };
+      };
+    }>(`/tickets/portal/customers/${customerId}/users/${contactId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  revokeCustomerPortalUser: (customerId: string, contactId: string) =>
+    apiRequest<{
+      revoked: true;
+      contactId: string;
+      delivery: {
+        delivered: boolean;
+        queued: boolean;
+        provider: "whatsapp";
+        conversationId?: string;
+        messageId?: string;
+        protocol?: string;
+        error?: string;
+      };
+    }>(`/tickets/portal/customers/${customerId}/users/${contactId}`, { method: "DELETE" }),
+  inviteCustomerContact: (contactId: string, customerId?: string) =>
     apiRequest<{
       id?: string;
       contactId: string;
@@ -2483,10 +2872,17 @@ export const ticketApi = {
       status: "pending" | "active";
       expiresAt?: string;
       acceptUrl?: string;
-      delivery?: { delivered: boolean; provider: string };
+      delivery?: {
+        delivered: boolean;
+        queued?: boolean;
+        provider: string;
+        conversationId?: string;
+        messageId?: string;
+        protocol?: string;
+      };
     }>(`/tickets/portal/contacts/${contactId}/invitations`, {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(customerId ? { customerId } : {}),
     }),
   list: (
     params: {
@@ -2514,6 +2910,14 @@ export const ticketApi = {
       conversationId?: string;
     } = {},
   ) => apiRequest<ApiTicketSummary>(`/tickets/summary${queryString(params)}`),
+  portalDashboard: (
+    params: {
+      createdFrom?: string;
+      createdTo?: string;
+      customerDepartmentId?: string;
+      originBranchId?: string;
+    } = {},
+  ) => apiRequest<ApiCustomerPortalDashboard>(`/tickets/portal/dashboard${queryString(params)}`),
   get: (id: string) => apiRequest<ApiTicket>(`/tickets/${id}`),
   create: (data: {
     title: string;
@@ -2527,6 +2931,7 @@ export const ticketApi = {
     customerDepartmentId?: string | null;
     originBranchId?: string | null;
     conversationId?: string | null;
+    aiExecutionId?: string | null;
   }) => apiRequest<ApiTicket>("/tickets", { method: "POST", body: JSON.stringify(data) }),
   update: (
     id: string,
@@ -2578,7 +2983,7 @@ export const ticketApi = {
     id: string,
     data: { bodyHtml: string; departmentId: string; assignedMembershipId?: string | null },
   ) =>
-    apiRequest<unknown>(`/tickets/${id}/actions/transfer`, {
+    apiRequest<ApiTicketComment>(`/tickets/${id}/actions/transfer`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
@@ -2586,17 +2991,20 @@ export const ticketApi = {
     id: string,
     data: { bodyHtml: string; approverMembershipId?: string; approverContactId?: string },
   ) =>
-    apiRequest<unknown>(`/tickets/${id}/actions/request-approval`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    apiRequest<{ approval: ApiTicketApproval; comment: ApiTicketComment }>(
+      `/tickets/${id}/actions/request-approval`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    ),
   solve: (id: string, bodyHtml: string) =>
-    apiRequest<unknown>(`/tickets/${id}/actions/solve`, {
+    apiRequest<ApiTicketComment>(`/tickets/${id}/actions/solve`, {
       method: "POST",
       body: JSON.stringify({ bodyHtml }),
     }),
   cancel: (id: string, bodyHtml: string) =>
-    apiRequest<unknown>(`/tickets/${id}/actions/cancel`, {
+    apiRequest<ApiTicketComment>(`/tickets/${id}/actions/cancel`, {
       method: "POST",
       body: JSON.stringify({ bodyHtml }),
     }),
@@ -2616,16 +3024,18 @@ export const ticketApi = {
       body: JSON.stringify(data),
     }),
   attachments: (id: string) => apiRequest<ApiTicketAttachment[]>(`/tickets/${id}/attachments`),
-  uploadAttachment: async (id: string, file: File) => {
+  uploadAttachment: async (id: string, file: File, commentId?: string) => {
+    const uploadHeaders = {
+      "Content-Type": file.type || "application/octet-stream",
+      "X-File-Name": encodeURIComponent(file.name),
+      "X-File-Size": String(file.size),
+      ...(commentId ? { "X-Comment-Id": commentId } : {}),
+    };
     let response = await fetchTrixus(
       `/tickets/${id}/attachments`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": file.type || "application/octet-stream",
-          "X-File-Name": encodeURIComponent(file.name),
-          "X-File-Size": String(file.size),
-        },
+        headers: uploadHeaders,
         body: file,
       },
       true,
@@ -2635,11 +3045,7 @@ export const ticketApi = {
         `/tickets/${id}/attachments`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": file.type || "application/octet-stream",
-            "X-File-Name": encodeURIComponent(file.name),
-            "X-File-Size": String(file.size),
-          },
+          headers: uploadHeaders,
           body: file,
         },
         true,
@@ -3752,6 +4158,8 @@ function loginResponseToSessionUser(data: LoginResponse): SessionUser {
     customerBubbleTextColor: data.user.customerBubbleTextColor ?? undefined,
     chatBackgroundColor: data.user.chatBackgroundColor ?? undefined,
     chatBackgroundMode: data.user.chatBackgroundMode ?? "IMAGE",
+    portalAccessId: data.portalAccess?.id,
+    portalAccessProfile: data.portalAccess?.accessProfile,
     permissions: effectiveSessionPermissions(role, data.permissions),
   };
 }

@@ -28,8 +28,11 @@ describe("registration uppercase write integration", () => {
     expect(users).not.toContain("data: { name: await normalizeRegistrationText(");
   });
 
-  it("does not invent persistence for bot flows or AI agents", () => {
+  it("keeps bot flows unimplemented and recognizes the implemented AI persistence", () => {
     const schema = source("../../prisma/schema.prisma");
-    expect(schema).not.toMatch(/model (BotFlow|AiAgent|AIAgent)/);
+    expect(schema).not.toMatch(/model (BotFlow|AIAgent)/);
+    expect(schema).toMatch(/model AiConnection\s*\{/);
+    expect(schema).toMatch(/model AiAgent\s*\{/);
+    expect(schema).toMatch(/model AiExecution\s*\{/);
   });
 });

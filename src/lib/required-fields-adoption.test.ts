@@ -28,7 +28,9 @@ describe("padrão compartilhado de campos obrigatórios", () => {
     const bulk = source("../components/bulk-conversation-action-modal.tsx");
     expect(dashboard).toContain('showRequiredFieldsToast(["Título do componente"])');
     expect(schedule).toContain('...(nextRequiredErrors.message ? ["Mensagem ou anexo"] : [])');
-    expect(schedule).toContain("requiredFieldClassName(requiredErrors.scheduleAt)");
+    expect(schedule).toContain(
+      "requiredFieldClassName(requiredErrors.scheduleAt || scheduleTimeInvalid)",
+    );
     expect(bulk).toContain("setTargetRequired(true)");
     expect(bulk).toContain("requiredFieldClassName(targetRequired)");
   });

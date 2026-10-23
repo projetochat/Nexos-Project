@@ -331,7 +331,7 @@ function SchedulingPage() {
                 </Card>
               )}
             </div>
-            <Card padding={false} className="overflow-hidden">
+            <div className="overflow-hidden rounded-xl border border-border">
               <SchedulePagination
                 shown={paginated.length}
                 total={filtered.length}
@@ -342,7 +342,7 @@ function SchedulingPage() {
                 onPrevious={() => setPage((current) => Math.max(1, current - 1))}
                 onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
               />
-            </Card>
+            </div>
           </div>
         )}
         <Card

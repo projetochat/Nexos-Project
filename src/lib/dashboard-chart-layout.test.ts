@@ -53,6 +53,14 @@ describe("dashboard chart layout", () => {
     expect(desktop.width).toBeLessThanOrEqual(202);
   });
 
+  it("does not reserve a wide category axis for a single short bar label", () => {
+    const layout = dashboardCategoryAxisLayout(["DIPS"], 370);
+
+    expect(layout.width).toBeGreaterThanOrEqual(40);
+    expect(layout.width).toBeLessThan(60);
+    expect(formatDashboardAxisLabelToWidth("DIPS", layout.maxLabelWidth)).toBe("DIPS");
+  });
+
   it("keeps complete column labels whenever their measured slot has room", () => {
     const layout = dashboardColumnAxisLayout(["VOCICAL", "FLOWID"], 640);
 

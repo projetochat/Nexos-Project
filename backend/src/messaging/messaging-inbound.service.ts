@@ -28,6 +28,7 @@ import {
 import { MessagingOutboundService } from "./messaging-outbound.service";
 import { selectAutomaticReply } from "./automatic-reply";
 import { conversationQueueForNotification } from "../conversations/conversation-queue-scope";
+import { groupConversationLockKey } from "../conversations/group-conversation-identity";
 import { effectivePermissions } from "../auth/effective-permissions";
 import { roleChatScopes } from "../auth/connection-access";
 import { MESSAGE_CLOCK, type MessageClock, SYSTEM_MESSAGE_CLOCK } from "./message-clock";
@@ -122,6 +123,22 @@ export class MessagingInboundService {
         },
         orderBy: { updatedAt: "desc" },
       });
+      const directDisplayName =
+        !isGroup && !event.fromMe
+          ? meaningfulProviderContactName(
+              event.metadata?.displayName ?? event.sender.displayName,
+              [event.sender.phone, event.sender.normalizedPhone, event.externalChatId],
+            )
+          : null;
+      const contactNameUpdated = Boolean(
+        existingContact &&
+          directDisplayName &&
+          isContactPhonePlaceholder(existingContact.name, [
+            existingContact.phone,
+            existingContact.normalizedPhone,
+            event.externalChatId,
+          ]),
+      );
       const contact = existingContact
         ? await tx.contact.update({
             where: { tenantId_id: { tenantId: event.tenantId, id: existingContact.id } },
@@ -131,7 +148,9 @@ export class MessagingInboundService {
                 ? groupDisplayName && existingContact.name === "Grupo WhatsApp"
                   ? groupDisplayName
                   : existingContact.name
-                : undefined,
+                : contactNameUpdated && directDisplayName
+                  ? directDisplayName
+                  : undefined,
               instance: connection.externalReference ?? existingContact.instance,
               instanceIds: Array.from(
                 new Set([...(existingContact.instanceIds ?? []), connection.id]),
@@ -148,9 +167,7 @@ export class MessagingInboundService {
             update: {
               name: isGroup
                 ? (groupDisplayName ?? "Grupo WhatsApp")
-                : event.fromMe
-                  ? undefined
-                  : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
+                : undefined,
               phone: isGroup ? event.externalChatId : event.sender.phone,
               instance: connection.externalReference,
               instanceIds: [connection.id],
@@ -160,9 +177,7 @@ export class MessagingInboundService {
               tenantId: event.tenantId,
               name: isGroup
                 ? (groupDisplayName ?? "Grupo WhatsApp")
-                : event.fromMe
-                  ? event.sender.phone
-                  : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
+                : directDisplayName ?? event.sender.phone,
               phone: isGroup ? event.externalChatId : event.sender.phone,
               normalizedPhone: canonicalPhone,
               instance: connection.externalReference,
@@ -460,20 +475,31 @@ export class MessagingInboundService {
             effectiveAt: automaticReplyAt,
             contact,
             timezone: connection.timezone,
-            departmentName: contact.contactDepartmentId
+            departmentName: contact.customerDepartmentId
               ? ((
-                  await tx.contactDepartment.findFirst({
+                  await tx.customerDepartment.findFirst({
                     where: {
-                      id: contact.contactDepartmentId,
+                      id: contact.customerDepartmentId,
                       tenantId: event.tenantId,
                       archivedAt: null,
                     },
                     select: { name: true },
                   })
-                )?.name ??
-                contact.departmentName ??
-                null)
-              : (contact.departmentName ?? null),
+                )?.name ?? null)
+              : contact.contactDepartmentId
+                ? ((
+                    await tx.contactDepartment.findFirst({
+                      where: {
+                        id: contact.contactDepartmentId,
+                        tenantId: event.tenantId,
+                        archivedAt: null,
+                      },
+                      select: { name: true },
+                    })
+                  )?.name ??
+                  contact.departmentName ??
+                  null)
+                : (contact.departmentName ?? null),
             customerName: contact.customerId
               ? ((
                   await tx.customer.findFirst({
@@ -516,6 +542,7 @@ export class MessagingInboundService {
         unreadCount: updatedConversation.unreadCount,
         clearsPendingResponse,
         automaticReply: reply,
+        contactNameUpdated,
       };
     });
 
@@ -574,7 +601,7 @@ export class MessagingInboundService {
         notificationQueue: result.notificationQueue,
         tagNotification: result.createdConversation && result.tagNotification,
       });
-      if (profilePictureUpdated && result.contactId) {
+      if ((profilePictureUpdated || result.contactNameUpdated) && result.contactId) {
         this.realtime?.publishContactUpdated({
           tenantId: event.tenantId,
           contactId: result.contactId,
@@ -910,6 +937,11 @@ export class MessagingInboundService {
     initialDepartmentId: string | null = contact.departmentId ?? null,
   ) {
     if (event.conversationType === "GROUP") {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${groupConversationLockKey({
+        tenantId: event.tenantId,
+        connectionId: event.connectionId,
+        externalChatId: event.externalChatId,
+      })}, 0))`;
       const existing = await tx.conversation.findFirst({
         where: {
           tenantId: event.tenantId,
@@ -1143,6 +1175,39 @@ function resolveInboundMediaState(
 
 function uniqueNormalizedPhones(values: Array<string | null | undefined>) {
   return [...new Set(values.filter((value): value is string => !!value))];
+}
+
+function meaningfulProviderContactName(
+  value: string | null | undefined,
+  identities: Array<string | null | undefined>,
+) {
+  const name = value?.trim();
+  if (!name || isContactPhonePlaceholder(name, identities)) return null;
+  return name;
+}
+
+function isContactPhonePlaceholder(
+  name: string,
+  identities: Array<string | null | undefined>,
+) {
+  const nameDigits = phoneIdentityDigits(name);
+  if (!nameDigits) return false;
+  return identities.some((identity) => {
+    if (!identity) return false;
+    try {
+      return normalizeRemotePhoneCandidates(identity).some(
+        (candidate) => phoneIdentityDigits(candidate) === nameDigits,
+      );
+    } catch {
+      return phoneIdentityDigits(identity) === nameDigits;
+    }
+  });
+}
+
+function phoneIdentityDigits(value: string) {
+  const local = value.split("@")[0]?.split(":")[0] ?? value;
+  const digits = local.replace(/\D/g, "");
+  return digits.length >= 10 ? digits : null;
 }
 
 function mediaPreview(type: InboundMessageEvent["type"]) {

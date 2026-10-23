@@ -105,6 +105,7 @@ import {
   type ApiContactCustomField,
   type ApiContactInstanceOption,
   type ApiCustomer,
+  type ApiCustomerDepartment,
   type ApiTag,
 } from "@/lib/trixus-api";
 
@@ -424,7 +425,7 @@ function ContatosPage() {
   const canReadAdditionalFields =
     user?.permissions?.includes("contacts.additional_fields.read") ?? false;
   const canStartConversation = canStartActiveConversation(user?.permissions);
-  const filtersStorageKey = `trixus.contacts.filters.${user?.id ?? "anonymous"}`;
+  const filtersStorageKey = `trixus.contacts.filters.v2.${user?.id ?? "anonymous"}`;
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [tags, setTags] = React.useState<Tag[]>([]);
@@ -454,6 +455,11 @@ function ContatosPage() {
   const [tagFilter, setTagFilter] = React.useState(
     () => loadContactFiltersMemory(filtersStorageKey).tag,
   );
+  React.useEffect(() => {
+    if (!clienteFilter || clienteFilter === EMPTY_FILTER_VALUE) {
+      setDepartamentoFilter("");
+    }
+  }, [clienteFilter]);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(
     () => loadContactFiltersMemory(filtersStorageKey).pageSize,
@@ -467,8 +473,14 @@ function ContatosPage() {
   const [bulkAction, setBulkAction] = React.useState("");
   const [bulkMode, setBulkMode] = React.useState("");
   const [bulkValue, setBulkValue] = React.useState("");
+  const [bulkCustomerId, setBulkCustomerId] = React.useState("");
   const [bulkTags, setBulkTags] = React.useState<string[]>([]);
   const [bulkCustomValue, setBulkCustomValue] = React.useState<string | boolean>("");
+  const bulkCustomerDepartments = useQuery({
+    queryKey: ["trixus", "customer-departments", "contacts-bulk", bulkCustomerId],
+    queryFn: () => crmApi.listCustomerDepartments(bulkCustomerId),
+    enabled: bulkMode === "department" && Boolean(bulkCustomerId),
+  });
   const importModal = useDisclosure();
   const exportModal = useDisclosure();
   const exportMenu = useDisclosure();
@@ -566,7 +578,7 @@ function ContatosPage() {
     () => ({
       q: query,
       instance: instanciaFilter,
-      department: departamentoFilter,
+      customerDepartmentId: departamentoFilter,
       customerId: clienteFilter,
       tagId: tagFilter,
     }),
@@ -820,7 +832,7 @@ function ContatosPage() {
         formatPhoneWithDdi(contact.telefone),
         contact.email ?? "",
         contact.customer?.nome ?? "",
-        contact.contactDepartment?.nome ?? contact.departamento ?? "",
+        contact.customerDepartment?.name ?? contact.effectiveDepartment?.name ?? "",
         contact.contactProfile?.nome ?? "",
         (contact.instanceIds ?? []).map((id) => connectionLabelByValue.get(id) ?? id).join(", "),
         contact.tags.map((tag) => tag.nome).join(", "),
@@ -852,7 +864,7 @@ function ContatosPage() {
         page: nextPage,
         pageSize: 1000,
         instance: instanciaFilter,
-        department: departamentoFilter,
+        customerDepartmentId: departamentoFilter,
         customerId: clienteFilter,
         tagId: tagFilter,
       });
@@ -899,18 +911,6 @@ function ContatosPage() {
       }
     };
 
-    const ensureDepartment = async (name: string) => {
-      const cleanName = cleanImportName(name);
-      if (!cleanName || findByImportedName(importedDepartments, cleanName)) return;
-      try {
-        importedDepartments.push(await crmApi.createContactDepartment({ name: cleanName }));
-      } catch {
-        const refreshed = await crmApi.listContactDepartments();
-        const existing = findByImportedName(refreshed, cleanName);
-        if (existing) importedDepartments.push(existing);
-      }
-    };
-
     const ensureProfile = async (name: string) => {
       const cleanName = cleanImportName(name);
       if (!cleanName || findByImportedName(importedProfiles, cleanName)) return;
@@ -936,16 +936,45 @@ function ContatosPage() {
     };
 
     const customerNames = uniqueLabels(records.map((row) => valueAt(row, index, ["empresa"])));
-    const departmentNames = uniqueLabels(
-      records.map((row) => valueAt(row, index, ["departamento"])),
-    );
     const profileNames = uniqueLabels(records.map((row) => valueAt(row, index, ["perfil"])));
     const tagNames = uniqueLabels(
       records.flatMap((row) => splitImportList(valueAt(row, index, ["etiquetas"]))),
     );
 
     for (const name of customerNames) await ensureCustomer(name);
-    for (const name of departmentNames) await ensureDepartment(name);
+    for (const row of records) {
+      const customerName = valueAt(row, index, ["empresa"]);
+      const departmentName = cleanImportName(valueAt(row, index, ["departamento"]));
+      const customer = findByImportedName(importedCustomers, customerName);
+      if (!customer || !departmentName) continue;
+      const existing = importedDepartments.find(
+        (department) =>
+          department.customerId === customer.id &&
+          normalizeImportName(department.nome) === normalizeImportName(departmentName),
+      );
+      if (existing) continue;
+      try {
+        const created = await crmApi.createCustomerDepartment(customer.id, {
+          name: departmentName,
+        });
+        importedDepartments.push({
+          ...customerDepartmentCatalog(created),
+          customerName: customer.nome,
+        });
+      } catch {
+        const refreshed = await crmApi.listCustomerDepartments(customer.id);
+        const matched = refreshed.find(
+          (department) =>
+            normalizeImportName(department.name) === normalizeImportName(departmentName),
+        );
+        if (matched) {
+          importedDepartments.push({
+            ...customerDepartmentCatalog(matched),
+            customerName: customer.nome,
+          });
+        }
+      }
+    }
     for (const name of profileNames) await ensureProfile(name);
     for (const name of tagNames) await ensureTag(name);
 
@@ -980,6 +1009,18 @@ function ContatosPage() {
     });
     if (!validRecords.length) {
       toast.error("Nenhum contato válido encontrado.");
+      return;
+    }
+    const departmentWithoutCustomer = validRecords.find((row) => {
+      const department = cleanImportName(valueAt(row, index, ["departamento"]));
+      const customer = cleanImportName(valueAt(row, index, ["empresa"]));
+      return Boolean(department && !customer);
+    });
+    if (departmentWithoutCustomer) {
+      toast.error("Empresa obrigatória para o departamento", {
+        description:
+          "Informe a empresa em todas as linhas que possuem departamento antes de importar.",
+      });
       return;
     }
     let importCatalogs: Awaited<ReturnType<typeof ensureImportCatalogs>>;
@@ -1023,7 +1064,11 @@ function ContatosPage() {
       const tagNames = splitImportList(valueAt(row, index, ["etiquetas"]));
       const instanceNames = splitImportList(valueAt(row, index, ["instancias", "instâncias"]));
       const customer = findByImportedName(importCatalogs.customers, customerName);
-      const department = findByImportedName(importCatalogs.departments, departmentName);
+      const department = importCatalogs.departments.find(
+        (item) =>
+          item.customerId === customer?.id &&
+          normalizeImportName(item.nome) === normalizeImportName(departmentName),
+      );
       const profile = findByImportedName(importCatalogs.profiles, profileName);
       const importedTags = tagNames
         .map((item) => findByImportedName(importCatalogs.tags, item))
@@ -1038,7 +1083,7 @@ function ContatosPage() {
             telefone: phone,
             customer_id: customer?.id ?? null,
             email: valueAt(row, index, ["email", "e-mail"]) || null,
-            contactDepartmentId: department?.id ?? null,
+            customerDepartmentId: department?.id ?? null,
             contactProfileId: profile?.id ?? null,
             instanceIds: importedInstances.map((instance) => instance.value),
             tag_ids: importedTags.map((tag) => tag.id),
@@ -1289,8 +1334,13 @@ function ContatosPage() {
     } else {
       await crmApi.bulkUpdateContacts({
         ...target,
-        customerId: bulkMode === "customer" ? bulkValue || null : undefined,
-        contactDepartmentId: bulkMode === "department" ? bulkValue || null : undefined,
+        customerId:
+          bulkMode === "department"
+            ? bulkCustomerId || null
+            : bulkMode === "customer"
+              ? bulkValue || null
+              : undefined,
+        customerDepartmentId: bulkMode === "department" ? bulkValue || null : undefined,
         contactProfileId: bulkMode === "profile" ? bulkValue || null : undefined,
       });
     }
@@ -1299,6 +1349,7 @@ function ContatosPage() {
     setBulkAction("");
     setBulkMode("");
     setBulkValue("");
+    setBulkCustomerId("");
     setBulkTags([]);
     setBulkCustomValue("");
     await load();
@@ -1389,7 +1440,14 @@ function ContatosPage() {
                 }))}
               />
             </label>
-            <FilterSelect label="Empresa" value={clienteFilter} onChange={setClienteFilter}>
+            <FilterSelect
+              label="Empresa"
+              value={clienteFilter}
+              onChange={(value) => {
+                setClienteFilter(value);
+                setDepartamentoFilter("");
+              }}
+            >
               {[
                 <option key="all" value="">
                   Todas
@@ -1408,6 +1466,7 @@ function ContatosPage() {
               label="Departamento"
               value={departamentoFilter}
               onChange={setDepartamentoFilter}
+              disabled={!clienteFilter || clienteFilter === EMPTY_FILTER_VALUE}
             >
               {[
                 <option key="all" value="">
@@ -1416,11 +1475,13 @@ function ContatosPage() {
                 <option key="empty" value={EMPTY_FILTER_VALUE}>
                   - Sem departamento -
                 </option>,
-                ...departments.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {department.nome}
-                  </option>
-                )),
+                ...departments
+                  .filter((department) => department.customerId === clienteFilter)
+                  .map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.nome}
+                    </option>
+                  )),
               ]}
             </FilterSelect>
             <FilterSelect label="Etiqueta" value={tagFilter} onChange={setTagFilter}>
@@ -1549,6 +1610,7 @@ function ContatosPage() {
                   setBulkAction(nextAction);
                   setBulkMode(nextAction === "delete" ? "delete" : "");
                   setBulkValue("");
+                  setBulkCustomerId("");
                   setBulkTags([]);
                   setBulkCustomValue("");
                 }}
@@ -1564,6 +1626,7 @@ function ContatosPage() {
                   onChange={(event) => {
                     setBulkMode(event.target.value as typeof bulkMode);
                     setBulkValue("");
+                    setBulkCustomerId("");
                     setBulkTags([]);
                     setBulkCustomValue("");
                   }}
@@ -1602,18 +1665,38 @@ function ContatosPage() {
                 </Select>
               )}
               {bulkMode === "department" && (
-                <Select
-                  value={bulkValue}
-                  onChange={(event) => setBulkValue(event.target.value)}
-                  className="w-60"
-                >
-                  <option value="">- Sem departamento -</option>
-                  {departments.map((department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.nome}
-                    </option>
-                  ))}
-                </Select>
+                <>
+                  <Select
+                    value={bulkCustomerId}
+                    onChange={(event) => {
+                      setBulkCustomerId(event.target.value);
+                      setBulkValue("");
+                    }}
+                    className="w-60"
+                  >
+                    <option value="">- Selecione a empresa -</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.nome}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    value={bulkValue}
+                    onChange={(event) => setBulkValue(event.target.value)}
+                    disabled={!bulkCustomerId || bulkCustomerDepartments.isLoading}
+                    className="w-60"
+                  >
+                    <option value="">- Sem departamento -</option>
+                    {(bulkCustomerDepartments.data ?? [])
+                      .filter((department) => department.active)
+                      .map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.name}
+                        </option>
+                      ))}
+                  </Select>
+                </>
               )}
               {bulkMode === "profile" && (
                 <Select
@@ -1670,7 +1753,11 @@ function ContatosPage() {
               <Button
                 variant="primary"
                 size="sm"
-                disabled={!bulkAction || (bulkAction === "update" && !bulkMode)}
+                disabled={
+                  !bulkAction ||
+                  (bulkAction === "update" && !bulkMode) ||
+                  (bulkMode === "department" && !bulkCustomerId)
+                }
                 onClick={() => void applyBulkAction()}
               >
                 <Check className="h-3.5 w-3.5" /> Aplicar
@@ -1722,6 +1809,7 @@ function ContatosPage() {
                       setBulkAction(nextAction);
                       setBulkMode(nextAction === "delete" ? "delete" : "");
                       setBulkValue("");
+                      setBulkCustomerId("");
                       setBulkTags([]);
                       setBulkCustomValue("");
                     }}
@@ -1737,6 +1825,7 @@ function ContatosPage() {
                       onChange={(event) => {
                         setBulkMode(event.target.value as typeof bulkMode);
                         setBulkValue("");
+                        setBulkCustomerId("");
                         setBulkTags([]);
                         setBulkCustomValue("");
                       }}
@@ -1774,17 +1863,36 @@ function ContatosPage() {
                     </Select>
                   )}
                   {bulkMode === "department" && (
-                    <Select
-                      value={bulkValue}
-                      onChange={(event) => setBulkValue(event.target.value)}
-                    >
-                      <option value="">- Sem departamento -</option>
-                      {departments.map((department) => (
-                        <option key={department.id} value={department.id}>
-                          {department.nome}
-                        </option>
-                      ))}
-                    </Select>
+                    <>
+                      <Select
+                        value={bulkCustomerId}
+                        onChange={(event) => {
+                          setBulkCustomerId(event.target.value);
+                          setBulkValue("");
+                        }}
+                      >
+                        <option value="">- Selecione a empresa -</option>
+                        {customers.map((customer) => (
+                          <option key={customer.id} value={customer.id}>
+                            {customer.nome}
+                          </option>
+                        ))}
+                      </Select>
+                      <Select
+                        value={bulkValue}
+                        onChange={(event) => setBulkValue(event.target.value)}
+                        disabled={!bulkCustomerId || bulkCustomerDepartments.isLoading}
+                      >
+                        <option value="">- Sem departamento -</option>
+                        {(bulkCustomerDepartments.data ?? [])
+                          .filter((department) => department.active)
+                          .map((department) => (
+                            <option key={department.id} value={department.id}>
+                              {department.name}
+                            </option>
+                          ))}
+                      </Select>
+                    </>
                   )}
                   {bulkMode === "profile" && (
                     <Select
@@ -1835,7 +1943,11 @@ function ContatosPage() {
                   <Button
                     variant="primary"
                     size="sm"
-                    disabled={!bulkAction || (bulkAction === "update" && !bulkMode)}
+                    disabled={
+                      !bulkAction ||
+                      (bulkAction === "update" && !bulkMode) ||
+                      (bulkMode === "department" && !bulkCustomerId)
+                    }
                     onClick={() => void applyBulkAction()}
                   >
                     <Check className="h-3.5 w-3.5" /> Aplicar
@@ -1852,7 +1964,13 @@ function ContatosPage() {
             onLetterClick={scrollToContactLetter}
             onFooterClick={scrollToContactsFooter}
           />
-          <Card className="overflow-visible p-4 md:overflow-hidden md:rounded-lg md:p-0">
+          <Card
+            className={
+              viewMode === "cards"
+                ? "overflow-visible rounded-none border-0 bg-transparent p-0 shadow-none"
+                : "overflow-visible rounded-none border-0 bg-transparent p-0 shadow-none md:overflow-hidden md:rounded-lg md:border md:border-border md:bg-card md:shadow-card"
+            }
+          >
             <div className="space-y-3 md:hidden">
               {loading && (
                 <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
@@ -1884,7 +2002,7 @@ function ContatosPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex justify-end border-t border-border px-3 py-2">
+                    <div className="mx-3 flex justify-end border-t border-border py-2">
                       <ContactActions
                         contact={contact}
                         canViewContacts={canViewContacts}
@@ -2001,7 +2119,7 @@ function ContatosPage() {
                 </table>
               </div>
             ) : (
-              <div className="hidden gap-3 p-4 md:grid md:grid-cols-3">
+              <div className="hidden gap-3 md:grid md:grid-cols-3">
                 {loading && (
                   <div className="col-span-3 rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
                     Carregando...
@@ -2036,7 +2154,7 @@ function ContatosPage() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex justify-end border-t border-border px-3 py-2">
+                      <div className="mx-3 flex justify-end border-t border-border py-2">
                         <ContactActions
                           contact={contact}
                           canViewContacts={canViewContacts}
@@ -2060,7 +2178,11 @@ function ContatosPage() {
             )}
             <div
               data-contacts-list-footer
-              className="flex items-center justify-between gap-2 border-t border-border bg-surface-2 px-3 py-1.5 text-xs text-muted-foreground sm:px-4"
+              className={`flex items-center justify-between gap-2 bg-surface-2 px-3 py-1.5 text-xs text-muted-foreground sm:px-4 ${
+                viewMode === "cards"
+                  ? "mt-3 overflow-hidden rounded-xl border border-border"
+                  : "mt-3 overflow-hidden rounded-xl border border-border md:mt-0 md:rounded-none md:border-x-0 md:border-b-0"
+              }`}
             >
               <div className="flex min-w-0 items-center gap-2">
                 <span className="shrink-0 leading-tight sm:leading-normal">
@@ -2550,7 +2672,7 @@ function ContactGridValue({
     case "native:department":
       return (
         <span className="text-xs">
-          {contact.contactDepartment?.nome ?? contact.departamento ?? "-"}
+          {contact.customerDepartment?.name ?? contact.effectiveDepartment?.name ?? "-"}
         </span>
       );
     case "native:profile":
@@ -3380,13 +3502,13 @@ export function ContactFormModal({
   onSubmit,
   initial,
   defaultInstanceId,
+  defaultCustomerId,
+  lockCustomer = false,
   customers,
   tags,
-  departments,
   profiles,
   instances,
   onCustomerCreated,
-  onDepartmentSaved,
   onProfileSaved,
   readOnly = false,
 }: {
@@ -3406,8 +3528,9 @@ export function ContactFormModal({
     telefone: string;
     countryCode?: string;
     customer_id: string | null;
+    customerBranchId: string | null;
+    customerDepartmentId: string | null;
     email: string | null;
-    contactDepartmentId: string | null;
     contactProfileId: string | null;
     instanceIds: string[];
     tag_ids: string[];
@@ -3416,6 +3539,8 @@ export function ContactFormModal({
   }) => void | Promise<void>;
   initial?: Contact;
   defaultInstanceId?: string;
+  defaultCustomerId?: string;
+  lockCustomer?: boolean;
   readOnly?: boolean;
 }) {
   const canReadAdditionalFields = useSession(
@@ -3429,9 +3554,10 @@ export function ContactFormModal({
   const [telefone, setTelefone] = React.useState("");
   const [countryCode, setCountryCode] = React.useState("55");
   const [customerId, setCustomerId] = React.useState("");
+  const [customerBranchId, setCustomerBranchId] = React.useState("");
+  const [customerDepartmentId, setCustomerDepartmentId] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [avatarUrl, setAvatarUrl] = React.useState<string | null>(null);
-  const [contactDepartmentId, setContactDepartmentId] = React.useState("");
   const [contactProfileId, setContactProfileId] = React.useState("");
   const [instanceIds, setInstanceIds] = React.useState<string[]>([]);
   const [tagIds, setTagIds] = React.useState<string[]>([]);
@@ -3448,6 +3574,16 @@ export function ContactFormModal({
   const profilesManager = useDisclosure();
   const tagsManager = useDisclosure();
   const initializedFormSession = React.useRef<string | null>(null);
+  const customerBranches = useQuery({
+    queryKey: ["trixus", "customer-branches", "contact-form", customerId],
+    queryFn: () => crmApi.listCustomerBranches(customerId),
+    enabled: open && Boolean(customerId),
+  });
+  const customerDepartments = useQuery({
+    queryKey: ["trixus", "customer-departments", "contact-form", customerId],
+    queryFn: () => crmApi.listCustomerDepartments(customerId),
+    enabled: open && Boolean(customerId),
+  });
 
   React.useEffect(() => {
     if (!open) {
@@ -3466,10 +3602,11 @@ export function ContactFormModal({
         ? formatPhoneDraftOnBlur(initialPhone.localPhone, initialPhone.countryCode)
         : "",
     );
-    setCustomerId(initial?.customer_id ?? "");
+    setCustomerId(initial?.customer_id ?? defaultCustomerId ?? "");
+    setCustomerBranchId(initial?.customerBranchId ?? "");
+    setCustomerDepartmentId(initial?.customerDepartmentId ?? "");
     setEmail((initial?.email ?? "").toLocaleLowerCase("en-US"));
     setAvatarUrl(initial?.avatar_url ?? null);
-    setContactDepartmentId(initial?.contactDepartmentId ?? "");
     setContactProfileId(initial?.contactProfileId ?? "");
     setInstanceIds(
       canonicalContactInstanceIds(
@@ -3492,7 +3629,15 @@ export function ContactFormModal({
     } else {
       setCustomFieldDefinitions([]);
     }
-  }, [canReadAdditionalFields, defaultInstanceId, initial, instances, open, tags]);
+  }, [
+    canReadAdditionalFields,
+    defaultCustomerId,
+    defaultInstanceId,
+    initial,
+    instances,
+    open,
+    tags,
+  ]);
 
   React.useEffect(() => {
     setErrors((current) => {
@@ -3583,8 +3728,9 @@ export function ContactFormModal({
       telefone,
       countryCode,
       customer_id: customerId || null,
+      customerBranchId: customerBranchId || null,
+      customerDepartmentId: customerDepartmentId || null,
       email: email.trim() || null,
-      contactDepartmentId: contactDepartmentId || null,
       contactProfileId: contactProfileId || null,
       instanceIds: validInstanceIds,
       tag_ids: tagIds,
@@ -3742,7 +3888,15 @@ export function ContactFormModal({
                   <div className="space-y-4">
                     <Field label="Empresa do Contato">
                       <div className="flex gap-2">
-                        <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                        <Select
+                          value={customerId}
+                          disabled={lockCustomer}
+                          onChange={(e) => {
+                            setCustomerId(e.target.value);
+                            setCustomerBranchId("");
+                            setCustomerDepartmentId("");
+                          }}
+                        >
                           <option value="">- Sem empresa -</option>
                           {customers.map((customer) => (
                             <option key={customer.id} value={customer.id}>
@@ -3755,32 +3909,85 @@ export function ContactFormModal({
                           size="sm"
                           onClick={customersManager.show}
                           title="Gerenciar empresas"
+                          className={lockCustomer ? "hidden" : undefined}
                         >
                           <Plus className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </Field>
                     <Field label="Departamento do Contato">
-                      <div className="flex gap-2">
+                      <div className="space-y-1.5">
+                        <div className="flex gap-2">
+                          <Select
+                            value={customerDepartmentId}
+                            onChange={(e) => setCustomerDepartmentId(e.target.value)}
+                            disabled={!customerId || customerDepartments.isLoading}
+                          >
+                            <option value="">- Sem departamento -</option>
+                            {(customerDepartments.data ?? [])
+                              .filter(
+                                (department) =>
+                                  department.active || department.id === customerDepartmentId,
+                              )
+                              .map((department) => (
+                                <option key={department.id} value={department.id}>
+                                  {department.name}
+                                </option>
+                              ))}
+                          </Select>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={departmentsManager.show}
+                            title={
+                              customerId
+                                ? "Gerenciar departamentos"
+                                : "Selecione uma empresa primeiro"
+                            }
+                            disabled={!customerId}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                        {customerId &&
+                          !customerDepartments.isLoading &&
+                          !(customerDepartments.data ?? []).some(
+                            (department) => department.active,
+                          ) && (
+                            <p className="text-[11px] text-warning-foreground">
+                              Cadastre um departamento ativo para este cliente no menu Clientes.
+                            </p>
+                          )}
+                      </div>
+                    </Field>
+                    <Field label="Filial do Cliente">
+                      <div className="space-y-1.5">
                         <Select
-                          value={contactDepartmentId}
-                          onChange={(e) => setContactDepartmentId(e.target.value)}
+                          value={customerBranchId}
+                          onChange={(e) => setCustomerBranchId(e.target.value)}
+                          disabled={!customerId || customerBranches.isLoading}
                         >
-                          <option value="">- Sem departamento -</option>
-                          {departments.map((department) => (
-                            <option key={department.id} value={department.id}>
-                              {department.nome}
-                            </option>
-                          ))}
+                          <option value="">- Sem filial -</option>
+                          {(customerBranches.data ?? [])
+                            .filter(
+                              (branch) =>
+                                branch.status === "ACTIVE" || branch.id === customerBranchId,
+                            )
+                            .map((branch) => (
+                              <option key={branch.id} value={branch.id}>
+                                {branch.name}
+                              </option>
+                            ))}
                         </Select>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={departmentsManager.show}
-                          title="Gerenciar departamentos"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                        </Button>
+                        {customerId &&
+                          !customerBranches.isLoading &&
+                          !(customerBranches.data ?? []).some(
+                            (branch) => branch.status === "ACTIVE",
+                          ) && (
+                            <p className="text-[11px] text-warning-foreground">
+                              Cadastre uma filial ativa para este cliente no menu Clientes.
+                            </p>
+                          )}
                       </div>
                     </Field>
                     <Field label="Perfil do Contato">
@@ -3907,6 +4114,8 @@ export function ContactFormModal({
             onCustomerSelected={(customer) => {
               onCustomerCreated(customer);
               setCustomerId(customer.id);
+              setCustomerBranchId("");
+              setCustomerDepartmentId("");
               customersManager.hide();
             }}
           />
@@ -3915,9 +4124,10 @@ export function ContactFormModal({
           <DepartmentsManagerModal
             open={departmentsManager.open}
             onClose={departmentsManager.hide}
+            customerId={customerId}
             onDepartmentSelected={(department) => {
-              onDepartmentSaved(department);
-              setContactDepartmentId(department.id);
+              setCustomerDepartmentId(department.id);
+              void customerDepartments.refetch();
               departmentsManager.hide();
             }}
           />
@@ -4185,10 +4395,12 @@ function CustomersManagerModal({
 function DepartmentsManagerModal({
   open,
   onClose,
+  customerId,
   onDepartmentSelected,
 }: {
   open: boolean;
   onClose: () => void;
+  customerId: string;
   onDepartmentSelected: (department: ContactCatalog) => void;
 }) {
   const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
@@ -4202,13 +4414,18 @@ function DepartmentsManagerModal({
     if (!open) return;
     setLoading(true);
     try {
-      setDepartments(await crmApi.listContactDepartments());
+      if (!customerId) {
+        setDepartments([]);
+        return;
+      }
+      const rows = await crmApi.listCustomerDepartments(customerId);
+      setDepartments(rows.map(customerDepartmentCatalog));
     } catch (error) {
       toast.error("Falha ao carregar departamentos", { description: (error as Error).message });
     } finally {
       setLoading(false);
     }
-  }, [open]);
+  }, [customerId, open]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -4230,9 +4447,18 @@ function DepartmentsManagerModal({
 
   const saveDepartment = async (data: DepartamentoFormData) => {
     try {
-      const department = editing
-        ? await crmApi.updateContactDepartment(editing.id, departmentPayload(data))
-        : await crmApi.createContactDepartment(departmentPayload(data));
+      if (!customerId) {
+        toast.error("Selecione uma empresa antes de cadastrar o departamento.");
+        return;
+      }
+      const saved = editing
+        ? await crmApi.updateCustomerDepartment(customerId, editing.id, {
+            name: data.name?.trim() ?? "",
+          })
+        : await crmApi.createCustomerDepartment(customerId, {
+            name: data.name?.trim() ?? "",
+          });
+      const department = customerDepartmentCatalog(saved);
       toast.success(editing ? "Departamento atualizado" : "Departamento criado");
       create.hide();
       setEditing(null);
@@ -4246,7 +4472,7 @@ function DepartmentsManagerModal({
   const deleteDepartment = async () => {
     if (!deleting) return;
     try {
-      await crmApi.deleteContactDepartment(deleting.id);
+      await crmApi.deleteCustomerDepartment(customerId, deleting.id);
       await load();
       toast.success("Departamento excluído");
     } catch (error) {
@@ -4337,6 +4563,7 @@ function DepartmentsManagerModal({
           setEditing(null);
         }}
         onSubmit={saveDepartment}
+        simple
       />
       <ConfirmDialog
         open={!!deleting}
@@ -4363,12 +4590,14 @@ function DepartmentFormModal({
   onSubmit,
   initial,
   title,
+  simple = false,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: DepartamentoFormData) => void | Promise<void>;
   initial?: ContactCatalog;
   title?: string;
+  simple?: boolean;
 }) {
   const [form, setForm] = React.useState<DepartamentoFormData>({});
   const [error, setError] = React.useState("");
@@ -4413,7 +4642,13 @@ function DepartmentFormModal({
       }
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+        <div
+          className={
+            simple
+              ? "grid grid-cols-1 gap-3"
+              : "grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]"
+          }
+        >
           <Field label="Nome *">
             <Input
               value={form.name ?? ""}
@@ -4425,21 +4660,25 @@ function DepartmentFormModal({
               className={requiredFieldClassName(Boolean(error))}
             />
           </Field>
-          <Field label="Cor">
-            <ColorField
-              value={form.color ?? "#3B82F6"}
-              fallback="#3B82F6"
-              onChange={(color) => setForm({ ...form, color })}
+          {!simple && (
+            <Field label="Cor">
+              <ColorField
+                value={form.color ?? "#3B82F6"}
+                fallback="#3B82F6"
+                onChange={(color) => setForm({ ...form, color })}
+              />
+            </Field>
+          )}
+        </div>
+        {!simple && (
+          <Field label="Nota">
+            <Textarea
+              rows={3}
+              value={form.description ?? ""}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
             />
           </Field>
-        </div>
-        <Field label="Nota">
-          <Textarea
-            rows={3}
-            value={form.description ?? ""}
-            onChange={(event) => setForm({ ...form, description: event.target.value })}
-          />
-        </Field>
+        )}
       </div>
     </Modal>
   );
@@ -5594,6 +5833,12 @@ function CustomDateInput({
     setDraft(parsed.display);
     onChange(parsed.iso);
   };
+  const openPicker = () => {
+    const picker = pickerRef.current;
+    if (!picker) return;
+    if (typeof picker.showPicker === "function") picker.showPicker();
+    else picker.click();
+  };
 
   return (
     <div className="relative">
@@ -5604,6 +5849,7 @@ function CustomDateInput({
         value={draft}
         data-date-input="true"
         className="pr-10"
+        onClick={openPicker}
         onKeyDown={(event) => {
           if (event.key.toLowerCase() !== "h") return;
           event.preventDefault();
@@ -5642,12 +5888,7 @@ function CustomDateInput({
         className="absolute right-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
         aria-label={variant === "datetime" ? "Selecionar data e hora" : "Selecionar data"}
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => {
-          const picker = pickerRef.current;
-          if (!picker) return;
-          if (typeof picker.showPicker === "function") picker.showPicker();
-          else picker.click();
-        }}
+        onClick={openPicker}
       >
         <CalendarDays className="h-4 w-4" />
       </button>
@@ -5814,16 +6055,18 @@ function FilterSelect({
   value,
   onChange,
   children,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   children: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
-      <Select value={value} onChange={(event) => onChange(event.target.value)}>
+      <Select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
         {children}
       </Select>
     </label>
@@ -6670,6 +6913,21 @@ function departmentPayload(data: DepartamentoFormData) {
   };
 }
 
+function customerDepartmentCatalog(department: ApiCustomerDepartment): ContactCatalog {
+  return {
+    id: department.id,
+    tenantId: department.tenantId,
+    nome: department.name,
+    descricao: null,
+    cor: "#3B82F6",
+    customerId: department.customerId,
+    active: department.active,
+    contactCount: department.contactCount,
+    createdAt: department.createdAt,
+    updatedAt: department.updatedAt,
+  };
+}
+
 function resolveContactInstances(values: string[] | undefined, instances: ContactInstanceOption[]) {
   const byKey = new Map<string, ContactInstanceOption>();
   for (const instance of instances) {
@@ -6701,8 +6959,10 @@ export function contactPayload(data: {
   telefone: string;
   countryCode?: string;
   customer_id: string | null;
+  customerBranchId?: string | null;
+  customerDepartmentId?: string | null;
   email: string | null;
-  contactDepartmentId: string | null;
+  contactDepartmentId?: string | null;
   contactProfileId: string | null;
   instanceIds: string[];
   tag_ids: string[];
@@ -6714,8 +6974,9 @@ export function contactPayload(data: {
     active: data.active ?? true,
     phone: formatPhoneForSubmit(data.telefone, data.countryCode),
     customerId: data.customer_id,
+    customerBranchId: data.customerBranchId ?? null,
+    customerDepartmentId: data.customerDepartmentId ?? null,
     email: data.email,
-    contactDepartmentId: data.contactDepartmentId,
     contactProfileId: data.contactProfileId,
     instanceIds: data.instanceIds,
     instance: data.instanceIds[0] ?? null,

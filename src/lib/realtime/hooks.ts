@@ -109,7 +109,12 @@ export function useRealtimeInbox(conversationId?: string | null) {
 
   React.useEffect(() => {
     return onRealtimeEvent((event) => {
-      if (shouldNotifyInboxUpdate(event, user?.id)) playInboxNotificationSound(user?.id);
+      if (shouldNotifyInboxUpdate(event, user?.id))
+        playInboxNotificationSound(user?.id, {
+          tagNotification:
+            event.event === "conversation.updated" &&
+            (event.data as { tagNotification?: boolean }).tagNotification === true,
+        });
       if (
         event.event === "message.created" ||
         event.event === "message.status.updated" ||

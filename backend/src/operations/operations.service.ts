@@ -177,8 +177,6 @@ export class OperationsService {
     const range = periodRange(query, "today", tenant?.timezone);
     const allowedConnectionIds =
       current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []);
-    const allowedDepartmentIds =
-      current.roleKey === "tenant_admin" ? undefined : (current.chatDepartmentIds ?? []);
     const groupBy = query.groupBy;
 
     if (groupBy === "ticketRequesterContact") {
@@ -197,7 +195,6 @@ export class OperationsService {
       const ticketWhere: Prisma.TicketWhereInput = {
         tenantId: current.tenantId,
         archivedAt: null,
-        createdAt: { gte: range.start, lt: range.end },
         requesterContactId: { not: null },
         requesterContact: { is: { archivedAt: null } },
         ...(query.customerId ? { customerId: query.customerId } : {}),
@@ -248,10 +245,8 @@ export class OperationsService {
       archivedAt: null,
       createdAt: { gte: range.start, lt: range.end },
       ...(query.customerId ? { customerId: query.customerId } : {}),
-      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
       ...(query.connectionId ? { instanceIds: { has: query.connectionId } } : {}),
       ...(allowedConnectionIds ? { instanceIds: { hasSome: allowedConnectionIds } } : {}),
-      ...(allowedDepartmentIds ? { departmentId: { in: allowedDepartmentIds } } : {}),
     };
     if (groupBy.startsWith("custom:")) {
       if (!canReadContactAdditionalFields(current)) {
@@ -327,6 +322,66 @@ export class OperationsService {
       };
     }
 
+    if (groupBy === "department") {
+      const [customerRows, legacyRows] = await Promise.all([
+        this.prisma.contact.groupBy({
+          by: ["customerDepartmentId"],
+          where: { ...contactWhere, customerDepartmentId: { not: null } },
+          _count: { _all: true },
+          orderBy: { _count: { customerDepartmentId: "desc" } },
+          take: 20,
+        }),
+        this.prisma.contact.groupBy({
+          by: ["contactDepartmentId"],
+          where: { ...contactWhere, customerDepartmentId: null },
+          _count: { _all: true },
+          orderBy: { _count: { contactDepartmentId: "desc" } },
+          take: 20,
+        }),
+      ]);
+      const customerIds = customerRows.flatMap((row) =>
+        row.customerDepartmentId ? [row.customerDepartmentId] : [],
+      );
+      const legacyIds = legacyRows.flatMap((row) =>
+        row.contactDepartmentId ? [row.contactDepartmentId] : [],
+      );
+      const [customerDepartments, legacyDepartments] = await Promise.all([
+        this.prisma.customerDepartment.findMany({
+          where: { tenantId: current.tenantId, id: { in: customerIds } },
+          select: { id: true, name: true },
+        }),
+        this.prisma.contactDepartment.findMany({
+          where: { tenantId: current.tenantId, id: { in: legacyIds } },
+          select: { id: true, name: true, color: true },
+        }),
+      ]);
+      const customerById = new Map(customerDepartments.map((item) => [item.id, item]));
+      const legacyById = new Map(legacyDepartments.map((item) => [item.id, item]));
+      return {
+        items: [
+          ...customerRows.map((row) => ({
+            nome: row.customerDepartmentId
+              ? (customerById.get(row.customerDepartmentId)?.name ?? "Sem departamento")
+              : "Sem departamento",
+            total: row._count._all,
+            cor: "#64748b",
+          })),
+          ...legacyRows.map((row) => {
+            const department = row.contactDepartmentId
+              ? legacyById.get(row.contactDepartmentId)
+              : undefined;
+            return {
+              nome: department?.name ?? "Sem departamento",
+              total: row._count._all,
+              cor: department?.color ?? "#64748b",
+            };
+          }),
+        ]
+          .sort((left, right) => right.total - left.total)
+          .slice(0, 20),
+      };
+    }
+
     const relationConfig = {
       customer: {
         field: "customerId",
@@ -336,15 +391,6 @@ export class OperationsService {
             select: { id: true, name: true, color: true },
           }),
         empty: "Sem empresa",
-      },
-      department: {
-        field: "contactDepartmentId",
-        load: (ids: string[]) =>
-          this.prisma.contactDepartment.findMany({
-            where: { tenantId: current.tenantId, id: { in: ids } },
-            select: { id: true, name: true, color: true },
-          }),
-        empty: "Sem departamento",
       },
       profile: {
         field: "contactProfileId",
@@ -915,6 +961,10 @@ function validateDashboardConfiguration(value: unknown) {
   if (candidate.version !== 2 || !Array.isArray(candidate.components)) {
     throw new BadRequestException("Versão da configuração do dashboard inválida.");
   }
+  const nativeRevision = candidate.nativeRevision === undefined ? 1 : Number(candidate.nativeRevision);
+  if (!Number.isInteger(nativeRevision) || nativeRevision < 1 || nativeRevision > 4) {
+    throw new BadRequestException("Revisão da configuração do dashboard inválida.");
+  }
   if (candidate.components.length > 100) {
     throw new BadRequestException("Quantidade de componentes do dashboard excedida.");
   }
@@ -940,7 +990,7 @@ function validateDashboardConfiguration(value: unknown) {
     ) {
       throw new BadRequestException("Propriedades do componente do dashboard inválidas.");
     }
-    return {
+    const normalized = {
       id,
       title,
       visible: component.visible,
@@ -950,8 +1000,13 @@ function validateDashboardConfiguration(value: unknown) {
       groupBy: component.groupBy,
       valueMode: component.valueMode,
     };
+    if (nativeRevision < 3 && id === "ticketRequesterRanking") {
+      return { ...normalized, visualization: "table", columns: 1 };
+    }
+    if (nativeRevision < 4 && id === "tag") return { ...normalized, columns: 1 };
+    return normalized;
   });
-  return { version: 2, components };
+  return { version: 2, nativeRevision: 4, components };
 }
 
 function conversationWhere(

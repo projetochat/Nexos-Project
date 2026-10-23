@@ -9,9 +9,11 @@ import {
   exchangeImpersonationHandoff,
   hydrateWithTrixusApi,
   invitationPreviewWithTrixusApi,
+  loginCustomerPortalWithTrixusApi,
   loginWithTrixusApi,
   completeRequiredPasswordChangeWithTrixusApi,
   selectTenantWithTrixusApi,
+  selectCustomerPortalWithTrixusApi,
   logoutFromTrixusApi,
   platformApi,
   readStoredHandoffImpersonation,
@@ -124,6 +126,41 @@ describe("trixus-api auth client", () => {
     expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
   });
 
+  it("returns access destinations without storing a session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(201, {
+          tenantSelectionRequired: true,
+          tenantSelectionToken: "selection-token",
+          destinations: [
+            {
+              selectionId: "portal:access-1",
+              type: "customer_portal",
+              tenant: { id: "tenant-a", slug: "alpha", name: "Alpha" },
+              customer: { id: "customer-1", name: "Cliente Um" },
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(
+      loginCustomerPortalWithTrixusApi("pessoa.test", "senha-segura"),
+    ).resolves.toMatchObject({
+      tenantSelectionRequired: true,
+      destinations: [{ selectionId: "portal:access-1", type: "customer_portal" }],
+    });
+    expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/auth/portal/login"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ login: "pessoa.test", password: "senha-segura" }),
+      }),
+    );
+  });
+
   it("stores a normal session only after the required password is changed", async () => {
     vi.stubGlobal(
       "fetch",
@@ -184,6 +221,44 @@ describe("trixus-api auth client", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ selectionToken: "selection-token", tenantId: "tenant-b" }),
+      }),
+    );
+  });
+
+  it("establishes a selected access destination by selectionId", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      responseJson(201, {
+        accessToken: "portal-access",
+        refreshToken: "portal-refresh",
+        user: {
+          id: "customer-user-1",
+          email: "pessoa@cliente.test",
+          name: "Pessoa Cliente",
+          roleId: "role-portal",
+          roleKey: "customer_portal",
+          platformRole: "USER",
+        },
+        tenant: { id: "tenant-a", slug: "alpha", name: "Alpha" },
+        membership: { id: "membership-1", role: "customer_portal", roleId: "role-portal" },
+        permissions: ["tickets.view"],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      selectCustomerPortalWithTrixusApi({
+        selectionToken: "selection-token",
+        selectionId: "portal:access-1",
+      }),
+    ).resolves.toMatchObject({ empresaId: "tenant-a", empresaNome: "Alpha" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/auth/portal/select"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          selectionToken: "selection-token",
+          selectionId: "portal:access-1",
+        }),
       }),
     );
   });

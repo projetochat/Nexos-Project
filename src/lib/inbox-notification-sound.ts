@@ -27,13 +27,15 @@ export function setInboxNotificationQueues(userId: string, queues: QueueId[]) {
 }
 
 export function shouldNotifyInboxUpdate(event: RealtimeEnvelope, userId?: string | null) {
-  if (!isInboundConversationUpdate(event) || !inboxNotificationSoundEnabled(userId)) return false;
+  if (!isInboundConversationUpdate(event)) return false;
   const data = event.data as {
     notificationQueue?: QueueId | null;
     tagNotification?: boolean;
     reason?: string;
   };
-  if (data.reason === "inbound.created" && data.tagNotification === true) return true;
+  if (data.reason === "inbound.created" && data.tagNotification === true)
+    return inboxTagNotificationSoundEnabled(userId);
+  if (!inboxNotificationSoundEnabled(userId)) return false;
   const queue = data.notificationQueue;
   const selected = inboxNotificationQueues(userId);
   // Older servers do not include the queue; only allow their alerts when all are selected.
@@ -45,6 +47,7 @@ export function shouldNotifyInboxUpdate(event: RealtimeEnvelope, userId?: string
 let audioContext: AudioContext | null = null;
 let lastPlayedAt = 0;
 const SOUND_PREFERENCE_PREFIX = "trixus:inbox-notification-sound:";
+const TAG_SOUND_PREFERENCE_PREFIX = "trixus:inbox-tag-notification-sound:";
 
 export function inboxNotificationSoundEnabled(userId?: string | null) {
   if (typeof window === "undefined" || !userId) return true;
@@ -59,6 +62,19 @@ export function setInboxNotificationSoundEnabled(userId: string, enabled: boolea
   );
   window.dispatchEvent(
     new CustomEvent("trixus:inbox-notification-sound-changed", { detail: { userId, enabled } }),
+  );
+}
+
+export function inboxTagNotificationSoundEnabled(userId?: string | null) {
+  if (typeof window === "undefined" || !userId) return true;
+  return window.localStorage.getItem(`${TAG_SOUND_PREFERENCE_PREFIX}${userId}`) !== "disabled";
+}
+
+export function setInboxTagNotificationSoundEnabled(userId: string, enabled: boolean) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    `${TAG_SOUND_PREFERENCE_PREFIX}${userId}`,
+    enabled ? "enabled" : "disabled",
   );
 }
 
@@ -82,8 +98,16 @@ export function prepareInboxNotificationSound() {
 }
 
 /** Plays a short, unobtrusive notification for a received WhatsApp message. */
-export function playInboxNotificationSound(userId?: string | null) {
-  if (!inboxNotificationSoundEnabled(userId)) return;
+export function playInboxNotificationSound(
+  userId?: string | null,
+  options?: { tagNotification?: boolean },
+) {
+  if (
+    options?.tagNotification
+      ? !inboxTagNotificationSoundEnabled(userId)
+      : !inboxNotificationSoundEnabled(userId)
+  )
+    return;
   const context = getAudioContext();
   if (!context || context.state !== "running") return;
 

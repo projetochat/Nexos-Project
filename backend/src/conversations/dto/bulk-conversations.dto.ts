@@ -12,6 +12,10 @@ import {
 
 export class BulkConversationSelectionDto {
   @IsOptional()
+  @IsIn(["start", "transfer", "close"])
+  action?: "start" | "transfer" | "close";
+
+  @IsOptional()
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(100)

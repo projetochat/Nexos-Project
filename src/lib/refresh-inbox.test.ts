@@ -22,7 +22,7 @@ describe("refreshInboxData", () => {
     expect(queryClient.refetchQueries).toHaveBeenCalledWith(
       {
         queryKey: ["trixus", "conversations", "conversation-a"],
-        exact: true,
+        exact: false,
         type: "active",
       },
       { throwOnError: true },
@@ -30,7 +30,7 @@ describe("refreshInboxData", () => {
     expect(queryClient.refetchQueries).toHaveBeenCalledWith(
       {
         queryKey: ["trixus", "messages", "conversation-a"],
-        exact: true,
+        exact: false,
         type: "active",
       },
       { throwOnError: true },

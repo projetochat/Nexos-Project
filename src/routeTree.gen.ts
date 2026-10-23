@@ -41,6 +41,9 @@ import { Route as InboxIndexRouteImport } from './routes/inbox.index'
 import { Route as ConfiguracoesIndexRouteImport } from './routes/configuracoes.index'
 import { Route as AtendimentoIndexRouteImport } from './routes/atendimento.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as PortalClienteDashboardRouteImport } from './routes/portal-cliente_.dashboard'
+import { Route as PortalClienteChamadosRouteImport } from './routes/portal-cliente_.chamados'
+import { Route as LoginPortalClienteRouteImport } from './routes/login_.portal-cliente'
 import { Route as InboxConversationIdRouteImport } from './routes/inbox.$conversationId'
 import { Route as ImpersonationCallbackRouteImport } from './routes/impersonation.callback'
 import { Route as ConfiguracoesVariaveisRouteImport } from './routes/configuracoes.variaveis'
@@ -231,6 +234,21 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminRoute,
+} as any)
+const PortalClienteDashboardRoute = PortalClienteDashboardRouteImport.update({
+  id: '/portal-cliente_/dashboard',
+  path: '/portal-cliente/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortalClienteChamadosRoute = PortalClienteChamadosRouteImport.update({
+  id: '/portal-cliente_/chamados',
+  path: '/portal-cliente/chamados',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginPortalClienteRoute = LoginPortalClienteRouteImport.update({
+  id: '/login_/portal-cliente',
+  path: '/login/portal-cliente',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const InboxConversationIdRoute = InboxConversationIdRouteImport.update({
   id: '/$conversationId',
@@ -445,6 +463,9 @@ export interface FileRoutesByFullPath {
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/impersonation/callback': typeof ImpersonationCallbackRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
+  '/login/portal-cliente': typeof LoginPortalClienteRoute
+  '/portal-cliente/chamados': typeof PortalClienteChamadosRoute
+  '/portal-cliente/dashboard': typeof PortalClienteDashboardRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
   '/configuracoes/': typeof ConfiguracoesIndexRoute
@@ -505,6 +526,9 @@ export interface FileRoutesByTo {
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/impersonation/callback': typeof ImpersonationCallbackRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
+  '/login/portal-cliente': typeof LoginPortalClienteRoute
+  '/portal-cliente/chamados': typeof PortalClienteChamadosRoute
+  '/portal-cliente/dashboard': typeof PortalClienteDashboardRoute
   '/admin': typeof AdminIndexRoute
   '/atendimento': typeof AtendimentoIndexRoute
   '/configuracoes': typeof ConfiguracoesIndexRoute
@@ -570,6 +594,9 @@ export interface FileRoutesById {
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/impersonation/callback': typeof ImpersonationCallbackRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
+  '/login_/portal-cliente': typeof LoginPortalClienteRoute
+  '/portal-cliente_/chamados': typeof PortalClienteChamadosRoute
+  '/portal-cliente_/dashboard': typeof PortalClienteDashboardRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
   '/configuracoes/': typeof ConfiguracoesIndexRoute
@@ -636,6 +663,9 @@ export interface FileRouteTypes {
     | '/configuracoes/variaveis'
     | '/impersonation/callback'
     | '/inbox/$conversationId'
+    | '/login/portal-cliente'
+    | '/portal-cliente/chamados'
+    | '/portal-cliente/dashboard'
     | '/admin/'
     | '/atendimento/'
     | '/configuracoes/'
@@ -696,6 +726,9 @@ export interface FileRouteTypes {
     | '/configuracoes/variaveis'
     | '/impersonation/callback'
     | '/inbox/$conversationId'
+    | '/login/portal-cliente'
+    | '/portal-cliente/chamados'
+    | '/portal-cliente/dashboard'
     | '/admin'
     | '/atendimento'
     | '/configuracoes'
@@ -760,6 +793,9 @@ export interface FileRouteTypes {
     | '/configuracoes/variaveis'
     | '/impersonation/callback'
     | '/inbox/$conversationId'
+    | '/login_/portal-cliente'
+    | '/portal-cliente_/chamados'
+    | '/portal-cliente_/dashboard'
     | '/admin/'
     | '/atendimento/'
     | '/configuracoes/'
@@ -797,6 +833,9 @@ export interface RootRouteChildren {
   PerfisRoute: typeof PerfisRoute
   RelatoriosRoute: typeof RelatoriosRoute
   ImpersonationCallbackRoute: typeof ImpersonationCallbackRoute
+  LoginPortalClienteRoute: typeof LoginPortalClienteRoute
+  PortalClienteChamadosRoute: typeof PortalClienteChamadosRoute
+  PortalClienteDashboardRoute: typeof PortalClienteDashboardRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1024,6 +1063,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/portal-cliente_/dashboard': {
+      id: '/portal-cliente_/dashboard'
+      path: '/portal-cliente/dashboard'
+      fullPath: '/portal-cliente/dashboard'
+      preLoaderRoute: typeof PortalClienteDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portal-cliente_/chamados': {
+      id: '/portal-cliente_/chamados'
+      path: '/portal-cliente/chamados'
+      fullPath: '/portal-cliente/chamados'
+      preLoaderRoute: typeof PortalClienteChamadosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login_/portal-cliente': {
+      id: '/login_/portal-cliente'
+      path: '/login/portal-cliente'
+      fullPath: '/login/portal-cliente'
+      preLoaderRoute: typeof LoginPortalClienteRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/inbox/$conversationId': {
       id: '/inbox/$conversationId'
@@ -1380,6 +1440,9 @@ const rootRouteChildren: RootRouteChildren = {
   PerfisRoute: PerfisRoute,
   RelatoriosRoute: RelatoriosRoute,
   ImpersonationCallbackRoute: ImpersonationCallbackRoute,
+  LoginPortalClienteRoute: LoginPortalClienteRoute,
+  PortalClienteChamadosRoute: PortalClienteChamadosRoute,
+  PortalClienteDashboardRoute: PortalClienteDashboardRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

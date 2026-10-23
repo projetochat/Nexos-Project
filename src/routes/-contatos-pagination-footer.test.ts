@@ -18,6 +18,13 @@ describe("rodapé da grade de contatos", () => {
     expect(footer).toContain("setPageSize(Number(event.target.value))");
   });
 
+  it("mantém o rodapé separado do balão dos cards", () => {
+    expect(footer).toContain('viewMode === "cards"');
+    expect(footer).toContain('"mt-3 overflow-hidden rounded-xl border border-border"');
+    expect(source).toContain('className="hidden gap-3 md:grid md:grid-cols-3"');
+    expect(source).not.toContain('className="hidden gap-3 p-4 md:grid md:grid-cols-3"');
+  });
+
   it("oferece até 5.000 registros sem manter a opção antiga de 10.000", () => {
     expect(source).toContain("const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 5000] as const;");
     expect(source).not.toContain(

@@ -1,7 +1,7 @@
 export type AppSurface = "platform" | "tenant" | "unified" | "unknown";
 
 const DEFAULT_PLATFORM_APP_URL = "https://app.trixus.com.br";
-const DEFAULT_TENANT_APP_URL = "https://chat.trixus.com.br";
+const DEFAULT_TENANT_APP_URL = "https://app.trixus.com.br";
 
 function configuredOrigin(value: string | undefined, fallback: string) {
   try {

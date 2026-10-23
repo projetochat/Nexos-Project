@@ -57,6 +57,8 @@ backend/src/generated/prisma/
 # Local task runtime caches
 .task-logs/
 .task-temp/
+.runtime/
+.tmp-vitest/
 **/__pycache__/
 
 # Local release packages

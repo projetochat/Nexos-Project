@@ -171,6 +171,8 @@ export function ScheduleMessageModal({
     onClose();
   };
 
+  const scheduleTimeInvalid = Boolean(scheduleAt) && new Date(scheduleAt).getTime() <= Date.now();
+
   return (
     <>
       <Modal open={open} onClose={close} title="Agendar Mensagem" size="xl" closeOnBackdrop={!busy}>
@@ -213,12 +215,18 @@ export function ScheduleMessageModal({
                     setScheduleAt(event.target.value);
                     if (event.target.value)
                       setRequiredErrors((current) => ({ ...current, scheduleAt: false }));
+                    setError("");
                   }}
-                  aria-invalid={requiredErrors.scheduleAt}
-                  className={`block w-full min-w-0 max-w-full bg-card ${requiredFieldClassName(requiredErrors.scheduleAt)}`}
+                  aria-invalid={requiredErrors.scheduleAt || scheduleTimeInvalid}
+                  className={`block w-full min-w-0 max-w-full bg-card ${requiredFieldClassName(requiredErrors.scheduleAt || scheduleTimeInvalid)}`}
                 />
               </div>
             </Field>
+            {scheduleTimeInvalid && (
+              <p role="alert" className="text-xs text-destructive">
+                Escolha um horário futuro.
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               A mensagem digitada será enviada na data escolhida.
             </p>
@@ -241,7 +249,7 @@ export function ScheduleMessageModal({
                 type="submit"
                 variant="primary"
                 className={editing ? "save-action-button" : undefined}
-                disabled={busy || (!content.trim() && !attachment) || !scheduleAt}
+                disabled={busy || (!content.trim() && !attachment) || !scheduleAt || scheduleTimeInvalid}
               >
                 {busy ? "Salvando..." : editing ? "Salvar alterações" : "Agendar"}
               </Button>

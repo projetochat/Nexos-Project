@@ -44,7 +44,7 @@ const countSqlByKey: Record<RegistrationCaseKey, (tenantId: string) => Prisma.Sq
   contactCompanies: (tenantId) =>
     Prisma.sql`SELECT COUNT(*)::int AS count FROM "customers" WHERE "tenantId" = ${tenantId} AND "archivedAt" IS NULL`,
   contactDepartments: (tenantId) =>
-    Prisma.sql`SELECT COUNT(*)::int AS count FROM "contact_departments" WHERE "tenantId" = ${tenantId} AND "archivedAt" IS NULL`,
+    Prisma.sql`SELECT COUNT(*)::int AS count FROM "customer_departments" WHERE "tenantId" = ${tenantId} AND "archivedAt" IS NULL`,
   contactProfiles: (tenantId) =>
     Prisma.sql`SELECT COUNT(*)::int AS count FROM "contact_profiles" WHERE "tenantId" = ${tenantId} AND "archivedAt" IS NULL`,
   attendants: (tenantId) =>
@@ -69,7 +69,7 @@ const conversionSqlByKey: Partial<Record<RegistrationCaseKey, (tenantId: string)
   contactCompanies: (tenantId) =>
     Prisma.sql`UPDATE "customers" SET name = UPPER(name), "updatedAt" = CURRENT_TIMESTAMP WHERE "tenantId" = ${tenantId} AND "archivedAt" IS NULL`,
   contactDepartments: (tenantId) =>
-    Prisma.sql`UPDATE "contact_departments" SET name = UPPER(name), "updatedAt" = CURRENT_TIMESTAMP WHERE "tenantId" = ${tenantId} AND "archivedAt" IS NULL`,
+    Prisma.sql`UPDATE "customer_departments" SET name = UPPER(name), "updatedAt" = CURRENT_TIMESTAMP WHERE "tenantId" = ${tenantId} AND "archivedAt" IS NULL`,
   contactProfiles: (tenantId) =>
     Prisma.sql`UPDATE "contact_profiles" SET name = UPPER(name), "updatedAt" = CURRENT_TIMESTAMP WHERE "tenantId" = ${tenantId} AND "archivedAt" IS NULL`,
   attendants: (tenantId) =>
@@ -163,6 +163,16 @@ export async function updateRegistrationCase(
         if (conflicts.length) {
           throw new BadRequestException(
             `A conversão geraria departamentos duplicados: ${conflicts[0].name}.`,
+          );
+        }
+      }
+      if (input.key === "contactDepartments") {
+        const conflicts = await tx.$queryRaw<Array<{ customerId: string; name: string }>>(
+          Prisma.sql`SELECT "customerId", UPPER(TRIM(name)) AS name FROM customer_departments WHERE "tenantId" = ${tenantId} AND "archivedAt" IS NULL GROUP BY "customerId", UPPER(TRIM(name)) HAVING COUNT(*) > 1 LIMIT 1`,
+        );
+        if (conflicts.length) {
+          throw new BadRequestException(
+            `A conversão geraria departamentos duplicados no mesmo cliente: ${conflicts[0].name}.`,
           );
         }
       }

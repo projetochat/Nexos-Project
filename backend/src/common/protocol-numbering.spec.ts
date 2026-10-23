@@ -1,5 +1,9 @@
 import { ProtocolFormat, ProtocolModule, ProtocolReset } from "../generated/prisma";
-import { formatProtocol, protocolPeriodKey } from "./protocol-numbering";
+import {
+  effectiveProtocolReset,
+  formatProtocol,
+  protocolPeriodKey,
+} from "./protocol-numbering";
 import { describe, expect, it } from "vitest";
 
 describe("protocol numbering", () => {
@@ -31,5 +35,20 @@ describe("protocol numbering", () => {
     expect(protocolPeriodKey(ProtocolReset.YEARLY, at)).toBe("2026");
     expect(protocolPeriodKey(ProtocolReset.MONTHLY, at)).toBe("2026-09");
     expect(protocolPeriodKey(ProtocolReset.NEVER, at)).toBe("GLOBAL");
+  });
+
+  it("derives the reset policy for predefined formats", () => {
+    expect(effectiveProtocolReset(ProtocolFormat.YEAR_SEQUENCE, ProtocolReset.NEVER)).toBe(
+      ProtocolReset.YEARLY,
+    );
+    expect(
+      effectiveProtocolReset(ProtocolFormat.YEAR_MONTH_SEQUENCE, ProtocolReset.NEVER),
+    ).toBe(ProtocolReset.MONTHLY);
+    expect(effectiveProtocolReset(ProtocolFormat.DATE_SEQUENCE, ProtocolReset.MONTHLY)).toBe(
+      ProtocolReset.NEVER,
+    );
+    expect(effectiveProtocolReset(ProtocolFormat.CUSTOM, ProtocolReset.MONTHLY)).toBe(
+      ProtocolReset.MONTHLY,
+    );
   });
 });

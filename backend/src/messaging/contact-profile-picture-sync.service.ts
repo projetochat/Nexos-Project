@@ -3,6 +3,8 @@ import { MessagingConnectionStatus, MessagingProviderType } from "../generated/p
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { EvolutionClient } from "./evolution/evolution.client";
+import type { EvolutionContact } from "./evolution/evolution.types";
+import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 
 type ContactProfilePictureTarget = {
   id: string;
@@ -11,6 +13,7 @@ type ContactProfilePictureTarget = {
   phone: string;
   normalizedPhone: string;
   avatarUrl: string | null;
+  remoteJid?: string | null;
   instance: string | null;
   instanceIds: string[];
 };
@@ -25,9 +28,14 @@ export class ContactProfilePictureSyncService {
   private readonly logger = new Logger(ContactProfilePictureSyncService.name);
   private readonly queuedContactIds = new Set<string>();
   private readonly recentAttempts = new Map<string, number>();
+  private readonly queuedNameContactIds = new Set<string>();
+  private readonly recentNameAttempts = new Map<string, number>();
   private pendingContacts: QueuedContactProfilePictureTarget[] = [];
+  private pendingNameContacts: QueuedContactProfilePictureTarget[] = [];
   private draining = false;
+  private drainingNames = false;
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
+  private nameDrainTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -39,9 +47,17 @@ export class ContactProfilePictureSyncService {
     tenantId: string;
     contacts: ContactProfilePictureTarget[];
   }): Promise<Map<string, string>> {
-    const targets = uniqueContacts(input.contacts).filter((contact) =>
-      needsProfilePicture(contact),
-    );
+    return this.syncContacts(input, false);
+  }
+
+  private async syncContacts(
+    input: { tenantId: string; contacts: ContactProfilePictureTarget[] },
+    refreshExisting: boolean,
+  ): Promise<Map<string, string>> {
+    const unique = uniqueContacts(input.contacts);
+    const targets = refreshExisting
+      ? unique.filter((contact) => canRefreshProfilePicture(contact))
+      : unique.filter((contact) => needsProfilePicture(contact));
     if (!targets.length) return new Map();
 
     const synced = new Map<string, string>();
@@ -52,14 +68,25 @@ export class ContactProfilePictureSyncService {
       const avatarUrl = await this.fetchProfilePictureUrl(instanceName, contact);
       if (!avatarUrl) continue;
 
-      await this.prisma.contact.updateMany({
-        where: {
-          id: contact.id,
-          tenantId: input.tenantId,
-          OR: [{ avatarUrl: null }, { avatarUrl: "" }],
-        },
+      const updated = await this.prisma.contact.updateMany({
+        where: refreshExisting
+          ? {
+              id: contact.id,
+              tenantId: input.tenantId,
+              OR: [
+                { avatarUrl: null },
+                { avatarUrl: "" },
+                { avatarUrl: { not: avatarUrl } },
+              ],
+            }
+          : {
+              id: contact.id,
+              tenantId: input.tenantId,
+              OR: [{ avatarUrl: null }, { avatarUrl: "" }],
+            },
         data: { avatarUrl },
       });
+      if (!updated.count) continue;
 
       synced.set(contact.id, avatarUrl);
       this.realtime.publishContactUpdated({
@@ -74,7 +101,7 @@ export class ContactProfilePictureSyncService {
   enqueueMissing(input: { tenantId: string; contacts: ContactProfilePictureTarget[] }) {
     const now = Date.now();
     const targets = uniqueContacts(input.contacts)
-      .filter((contact) => needsProfilePicture(contact))
+      .filter((contact) => canRefreshProfilePicture(contact))
       .filter((contact) => !this.wasRecentlyAttempted(contact.id, now))
       .filter((contact) => !this.queuedContactIds.has(contact.id))
       .slice(0, 10);
@@ -91,11 +118,42 @@ export class ContactProfilePictureSyncService {
     this.scheduleDrain();
   }
 
+  enqueuePlaceholderNames(input: {
+    tenantId: string;
+    contacts: ContactProfilePictureTarget[];
+  }) {
+    const now = Date.now();
+    const targets = uniqueContacts(input.contacts)
+      .filter((contact) => isPlaceholderContactName(contact))
+      .filter((contact) => !this.wasNameRecentlyAttempted(contact.id, now))
+      .filter((contact) => !this.queuedNameContactIds.has(contact.id))
+      .slice(0, 50);
+    if (!targets.length) return;
+
+    for (const contact of targets) {
+      this.queuedNameContactIds.add(contact.id);
+      this.pendingNameContacts.push({ tenantId: input.tenantId, contact });
+    }
+    if (this.pendingNameContacts.length > 200) {
+      const overflow = this.pendingNameContacts.splice(0, this.pendingNameContacts.length - 200);
+      for (const item of overflow) this.queuedNameContactIds.delete(item.contact.id);
+    }
+    this.scheduleNameDrain();
+  }
+
   private scheduleDrain() {
     if (this.drainTimer || this.draining) return;
     this.drainTimer = setTimeout(() => {
       this.drainTimer = null;
       void this.drain();
+    }, 250);
+  }
+
+  private scheduleNameDrain() {
+    if (this.nameDrainTimer || this.drainingNames) return;
+    this.nameDrainTimer = setTimeout(() => {
+      this.nameDrainTimer = null;
+      void this.drainNames();
     }, 250);
   }
 
@@ -108,7 +166,10 @@ export class ContactProfilePictureSyncService {
         if (!item) break;
         this.queuedContactIds.delete(item.contact.id);
         this.recentAttempts.set(item.contact.id, Date.now());
-        await this.syncMissing({ tenantId: item.tenantId, contacts: [item.contact] });
+        await this.syncContacts(
+          { tenantId: item.tenantId, contacts: [item.contact] },
+          true,
+        );
       }
     } catch (error) {
       this.logger.warn(
@@ -120,6 +181,63 @@ export class ContactProfilePictureSyncService {
       this.draining = false;
       this.trimRecentAttempts(Date.now());
       if (this.pendingContacts.length) this.scheduleDrain();
+    }
+  }
+
+  private async drainNames() {
+    if (this.drainingNames) return;
+    this.drainingNames = true;
+    const now = Date.now();
+    try {
+      const batch = this.pendingNameContacts.splice(0, 100);
+      const grouped = new Map<string, QueuedContactProfilePictureTarget[]>();
+      for (const item of batch) {
+        this.queuedNameContactIds.delete(item.contact.id);
+        this.recentNameAttempts.set(item.contact.id, now);
+        const instanceKey = [item.contact.instance, ...item.contact.instanceIds].find(Boolean);
+        if (!instanceKey) continue;
+        const key = `${item.tenantId}:${instanceKey}`;
+        const entries = grouped.get(key) ?? [];
+        entries.push(item);
+        grouped.set(key, entries);
+      }
+
+      for (const entries of grouped.values()) {
+        const first = entries[0];
+        if (!first) continue;
+        const instanceName = await this.resolveInstanceName(first.tenantId, first.contact);
+        if (!instanceName) continue;
+        const providerContacts = await this.evolution.findContacts({ instanceName });
+        const providerNames = providerContactNamesByIdentity(providerContacts);
+
+        for (const entry of entries) {
+          const name = contactIdentityKeys(entry.contact).map((key) => providerNames.get(key)).find(Boolean);
+          if (!name) continue;
+          const updated = await this.prisma.contact.updateMany({
+            where: {
+              id: entry.contact.id,
+              tenantId: entry.tenantId,
+              name: entry.contact.name,
+            },
+            data: { name },
+          });
+          if (!updated.count) continue;
+          this.realtime.publishContactUpdated({
+            tenantId: entry.tenantId,
+            contactId: entry.contact.id,
+          });
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel sincronizar nomes em segundo plano: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    } finally {
+      this.drainingNames = false;
+      this.trimRecentNameAttempts(Date.now());
+      if (this.pendingNameContacts.length) this.scheduleNameDrain();
     }
   }
 
@@ -166,6 +284,11 @@ export class ContactProfilePictureSyncService {
     return !!lastAttempt && now - lastAttempt < PROFILE_PICTURE_RETRY_INTERVAL_MS;
   }
 
+  private wasNameRecentlyAttempted(contactId: string, now: number) {
+    const lastAttempt = this.recentNameAttempts.get(contactId);
+    return !!lastAttempt && now - lastAttempt < PROFILE_NAME_RETRY_INTERVAL_MS;
+  }
+
   private trimRecentAttempts(now: number) {
     for (const [contactId, attemptedAt] of this.recentAttempts) {
       if (now - attemptedAt > PROFILE_PICTURE_RETRY_INTERVAL_MS) {
@@ -173,9 +296,18 @@ export class ContactProfilePictureSyncService {
       }
     }
   }
+
+  private trimRecentNameAttempts(now: number) {
+    for (const [contactId, attemptedAt] of this.recentNameAttempts) {
+      if (now - attemptedAt > PROFILE_NAME_RETRY_INTERVAL_MS) {
+        this.recentNameAttempts.delete(contactId);
+      }
+    }
+  }
 }
 
 const PROFILE_PICTURE_RETRY_INTERVAL_MS = 3 * 60 * 60 * 1000;
+const PROFILE_NAME_RETRY_INTERVAL_MS = 3 * 60 * 60 * 1000;
 
 function uniqueContacts(contacts: ContactProfilePictureTarget[]) {
   const seen = new Set<string>();
@@ -188,19 +320,99 @@ function uniqueContacts(contacts: ContactProfilePictureTarget[]) {
 
 function needsProfilePicture(contact: ContactProfilePictureTarget) {
   if (contact.avatarUrl?.trim()) return false;
-  if (contact.normalizedPhone.startsWith("group:")) return false;
-  if (contact.phone.includes("@g.us") || contact.normalizedPhone.includes("@g.us")) return false;
   return true;
 }
 
+function canRefreshProfilePicture(contact: ContactProfilePictureTarget) {
+  return !contact.avatarUrl?.trim().toLowerCase().startsWith("data:");
+}
+
+function isPlaceholderContactName(contact: ContactProfilePictureTarget) {
+  if (contact.normalizedPhone.startsWith("group:") || contact.phone.includes("@g.us")) return false;
+  const nameKeys = identityKeysFromValues([contact.name]);
+  if (!nameKeys.size) return false;
+  return [...identityKeysFromValues([contact.normalizedPhone, contact.phone])].some((key) =>
+    nameKeys.has(key),
+  );
+}
+
+function providerContactNamesByIdentity(contacts: EvolutionContact[]) {
+  const names = new Map<string, string>();
+  for (const contact of contacts) {
+    if (contact.isGroup || contact.type === "group") continue;
+    const identities = [contact.remoteJid, contact.id, contact.number];
+    const identityKeys = identityKeysFromValues(identities);
+    const name = [
+      contact.name,
+      contact.pushName,
+      contact.verifiedName,
+      contact.notify,
+      contact.contactName,
+      contact.shortName,
+      contact.displayName,
+      contact.profileName,
+    ]
+      .map((value) => value?.trim())
+      .find((value): value is string => {
+        if (!value) return false;
+        const nameKeys = identityKeysFromValues([value]);
+        return ![...nameKeys].some((key) => identityKeys.has(key));
+      });
+    if (!name) continue;
+    for (const key of identityKeys) names.set(key, name);
+  }
+  return names;
+}
+
+function contactIdentityKeys(contact: ContactProfilePictureTarget) {
+  return [...identityKeysFromValues([contact.remoteJid, contact.normalizedPhone, contact.phone])];
+}
+
+function identityKeysFromValues(values: Array<string | null | undefined>) {
+  const keys = new Set<string>();
+  for (const value of values) {
+    if (!value) continue;
+    try {
+      for (const candidate of normalizeRemotePhoneCandidates(value)) {
+        const digits = candidate.replace(/\D/g, "");
+        if (digits.length >= 10) keys.add(digits);
+      }
+    } catch {
+      const local = value.split("@")[0]?.split(":")[0] ?? value;
+      const digits = local.replace(/\D/g, "");
+      if (digits.length >= 10) keys.add(digits);
+    }
+  }
+  return keys;
+}
+
 function profilePictureLookupCandidates(contact: ContactProfilePictureTarget) {
-  const rawValues = [contact.normalizedPhone, contact.phone];
+  const remoteJid = contact.remoteJid?.trim() || null;
+  const rawValues = [remoteJid, contact.normalizedPhone, contact.phone].filter(Boolean) as string[];
+  const groupJid = rawValues
+    .map((value) => value.replace(/^group:/, ""))
+    .find((value) => value.includes("@g.us"));
+  if (groupJid) return [groupJid];
   const candidates = rawValues.flatMap((value) => {
     const beforeDomain = value.split("@")[0] ?? value;
     const digits = beforeDomain.replace(/\D/g, "");
-    return [value, digits ? `${digits}@s.whatsapp.net` : null, digits].filter(Boolean) as string[];
+    let normalized: string[] = [];
+    try {
+      normalized = normalizeRemotePhoneCandidates(value);
+    } catch {
+      // Preserve the provider's original identifier for legacy or non-mobile values.
+    }
+    const prioritizedValues = value === remoteJid ? [value, ...normalized] : [...normalized, value];
+    return prioritizedValues.flatMap((candidate) => {
+      const candidateDigits = candidate.split("@")[0]?.replace(/\D/g, "") ?? "";
+      return [
+        candidate,
+        candidateDigits ? `${candidateDigits}@s.whatsapp.net` : null,
+        candidateDigits,
+      ].filter(Boolean) as string[];
+    });
   });
-  return [...new Set(candidates.filter((item) => !item.includes("@g.us")))];
+  return [...new Set(candidates)];
 }
 
 function maskProfilePictureLookup(value: string) {

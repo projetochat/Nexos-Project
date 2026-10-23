@@ -14,9 +14,9 @@ const allowedEnvironmentExamples = new Set([
 const allowedSqlRoots = ["backend/prisma/migrations/", "supabase/migrations/"];
 // Reviewed fixtures/examples with intentional dummy credentials. Any content change invalidates the exception.
 const credentialFixtureHashes = new Map([
-  [".env.example", "9c2190e75b5a6f91debc2a983b0ec98e59aadfbf9dbea89b3906001d0e61eaf1"],
-  [".env.vps.example", "bd472a16c10fa4fd06e0500a86d4b796b05ea6bcad59db0626288c8cabaca818"],
-  ["backend/.env.example", "f71aed6f49c666c48f00d4ddfb0ca456c0a0a620495e4418c31c4d25bcc2438c"],
+  [".env.example", "6a84714d48fd3c5a38563bae7cf94935d55ef7f246ecf6bfba02e31d09818c1c"],
+  [".env.vps.example", "70ba3fd51d575e324888f9be96b6f943db3d09d09f5fd3c61451432afeae46c0"],
+  ["backend/.env.example", "5b227d84ebf13a3c1a7c2de30bf95e9fdb64a15eac36d22a49e49766fc4e31a0"],
   [
     "backend/prisma/test-fixtures.ts",
     "6bce9d380ab9b9c3ae3c53b0cf6e8927ff7a1abc59f9299ec910051578c8b0bc",
@@ -27,11 +27,11 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/src/auth/auth.service.spec.ts",
-    "2032dc45be1a8bfb88a0590e856d05d49527c74e2b521c28d6bb9d5fbbdc99d2",
+    "1461006a5e3af2e4f1d1fdd9ab3df298b92bdf50f756e359d0f25b4f2c9b76fa",
   ],
   [
     "backend/src/config/environment.spec.ts",
-    "e4542e27909ad0509289355dfbcad5d96cac9e1d6c0db26fe5c847e2ab6a9178",
+    "02601269a96aca1bd20d5ae6a3335f3e2fdaa002a4ba312348e18e0d1224dd73",
   ],
   [
     "backend/src/homologation/reset-safety.spec.ts",
@@ -71,11 +71,11 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/test/app.e2e-spec.ts",
-    "412c73d8980e0bc442c1a4d2cd8d26b7f9fdb14692d3ee83965eeb98ac8edfe1",
+    "63284a24be887d4cb22835503f91352d626ace717a109c5341e4b343dff31c8b",
   ],
   [
     "src/lib/trixus-api.test.ts",
-    "ee02d7f7d814fe2122b39d487dafbea20bd984bbc8d7980dbd1c5e3dc83ad234",
+    "4b81ac9129b14ad107e5e373ae2f4e9153f3ad3318a2e4165e28067580399da2",
   ],
   [
     "backend/src/platform/platform.service.spec.ts",
@@ -91,7 +91,7 @@ const credentialFixtureHashes = new Map([
   ["docs/README.md", "80ac543c48e1f64ca0bab45114240f64687ff3fe3d8753582623b260498badb3"],
   [
     "scripts/production/test_preflight.py",
-    "3629b57e429603e7f01225c9ab321428daaccc8bced2931bea71cc6947c2fe78",
+    "c609ee5b45f0fad64441dca3349165458383c4c8078e4fd385863ed3a1d01119",
   ],
   [
     "scripts/production/install.sh",

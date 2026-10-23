@@ -25,6 +25,10 @@ export class CreateConversationDto {
   isGroup?: boolean;
 
   @IsOptional()
+  @IsUUID()
+  sourceGroupConversationId?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   firstMessagePreview?: string | null;

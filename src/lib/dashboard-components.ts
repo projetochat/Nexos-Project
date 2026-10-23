@@ -32,8 +32,11 @@ export type DashboardComponentConfig = {
 
 export type DashboardPreferencesV2 = {
   version: 2;
+  nativeRevision?: number;
   components: DashboardComponentConfig[];
 };
+
+export const DASHBOARD_NATIVE_REVISION = 4;
 
 export type DashboardGroupingOption = {
   value: string;
@@ -87,13 +90,13 @@ export const DEFAULT_DASHBOARD_COMPONENTS: DashboardComponentConfig[] = [
     "ticketRequesterRanking",
     "Top 10 contatos que abriram chamados",
     true,
-    "bars",
-    2,
+    "table",
+    1,
     "records",
     "ticketRequesterContact",
     "count",
   ),
-  component("tag", "Conversas por etiqueta", true, "columns", 2, "conversations", "tag", "count"),
+  component("tag", "Conversas por etiqueta", true, "columns", 1, "conversations", "tag", "count"),
   component(
     "distribution",
     "Distribuição de conversas",
@@ -225,7 +228,11 @@ export function saveDashboardComponents(
   storageKey: string,
   components: DashboardComponentConfig[],
 ) {
-  const preferences: DashboardPreferencesV2 = { version: 2, components };
+  const preferences: DashboardPreferencesV2 = {
+    version: 2,
+    nativeRevision: DASHBOARD_NATIVE_REVISION,
+    components,
+  };
   window.localStorage.setItem(storageKey, JSON.stringify(preferences));
 }
 
@@ -233,11 +240,15 @@ export function parseDashboardPreferences(value: unknown): DashboardComponentCon
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const candidate = value as Record<string, unknown>;
     if (candidate.version === 2 && Array.isArray(candidate.components)) {
-      return mergeNativeDashboardAdditions(
+      const components = mergeNativeDashboardAdditions(
         candidate.components
           .map(normalizeComponent)
           .filter((item): item is DashboardComponentConfig => item !== null),
       );
+      const nativeRevision = Number(candidate.nativeRevision) || 1;
+      return nativeRevision >= DASHBOARD_NATIVE_REVISION
+        ? components
+        : migrateNativeDashboardRevision(components, nativeRevision);
     }
     return migrateLegacyPreferences(candidate);
   }
@@ -246,6 +257,21 @@ export function parseDashboardPreferences(value: unknown): DashboardComponentCon
     return cloneDefaults().map((item) => ({ ...item, visible: visible.has(item.id) }));
   }
   return cloneDefaults();
+}
+
+function migrateNativeDashboardRevision(
+  components: DashboardComponentConfig[],
+  nativeRevision: number,
+) {
+  return components.map((component) => {
+    if (nativeRevision < 3 && component.id === "ticketRequesterRanking") {
+      return { ...component, visualization: "table" as const, columns: 1 as const };
+    }
+    if (nativeRevision < 4 && component.id === "tag") {
+      return { ...component, columns: 1 as const };
+    }
+    return component;
+  });
 }
 
 function mergeNativeDashboardAdditions(components: DashboardComponentConfig[]) {

@@ -55,6 +55,11 @@ function setup(initialActive: boolean) {
       findFirst: vi.fn().mockResolvedValue(contact(initialActive)),
       update: vi.fn().mockResolvedValue(updated),
     },
+    customerPortalAccess: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([{ id: "access-a" }, { id: "access-b" }]),
+      updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+    },
     userInvitation: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     tenantMembership: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     authSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -73,14 +78,60 @@ function setup(initialActive: boolean) {
 }
 
 describe("portal de contato inativo", () => {
+  it.each(["acesso ativo", "convite pendente"])(
+    "bloqueia alteração de e-mail enquanto houver %s do portal",
+    async () => {
+      const { controller, prisma } = setup(true);
+      prisma.customerPortalAccess.findFirst.mockResolvedValue({ id: "access-a" });
+
+      await expect(
+        controller.updateContact("contact-a", { email: "novo@example.test" }, current),
+      ).rejects.toMatchObject({
+        response: {
+          code: "CONTACT_EMAIL_PORTAL_ACCESS_ACTIVE",
+          message: "Revogue o acesso ao Portal do Cliente antes de alterar o e-mail deste contato.",
+        },
+      });
+
+      expect(prisma.customerPortalAccess.findFirst).toHaveBeenCalledWith({
+        where: {
+          tenantId: "tenant-a",
+          contactId: "contact-a",
+          OR: [{ active: true }, { invitations: { some: { status: "PENDING" } } }],
+        },
+        select: { id: true },
+      });
+      expect(prisma.contact.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it("permite salvar o mesmo e-mail normalizado sem tratar como troca de identidade", async () => {
+    const { controller, prisma } = setup(true);
+
+    await controller.updateContact("contact-a", { email: " CLARA@EXAMPLE.TEST " }, current);
+
+    expect(prisma.customerPortalAccess.findFirst).not.toHaveBeenCalled();
+    expect(prisma.contact.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ email: "clara@example.test" }) }),
+    );
+  });
+
   it("revoga convites, membership e sessões na mesma transação ao desativar", async () => {
     const { controller, prisma } = setup(true);
 
     await controller.updateContact("contact-a", { active: false }, current);
 
     expect(prisma.userInvitation.updateMany).toHaveBeenCalledWith({
-      where: { tenantId: "tenant-a", contactId: "contact-a", status: "PENDING" },
+      where: {
+        tenantId: "tenant-a",
+        portalAccessId: { in: ["access-a", "access-b"] },
+        status: "PENDING",
+      },
       data: { status: "REVOKED", revokedAt: expect.any(Date) },
+    });
+    expect(prisma.customerPortalAccess.updateMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", id: { in: ["access-a", "access-b"] } },
+      data: { active: false },
     });
     expect(prisma.tenantMembership.updateMany).toHaveBeenCalledWith({
       where: {
@@ -93,7 +144,16 @@ describe("portal de contato inativo", () => {
     expect(prisma.authSession.updateMany).toHaveBeenCalledWith({
       where: {
         tenantId: "tenant-a",
+        portalAccessId: { in: ["access-a", "access-b"] },
+        revokedAt: null,
+      },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(prisma.authSession.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
         membershipId: "portal-membership",
+        portalAccessId: null,
         revokedAt: null,
       },
       data: { revokedAt: expect.any(Date) },
@@ -113,6 +173,7 @@ describe("portal de contato inativo", () => {
     expect(prisma.userInvitation.updateMany).not.toHaveBeenCalled();
     expect(prisma.tenantMembership.updateMany).not.toHaveBeenCalled();
     expect(prisma.authSession.updateMany).not.toHaveBeenCalled();
+    expect(prisma.customerPortalAccess.updateMany).not.toHaveBeenCalled();
     expect(prisma.contact.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ active: true, portalAccessActive: undefined }),

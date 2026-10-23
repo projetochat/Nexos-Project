@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, Info, MessageCircle, Save, Ticket } from "lucide-react";
+import { AlertTriangle, MessageCircle, Save, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/modal";
 import { Button, Card, Field, Input, Select } from "@/components/ui-kit";
@@ -13,32 +13,26 @@ export const Route = createFileRoute("/configuracoes/controle-numeracao")({
 const FORMAT_OPTIONS: Array<{
   value: ApiProtocolSettings["format"];
   label: string;
-  description: string;
 }> = [
   {
     value: "YEAR_SEQUENCE",
     label: "Ano + Sequencial",
-    description: "Utiliza o ano atual e um número sequencial.",
   },
   {
     value: "YEAR_MONTH_SEQUENCE",
     label: "Ano + Mês + Sequencial",
-    description: "Utiliza o ano, o mês e um número sequencial.",
-  },
-  {
-    value: "SEQUENCE",
-    label: "Sequencial Único",
-    description: "Utiliza apenas um número sequencial contínuo.",
-  },
-  {
-    value: "DATE_SEQUENCE",
-    label: "Data + Sequencial",
-    description: "Utiliza a data atual e um número sequencial.",
   },
   {
     value: "CUSTOM",
     label: "Personalizado",
-    description: "Permite combinar prefixo, data e sequencial.",
+  },
+  {
+    value: "DATE_SEQUENCE",
+    label: "Data + Sequencial",
+  },
+  {
+    value: "SEQUENCE",
+    label: "Sequencial Único",
   },
 ];
 
@@ -202,8 +196,13 @@ function ProtocolModuleCard({
   const isChat = item.module === "CHAT";
   const Icon = isChat ? MessageCircle : Ticket;
   return (
-    <section className="rounded-xl border border-border p-3 sm:p-4">
-      <div className="flex items-center gap-3">
+    <section className="overflow-hidden rounded-xl border border-border">
+      <div
+        className="flex items-center gap-3 border-b border-border px-3 py-3 sm:px-4"
+        style={{
+          backgroundColor: "color-mix(in srgb, var(--surface-1) 98%, var(--foreground) 2%)",
+        }}
+      >
         <div className="rounded-lg bg-surface-2 p-2 text-foreground">
           <Icon className="h-4 w-4" />
         </div>
@@ -215,96 +214,98 @@ function ProtocolModuleCard({
         </div>
       </div>
 
-      <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-        <Info className="mt-0.5 h-4 w-4 shrink-0" />
-        <p>
-          Escolha um formato único e fácil de identificar. A visualização é atualizada antes de
-          salvar.
-        </p>
-      </div>
-
-      <fieldset className="mt-3">
-        <legend className="text-xs font-semibold">Formato de numeração</legend>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-          {FORMAT_OPTIONS.map((option) => {
-            const selected = item.format === option.value;
-            return (
-              <label
-                key={option.value}
-                className={`cursor-pointer rounded-lg border p-3 transition hover:border-primary/60 ${
-                  selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border"
-                }`}
-              >
-                <span className="flex items-start gap-2">
-                  <input
-                    type="radio"
-                    name={`protocol-format-${item.module}`}
-                    value={option.value}
-                    checked={selected}
-                    onChange={() => onChange(item.module, { format: option.value })}
-                    className="mt-0.5 h-4 w-4 accent-primary"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-semibold">{option.label}</span>
-                    <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
-                      Exemplo: {protocolPreview({ ...item, format: option.value })}
+      <div className="p-3 sm:p-4">
+        <fieldset>
+          <legend className="text-xs font-semibold">Formato de numeração</legend>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+            {FORMAT_OPTIONS.map((option) => {
+              const selected = item.format === option.value;
+              return (
+                <label
+                  key={option.value}
+                  className={`cursor-pointer rounded-lg border p-2.5 transition hover:border-primary/60 ${
+                    selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border"
+                  }`}
+                >
+                  <span className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      name={`protocol-format-${item.module}`}
+                      value={option.value}
+                      checked={selected}
+                      onChange={() =>
+                        onChange(item.module, {
+                          format: option.value,
+                          ...(option.value === "CUSTOM"
+                            ? {}
+                            : { reset: defaultResetForFormat(option.value) }),
+                        })
+                      }
+                      className="mt-0.5 h-4 w-4 accent-primary"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold">{option.label}</span>
+                      <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                        Exemplo: {protocolPreview({ ...item, format: option.value })}
+                      </span>
                     </span>
                   </span>
-                </span>
-                <span className="mt-2 block text-[10px] leading-relaxed text-muted-foreground">
-                  {option.description}
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
 
-      {item.format === "CUSTOM" && (
-        <div className="mt-3">
-          <Field label="Padrão personalizado">
-            <Input
-              value={item.customPattern ?? ""}
-              onChange={(event) => onChange(item.module, { customPattern: event.target.value })}
-              placeholder={isChat ? "CHAT.{YEAR}.{SEQ}" : "CH.{YEAR}.{SEQ}"}
-            />
+        <div
+          className={`mt-3 grid gap-3 ${
+            item.format === "CUSTOM" ? "md:grid-cols-4" : "md:grid-cols-3"
+          }`}
+        >
+          {item.format === "CUSTOM" && (
+            <Field label="Padrão personalizado">
+              <div>
+                <Input
+                  value={item.customPattern ?? ""}
+                  onChange={(event) => onChange(item.module, { customPattern: event.target.value })}
+                  placeholder={isChat ? "CHAT.{YEAR}.{SEQ}" : "CH.{YEAR}.{SEQ}"}
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Variáveis: {"{YEAR}"}, {"{MONTH}"}, {"{DATE}"} e {"{SEQ}"}.
+                </p>
+              </div>
+            </Field>
+          )}
+          <Field label="Quantidade de dígitos do sequencial">
+            <Select
+              value={String(item.digits)}
+              onChange={(event) => onChange(item.module, { digits: Number(event.target.value) })}
+            >
+              {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </Select>
           </Field>
-          <p className="mt-1 text-[10px] text-muted-foreground">
-            Variáveis disponíveis: {"{YEAR}"}, {"{MONTH}"}, {"{DATE}"} e {"{SEQ}"}.
-          </p>
+          <Field label="Resetar número sequencial">
+            <Select
+              value={item.reset}
+              disabled={item.format !== "CUSTOM"}
+              onChange={(event) =>
+                onChange(item.module, {
+                  reset: event.target.value as ApiProtocolSettings["reset"],
+                })
+              }
+            >
+              <option value="YEARLY">Anualmente</option>
+              <option value="MONTHLY">Mensalmente</option>
+              <option value="NEVER">Nunca</option>
+            </Select>
+          </Field>
+          <Field label="Visualização do próximo protocolo">
+            <Input value={protocolPreview(item)} readOnly className="font-mono" />
+          </Field>
         </div>
-      )}
-
-      <div className="mt-3 grid gap-3 md:grid-cols-3">
-        <Field label="Quantidade de dígitos do sequencial">
-          <Select
-            value={String(item.digits)}
-            onChange={(event) => onChange(item.module, { digits: Number(event.target.value) })}
-          >
-            {[4, 5, 6, 7, 8, 9, 10].map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Resetar número sequencial">
-          <Select
-            value={item.reset}
-            onChange={(event) =>
-              onChange(item.module, {
-                reset: event.target.value as ApiProtocolSettings["reset"],
-              })
-            }
-          >
-            <option value="YEARLY">Anualmente</option>
-            <option value="MONTHLY">Mensalmente</option>
-            <option value="NEVER">Nunca</option>
-          </Select>
-        </Field>
-        <Field label="Visualização do próximo protocolo">
-          <Input value={protocolPreview(item)} readOnly className="font-mono" />
-        </Field>
       </div>
     </section>
   );
@@ -318,6 +319,14 @@ function protocolSignature(item: ApiProtocolSettings) {
     reset: item.reset,
     customPattern: item.customPattern ?? null,
   });
+}
+
+function defaultResetForFormat(
+  format: ApiProtocolSettings["format"],
+): ApiProtocolSettings["reset"] {
+  if (format === "YEAR_SEQUENCE") return "YEARLY";
+  if (format === "YEAR_MONTH_SEQUENCE") return "MONTHLY";
+  return "NEVER";
 }
 
 function protocolPreview(item: ApiProtocolSettings) {

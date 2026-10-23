@@ -98,4 +98,45 @@ describe("tenant registration uppercase settings", () => {
       'UPDATE "tenant_registration_case_settings"',
     );
   });
+
+  it("applies the contact department setting to the unified customer departments", async () => {
+    const tx = {
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 1 }])
+        .mockResolvedValueOnce([]),
+      $executeRaw: vi.fn().mockResolvedValue(1),
+    };
+    const prisma = { $transaction: vi.fn((callback) => callback(tx)) };
+
+    await updateRegistrationCase(prisma as never, "tenant-a", {
+      key: "contactDepartments",
+      enabled: true,
+      confirmExistingConversion: true,
+    });
+
+    expect(sqlText(tx.$executeRaw.mock.calls[1][0])).toContain('UPDATE "customer_departments"');
+  });
+
+  it("rejects uppercase conversion when a customer would receive duplicate departments", async () => {
+    const tx = {
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 2 }])
+        .mockResolvedValueOnce([{ customerId: "customer-a", name: "FINANCEIRO" }]),
+      $executeRaw: vi.fn().mockResolvedValue(1),
+    };
+    const prisma = { $transaction: vi.fn((callback) => callback(tx)) };
+
+    await expect(
+      updateRegistrationCase(prisma as never, "tenant-a", {
+        key: "contactDepartments",
+        enabled: true,
+        confirmExistingConversion: true,
+      }),
+    ).rejects.toThrow("departamentos duplicados no mesmo cliente");
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  });
 });

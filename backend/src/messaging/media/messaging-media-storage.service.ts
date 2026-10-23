@@ -38,12 +38,13 @@ export class MessagingMediaStorageService {
     if (this.provider !== "local") {
       throw new ServiceUnavailableException("Storage externo de mensagens não configurado.");
     }
-    const declaredMimeType = header(input.req, "content-type").split(";")[0].trim().toLowerCase();
+    const rawMimeType = header(input.req, "content-type").split(";")[0].trim().toLowerCase();
     const declaredSize = Number(
       header(input.req, "x-file-size") || input.req.headers["content-length"] || 0,
     );
     const fileName = sanitizeFileName(decodeHeader(input.req.headers["x-file-name"]) ?? "arquivo");
-    const messageType = resolveMessageType(declaredMimeType, header(input.req, "x-media-type"));
+    const messageType = resolveMessageType(rawMimeType, header(input.req, "x-media-type"));
+    const declaredMimeType = normalizeDocumentMimeType(messageType, rawMimeType, fileName);
     validatePolicy(messageType, declaredMimeType, Number.isFinite(declaredSize) ? declaredSize : 0);
     const body = await readLimitedRequest(input.req, maxSizeBytes(messageType));
     validatePolicy(messageType, declaredMimeType, body.byteLength);
@@ -79,7 +80,11 @@ export class MessagingMediaStorageService {
     fileName?: string | null;
     messageType: MessageType;
   }) {
-    const mimeType = normalizeMimeType(input.mimeType);
+    const mimeType = normalizeDocumentMimeType(
+      input.messageType,
+      input.mimeType,
+      input.fileName ?? "",
+    );
     validatePolicy(input.messageType, mimeType, input.body.byteLength);
     const detected = detectMimeType(input.body, mimeType);
     if (detected && detected !== mimeType) {
@@ -156,7 +161,7 @@ function allowedMimeTypes(type: MessageType) {
   if (type === MessageType.DOCUMENT) {
     return envSet(
       "TRIXUS_MESSAGE_ALLOWED_DOCUMENT_MIME_TYPES",
-      "application/pdf,text/plain,text/vcard,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/pdf,text/plain,text/csv,text/vcard,application/rtf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.text,application/vnd.oasis.opendocument.spreadsheet,application/vnd.oasis.opendocument.presentation,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed,application/x-7z-compressed,application/gzip,application/x-tar",
     );
   }
   if (type === MessageType.VIDEO) {
@@ -206,6 +211,39 @@ function normalizeMimeType(value: string) {
   return value.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
 }
 
+export function normalizeDocumentMimeType(type: MessageType, mimeType: string, fileName: string) {
+  const normalized = normalizeMimeType(mimeType);
+  if (type !== MessageType.DOCUMENT || normalized !== "application/octet-stream") {
+    return normalized;
+  }
+  const extension = fileName.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "";
+  return (
+    (
+      {
+        pdf: "application/pdf",
+        txt: "text/plain",
+        csv: "text/csv",
+        vcf: "text/vcard",
+        rtf: "application/rtf",
+        doc: "application/msword",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        xls: "application/vnd.ms-excel",
+        xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ppt: "application/vnd.ms-powerpoint",
+        pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        odt: "application/vnd.oasis.opendocument.text",
+        ods: "application/vnd.oasis.opendocument.spreadsheet",
+        odp: "application/vnd.oasis.opendocument.presentation",
+        zip: "application/zip",
+        rar: "application/vnd.rar",
+        "7z": "application/x-7z-compressed",
+        gz: "application/gzip",
+        tar: "application/x-tar",
+      } as Record<string, string>
+    )[extension] ?? normalized
+  );
+}
+
 export function resolveMessageType(mimeType: string, explicit: string) {
   const normalized = explicit.toLowerCase();
   if (normalized === "voice") return MessageType.VOICE;
@@ -224,6 +262,20 @@ function detectMimeType(body: Buffer, declaredMimeType: string) {
   if (body.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])))
     return "image/png";
   if (body.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return "image/jpeg";
+  if (
+    body.subarray(0, 2).toString("ascii") === "PK" &&
+    ["application/zip", "application/x-zip-compressed"].includes(declaredMimeType)
+  )
+    return declaredMimeType;
+  if (
+    body.subarray(0, 8).equals(Buffer.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00, 0x00])) ||
+    body.subarray(0, 8).equals(Buffer.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00]))
+  )
+    return ["application/vnd.rar", "application/x-rar-compressed"].includes(declaredMimeType)
+      ? declaredMimeType
+      : null;
+  if (body.subarray(0, 6).equals(Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c])))
+    return declaredMimeType === "application/x-7z-compressed" ? declaredMimeType : null;
   if (
     body.subarray(0, 4).toString("ascii") === "RIFF" &&
     body.subarray(8, 12).toString("ascii") === "WEBP"

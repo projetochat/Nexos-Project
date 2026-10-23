@@ -10,7 +10,7 @@ describe("PACK 09 catalog status contracts", () => {
     const source = routeSource("departamentos.tsx");
 
     expect(source).toContain('<Field label="Instâncias">');
-    expect(source).toContain("sm:grid-cols-[minmax(0,1fr)_7.5rem]");
+    expect(source).toContain("grid-cols-[minmax(0,1fr)_7.5rem]");
     expect(source).toContain("<DepartmentInstanceMultiSelect");
     expect(source).toContain('aria-haspopup="listbox"');
     expect(source).toContain('aria-label="Limpar seleção"');

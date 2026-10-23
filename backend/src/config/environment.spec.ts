@@ -7,14 +7,20 @@ const validProductionEnvironment = {
   DATABASE_URL: "postgresql://trixus:password@postgres:5432/trixus",
   JWT_SECRET: "access-secret-with-at-least-32-characters",
   JWT_REFRESH_SECRET: "refresh-secret-with-at-least-32-characters",
-  FRONTEND_ORIGIN: "https://app.example.com,https://chat.example.com",
-  TRIXUS_REALTIME_CORS_ORIGIN: "https://chat.example.com",
-  TRIXUS_PLATFORM_APP_URL: "https://app.example.com",
-  TRIXUS_TENANT_APP_URL: "https://chat.example.com",
+  AI_CREDENTIALS_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  FRONTEND_ORIGIN: "https://app.trixus.com.br",
+  TRIXUS_REALTIME_CORS_ORIGIN: "https://app.trixus.com.br",
+  TRIXUS_PLATFORM_APP_URL: "https://app.trixus.com.br",
+  TRIXUS_TENANT_APP_URL: "https://app.trixus.com.br",
+  TRIXUS_PUBLIC_APP_URL: "https://app.trixus.com.br",
   REDIS_URL: "redis://redis:6379",
   RESEND_API_KEY: "re_example",
   TRIXUS_EMAIL_FROM: "Trixus <access@example.com>",
   TENANT_ADMIN_PROVISIONING_MODE: "invitation_email",
+  EVOLUTION_BASE_URL: "http://evolution-api:8080",
+  EVOLUTION_API_KEY: "evolution-api-key",
+  EVOLUTION_WEBHOOK_PUBLIC_URL: "https://api.trixus.com.br/api/webhooks/evolution",
+  EVOLUTION_WEBHOOK_SECRET: "evolution-webhook-secret",
   TRIXUS_STORAGE_PROVIDER: "local",
   TRIXUS_STORAGE_LOCAL_PATH: "/var/lib/trixus/storage/tickets",
   TRIXUS_MESSAGE_STORAGE_PROVIDER: "local",
@@ -26,17 +32,49 @@ describe("production environment validation", () => {
     expect(validateEnvironment(validProductionEnvironment)).toEqual(validProductionEnvironment);
   });
 
-  it.each(["production", "homologation", "staging"])(
-    "accepts the supported Trixus environment %s",
-    (environment) => {
-      expect(
-        validateEnvironment({
-          ...validProductionEnvironment,
-          TRIXUS_ENVIRONMENT: environment,
-        }),
-      ).toMatchObject({ TRIXUS_ENVIRONMENT: environment });
-    },
-  );
+  it("requires a 32-byte AI credential encryption key without echoing its value", () => {
+    const leaked = "too-short-ai-secret";
+    expect(() => validateEnvironment({
+      ...validProductionEnvironment,
+      AI_CREDENTIALS_ENCRYPTION_KEY: leaked,
+    })).toThrow(/AI_CREDENTIALS_ENCRYPTION_KEY must encode exactly 32 bytes/);
+    try {
+      validateEnvironment({ ...validProductionEnvironment, AI_CREDENTIALS_ENCRYPTION_KEY: leaked });
+    } catch (error) {
+      expect(String(error)).not.toContain(leaked);
+    }
+  });
+
+  it("accepts the exact homologation public contract", () => {
+    expect(
+      validateEnvironment({
+        ...validProductionEnvironment,
+        TRIXUS_ENVIRONMENT: "homologation",
+        FRONTEND_ORIGIN: "https://hom.trixus.com.br",
+        TRIXUS_REALTIME_CORS_ORIGIN: "https://hom.trixus.com.br",
+        TRIXUS_PLATFORM_APP_URL: "https://hom.trixus.com.br",
+        TRIXUS_TENANT_APP_URL: "https://hom.trixus.com.br",
+        TRIXUS_PUBLIC_APP_URL: "https://hom.trixus.com.br",
+        EVOLUTION_WEBHOOK_PUBLIC_URL:
+          "https://api-hom.trixus.com.br/api/webhooks/evolution",
+      }),
+    ).toMatchObject({ TRIXUS_ENVIRONMENT: "homologation" });
+  });
+
+  it("keeps staging available without applying a production hostname contract", () => {
+    expect(
+      validateEnvironment({
+        ...validProductionEnvironment,
+        TRIXUS_ENVIRONMENT: "staging",
+        FRONTEND_ORIGIN: "https://staging.example.com",
+        TRIXUS_REALTIME_CORS_ORIGIN: "https://staging.example.com",
+        TRIXUS_PLATFORM_APP_URL: "https://staging.example.com",
+        TRIXUS_TENANT_APP_URL: "https://staging.example.com",
+        TRIXUS_PUBLIC_APP_URL: "https://staging.example.com",
+        EVOLUTION_WEBHOOK_PUBLIC_URL: "https://api-staging.example.com/api/webhooks/evolution",
+      }),
+    ).toMatchObject({ TRIXUS_ENVIRONMENT: "staging" });
+  });
 
   it("rejects an unknown or non-canonical Trixus environment", () => {
     for (const environment of ["development", "Staging"]) {
@@ -54,15 +92,15 @@ describe("production environment validation", () => {
     expect(validateEnvironment({ NODE_ENV: "development" })).toEqual({ NODE_ENV: "development" });
   });
 
-  it("keeps the legacy public URL as a production fallback", () => {
+  it("rejects the legacy single public URL fallback in controlled environments", () => {
     const { TRIXUS_PLATFORM_APP_URL, TRIXUS_TENANT_APP_URL, ...environment } =
       validProductionEnvironment;
-    expect(
+    expect(() =>
       validateEnvironment({
         ...environment,
-        TRIXUS_PUBLIC_APP_URL: "https://legacy.example.com",
+        TRIXUS_PUBLIC_APP_URL: "https://app.trixus.com.br",
       }),
-    ).toMatchObject({ TRIXUS_PUBLIC_APP_URL: "https://legacy.example.com" });
+    ).toThrow(/TRIXUS_PLATFORM_APP_URL must be exactly/);
   });
 
   it("requires exact HTTPS origins for the HTTP and realtime trust boundaries", () => {
@@ -115,9 +153,15 @@ describe("production environment validation", () => {
   });
 
   it("requires the complete Evolution trust boundary when any part is enabled", () => {
+    const {
+      EVOLUTION_API_KEY,
+      EVOLUTION_WEBHOOK_PUBLIC_URL,
+      EVOLUTION_WEBHOOK_SECRET,
+      ...environment
+    } = validProductionEnvironment;
     expect(() =>
       validateEnvironment({
-        ...validProductionEnvironment,
+        ...environment,
         EVOLUTION_BASE_URL: "http://evolution-api:8080",
       }),
     ).toThrow(/EVOLUTION_API_KEY is required when Evolution is configured/);

@@ -78,6 +78,7 @@ it("restores Todos, inline counters and submits all selected queues together", a
     )!;
     await act(async () => closeConversations.click());
     expect(bulkClose).toHaveBeenCalledExactlyOnceWith({
+      action: "close",
       source: "todos",
       tabs: ["standby", "leads"],
     });

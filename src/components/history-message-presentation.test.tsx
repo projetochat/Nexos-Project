@@ -252,9 +252,45 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
     await render({
       ...base,
       type: "document",
-      media_data: { file_name: "relatorio.pdf", state: "ready" },
+      media_data: {
+        file_name: "relatorio.pdf",
+        mime_type: "application/pdf",
+        size: 2048,
+        state: "ready",
+      },
     } as ApiMessage);
     expect(host.textContent).toContain("relatorio.pdf");
+    expect(host.textContent).toContain("2 KB");
+    expect(host.querySelector('[aria-label="Visualizar relatorio.pdf"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Baixar relatorio.pdf"]')).not.toBeNull();
+
+    await render({
+      ...base,
+      type: "document",
+      media_data: {
+        file_name: "documentos.zip",
+        mime_type: "application/zip",
+        state: "ready",
+      },
+    } as ApiMessage);
+    expect(host.querySelector('[aria-label="Visualizar documentos.zip"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Baixar documentos.zip"]')).not.toBeNull();
+
+    await render({
+      ...base,
+      type: "document",
+      media_data: {
+        file_name: "arquivo-antigo.zip",
+        mime_type: "application/zip",
+        state: "failed",
+      },
+    } as ApiMessage);
+    expect(host.textContent).toContain("arquivo-antigo.zip");
+    expect(host.textContent).toContain("Arquivo não armazenado");
+    expect(
+      (host.querySelector('[aria-label="Baixar arquivo-antigo.zip"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
     await render({ ...base, deleted_for_everyone: true });
     const inboundDeleted = host.querySelector('[data-message-id="one"] [data-deleted-message]')!;
     const inboundDeletedContent = inboundDeleted.previousElementSibling!;

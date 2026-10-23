@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
 type TenantAdministratorInvitation = {
@@ -13,6 +13,10 @@ type CustomerPortalInvitation = {
   to: string;
   contactName: string;
   customerName: string;
+  login: string;
+  profileName: string;
+  departmentName: string;
+  branchName: string;
   acceptUrl: string;
   expiresAt: Date;
 };
@@ -29,7 +33,7 @@ type DisconnectedInstanceAlert = {
 export class TransactionalEmailService {
   private readonly logger = new Logger(TransactionalEmailService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
 
   assertInvitationDeliveryReady() {
     if (this.isResendConfigured()) return;
@@ -186,6 +190,14 @@ function customerPortalInvitationText(input: CustomerPortalInvitation) {
     `Olá, ${input.contactName}.`,
     "",
     `Você recebeu um convite para acessar o portal da ${input.customerName}.`,
+    "",
+    "Dados do acesso:",
+    `Nome: ${input.contactName}`,
+    `Login: ${input.login}`,
+    `Perfil: ${input.profileName}`,
+    `Departamento: ${input.departmentName}`,
+    `Filial: ${input.branchName}`,
+    "",
     "Use o link abaixo para criar sua senha e ativar o acesso:",
     input.acceptUrl,
     "",
@@ -196,12 +208,23 @@ function customerPortalInvitationText(input: CustomerPortalInvitation) {
 function customerPortalInvitationHtml(input: CustomerPortalInvitation) {
   const name = escapeHtml(input.contactName);
   const customerName = escapeHtml(input.customerName);
+  const login = escapeHtml(input.login);
+  const profileName = escapeHtml(input.profileName);
+  const departmentName = escapeHtml(input.departmentName);
+  const branchName = escapeHtml(input.branchName);
   const url = escapeHtml(input.acceptUrl);
   return `
     <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;max-width:560px;margin:0 auto">
       <h1 style="font-size:24px;margin-bottom:16px">Ativar meu acesso</h1>
       <p>Olá, ${name}.</p>
       <p>Você recebeu um convite para acessar o portal da <strong>${customerName}</strong>.</p>
+      <div style="margin:22px 0;padding:16px 18px;border:1px solid #dbe7fb;border-radius:12px;background:#f8fbff">
+        <div style="margin-bottom:8px"><span style="display:inline-block;width:112px;color:#64748b">Nome</span><strong>${name}</strong></div>
+        <div style="margin-bottom:8px"><span style="display:inline-block;width:112px;color:#64748b">Login</span><strong>${login}</strong></div>
+        <div style="margin-bottom:8px"><span style="display:inline-block;width:112px;color:#64748b">Perfil</span><strong>${profileName}</strong></div>
+        <div style="margin-bottom:8px"><span style="display:inline-block;width:112px;color:#64748b">Departamento</span><strong>${departmentName}</strong></div>
+        <div><span style="display:inline-block;width:112px;color:#64748b">Filial</span><strong>${branchName}</strong></div>
+      </div>
       <p style="margin:28px 0"><a href="${url}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#176ef2;color:#fff;text-decoration:none;font-weight:600">Ativar acesso</a></p>
       <p style="font-size:13px;color:#64748b">Este convite expira em ${escapeHtml(formatExpiration(input.expiresAt))}.</p>
     </div>

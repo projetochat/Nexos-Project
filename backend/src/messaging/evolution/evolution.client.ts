@@ -718,10 +718,22 @@ function extractGroups(value: unknown): Array<{
         (value as Record<string, unknown>).data ??
         (value as Record<string, unknown>).value)
       : null;
-  if (!Array.isArray(source)) return [];
-  return source
-    .map((item) => extractGroupSnapshot(item))
-    .filter((item): item is NonNullable<ReturnType<typeof extractGroupSnapshot>> => Boolean(item));
+  if (!Array.isArray(source)) {
+    throw new MessagingProviderError(
+      MessagingErrorCode.INVALID_PROVIDER_PAYLOAD,
+      "Evolution returned an invalid group list.",
+      true,
+    );
+  }
+  const groups = source.map((item) => extractGroupSnapshot(item));
+  if (groups.some((item) => !item)) {
+    throw new MessagingProviderError(
+      MessagingErrorCode.INVALID_PROVIDER_PAYLOAD,
+      "Evolution returned an incomplete group list.",
+      true,
+    );
+  }
+  return groups as Array<NonNullable<ReturnType<typeof extractGroupSnapshot>>>;
 }
 
 function extractContacts(value: unknown): EvolutionContact[] {
@@ -846,13 +858,55 @@ function extractGroupSnapshot(value: unknown) {
 }
 
 function groupParticipantsFromRecord(record: Record<string, unknown>) {
-  return extractGroupParticipants(
+  const participants = extractGroupParticipants(
     record.participants ??
       record.participantsList ??
       record.participantList ??
       record.members ??
       record.users,
   );
+  const creator = groupCreatorFromRecord(record);
+  if (!creator) return participants;
+
+  const creatorKeys = groupParticipantIdentityKeys(creator);
+  const existingIndex = participants.findIndex((participant) =>
+    groupParticipantIdentityKeys(participant).some((key) => creatorKeys.includes(key)),
+  );
+  if (existingIndex < 0) return [...participants, creator];
+
+  return participants.map((participant, index) =>
+    index === existingIndex ? { ...participant, isAdmin: true, isSuperAdmin: true } : participant,
+  );
+}
+
+function groupCreatorFromRecord(record: Record<string, unknown>) {
+  const owner = record.owner;
+  if (!owner) return null;
+  const ownerRecord =
+    typeof owner === "string"
+      ? { id: owner }
+      : owner && typeof owner === "object" && !Array.isArray(owner)
+        ? (owner as Record<string, unknown>)
+        : null;
+  if (!ownerRecord) return null;
+  return (
+    extractGroupParticipants([
+      { ...ownerRecord, admin: "superadmin", isAdmin: true, isSuperAdmin: true },
+    ])[0] ?? null
+  );
+}
+
+function groupParticipantIdentityKeys(
+  participant: NonNullable<ReturnType<typeof groupCreatorFromRecord>>,
+) {
+  const keys = new Set<string>();
+  for (const value of [participant.externalParticipantId, participant.lid]) {
+    const normalized = value?.trim().toLowerCase();
+    if (normalized) keys.add(`id:${normalized}`);
+  }
+  const digits = participant.phone?.replace(/\D/g, "");
+  if (digits) keys.add(`phone:${digits}`);
+  return [...keys];
 }
 
 function extractGroupParticipants(value: unknown) {
@@ -870,12 +924,16 @@ function extractGroupParticipants(value: unknown) {
         stringField(record, "jid") ??
         stringField(record, "remoteJid") ??
         stringField(record, "participant") ??
+        stringField(record, "phoneNumber") ??
         stringField(record, "phone") ??
         stringField(record, "number");
       if (!id) return null;
-      const admin = stringField(record, "admin");
+      const admin = stringField(record, "admin")?.trim().toLowerCase();
       const phone = phoneFromParticipant(
-        stringField(record, "phone") ?? stringField(record, "number") ?? id,
+        stringField(record, "phoneNumber") ??
+          stringField(record, "phone") ??
+          stringField(record, "number") ??
+          id,
       );
       const lid =
         stringField(record, "lid") ??

@@ -1,6 +1,17 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Building2, Check, Eye, EyeOff, Loader2, LockKeyhole } from "lucide-react";
+import {
+  Building2,
+  Check,
+  Eye,
+  EyeOff,
+  Loader2,
+  LockKeyhole,
+  Mail,
+  Network,
+  UserRound,
+  UsersRound,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "@/components/modal";
 import { Button, Field, Input } from "@/components/ui-kit";
@@ -28,7 +39,7 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
-  const { invite } = Route.useSearch() as { invite?: string };
+  const { invite, portal } = Route.useSearch() as { invite?: string; portal?: string | number };
   const user = useSession((s) => s.user);
   const surface = currentAppSurface();
   const surfaceLabel = surface === "platform" ? "Platform" : surface === "tenant" ? "Chat" : null;
@@ -38,6 +49,7 @@ function LoginPage() {
   const [name, setName] = React.useState("");
   const [passwordConfirmation, setPasswordConfirmation] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [requiredPasswordChange, setRequiredPasswordChange] =
@@ -45,7 +57,7 @@ function LoginPage() {
   const [tenantSelection, setTenantSelection] = React.useState<TenantSelectionRequired | null>(
     null,
   );
-  const [selectedTenantId, setSelectedTenantId] = React.useState("");
+  const [selectedAccessId, setSelectedAccessId] = React.useState("");
   const [tenantSelectionError, setTenantSelectionError] = React.useState<string | null>(null);
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmNewPassword, setConfirmNewPassword] = React.useState("");
@@ -96,7 +108,7 @@ function LoginPage() {
       }
       if (authenticationChallenge && "tenantSelectionRequired" in authenticationChallenge) {
         setTenantSelection(authenticationChallenge);
-        setSelectedTenantId("");
+        setSelectedAccessId("");
         return;
       }
       const sessionUser = useSession.getState().user;
@@ -115,13 +127,15 @@ function LoginPage() {
 
   async function handleTenantSelection(event: React.FormEvent) {
     event.preventDefault();
-    if (!tenantSelection || !selectedTenantId || loading) return;
+    if (!tenantSelection || !selectedAccessId || loading) return;
     setTenantSelectionError(null);
     setLoading(true);
     try {
       const pendingPasswordChange = await selectTenant({
         selectionToken: tenantSelection.tenantSelectionToken,
-        tenantId: selectedTenantId,
+        ...(tenantSelection.destinations?.length
+          ? { selectionId: selectedAccessId }
+          : { tenantId: selectedAccessId }),
       });
       setTenantSelection(null);
       setPassword("");
@@ -172,7 +186,7 @@ function LoginPage() {
       if (nextTenantSelection) {
         toast.success("Senha alterada. Agora selecione a organização.");
         setTenantSelection(nextTenantSelection);
-        setSelectedTenantId("");
+        setSelectedAccessId("");
         return;
       }
       toast.success("Senha alterada. Seu acesso está liberado.");
@@ -217,6 +231,162 @@ function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  const isCustomerPortalInvitation = Boolean(invitationPreview?.contact) || String(portal) === "1";
+
+  if (invite && isCustomerPortalInvitation) {
+    const contact = invitationPreview?.contact;
+    const loginLabel = invitationPreview?.email.includes("@") ? "E-mail" : "Login";
+    const summaryRows = contact
+      ? [
+          { label: "Nome", value: contact.name, icon: UserRound },
+          { label: loginLabel, value: invitationPreview?.email ?? "—", icon: Mail },
+          {
+            label: "Perfil",
+            value: invitationProfileLabel(invitationPreview?.profile ?? ""),
+            icon: UsersRound,
+          },
+          { label: "Departamento", value: contact.department?.name ?? "—", icon: Network },
+          { label: "Filial", value: contact.branch?.name ?? "—", icon: Building2 },
+        ]
+      : [];
+
+    return (
+      <main className="relative flex min-h-dvh items-center justify-center overflow-x-hidden bg-white px-4 py-8 text-[#071535] sm:px-6">
+        <section className="relative w-full max-w-[690px] rounded-2xl border border-slate-200/90 bg-white/95 px-5 py-7 shadow-[0_22px_64px_rgba(15,42,90,0.14)] backdrop-blur sm:px-9 sm:py-9">
+          <div className="flex items-center justify-center gap-3" aria-label="Trixus">
+            <img src="/trixus-logo.png" alt="" className="h-10 w-10 object-contain" />
+            <span className="text-2xl font-bold tracking-tight text-[#071535]">Trixus</span>
+          </div>
+
+          <header className="mt-5 text-center">
+            <h1 className="text-3xl font-bold tracking-tight text-[#071535] sm:text-4xl">
+              Ativar meu acesso
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-slate-500 sm:text-base">
+              Você recebeu um convite para o portal da{" "}
+              <strong className="font-semibold text-[#071535]">
+                {contact?.customer?.name ?? invitationPreview?.tenant.name ?? "empresa"}
+              </strong>
+              .
+            </p>
+          </header>
+
+          {summaryRows.length > 0 ? (
+            <div className="mt-6 rounded-xl border border-slate-200 bg-[#f7faff] px-4 py-3 sm:px-5">
+              {summaryRows.map(({ label, value, icon: Icon }) => (
+                <div
+                  key={label}
+                  className="grid grid-cols-[1.25rem_7.25rem_minmax(0,1fr)] items-center gap-3 py-2 text-sm sm:grid-cols-[1.5rem_8rem_minmax(0,1fr)] sm:text-base"
+                >
+                  <Icon className="h-5 w-5 text-[#071535]" aria-hidden="true" />
+                  <span className="text-slate-500">{label}</span>
+                  <span className="min-w-0 break-words font-semibold text-[#071535]">{value}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <form onSubmit={handleInvitation} className="mt-6 space-y-4">
+            <div>
+              <label htmlFor="portal-password" className="mb-1.5 block text-sm font-semibold">
+                Criar senha
+              </label>
+              <div className="relative">
+                <input
+                  id="portal-password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Digite sua senha"
+                  autoComplete="new-password"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "portal-invitation-error" : undefined}
+                  className="h-13 w-full rounded-lg border border-slate-300 bg-white px-4 pr-12 text-sm text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 sm:text-base"
+                  required
+                  minLength={8}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-600 transition hover:bg-blue-50 hover:text-[#071535]"
+                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="portal-password-confirmation"
+                className="mb-1.5 block text-sm font-semibold"
+              >
+                Confirmar senha
+              </label>
+              <div className="relative">
+                <input
+                  id="portal-password-confirmation"
+                  type={showPasswordConfirmation ? "text" : "password"}
+                  value={passwordConfirmation}
+                  onChange={(event) => setPasswordConfirmation(event.target.value)}
+                  placeholder="Digite sua senha novamente"
+                  autoComplete="new-password"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "portal-invitation-error" : undefined}
+                  className="h-13 w-full rounded-lg border border-slate-300 bg-white px-4 pr-12 text-sm text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 sm:text-base"
+                  required
+                  minLength={8}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordConfirmation((value) => !value)}
+                  className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-600 transition hover:bg-blue-50 hover:text-[#071535]"
+                  aria-label={showPasswordConfirmation ? "Ocultar confirmação" : "Mostrar confirmação"}
+                >
+                  {showPasswordConfirmation ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {error ? (
+              <div
+                id="portal-invitation-error"
+                ref={errorRef}
+                tabIndex={-1}
+                className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 outline-none"
+                role="alert"
+              >
+                {error}
+              </div>
+            ) : null}
+
+            <button
+              className="flex h-13 w-full items-center justify-center rounded-lg bg-gradient-to-r from-[#0e55ef] via-[#176ef2] to-[#168ff0] text-sm font-semibold text-white shadow-[0_8px_18px_rgba(23,105,238,0.22)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:text-base"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Ativando...
+                </>
+              ) : (
+                "Ativar acesso"
+              )}
+            </button>
+          </form>
+
+          <p className="mt-4 text-center text-sm text-slate-500">
+            Após ativar, você poderá abrir e acompanhar seus chamados.
+          </p>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -497,24 +667,37 @@ function LoginPage() {
       <Modal
         open={Boolean(tenantSelection)}
         onClose={() => undefined}
-        title="Selecione a organização"
-        description="Escolha a Tenant que deseja acessar nesta sessão."
+        title="Selecione o acesso"
+        description="Escolha a organização e, quando aplicável, o cliente que deseja acessar nesta sessão."
         size="md"
         dismissible={false}
         closeOnBackdrop={false}
       >
         <form onSubmit={handleTenantSelection} className="space-y-4">
           <div className="space-y-2">
-            {tenantSelection?.tenants
+            {(tenantSelection?.destinations?.length
+              ? tenantSelection.destinations
+              : (tenantSelection?.tenants ?? []).map((tenant) => ({
+                  selectionId: tenant.id,
+                  type: "tenant" as const,
+                  tenant,
+                  customer: undefined,
+                }))
+            )
               .slice()
-              .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"))
-              .map((tenant) => {
-                const selected = selectedTenantId === tenant.id;
+              .sort((left, right) => {
+                const leftName = left.customer?.name ?? left.tenant.name;
+                const rightName = right.customer?.name ?? right.tenant.name;
+                return leftName.localeCompare(rightName, "pt-BR");
+              })
+              .map((destination) => {
+                const selected = selectedAccessId === destination.selectionId;
+                const isCustomerPortal = destination.type === "customer_portal";
                 return (
                   <button
-                    key={tenant.id}
+                    key={destination.selectionId}
                     type="button"
-                    onClick={() => setSelectedTenantId(tenant.id)}
+                    onClick={() => setSelectedAccessId(destination.selectionId)}
                     className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition ${
                       selected
                         ? "border-primary bg-primary/5 ring-2 ring-primary/20"
@@ -526,10 +709,14 @@ function LoginPage() {
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium text-foreground">
-                        {tenant.name}
+                        {isCustomerPortal
+                          ? (destination.customer?.name ?? "Portal do Cliente")
+                          : destination.tenant.name}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {tenant.slug}
+                        {isCustomerPortal
+                          ? `${destination.tenant.name} · Portal do Cliente`
+                          : `${destination.tenant.slug} · Acesso interno`}
                       </span>
                     </span>
                     {selected && <Check className="h-5 w-5 text-primary" />}
@@ -551,14 +738,14 @@ function LoginPage() {
               variant="secondary"
               onClick={() => {
                 setTenantSelection(null);
-                setSelectedTenantId("");
+                setSelectedAccessId("");
                 setPassword("");
               }}
               disabled={loading}
             >
               Voltar
             </Button>
-            <Button type="submit" disabled={!selectedTenantId || loading}>
+            <Button type="submit" disabled={!selectedAccessId || loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Continuar
             </Button>

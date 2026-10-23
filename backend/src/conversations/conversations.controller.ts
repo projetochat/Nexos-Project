@@ -1,5 +1,6 @@
 import {
   connectionIdAccess,
+  conversationChatScopeAccess,
   departmentIdAccess,
   roleChatDepartmentIds,
   roleChatScopes,
@@ -28,6 +29,7 @@ import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.de
 import { PermissionsGuard } from "../auth/permissions.guard";
 import {
   ConversationStatus,
+  ConversationType,
   LeadStatus,
   MembershipStatus,
   MessagingConnectionStatus,
@@ -71,6 +73,9 @@ const conversationInclude = {
   contact: {
     include: {
       customer: true,
+      customerDepartment: {
+        select: { id: true, tenantId: true, name: true, active: true, archivedAt: true },
+      },
       contactDepartment: {
         select: { id: true, tenantId: true, name: true, color: true, archivedAt: true },
       },
@@ -142,7 +147,9 @@ export class ConversationsController {
     this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
       contacts: items.flatMap((conversation) =>
-        conversation.contact ? [conversation.contact] : [],
+        conversation.contact
+          ? [{ ...conversation.contact, remoteJid: conversation.externalChatId }]
+          : [],
       ),
     });
 
@@ -184,7 +191,9 @@ export class ConversationsController {
     const conversation = await this.findVisibleConversation(id, current);
     this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
-      contacts: conversation.contact ? [conversation.contact] : [],
+      contacts: conversation.contact
+        ? [{ ...conversation.contact, remoteJid: conversation.externalChatId }]
+        : [],
     });
     return this.serialize(conversation, current);
   }
@@ -216,6 +225,21 @@ export class ConversationsController {
     const reuseVisibility = dto.reuseExistingOpen ? await this.visibilityWhere(current) : undefined;
 
     const result = await this.prisma.$transaction(async (tx) => {
+      const sourceGroup = dto.sourceGroupConversationId
+        ? await tx.conversation.findFirst({
+            where: {
+              AND: [conversationChatScopeAccess(current)],
+              id: dto.sourceGroupConversationId,
+              tenantId: current.tenantId,
+              conversationType: ConversationType.GROUP,
+              archivedAt: null,
+            },
+            include: { participants: true },
+          })
+        : null;
+      if (dto.sourceGroupConversationId && !sourceGroup) {
+        throw new BadRequestException("Grupo não encontrado para iniciar a conversa.");
+      }
       // Serializa tentativas para o mesmo contato sem exigir migração ou confiar no frontend.
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "contacts" WHERE id = ${dto.contactId} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
@@ -244,7 +268,12 @@ export class ConversationsController {
         );
       }
       const departmentId = connection
-        ? await this.resolveDepartmentId(dto.departmentId, current, connection.id, tx)
+        ? await this.resolveDepartmentId(
+            dto.departmentId ?? sourceGroup?.departmentId,
+            current,
+            connection.id,
+            tx,
+          )
         : null;
       if (connection && !contact.instanceIds.includes(connection.id)) {
         await tx.contact.update({
@@ -337,6 +366,13 @@ export class ConversationsController {
           status,
           protocol,
           isGroup: dto.isGroup ?? false,
+          conversationType: sourceGroup ? ConversationType.GROUP : ConversationType.DIRECT,
+          externalChatId: sourceGroup?.externalChatId ?? null,
+          externalGroupId: sourceGroup?.externalGroupId ?? null,
+          groupName: sourceGroup?.groupName ?? null,
+          groupImageUrl: sourceGroup?.groupImageUrl ?? null,
+          groupSubjectUpdatedAt: sourceGroup?.groupSubjectUpdatedAt ?? null,
+          groupMetadataJson: sourceGroup?.groupMetadataJson ?? undefined,
           lastMessagePreview: null,
           // A conversation without a first message still has an inbox movement:
           // its active opening. Persist it so database ordering matches the
@@ -345,6 +381,23 @@ export class ConversationsController {
         },
         include: conversationInclude,
       });
+      if (sourceGroup?.participants.length) {
+        await tx.conversationParticipant.createMany({
+          data: sourceGroup.participants.map((participant) => ({
+            tenantId: current.tenantId,
+            conversationId: created.id,
+            externalParticipantId: participant.externalParticipantId,
+            phone: participant.phone,
+            lid: participant.lid,
+            displayName: participant.displayName,
+            isAdmin: participant.isAdmin,
+            isSuperAdmin: participant.isSuperAdmin,
+            active: participant.active,
+            firstSeenAt: participant.firstSeenAt,
+            lastSeenAt: participant.lastSeenAt,
+          })),
+        });
+      }
       if (assignToSelf) {
         await this.messages.createSystemMessage(
           tx,
@@ -797,12 +850,16 @@ export class ConversationsController {
     @Body() dto: BulkConversationSelectionDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    const countWhere = await this.buildBulkSelectionWhere(dto, current, { omitTab: true });
+    const startedOnly = dto.action === "transfer";
+    const countWhere = await this.buildBulkSelectionWhere(dto, current, {
+      omitTab: true,
+      startedOnly,
+    });
     const counts = await this.countTabs(countWhere, current);
     if (!dto.tab && !dto.tabs?.length && !dto.conversationIds?.length) {
       return { counts, departments: [], agents: [] };
     }
-    const conversationIds = await this.resolveBulkConversationIds(dto, current);
+    const conversationIds = await this.resolveBulkConversationIds(dto, current, { startedOnly });
     const conversations = await this.prisma.conversation.findMany({
       where: {
         AND: [
@@ -884,7 +941,9 @@ export class ConversationsController {
     if (dto.mode === "status" && !dto.status) {
       throw new BadRequestException("Selecione o status da transferência.");
     }
-    const conversationIds = await this.resolveBulkConversationIds(dto, current);
+    const conversationIds = await this.resolveBulkConversationIds(dto, current, {
+      startedOnly: true,
+    });
     return this.runBulkConversationAction(conversationIds, async (conversationId) => {
       if (dto.mode === "department") {
         await this.transferDepartment(conversationId, { departmentId: dto.targetId! }, current);
@@ -1018,12 +1077,32 @@ export class ConversationsController {
   private async resolveBulkConversationIds(
     selection: BulkConversationSelectionDto,
     current: AuthenticatedUser,
+    options: { startedOnly?: boolean } = {},
   ) {
-    if (selection.conversationIds?.length) return selection.conversationIds;
+    if (selection.conversationIds?.length) {
+      if (!options.startedOnly) return selection.conversationIds;
+      const eligible = await this.prisma.conversation.findMany({
+        where: {
+          AND: [
+            {
+              tenantId: current.tenantId,
+              archivedAt: null,
+              id: { in: selection.conversationIds },
+              protocol: { not: null },
+              status: { not: ConversationStatus.FECHADA },
+            },
+            conversationVisibilityWhere(current),
+          ],
+        },
+        select: { id: true },
+        orderBy: { id: "asc" },
+      });
+      return eligible.map((conversation) => conversation.id);
+    }
     if (!selection.tab && !selection.tabs?.length) {
       throw new BadRequestException("Selecione ao menos uma aba de conversas.");
     }
-    const where = await this.buildBulkSelectionWhere(selection, current);
+    const where = await this.buildBulkSelectionWhere(selection, current, options);
     const conversations = await this.prisma.conversation.findMany({
       where,
       select: { id: true },
@@ -1035,7 +1114,7 @@ export class ConversationsController {
   private async buildBulkSelectionWhere(
     selection: BulkConversationSelectionDto,
     current: AuthenticatedUser,
-    options: { omitTab?: boolean } = {},
+    options: { omitTab?: boolean; startedOnly?: boolean } = {},
   ) {
     const selectedTabs = selection.tabs?.length ? selection.tabs : undefined;
     const baseWhere = await this.buildWhere(
@@ -1049,6 +1128,9 @@ export class ConversationsController {
       { omitTab: options.omitTab || Boolean(selectedTabs) },
     );
     const filters: Prisma.ConversationWhereInput[] = [baseWhere];
+    if (options.startedOnly) {
+      filters.push({ protocol: { not: null }, status: { not: ConversationStatus.FECHADA } });
+    }
     if (!options.omitTab && selectedTabs) {
       filters.push({ OR: selectedTabs.map((tab) => tabWhere(tab, current)) });
     }
@@ -1120,6 +1202,7 @@ export class ConversationsController {
       { contact: { name: { contains: q, mode: "insensitive" } } },
       { contact: { phone: { contains: q, mode: "insensitive" } } },
       { contact: { departmentName: { contains: q, mode: "insensitive" } } },
+      { contact: { customerDepartment: { name: { contains: q, mode: "insensitive" } } } },
       { department: { name: { contains: q, mode: "insensitive" } } },
       { connection: { name: { contains: q, mode: "insensitive" } } },
       { connection: { externalReference: { contains: q, mode: "insensitive" } } },
@@ -1478,24 +1561,56 @@ export class ConversationsController {
             nome: conversation.contact.name,
             active: conversation.contact.active,
             telefone: conversation.contact.phone,
-            avatar_url: conversation.contact.avatarUrl,
+            avatar_url: conversation.isGroup
+              ? conversation.groupImageUrl || conversation.contact.avatarUrl
+              : conversation.contact.avatarUrl,
             customer_id: conversation.contact.customerId,
             email: conversation.contact.email,
-            departamento: conversation.contact.departmentName,
-            contactDepartmentId:
-              conversation.contact.contactDepartment?.tenantId === conversation.tenantId &&
-              !conversation.contact.contactDepartment.archivedAt
-                ? conversation.contact.contactDepartmentId
+            departamento:
+              conversation.contact.customerDepartment?.tenantId === conversation.tenantId &&
+              !conversation.contact.customerDepartment.archivedAt
+                ? conversation.contact.customerDepartment.name
+                : conversation.contact.contactDepartment?.tenantId === conversation.tenantId &&
+                    !conversation.contact.contactDepartment.archivedAt
+                  ? conversation.contact.contactDepartment.name
+                  : conversation.contact.departmentName,
+            customerDepartmentId:
+              conversation.contact.customerDepartment?.tenantId === conversation.tenantId &&
+              !conversation.contact.customerDepartment.archivedAt
+                ? conversation.contact.customerDepartmentId
                 : null,
-            contactDepartment:
-              conversation.contact.contactDepartment?.tenantId === conversation.tenantId &&
-              !conversation.contact.contactDepartment.archivedAt
+            customerDepartment:
+              conversation.contact.customerDepartment?.tenantId === conversation.tenantId &&
+              !conversation.contact.customerDepartment.archivedAt
                 ? {
-                    id: conversation.contact.contactDepartment.id,
-                    nome: conversation.contact.contactDepartment.name,
-                    cor: conversation.contact.contactDepartment.color,
+                    id: conversation.contact.customerDepartment.id,
+                    name: conversation.contact.customerDepartment.name,
                   }
                 : null,
+            contactDepartmentId:
+              conversation.contact.customerDepartment?.tenantId === conversation.tenantId &&
+              !conversation.contact.customerDepartment.archivedAt
+                ? conversation.contact.customerDepartmentId
+                : conversation.contact.contactDepartment?.tenantId === conversation.tenantId &&
+                    !conversation.contact.contactDepartment.archivedAt
+                  ? conversation.contact.contactDepartmentId
+                  : null,
+            contactDepartment:
+              conversation.contact.customerDepartment?.tenantId === conversation.tenantId &&
+              !conversation.contact.customerDepartment.archivedAt
+                ? {
+                    id: conversation.contact.customerDepartment.id,
+                    nome: conversation.contact.customerDepartment.name,
+                    cor: "#3B82F6",
+                  }
+                : conversation.contact.contactDepartment?.tenantId === conversation.tenantId &&
+                    !conversation.contact.contactDepartment.archivedAt
+                  ? {
+                      id: conversation.contact.contactDepartment.id,
+                      nome: conversation.contact.contactDepartment.name,
+                      cor: conversation.contact.contactDepartment.color,
+                    }
+                  : null,
             nivel_gerencia: roleLabel(conversation.contact.companyRole),
             instancia: conversation.contact.instance,
             customer: conversation.contact.customer
