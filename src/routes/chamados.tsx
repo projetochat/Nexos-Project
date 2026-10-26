@@ -1,3 +1,4 @@
+import { messageImageReference } from "@/lib/ticket-image-reference";
 import { validateTicketSearch, type TicketSearch } from "@/lib/ticket-search";
 import { RichTextEditor } from "@/components/ticket-rich-text-editor";
 import { TicketRichTextContent } from "@/components/ticket-rich-text-content";
@@ -2757,14 +2758,9 @@ async function buildConversationTicketDescription(
       message.media_data &&
       (!message.media_data.state || message.media_data.state === "ready")
     ) {
-      try {
-        const blob = await messageApi.downloadMedia(conversation.id, message.id, true);
-        const source = await blobToDataUrl(blob);
-        const alt = escapeHtml(message.media_data.file_name ?? "Imagem da conversa");
-        parts.push(`<img src="${source}" alt="${alt}">`);
-      } catch {
-        parts.push("<p><em>Imagem da conversa indisponível para importação.</em></p>");
-      }
+      const source = messageImageReference(conversation.id, message.id);
+      const alt = escapeHtml(message.media_data.file_name ?? "Imagem da conversa");
+      parts.push(`<img src="${source}" alt="${alt}">`);
     } else if (message.media_data?.file_name && message.type !== "text") {
       parts.push(
         `<p><em>${escapeHtml(`${messageTypeLabel(message.type)}: ${message.media_data.file_name} — disponível na seção Anexos.`)}</em></p>`,
@@ -2802,15 +2798,6 @@ function whatsAppTextToHtml(value: string) {
     })
     .join("")
     .replace(/\r?\n/g, "<br>");
-}
-
-function blobToDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("Não foi possível ler a imagem da conversa."));
-    reader.readAsDataURL(blob);
-  });
 }
 
 function messageTypeLabel(type: ApiMessage["type"]) {

@@ -1,3 +1,9 @@
+import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
+import {
+  parseTicketImageReference,
+  ticketImageSources,
+  replaceTicketImageSources,
+} from "./ticket-image-reference";
 import {
   BadRequestException,
   ConflictException,
@@ -87,6 +93,19 @@ const transitions: Record<TicketStatus, TicketStatus[]> = {
   CONCLUIDA: ["VALIDADO", "REPROVADO", "EM_EXECUCAO"],
   VALIDADO: ["EM_EXECUCAO"],
   REPROVADO: ["EM_EXECUCAO", "AGUARDANDO_APROVACAO", "CANCELADO"],
+};
+
+type PreparedTicketAttachment = {
+  id: string;
+  sourceMessageId: string | null;
+  originalReference?: string;
+  ordinal: number;
+  objectKey: string;
+  fileName: string;
+  mimeType: string;
+  body: Buffer;
+  checksum: string;
+  scanStatus: "NOT_SCANNED";
 };
 
 @Injectable()
@@ -1166,9 +1185,38 @@ export class TicketsService {
       "ticketTitles",
       sanitizePlainText(input.title, 180),
     );
-    const html = sanitizeTicketHtml(input.descriptionHtml);
+    let html = sanitizeTicketHtml(input.descriptionHtml);
+    const imageSources = ticketImageSources(html);
+    const referencedMessageIds: string[] = [];
+    for (const source of imageSources) {
+      const reference = parseTicketImageReference(source)!;
+      if (reference.kind === "message") {
+        if (
+          !relations.conversationId ||
+          reference.conversationId !== relations.conversationId ||
+          portalContext
+        ) {
+          throw new BadRequestException("A imagem não pertence à conversa informada.");
+        }
+        referencedMessageIds.push(reference.messageId);
+      }
+    }
     const descriptionText = htmlToText(html);
     if (!descriptionText) throw new BadRequestException("Descrição do chamado obrigatoria.");
+    if (referencedMessageIds.length) {
+      if (!current.permissions?.includes("conversations.read")) {
+        throw new ForbiddenException("Sem permissão para importar imagens da conversa.");
+      }
+      const visible = await this.prisma.conversation.findFirst({
+        where: {
+          AND: [
+            { id: relations.conversationId!, tenantId: current.tenantId, archivedAt: null },
+            conversationVisibilityWhere(current),
+          ],
+        },
+      });
+      if (!visible) throw new NotFoundException("Conversa não encontrada.");
+    }
     const ticketId = randomUUID();
     const aiAttachments = aiExecution
       ? await this.prepareAiEvidenceAttachments(
@@ -1176,24 +1224,65 @@ export class TicketsService {
           aiExecution.conversationId,
           aiExecution.resultJson,
           current,
+          referencedMessageIds,
         )
       : relations.conversationId
         ? await this.prepareManualConversationAttachments(
             ticketId,
             relations.conversationId,
             current,
+            referencedMessageIds,
           )
         : [];
+    const copiedImageCount = imageSources.filter(
+      (source) => parseTicketImageReference(source)?.kind === "attachment",
+    ).length;
+    if (aiAttachments.length + copiedImageCount > 10) {
+      throw new BadRequestException("A importação permite no máximo 10 anexos por chamado.");
+    }
+    const copiedImages = await this.prepareReferencedTicketImages(ticketId, imageSources, current);
+    aiAttachments.push(...copiedImages);
+    if (aiAttachments.length > 10) {
+      throw new BadRequestException("A importação permite no máximo 10 anexos por chamado.");
+    }
+    if (aiAttachments.length) {
+      const usage = await this.entitlements.getUsage(current.tenantId);
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxStorageBytes",
+        usage.storageBytes,
+        aiAttachments.reduce((sum, attachment) => sum + attachment.body.byteLength, 0),
+      );
+    }
+    const imageReplacements = new Map<string, string>();
+    for (const source of imageSources) {
+      const reference = parseTicketImageReference(source)!;
+      const attachment = aiAttachments.find((item) =>
+        reference.kind === "message"
+          ? item.sourceMessageId === reference.messageId
+          : item.originalReference === source,
+      );
+      if (!attachment || !/^image\/(?:png|jpeg|gif|webp)$/i.test(attachment.mimeType)) {
+        throw new BadRequestException(
+          "Uma imagem da descrição não está disponível para importação.",
+        );
+      }
+      imageReplacements.set(
+        source,
+        `/ticket-images/tickets/${ticketId}/attachments/${attachment.id}`,
+      );
+    }
+    html = replaceTicketImageSources(html, imageReplacements);
     const storedAiObjectKeys: string[] = [];
     try {
       for (const attachment of aiAttachments) {
+        storedAiObjectKeys.push(attachment.objectKey);
         await this.storage.completeUpload({
           objectKey: attachment.objectKey,
           mimeType: attachment.mimeType,
           sizeBytes: attachment.body.byteLength,
           body: attachment.body,
         });
-        storedAiObjectKeys.push(attachment.objectKey);
       }
     } catch (error) {
       await Promise.all(
@@ -1361,6 +1450,7 @@ export class TicketsService {
     }
     if (dto.descriptionHtml !== undefined) {
       const html = sanitizeTicketHtml(dto.descriptionHtml);
+      await this.validatePersistedTicketImages(html, existing.id, current);
       data.descriptionHtmlSanitized = html;
       data.descriptionText = htmlToText(html);
     }
@@ -1769,6 +1859,7 @@ export class TicketsService {
   async createComment(id: string, dto: CreateTicketCommentDto, current: AuthenticatedUser) {
     const ticket = await this.findVisibleTicket(id, current);
     const html = sanitizeTicketHtml(dto.bodyHtml);
+    await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = htmlToText(html);
     if (!bodyText) throw new BadRequestException("Comentário obrigatório.");
     const comment = await this.prisma.$transaction(async (tx) => {
@@ -1825,6 +1916,7 @@ export class TicketsService {
       throw new ForbiddenException("Somente o autor pode editar este diálogo.");
     }
     const html = sanitizeTicketHtml(dto.bodyHtml);
+    await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = htmlToText(html);
     if (!bodyText) throw new BadRequestException("Diálogo obrigatório.");
     const editedAt = new Date();
@@ -1904,6 +1996,7 @@ export class TicketsService {
     const ticket = await this.findVisibleTicket(id, current);
     const target = await this.resolveApprovalTarget(ticket, dto, current);
     const html = sanitizeTicketHtml(dto.bodyHtml);
+    await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = htmlToText(html);
     if (!bodyText) throw new BadRequestException("Resposta obrigatória.");
     const result = await this.prisma.$transaction(async (tx) => {
@@ -1974,6 +2067,7 @@ export class TicketsService {
     await this.assertApprovalActor(approval, current);
     const approved = dto.decision === "APPROVED";
     const html = dto.bodyHtml ? sanitizeTicketHtml(dto.bodyHtml) : null;
+    if (html) await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = html ? htmlToText(html) : approved ? "Aprovação concedida." : "";
     if (!approved && !bodyText) throw new BadRequestException("Comentário da recusa obrigatório.");
     const now = new Date();
@@ -2078,6 +2172,7 @@ export class TicketsService {
     await this.assertSolutionValidator(ticket, current);
     const approved = dto.decision === "APPROVED";
     const html = dto.bodyHtml ? sanitizeTicketHtml(dto.bodyHtml) : null;
+    if (html) await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = html ? htmlToText(html) : approved ? "Solução aprovada." : "";
     if (!approved && !bodyText) throw new BadRequestException("Comentário da recusa obrigatório.");
     const now = new Date();
@@ -2681,6 +2776,7 @@ export class TicketsService {
   ) {
     const ticket = await this.findVisibleTicket(id, current);
     const html = sanitizeTicketHtml(bodyHtml);
+    await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = htmlToText(html);
     if (!bodyText) throw new BadRequestException("Resposta obrigatória.");
     const comment = await this.prisma.$transaction(async (tx) => {
@@ -2903,7 +2999,8 @@ export class TicketsService {
     conversationId: string,
     resultJson: Prisma.JsonValue,
     current: AuthenticatedUser,
-  ) {
+    referencedImageIds: string[] = [],
+  ): Promise<PreparedTicketAttachment[]> {
     const result = jsonRecord(resultJson);
     const evidence = Array.isArray(result.evidence) ? result.evidence : [];
     const ordinalByMessageId = new Map<string, number>();
@@ -2918,7 +3015,12 @@ export class TicketsService {
         );
       }
     }
-    const messageIds = [...ordinalByMessageId.keys()].slice(0, 10);
+    const messageIds = [
+      ...new Set([...ordinalByMessageId.keys()].slice(0, 10).concat(referencedImageIds)),
+    ];
+    if (messageIds.length > 10) {
+      throw new BadRequestException("A importação permite no máximo 10 anexos por chamado.");
+    }
     if (!messageIds.length) return [];
     await this.entitlements.assertFeature(current.tenantId, "storage");
     const messages = await this.prisma.message.findMany({
@@ -2937,17 +3039,19 @@ export class TicketsService {
         mediaChecksum: true,
       },
     });
-    const prepared: Array<{
-      id: string;
-      sourceMessageId: string;
-      ordinal: number;
-      objectKey: string;
-      fileName: string;
-      mimeType: string;
-      body: Buffer;
-      checksum: string;
-      scanStatus: "NOT_SCANNED";
-    }> = [];
+    if (
+      referencedImageIds.some(
+        (id) =>
+          !messages.some(
+            (message) =>
+              message.id === id &&
+              /^image\/(?:png|jpeg|gif|webp)$/i.test(message.mediaMimeType ?? ""),
+          ),
+      )
+    ) {
+      throw new BadRequestException("Uma imagem da descrição não está disponível para importação.");
+    }
+    const prepared: PreparedTicketAttachment[] = [];
     let totalSize = 0;
     for (const message of messages) {
       const mimeType = (message.mediaMimeType ?? "application/octet-stream").toLowerCase();
@@ -2992,7 +3096,8 @@ export class TicketsService {
     ticketId: string,
     conversationId: string,
     current: AuthenticatedUser,
-  ) {
+    referencedImageIds: string[] = [],
+  ): Promise<PreparedTicketAttachment[]> {
     const messages = await this.prisma.message.findMany({
       where: {
         tenantId: current.tenantId,
@@ -3005,7 +3110,7 @@ export class TicketsService {
       take: 10,
       select: { id: true },
     });
-    if (!messages.length) return [];
+    if (!messages.length && !referencedImageIds.length) return [];
     return this.prepareAiEvidenceAttachments(
       ticketId,
       conversationId,
@@ -3016,7 +3121,83 @@ export class TicketsService {
         })),
       },
       current,
+      referencedImageIds,
     );
+  }
+
+  private async validatePersistedTicketImages(
+    html: string,
+    ticketId: string,
+    current: AuthenticatedUser,
+  ) {
+    for (const source of ticketImageSources(html)) {
+      const reference = parseTicketImageReference(source)!;
+      if (reference.kind !== "attachment" || reference.ticketId !== ticketId) {
+        throw new BadRequestException("A imagem não pertence a este chamado.");
+      }
+      const attachment = await this.findAttachment(ticketId, reference.attachmentId, current);
+      if (
+        attachment.status !== TicketAttachmentStatus.READY ||
+        attachment.deletedAt ||
+        !/^image\/(?:png|jpeg|gif|webp)$/i.test(attachment.mimeType)
+      ) {
+        throw new BadRequestException("Imagem do chamado indisponível.");
+      }
+    }
+  }
+
+  private async prepareReferencedTicketImages(
+    ticketId: string,
+    sources: string[],
+    current: AuthenticatedUser,
+  ): Promise<PreparedTicketAttachment[]> {
+    const references = sources
+      .map((source) => ({ source, reference: parseTicketImageReference(source)! }))
+      .filter((item) => item.reference.kind === "attachment");
+    if (references.length > 10)
+      throw new BadRequestException("A importação permite no máximo 10 anexos por chamado.");
+    if (references.length && !current.permissions?.includes("tickets.read")) {
+      throw new ForbiddenException("Sem permissão para copiar imagens de chamados.");
+    }
+    if (references.length) await this.entitlements.assertFeature(current.tenantId, "storage");
+    const prepared: PreparedTicketAttachment[] = [];
+    for (const { source, reference } of references) {
+      if (reference.kind !== "attachment") continue;
+      // Cloning copies an authorized image into storage owned by the new ticket.
+      await this.findVisibleTicket(reference.ticketId, current);
+      const attachment = await this.findAttachment(
+        reference.ticketId,
+        reference.attachmentId,
+        current,
+      );
+      if (
+        attachment.status !== TicketAttachmentStatus.READY ||
+        attachment.deletedAt ||
+        !/^image\/(?:png|jpeg|gif|webp)$/i.test(attachment.mimeType)
+      ) {
+        throw new BadRequestException("Imagem do chamado indisponível.");
+      }
+      const body = (await this.storage.getDownloadObject(attachment.objectKey)).body;
+      this.validateAttachment(attachment.mimeType, body.byteLength);
+      if (detectMimeType(body, attachment.mimeType) !== attachment.mimeType) {
+        throw new BadRequestException("Uma imagem do chamado possui tipo de arquivo inválido.");
+      }
+      const id = randomUUID();
+      const fileName = sanitizeFileName(attachment.originalNameSanitized);
+      prepared.push({
+        id,
+        originalReference: source,
+        sourceMessageId: attachment.sourceMessageId,
+        ordinal: prepared.length + 1,
+        fileName,
+        mimeType: attachment.mimeType,
+        body,
+        checksum: createHash("sha256").update(body).digest("hex"),
+        scanStatus: await this.scanner.scan(),
+        objectKey: `tenants/${current.tenantId}/tickets/${ticketId}/${id}/${fileName}`,
+      });
+    }
+    return prepared;
   }
 
   private assertInternalActor(current: AuthenticatedUser) {

@@ -1,3 +1,4 @@
+import { hydrateTicketImages } from "../lib/ticket-image-dom";
 import * as React from "react";
 import { toast } from "sonner";
 import {
@@ -57,7 +58,10 @@ export function RichTextEditor({
 
   React.useEffect(() => {
     const editor = editorRef.current;
-    if (editor && document.activeElement !== editor) writeTicketEditorHtml(editor, value);
+    if (editor) {
+      if (document.activeElement !== editor) writeTicketEditorHtml(editor, value);
+      return hydrateTicketImages(editor);
+    }
   }, [value]);
 
   const clearSelectedImage = React.useCallback(() => {
