@@ -1,3 +1,4 @@
+import { hydrateTicketImages } from "../lib/ticket-image-dom";
 import * as React from "react";
 import { writeTicketEditorHtml } from "../lib/ticket-editor-dom";
 
@@ -6,7 +7,10 @@ export function TicketRichTextContent({ html, className }: { html: string; class
 
   React.useEffect(() => {
     const content = contentRef.current;
-    if (content) writeTicketEditorHtml(content, html);
+    if (content) {
+      writeTicketEditorHtml(content, html);
+      return hydrateTicketImages(content);
+    }
   }, [html]);
 
   return <div ref={contentRef} className={className} />;

@@ -68,7 +68,14 @@ describe("PACK 12 — integração de IA com Chat e Chamados", () => {
     expect(ticketsPage).toContain("Segue abaixo o histórico da conversa:");
     expect(ticketsPage).toContain("formatPhoneVariable(conversation.contact.telefone)");
     expect(ticketsPage).toContain("whatsAppTextToHtml");
-    expect(ticketsPage).toContain("messageApi.downloadMedia");
+    expect(ticketsPage).toContain("messageImageReference(conversation.id, message.id)");
+    expect(ticketsPage).not.toMatch(/FileReader|readAsDataURL/);
+    const imageResolver = readFileSync(
+      new URL("../lib/ticket-image-dom.ts", import.meta.url),
+      "utf8",
+    );
+    expect(imageResolver).toContain("messageApi.downloadMedia");
+    expect(imageResolver).toContain("ticketApi.preview");
     expect(ticketsPage).toContain('alt="${alt}"');
     expect(ticketsPage).toContain("disponível na seção Anexos");
     expect(ticketsPage).not.toContain("Conversa adicionada ao descritivo.");

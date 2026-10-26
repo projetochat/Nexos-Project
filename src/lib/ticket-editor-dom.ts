@@ -1,3 +1,4 @@
+import { hydratedTicketImages, parseTicketImageReference } from "./ticket-image-reference";
 import createDOMPurify from "dompurify";
 
 export const MAX_TICKET_EDITOR_HTML_LENGTH = 15_000_000;
@@ -64,7 +65,16 @@ export function writeTicketEditorHtml(editor: HTMLElement, value: string) {
 }
 
 export function readTicketEditorHtml(editor: HTMLElement | null): string {
-  return sanitizeTicketEditorHtml(editor?.innerHTML ?? "");
+  if (!editor) return "";
+  const copy = editor.cloneNode(true) as HTMLElement;
+  const originals = editor.querySelectorAll<HTMLImageElement>("img");
+  copy.querySelectorAll<HTMLImageElement>("img").forEach((image, index) => {
+    const hydrated = hydratedTicketImages.get(originals[index]);
+    if (hydrated && originals[index].getAttribute("src") === hydrated.url) {
+      image.setAttribute("src", hydrated.source);
+    }
+  });
+  return sanitizeTicketEditorHtml(copy.innerHTML);
 }
 
 export function normalizeTicketEditorHtml(editor: HTMLElement | null): string {
@@ -157,6 +167,7 @@ function validColor(value: string) {
 function safeImageSource(value: string) {
   const trimmed = value.trim();
   if (trimmed.length > 14_000_000) return false;
+  if (parseTicketImageReference(trimmed)) return true;
   return /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(trimmed);
 }
 

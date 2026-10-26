@@ -2300,6 +2300,178 @@ describe("TicketsService dialog attachment association", () => {
   });
 });
 
+describe("persisted conversation images", () => {
+  const imageActor = { ...current, permissions: [...current.permissions, "conversations.read"] };
+  function setup() {
+    const prisma = prismaMock();
+    prisma.department.findFirst.mockResolvedValue({ id: "department-a" });
+    prisma.conversation.findFirst.mockResolvedValue({
+      id: "conversation-a",
+      contactId: null,
+      contact: null,
+    });
+    prisma.$transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
+      callback(prisma),
+    );
+    prisma.ticketProtocolCounter.update.mockResolvedValue({ lastNumber: 1 });
+    prisma.ticket.create.mockResolvedValue(ticket());
+    prisma.ticketHistory.create.mockResolvedValue({});
+    Object.assign(prisma.ticket, { findUniqueOrThrow: vi.fn().mockResolvedValue(ticket()) });
+    const storage = {
+      completeUpload: vi.fn().mockResolvedValue(undefined),
+      deleteObject: vi.fn().mockResolvedValue(undefined),
+    };
+    const media = {
+      readObject: vi.fn().mockResolvedValue(Buffer.from("89504e470d0a1a0a00000000", "hex")),
+    };
+    const service = serviceWith(prisma);
+    Object.assign(service, {
+      storage,
+      messagingMediaStorage: media,
+      scanner: { scan: vi.fn().mockResolvedValue("NOT_SCANNED") },
+      entitlements: {
+        assertFeature: vi.fn(),
+        getUsage: vi.fn().mockResolvedValue({ storageBytes: 0 }),
+        assertWithinLimit: vi.fn(),
+      },
+    });
+    const image = {
+      id: "message-image",
+      mediaStorageKey: "tenants/tenant-a/image.png",
+      mediaMimeType: "image/png",
+      mediaFileName: "image.png",
+      mediaChecksum: null,
+    };
+    prisma.message.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([image]);
+    const dto = {
+      title: "Chamado com imagem",
+      departmentId: "department-a",
+      conversationId: "conversation-a",
+      descriptionHtml:
+        '<p>Histórico</p><img src="/ticket-images/conversations/conversation-a/messages/message-image">',
+    };
+    return { prisma, service, storage, media, dto };
+  }
+
+  it("stores image bytes as ticket attachments and persists only the new ticket reference", async () => {
+    const { prisma, service, storage, dto } = setup();
+    await service.create(dto, imageActor);
+    const data = prisma.ticket.create.mock.calls[0][0].data;
+    const attachment = prisma.ticketAttachment.create.mock.calls[0][0].data;
+    expect(data.descriptionHtmlSanitized).toContain(
+      `/ticket-images/tickets/${data.id}/attachments/${attachment.id}`,
+    );
+    expect(data.descriptionHtmlSanitized).not.toMatch(/data:|blob:|conversations\//);
+    expect(attachment).toMatchObject({
+      tenantId: "tenant-a",
+      ticketId: "ticket-a",
+      sourceMessageId: "message-image",
+      status: "READY",
+    });
+    expect(storage.completeUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.any(Buffer), mimeType: "image/png" }),
+    );
+    expect(prisma.message.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: "tenant-a",
+          conversationId: "conversation-a",
+          id: { in: ["message-image"] },
+        }),
+      }),
+    );
+  });
+
+  it("rejects a different conversation or unresolved message before storing anything", async () => {
+    const first = setup();
+    first.dto.descriptionHtml = first.dto.descriptionHtml.replace(
+      "conversation-a/messages",
+      "conversation-other/messages",
+    );
+    await expect(first.service.create(first.dto, imageActor)).rejects.toThrow("não pertence");
+    expect(first.storage.completeUpload).not.toHaveBeenCalled();
+    const second = setup();
+    second.prisma.message.findMany.mockReset().mockResolvedValue([]);
+    await expect(second.service.create(second.dto, imageActor)).rejects.toThrow(
+      "não está disponível",
+    );
+    expect(second.storage.completeUpload).not.toHaveBeenCalled();
+  });
+
+  it("requires chat read access and rechecks conversation visibility before copying images", async () => {
+    const first = setup();
+    await expect(first.service.create(first.dto, current)).rejects.toThrow("Sem permissão");
+    expect(first.storage.completeUpload).not.toHaveBeenCalled();
+    const second = setup();
+    second.prisma.conversation.findFirst
+      .mockResolvedValueOnce({ id: "conversation-a" })
+      .mockResolvedValueOnce(null);
+    await expect(second.service.create(second.dto, imageActor)).rejects.toThrow(
+      "Conversa não encontrada",
+    );
+    expect(second.storage.completeUpload).not.toHaveBeenCalled();
+  });
+
+  it("rejects more than ten image references rather than silently dropping images", async () => {
+    const { service, storage, dto } = setup();
+    dto.descriptionHtml =
+      "<p>Histórico</p>" +
+      Array.from(
+        { length: 11 },
+        (_, i) => `<img src="/ticket-images/conversations/conversation-a/messages/image-${i}">`,
+      ).join("");
+    await expect(service.create(dto, imageActor)).rejects.toThrow("máximo 10");
+    expect(storage.completeUpload).not.toHaveBeenCalled();
+  });
+
+  it("compensates both a partial storage failure and a history failure", async () => {
+    for (const failure of ["storage", "history"]) {
+      const { prisma, service, storage, dto } = setup();
+      if (failure === "storage")
+        storage.completeUpload.mockRejectedValue(new Error("partial write"));
+      else prisma.ticketHistory.create.mockRejectedValue(new Error("history failed"));
+      await expect(service.create(dto, imageActor)).rejects.toThrow();
+      expect(storage.deleteObject).toHaveBeenCalledWith(
+        storage.completeUpload.mock.calls[0][0].objectKey,
+      );
+    }
+  });
+
+  it("rejects unresolved chat references and other-ticket references in persisted dialogs", async () => {
+    for (const source of [
+      "/ticket-images/conversations/conversation-a/messages/message-image",
+      "/ticket-images/tickets/other-ticket/attachments/image-a",
+    ]) {
+      const { prisma, service } = setup();
+      prisma.ticket.findFirst.mockResolvedValue(ticket());
+      await expect(
+        service.createComment(
+          "ticket-a",
+          { bodyHtml: `<p>Imagem</p><img src="${source}">` },
+          imageActor,
+        ),
+      ).rejects.toThrow("não pertence");
+      expect(prisma.ticketComment.create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects image references from another ticket when updating an existing description", async () => {
+    const { prisma, service } = setup();
+    prisma.ticket.findFirst.mockResolvedValue(ticket());
+    await expect(
+      service.update(
+        "ticket-a",
+        {
+          descriptionHtml:
+            '<p>Imagem</p><img src="/ticket-images/tickets/other-ticket/attachments/image-a">',
+        },
+        current,
+      ),
+    ).rejects.toThrow("não pertence");
+    expect(prisma.ticket.update).not.toHaveBeenCalled();
+  });
+});
+
 function serviceWith(
   prisma: ReturnType<typeof prismaMock>,
   cleanup: { process: ReturnType<typeof vi.fn> } | undefined = { process: vi.fn() },

@@ -71,7 +71,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/test/app.e2e-spec.ts",
-    "63284a24be887d4cb22835503f91352d626ace717a109c5341e4b343dff31c8b",
+    "97fa7896f8a44ba832eea06b2bacf6d61e616bdd256e9eb13daa595c4974a510",
   ],
   [
     "src/lib/trixus-api.test.ts",
