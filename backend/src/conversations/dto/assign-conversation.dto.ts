@@ -1,8 +1,10 @@
-import { IsBoolean, IsOptional, IsUUID } from "class-validator";
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class AssignConversationDto {
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
   departmentId?: string | null;
 
   @IsOptional()

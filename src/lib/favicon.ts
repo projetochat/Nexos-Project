@@ -1,8 +1,8 @@
 // Keep the application and the standalone error page on the same environment favicon.
 const FAVICON_HREFS = {
-  development: "/favicon-dev.ico?v=trixus-20261023-global-v1",
-  homologation: "/favicon-hom.ico?v=trixus-20261023-global-v1",
-  production: "/favicon-prod.ico?v=trixus-20261023-global-v1",
+  development: "/favicon-dev.ico?v=trixus-20261023-environments-v2",
+  homologation: "/favicon-hom.ico?v=trixus-20261023-environments-v2",
+  production: "/favicon-prod.ico?v=trixus-20261023-environments-v2",
 } as const;
 
 export type FaviconEnvironment = keyof typeof FAVICON_HREFS;
