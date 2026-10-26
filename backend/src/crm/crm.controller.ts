@@ -2093,18 +2093,14 @@ export class CrmController {
         where: {
           tenantId: current.tenantId,
           contactId: id,
-          OR: [
-            { active: true },
-            { invitations: { some: { status: "PENDING" } } },
-          ],
+          OR: [{ active: true }, { invitations: { some: { status: "PENDING" } } }],
         },
         select: { id: true },
       });
       if (protectedPortalAccess) {
         throw new ConflictException({
           code: "CONTACT_EMAIL_PORTAL_ACCESS_ACTIVE",
-          message:
-            "Revogue o acesso ao Portal do Cliente antes de alterar o e-mail deste contato.",
+          message: "Revogue o acesso ao Portal do Cliente antes de alterar o e-mail deste contato.",
         });
       }
     }

@@ -31,9 +31,7 @@ describe("cor dos rodapés integrados de grade", () => {
         expect(effectiveSource).toContain(
           "flex items-center justify-between gap-2 bg-surface-2 px-3 py-1.5",
         );
-        expect(effectiveSource).toContain(
-          '"mt-3 overflow-hidden rounded-xl border border-border"',
-        );
+        expect(effectiveSource).toContain('"mt-3 overflow-hidden rounded-xl border border-border"');
         expect(effectiveSource).toContain("md:border-x-0 md:border-b-0");
       } else {
         expect(effectiveSource).toContain("border-t border-border bg-surface-2 px-3 py-1.5");

@@ -25,7 +25,7 @@ describe("DashboardComponentRenderer height contract", () => {
   });
 
   it("uses the exact horizontal-bar maximum to avoid unused plot space", () => {
-    expect(source).toContain('domain={[0, (dataMax: number) => Math.max(1, dataMax)]}');
+    expect(source).toContain("domain={[0, (dataMax: number) => Math.max(1, dataMax)]}");
   });
 
   it("compacts both horizontal-bar side reservations without clipping values", () => {

@@ -81,9 +81,7 @@ describe("login exclusivo do Portal do Cliente", () => {
   it("direciona o portal para uma rota exclusiva que reutiliza a tela de chamados", () => {
     expect(portalSource).toContain("CUSTOMER_PORTAL_TICKETS_PATH");
     expect(portalSource).not.toContain('to: "/chamados"');
-    expect(portalTicketsSource).toContain(
-      'createFileRoute("/portal-cliente_/chamados")',
-    );
+    expect(portalTicketsSource).toContain('createFileRoute("/portal-cliente_/chamados")');
     expect(portalTicketsSource).toContain(
       '<ChamadosPage mode="customer_portal" search={Route.useSearch()} />',
     );

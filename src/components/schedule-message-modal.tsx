@@ -249,7 +249,9 @@ export function ScheduleMessageModal({
                 type="submit"
                 variant="primary"
                 className={editing ? "save-action-button" : undefined}
-                disabled={busy || (!content.trim() && !attachment) || !scheduleAt || scheduleTimeInvalid}
+                disabled={
+                  busy || (!content.trim() && !attachment) || !scheduleAt || scheduleTimeInvalid
+                }
               >
                 {busy ? "Salvando..." : editing ? "Salvar alterações" : "Agendar"}
               </Button>

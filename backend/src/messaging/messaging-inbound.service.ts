@@ -125,19 +125,20 @@ export class MessagingInboundService {
       });
       const directDisplayName =
         !isGroup && !event.fromMe
-          ? meaningfulProviderContactName(
-              event.metadata?.displayName ?? event.sender.displayName,
-              [event.sender.phone, event.sender.normalizedPhone, event.externalChatId],
-            )
+          ? meaningfulProviderContactName(event.metadata?.displayName ?? event.sender.displayName, [
+              event.sender.phone,
+              event.sender.normalizedPhone,
+              event.externalChatId,
+            ])
           : null;
       const contactNameUpdated = Boolean(
         existingContact &&
-          directDisplayName &&
-          isContactPhonePlaceholder(existingContact.name, [
-            existingContact.phone,
-            existingContact.normalizedPhone,
-            event.externalChatId,
-          ]),
+        directDisplayName &&
+        isContactPhonePlaceholder(existingContact.name, [
+          existingContact.phone,
+          existingContact.normalizedPhone,
+          event.externalChatId,
+        ]),
       );
       const contact = existingContact
         ? await tx.contact.update({
@@ -165,9 +166,7 @@ export class MessagingInboundService {
               },
             },
             update: {
-              name: isGroup
-                ? (groupDisplayName ?? "Grupo WhatsApp")
-                : undefined,
+              name: isGroup ? (groupDisplayName ?? "Grupo WhatsApp") : undefined,
               phone: isGroup ? event.externalChatId : event.sender.phone,
               instance: connection.externalReference,
               instanceIds: [connection.id],
@@ -177,7 +176,7 @@ export class MessagingInboundService {
               tenantId: event.tenantId,
               name: isGroup
                 ? (groupDisplayName ?? "Grupo WhatsApp")
-                : directDisplayName ?? event.sender.phone,
+                : (directDisplayName ?? event.sender.phone),
               phone: isGroup ? event.externalChatId : event.sender.phone,
               normalizedPhone: canonicalPhone,
               instance: connection.externalReference,
@@ -937,11 +936,13 @@ export class MessagingInboundService {
     initialDepartmentId: string | null = contact.departmentId ?? null,
   ) {
     if (event.conversationType === "GROUP") {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${groupConversationLockKey({
-        tenantId: event.tenantId,
-        connectionId: event.connectionId,
-        externalChatId: event.externalChatId,
-      })}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${groupConversationLockKey(
+        {
+          tenantId: event.tenantId,
+          connectionId: event.connectionId,
+          externalChatId: event.externalChatId,
+        },
+      )}, 0))`;
       const existing = await tx.conversation.findFirst({
         where: {
           tenantId: event.tenantId,
@@ -1186,10 +1187,7 @@ function meaningfulProviderContactName(
   return name;
 }
 
-function isContactPhonePlaceholder(
-  name: string,
-  identities: Array<string | null | undefined>,
-) {
+function isContactPhonePlaceholder(name: string, identities: Array<string | null | undefined>) {
   const nameDigits = phoneIdentityDigits(name);
   if (!nameDigits) return false;
   return identities.some((identity) => {

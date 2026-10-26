@@ -10,7 +10,7 @@ describe("dashboard exclusivo do Portal do Cliente", () => {
   it("possui rota própria e usa somente indicadores retornados pela API", () => {
     expect(dashboard).toContain('createFileRoute("/portal-cliente_/dashboard")');
     expect(dashboard).toContain("ticketApi.portalDashboard");
-    expect(api).toContain('`/tickets/portal/dashboard${queryString(params)}`');
+    expect(api).toContain("`/tickets/portal/dashboard${queryString(params)}`");
     expect(dashboard).toContain("Chamados por departamento");
     expect(dashboard).toContain("Chamados por filial");
     expect(dashboard).toContain("Tipos de chamado");

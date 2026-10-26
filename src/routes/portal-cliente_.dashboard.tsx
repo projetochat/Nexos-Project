@@ -126,12 +126,7 @@ function DashboardContent({ dashboard }: { dashboard: ApiCustomerPortalDashboard
           icon={ShieldAlert}
           tone="purple"
         />
-        <MetricCard
-          label="Concluídos"
-          value={metrics.completed}
-          icon={CheckCircle2}
-          tone="green"
-        />
+        <MetricCard label="Concluídos" value={metrics.completed} icon={CheckCircle2} tone="green" />
         <MetricCard label="Reprovados" value={metrics.rejected} icon={XCircle} tone="red" />
         <MetricCard
           label="Tempo médio de solução"
@@ -172,7 +167,9 @@ function MetricCard({
   };
   return (
     <Card className="flex min-h-24 items-center gap-3 p-4">
-      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${tones[tone]}`}>
+      <span
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${tones[tone]}`}
+      >
         <Icon className="h-5 w-5" />
       </span>
       <span className="min-w-0">
@@ -196,7 +193,10 @@ function DimensionCard({ title, items }: { title: string; items: ApiTicketDashbo
       {items.length ? (
         <div className="space-y-3">
           {items.slice(0, 6).map((item) => (
-            <div key={item.id ?? item.label} className="grid grid-cols-[minmax(90px,150px)_1fr_auto] items-center gap-3 text-xs">
+            <div
+              key={item.id ?? item.label}
+              className="grid grid-cols-[minmax(90px,150px)_1fr_auto] items-center gap-3 text-xs"
+            >
               <span className="truncate text-muted-foreground" title={item.label}>
                 {item.label}
               </span>

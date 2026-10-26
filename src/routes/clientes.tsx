@@ -3197,7 +3197,7 @@ function customerPayload(form: CustomerForm): Parameters<typeof crmApi.createCus
   } as Parameters<typeof crmApi.createCustomer>[0];
 }
 
-export function normalizeCustomerCity(city: string, state: string) {
+function normalizeCustomerCity(city: string, state: string) {
   const normalizedCity = city.trim();
   const normalizedState = state.trim();
   if (!normalizedState) return normalizedCity;

@@ -208,12 +208,7 @@ export class RealtimeAuthService {
   private async assertPersistedSession(
     context: Pick<
       RealtimeSocketContext,
-      | "userId"
-      | "tenantId"
-      | "membershipId"
-      | "sid"
-      | "portalAccessId"
-      | "impersonationSessionId"
+      "userId" | "tenantId" | "membershipId" | "sid" | "portalAccessId" | "impersonationSessionId"
     >,
   ) {
     const session = await this.prisma.authSession.findFirst({
@@ -246,10 +241,7 @@ export class RealtimeAuthService {
         contact: { active: true, archivedAt: null },
         customer: { status: "ACTIVE", archivedAt: null },
         branch: { status: "ACTIVE", archivedAt: null },
-        OR: [
-          { accessProfile: "FULL_ACCESS" },
-          { department: { active: true, archivedAt: null } },
-        ],
+        OR: [{ accessProfile: "FULL_ACCESS" }, { department: { active: true, archivedAt: null } }],
       },
       select: { id: true },
     });

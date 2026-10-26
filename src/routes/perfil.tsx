@@ -214,7 +214,9 @@ function PerfilPage() {
     if (!user) return;
     setInboxTagNotificationSoundEnabled(user.id, enabled);
     setTagSoundEnabled(enabled);
-    toast.success(enabled ? "Aviso sonoro de etiquetas ativado." : "Aviso sonoro de etiquetas desativado.");
+    toast.success(
+      enabled ? "Aviso sonoro de etiquetas ativado." : "Aviso sonoro de etiquetas desativado.",
+    );
   };
 
   const changeSidebarPreference = async (checked: boolean) => {
@@ -447,14 +449,14 @@ function PerfilPage() {
                     <Input value={roleMeta?.label ?? "Usuário"} readOnly />
                   </Field>
                   <div className="col-span-2 md:col-span-1">
-                  <Field label="E-mail">
-                    <Input value={user?.email ?? ""} readOnly />
-                  </Field>
+                    <Field label="E-mail">
+                      <Input value={user?.email ?? ""} readOnly />
+                    </Field>
                   </div>
                   <div className="col-span-2 md:col-span-1">
-                  <Field label="Empresa">
-                    <Input value={user?.empresaNome ?? ""} readOnly />
-                  </Field>
+                    <Field label="Empresa">
+                      <Input value={user?.empresaNome ?? ""} readOnly />
+                    </Field>
                   </div>
                 </div>
                 <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-border bg-surface-1 p-4">
@@ -478,23 +480,23 @@ function PerfilPage() {
                   <p className="text-sm font-semibold">Alterar senha</p>
                   <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
                     <div className="col-span-2 md:col-span-1">
-                    <Field label="Senha atual *">
-                      <Input
-                        type="password"
-                        autoComplete="current-password"
-                        value={currentPassword}
-                        onChange={(event) => {
-                          setCurrentPassword(event.target.value);
-                          if (event.target.value)
-                            setRequiredPasswordErrors((current) => ({
-                              ...current,
-                              currentPassword: false,
-                            }));
-                        }}
-                        aria-invalid={requiredPasswordErrors.currentPassword}
-                        className={requiredFieldClassName(requiredPasswordErrors.currentPassword)}
-                      />
-                    </Field>
+                      <Field label="Senha atual *">
+                        <Input
+                          type="password"
+                          autoComplete="current-password"
+                          value={currentPassword}
+                          onChange={(event) => {
+                            setCurrentPassword(event.target.value);
+                            if (event.target.value)
+                              setRequiredPasswordErrors((current) => ({
+                                ...current,
+                                currentPassword: false,
+                              }));
+                          }}
+                          aria-invalid={requiredPasswordErrors.currentPassword}
+                          className={requiredFieldClassName(requiredPasswordErrors.currentPassword)}
+                        />
+                      </Field>
                     </div>
                     <Field label="Nova senha *">
                       <PasswordInput
@@ -589,10 +591,17 @@ function PerfilPage() {
                 <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-border bg-surface-1 p-4">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="mt-0.5 rounded-lg bg-primary/10 p-2 text-primary">
-                      {tagSoundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                      {tagSoundEnabled ? (
+                        <Volume2 className="h-4 w-4" />
+                      ) : (
+                        <VolumeX className="h-4 w-4" />
+                      )}
                     </span>
                     <div>
-                      <label htmlFor="profile-tag-notification-sound" className="text-sm font-medium">
+                      <label
+                        htmlFor="profile-tag-notification-sound"
+                        className="text-sm font-medium"
+                      >
                         Aviso sonoro de etiquetas
                       </label>
                       <p className="mt-1 text-xs text-muted-foreground">

@@ -190,9 +190,7 @@ function validateDeploymentContract(environment: Record<string, string>, errors:
     }
   }
   if (environment.EVOLUTION_WEBHOOK_PUBLIC_URL !== contract.webhookUrl) {
-    errors.push(
-      `EVOLUTION_WEBHOOK_PUBLIC_URL must be exactly ${contract.webhookUrl} in ${name}`,
-    );
+    errors.push(`EVOLUTION_WEBHOOK_PUBLIC_URL must be exactly ${contract.webhookUrl} in ${name}`);
   }
 }
 

@@ -48,7 +48,7 @@ describe("Inbox visual requirements", () => {
 
   it("separa o horário da coluna de conteúdo dos cards de conversa", () => {
     expect(source).toContain(
-      'grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2',
+      "grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2",
     );
     expect(source).not.toContain('className="flex items-center justify-between gap-2"');
     expect(source).toContain('className="mx-auto mt-0.5 h-3.5 w-3.5 text-primary"');

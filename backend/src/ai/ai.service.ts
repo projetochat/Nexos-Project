@@ -641,7 +641,7 @@ function serializeConnection(row: {
   };
 }
 
-function serializeAgent(row: any) {
+function serializeAgent(row: Prisma.AiAgentGetPayload<{ include: { connection: true } }>) {
   return {
     id: row.id,
     active: row.active,
@@ -658,7 +658,11 @@ function serializeAgent(row: any) {
   };
 }
 
-function executionResponse(executionId: string, agent: any, draft: any) {
+function executionResponse<Draft>(
+  executionId: string,
+  agent: Prisma.AiAgentGetPayload<{ include: { connection: true } }>,
+  draft: Draft,
+) {
   return {
     executionId,
     status: "COMPLETED",
@@ -672,7 +676,21 @@ function executionResponse(executionId: string, agent: any, draft: any) {
   };
 }
 
-function buildPrompt(instructions: string, conversation: any, messages: any[], catalogs: unknown) {
+function buildPrompt(
+  instructions: string,
+  conversation: { id: string; contact: unknown; department: unknown },
+  messages: Array<{
+    id: string;
+    createdAt: Date;
+    direction: string;
+    authorMembership: { presentationName: string | null; user: { name: string } } | null;
+    participantName: string | null;
+    content: string | null;
+    mediaCaption: string | null;
+    type: string;
+  }>,
+  catalogs: unknown,
+) {
   const transcript = messages.map((message) => ({
     id: message.id,
     at: message.createdAt,

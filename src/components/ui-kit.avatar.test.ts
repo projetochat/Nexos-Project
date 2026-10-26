@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { avatarInitials } from "./ui-kit";
+import { avatarInitials } from "@/lib/avatar-initials";
 
 describe("avatarInitials", () => {
   it("ignores words made only of special characters", () => {
