@@ -3,3 +3,14 @@ scripts/production/*.sh text eol=lf
 scripts/production/INSTALL-SHA256SUMS text eol=lf
 backend/prisma/migrations/*/migration.sql text eol=lf
 backend/prisma/migration-reconciliations.json text eol=lf
+
+# Release inputs must retain Linux line endings.
+scripts/homologation/*.py text eol=lf
+scripts/homologation/*.sh text eol=lf
+scripts/release/*.py text eol=lf
+.github/workflows/*.yml text eol=lf
+Dockerfile* text eol=lf
+backend/Dockerfile text eol=lf
+
+# Applied historical SQL is immutable: preserve its committed byte checksum.
+backend/prisma/migrations/20260827100000_contact_custom_fields/migration.sql -text

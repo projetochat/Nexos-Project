@@ -1,6 +1,6 @@
 name: Build Trixus production images
 
-# Publication requires explicit mode, or a repository-level opt-in for pushes.
+# Push and PR validate/build only; promotion requires explicit manual mode.
 on:
   pull_request:
     branches: [main]
@@ -11,11 +11,20 @@ on:
         type: choice
         default: build
         options: [build, plan, deploy]
+      source_run_id:
+        description: "ID da execucao build aprovada; obrigatorio em plan/deploy"
+        type: string
+        default: ""
+      plan_run_id:
+        description: "ID do plan aprovado; obrigatorio em deploy"
+        type: string
+        default: ""
   push:
     branches: [main]
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: trixus-production-build
@@ -23,7 +32,7 @@ concurrency:
 
 jobs:
   validate:
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.release_mode == 'build')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -62,6 +71,8 @@ jobs:
           bun-version: "1.3.14"
       - name: Test production release protections
         run: python3 -m unittest discover -s scripts/production -p 'test_*.py' -v
+      - name: Test immutable package promotion
+        run: python3 -B -m unittest discover -s scripts/release -p 'test_*.py' -v
       - run: bun install --frozen-lockfile
       - run: bun run --cwd backend prisma:generate
       - name: Prepare fixtures in the disposable test database
@@ -111,6 +122,7 @@ jobs:
           test "$(docker image inspect "trixus-pr/backend:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
           test "$(docker image inspect "trixus-pr/migrate:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
           test "$(docker image inspect "trixus-pr/migrate:$GITHUB_SHA" --format '{{json .Config.Cmd}}')" = '["bun","run","prisma:migrate:deploy","--help"]'
+          test "$(docker image inspect "trixus-pr/frontend:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
           docker run --rm --entrypoint sh "trixus-pr/backend:$GITHUB_SHA" \
             -c 'command -v node && test -s /app/backend/dist/src/main.js'
           docker run --rm "trixus-pr/migrate:$GITHUB_SHA"
@@ -141,7 +153,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           : "${VITE_TRIXUS_API_URL:?Set the production Environment variable VITE_TRIXUS_API_URL}"
-          [[ "$VITE_TRIXUS_API_URL" == https://* ]]
+          test "$VITE_TRIXUS_API_URL" = "https://api.trixus.com.br/api"
           test "$VITE_TRIXUS_PLATFORM_APP_URL" = "https://app.trixus.com.br"
           test "$VITE_TRIXUS_TENANT_APP_URL" = "https://app.trixus.com.br"
           docker build --platform linux/amd64 -f backend/Dockerfile \
@@ -161,6 +173,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          test "$(docker image inspect "trixus-release/backend:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
+          test "$(docker image inspect "trixus-release/migrate:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
+          test "$(docker image inspect "trixus-release/frontend:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
           docker run --rm --entrypoint sh "trixus-release/backend:$GITHUB_SHA" \
             -c 'command -v node && test -s /app/backend/dist/src/main.js'
           test "$(docker image inspect "trixus-release/migrate:$GITHUB_SHA" --format '{{json .Config.Cmd}}')" = '["bun","run","prisma:migrate:deploy","--help"]'
@@ -208,7 +223,6 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: build
     if: >-
       github.ref == 'refs/heads/main' &&
       github.event_name == 'workflow_dispatch' &&
@@ -218,6 +232,9 @@ jobs:
     environment: production
     env:
       RELEASE_MODE: ${{ inputs.release_mode }}
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      PLAN_RUN_ID: ${{ inputs.plan_run_id }}
+      GH_TOKEN: ${{ github.token }}
       DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER }}
@@ -225,10 +242,33 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Verify source build provenance
+        run: python3 -B scripts/release/promotion.py run --environment production --run-id "$SOURCE_RUN_ID"
+      - name: Verify approved plan provenance
+        if: inputs.release_mode == 'deploy'
+        run: python3 -B scripts/release/promotion.py run --environment production --kind plan --run-id "$PLAN_RUN_ID"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: trixus-linux-amd64-${{ github.sha }}
           path: release
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: inputs.release_mode == 'deploy'
+        with:
+          name: trixus-production-plan-${{ inputs.plan_run_id }}
+          path: approved-plan
+          run-id: ${{ inputs.plan_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify exact package and approved plan
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          args=()
+          if [[ "$RELEASE_MODE" == deploy ]]; then
+            args=(--receipt approved-plan/plan.json)
+          fi
+          python3 -B scripts/release/promotion.py package --environment production "${args[@]}"
       - name: Verify release checksums
         working-directory: release
         run: sha256sum --check SHA256SUMS
@@ -237,3 +277,13 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: bash scripts/production/transfer.sh
+      - name: Record successful plan for this exact package
+        if: inputs.release_mode == 'plan'
+        run: python3 -B scripts/release/promotion.py receipt --environment production
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: inputs.release_mode == 'plan'
+        with:
+          name: trixus-production-plan-${{ github.run_id }}
+          path: plan-receipt/
+          retention-days: 14
+          if-no-files-found: error

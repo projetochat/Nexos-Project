@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
@@ -474,6 +475,25 @@ def publish(config, old, protected, sha, release_dir, recovery_marker):
         raise
 
 
+def assert_no_pending_recovery():
+    for name in ("recovery-required", "investigation-required"):
+        require(not os.path.lexists(STATE / name), "Recuperacao ou investigacao pendente")
+
+
+def consume_approval(release_dir, sha, digest):
+    """Consume under release.lock before any image load or application change."""
+    gate = STATE / "enabled"
+    trusted_path(gate)
+    info = gate.stat()
+    require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600,
+            "Aprovacao deve ser arquivo root:root 0600")
+    require(gate.read_text().strip() == "approved", "Deploy desabilitado")
+    gate.replace(release_dir / "approval.txt")
+    (release_dir / "approval-consumed.json").write_text(json.dumps({
+        "commit": sha, "archive_sha256": digest, "gate_disabled": True,
+    }) + "\n")
+
+
 def main(args):
     import fcntl
     mode, sha, digest, length = parse_request(args)
@@ -482,12 +502,9 @@ def main(args):
     os.environ.clear()
     os.environ.update(PATH='/usr/sbin:/usr/bin:/sbin:/bin', HOME='/root', LANG='C.UTF-8')
     trusted_path(STATE)
-    if mode == 'deploy':
-        trusted_path(STATE / 'enabled')
-        require((STATE / 'enabled').read_text().strip() == 'approved', 'Deploy desabilitado')
     with (STATE / 'release.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        require(not (STATE / 'recovery-required').exists(), 'Recuperacao anterior pendente')
+        assert_no_pending_recovery()
         config, old, protected, backup_size = inventory()
         require(shutil.disk_usage(STATE).free >= length + MAX_EXPANDED + 2 * GIB,
                 'Espaco insuficiente para receber e conferir pacote')
@@ -519,13 +536,14 @@ def main(args):
                                   'backup_estimado_bytes': backup_size,
                                   'reserva_minima_bytes': 2 * GIB}))
                 return
+            release_dir = STATE / 'releases' / (time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + sha)
+            release_dir.mkdir(mode=0o700)
+            consume_approval(release_dir, sha, digest)
             command(['/usr/bin/nice', '-n', '10', '/usr/bin/ionice', '-c', '2', '-n', '7',
                      '/usr/bin/docker', 'load', '--input', str(clean)], timeout=900)
             clean.unlink()
             config, old, protected, backup_size = inventory()
             require(shutil.disk_usage(STATE).free >= backup_size + 2 * GIB, 'Disco insuficiente para backup')
-            release_dir = STATE / 'releases' / (time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + sha)
-            release_dir.mkdir(mode=0o700)
             publish(config, old, protected, sha, release_dir,
                     recovery_marker=STATE / 'recovery-required')
             # Cleanup is deliberately post-commit: never delete recovery data

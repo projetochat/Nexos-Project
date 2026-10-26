@@ -840,6 +840,25 @@ def publish(config, ports, apps, protected, production_before, sha, release_dir)
         raise
 
 
+def assert_no_pending_recovery():
+    for name in ("recovery-required", "investigation-required"):
+        require(not os.path.lexists(STATE / name), "Recuperacao ou investigacao pendente")
+
+
+def consume_approval(release_dir, sha, digest):
+    """Consume under release.lock before any image load or application change."""
+    gate = STATE / "enabled"
+    trusted_path(gate)
+    info = gate.stat()
+    require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600,
+            "Aprovacao deve ser arquivo root:root 0600")
+    require(gate.read_text().strip() == "approved", "Deploy desabilitado")
+    gate.replace(release_dir / "approval.txt")
+    (release_dir / "approval-consumed.json").write_text(json.dumps({
+        "commit": sha, "archive_sha256": digest, "gate_disabled": True,
+    }) + "\n")
+
+
 def main(args):
     import fcntl
     mode, sha, digest, length = parse_request(args)
@@ -850,7 +869,7 @@ def main(args):
     trusted_path(STATE)
     with (STATE / "release.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        require(not (STATE / "recovery-required").exists(), "Recuperacao HML pendente")
+        assert_no_pending_recovery()
         config, ports, apps, protected, backup_size = inventory()
         production_before = production_fingerprint()
         require(shutil.disk_usage(STATE).free >= length + MAX_EXPANDED + 2 * GIB,
@@ -877,19 +896,13 @@ def main(args):
                                   "backup_estimado_bytes": backup_size,
                                   "webhook": WEBHOOK_URL}))
                 return
-            gate = STATE / "enabled"
-            trusted_path(gate)
-            gate_info = gate.stat()
-            require(stat.S_ISREG(gate_info.st_mode) and stat.S_IMODE(gate_info.st_mode) == 0o600,
-                    "Aprovacao HML deve ser arquivo root:root 0600")
-            require(gate.read_text().strip() == "approved", "Deploy HML desabilitado")
-            command(["/usr/bin/nice", "-n", "10", "/usr/bin/ionice", "-c", "2", "-n", "7",
-                     "/usr/bin/docker", "load", "--input", str(clean)], timeout=900)
-            clean.unlink()
             stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
             release_dir = STATE / "releases" / f"{stamp}-{sha}"
             release_dir.mkdir(mode=0o700)
-            gate.replace(release_dir / "approval.txt")
+            consume_approval(release_dir, sha, digest)
+            command(["/usr/bin/nice", "-n", "10", "/usr/bin/ionice", "-c", "2", "-n", "7",
+                     "/usr/bin/docker", "load", "--input", str(clean)], timeout=900)
+            clean.unlink()
             publish(config, ports, apps, protected, production_before, sha, release_dir)
 
 

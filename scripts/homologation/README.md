@@ -70,3 +70,21 @@ backups e checksums. Antes da migração, o runner retorna aos mesmos containers
 Após o início da migração, não remova `recovery-required` manualmente: determine
 o estado da migration, restaure somente a partir do backup correspondente e
 certifique banco, storage, Redis, Evolution, aplicação, produção e GLPI.
+
+## Promocao de pacote imutavel e aprovacao unica
+
+No workflow, execute `build` primeiro. Em `plan`, informe `source_run_id` da
+execucao build concluida com sucesso no mesmo SHA. O pacote e baixado dessa
+execucao, sem recompilar. O plan bem-sucedido publica um recibo com ambiente,
+SHA, ID do build e SHA-256 do arquivo. Em `deploy`, informe o mesmo
+`source_run_id` e o `plan_run_id` revisado. Divergencias bloqueiam antes do SSH.
+
+O gate root-owned `enabled`, modo 0600 e conteudo `approved`, e consumido sob
+lock antes de carregar imagens. `approval.txt` e `approval-consumed.json`
+registram o consumo na pasta da tentativa. Falhas nao rearmam o gate; nao
+repetir automaticamente. `recovery-required` e `investigation-required`
+bloqueiam plan e deploy, inclusive quando sao links pendentes. Nao remover
+marcadores manualmente; preservar evidencias e seguir recuperacao explicita.
+
+A mudanca local so vale na VPS apos upgrade administrativo revisado do runner.
+Esta documentacao nao autoriza instalar scripts, habilitar gate ou publicar.

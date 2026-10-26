@@ -65,11 +65,14 @@ chown root:root /var/lib/trixus-production/enabled
 chmod 600 /var/lib/trixus-production/enabled
 ```
 
-Executar workflow na main com `release_mode=deploy`. Ele constroi novamente
-o commit escolhido e baixa apenas o artifact da propria execucao. Confirmar
-`DEPLOY_OK`, acesso/login no Trixus e GLPI. Proximas publicacoes continuam
-exigindo novo disparo manual na main. Para impedir novas publicacoes, renomear
-`enabled` na VPS; isso nao interrompe uma publicacao ja em andamento.
+Executar primeiro `release_mode=build` na main. Revisar o pacote e informar o
+ID dessa execucao em `source_run_id` ao disparar `plan`. Depois da revisao do
+plano e da autorizacao explicita, executar `deploy` com o mesmo `source_run_id`
+e o `plan_run_id` aprovado. Plan/deploy reutilizam o pacote, sem reconstruir.
+O recibo do plan vincula ambiente, SHA, ID do build e checksum do arquivo.
+Confirmar `DEPLOY_OK`, acesso/login, GLPI e o consumo do gate registrado em
+`approval-consumed.json`. O gate e movido para a tentativa antes do docker load;
+qualquer falha posterior exige nova aprovacao, sem repeticao automatica.
 
 ## O que acontece no deploy
 
@@ -128,8 +131,9 @@ do GLPI exige outra VPS.
   anexos, checksums e `previous-compose.json`. Preservar durante diagnostico.
 - Falhas de comandos podem estar em `last-error.log`, privado: nao colar
   indiscriminadamente no chat/GitHub porque pode conter dados sensiveis.
-- Se somente o backup falhou e nenhuma migration iniciou, confirmar saude
-  da aplicacao anterior antes de remover manualmente o bloqueio.
+- Nao remover marcadores manualmente. Mesmo quando nenhuma migration iniciou,
+  preservar os registros e confirmar a recuperacao explicitamente antes de
+  qualquer nova tentativa.
 - Depois de migration, decidir entre corrigir para frente ou restaurar.
   Restauracao exige revisar dados gravados, parar escritores e combinar
   banco, anexos e codigo anterior. Nao aplicar `previous-compose.json`

@@ -87,6 +87,86 @@ def make_archive(path, tags=None):
 
 
 class HomologationReleaseTest(unittest.TestCase):
+    def test_main_consumes_gate_before_load_and_never_rearms_after_failure(self):
+        from contextlib import ExitStack
+        from types import SimpleNamespace
+        for failure in ("load", "publish"):
+            with tempfile.TemporaryDirectory() as folder, ExitStack() as stack:
+                state = Path(folder)
+                (state / "releases").mkdir()
+                gate = state / "enabled"
+                gate.write_text("approved")
+                gate.chmod(0o600)
+                stack.enter_context(patch.object(release, "STATE", state))
+                stack.enter_context(patch.object(release, "trusted_path"))
+                stack.enter_context(patch.object(release.os, "geteuid", return_value=0))
+                stack.enter_context(patch.object(release.os, "umask"))
+                stack.enter_context(patch.dict(release.os.environ))
+                stack.enter_context(patch.object(release.signal, "alarm"))
+                stack.enter_context(patch.object(release.signal, "signal"))
+                stack.enter_context(patch.object(release.shutil, "disk_usage", return_value=SimpleNamespace(free=100 * release.GIB)))
+                stack.enter_context(patch.object(release, "inventory", return_value=(config(), {}, {}, {}, 0)))
+                stack.enter_context(patch.object(release, "production_fingerprint", return_value={}))
+                stack.enter_context(patch.object(release, "receive", side_effect=lambda source, path, *args: path.write_bytes(b"x")))
+                stack.enter_context(patch.object(release, "expand", side_effect=lambda source, path: (path.write_bytes(b"x") and 1)))
+                stack.enter_context(patch.object(release, "normalize_archive", side_effect=lambda source, path, sha: path.write_bytes(b"x")))
+                def command(args, **kwargs):
+                    if "load" in args:
+                        self.assertFalse(gate.exists(), "Gate must be consumed before image load")
+                        if failure == "load":
+                            raise release.CheckError("simulated load failure")
+                    return str(state)
+                stack.enter_context(patch.object(release, "command", side_effect=command))
+                publish = stack.enter_context(patch.object(release, "publish", side_effect=release.CheckError("simulated publish failure")))
+                with self.assertRaises(release.CheckError):
+                    release.main(["deploy", SHA, "b" * 64, "1"])
+                self.assertFalse(gate.exists())
+                self.assertEqual(len(list((state / "releases").glob("*/approval-consumed.json"))), 1)
+                self.assertEqual(publish.call_count, int(failure == "publish"))
+
+    def test_approval_is_consumed_once_and_binds_package(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder)
+            target = state / "releases" / "candidate"
+            target.mkdir(parents=True)
+            gate = state / "enabled"
+            gate.write_text("approved\n")
+            gate.chmod(0o600)
+            with patch.object(release, "STATE", state), patch.object(release, "trusted_path"):
+                release.consume_approval(target, SHA, "b" * 64)
+                self.assertFalse(gate.exists())
+                self.assertEqual((target / "approval.txt").read_text(), "approved\n")
+                record = json.loads((target / "approval-consumed.json").read_text())
+                self.assertEqual(record, {"commit": SHA, "archive_sha256": "b" * 64,
+                                          "gate_disabled": True})
+                with self.assertRaises(FileNotFoundError):
+                    release.consume_approval(target, SHA, "b" * 64)
+
+    def test_approval_rejects_bad_mode_or_content_without_consuming(self):
+        for mode, content in ((0o644, "approved"), (0o600, "no")):
+            with tempfile.TemporaryDirectory() as folder:
+                state = Path(folder)
+                gate = state / "enabled"
+                gate.write_text(content)
+                gate.chmod(mode)
+                with patch.object(release, "STATE", state), patch.object(release, "trusted_path"):
+                    with self.assertRaises(release.CheckError):
+                        release.consume_approval(state, SHA, "b" * 64)
+                self.assertTrue(gate.exists())
+
+    def test_both_recovery_markers_block_even_dangling_symlinks(self):
+        for name in ("recovery-required", "investigation-required"):
+            for symlink in (False, True):
+                with tempfile.TemporaryDirectory() as folder:
+                    state = Path(folder)
+                    marker = state / name
+                    if symlink:
+                        marker.symlink_to(state / "missing")
+                    else:
+                        marker.write_text("pending")
+                    with patch.object(release, "STATE", state), self.assertRaises(release.CheckError):
+                        release.assert_no_pending_recovery()
+
     def test_fixed_namespace_and_canonical_urls_never_point_to_production(self):
         self.assertEqual(release.PROJECT, "trixus-hml")
         self.assertEqual(

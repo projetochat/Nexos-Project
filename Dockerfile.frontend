@@ -28,6 +28,7 @@ RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run build
 
+USER bun
 EXPOSE 4173
 
 CMD ["bun", ".output/server/index.mjs"]
