@@ -32,6 +32,7 @@ import { groupConversationLockKey } from "../conversations/group-conversation-id
 import { effectivePermissions } from "../auth/effective-permissions";
 import { roleChatScopes } from "../auth/connection-access";
 import { MESSAGE_CLOCK, type MessageClock, SYSTEM_MESSAGE_CLOCK } from "./message-clock";
+import { retryTransientMediaAcquisition } from "./media/retry-media-acquisition";
 
 @Injectable()
 export class MessagingInboundService {
@@ -88,17 +89,39 @@ export class MessagingInboundService {
         where: duplicateWhere,
       });
       if (duplicate) {
+        const duplicateData = duplicate.interactiveData;
+        const deletedForEveryone =
+          duplicateData !== null &&
+          typeof duplicateData === "object" &&
+          !Array.isArray(duplicateData) &&
+          duplicateData.deletedForEveryone === true;
         if (
-          options.requireMediaReady &&
+          !deletedForEveryone &&
           event.media &&
-          (!duplicate.mediaStorageKey || duplicate.mediaState !== MessageMediaState.READY)
+          ((options.requireMediaReady &&
+            (!duplicate.mediaStorageKey || duplicate.mediaState !== MessageMediaState.READY)) ||
+            duplicate.mediaState === MessageMediaState.FAILED ||
+            duplicate.mediaState === MessageMediaState.PENDING)
         ) {
           const stored = await this.downloadInboundMedia(
             event,
             duplicate.conversationId,
-            connection.externalReference,
-          );
-          if (!stored) throw new Error("Mídia retida ainda não disponível para importação.");
+            event.metadata?.providerInstanceName ?? connection.externalReference,
+          ).catch((error) => {
+            if (options.requireMediaReady) throw error;
+            this.logger.warn({
+              event: "messaging.media.duplicate_repair_failed",
+              tenantId: event.tenantId,
+              connectionId: event.connectionId,
+              // Provider errors can contain URLs or response bodies; do not log them here.
+            });
+            return null;
+          });
+          if (!stored) {
+            if (options.requireMediaReady)
+              throw new Error("Mídia retida ainda não disponível para importação.");
+            return { message: duplicate, duplicate: true };
+          }
           const repaired = await tx.message.update({
             where: { id: duplicate.id },
             data: {
@@ -125,19 +148,20 @@ export class MessagingInboundService {
       });
       const directDisplayName =
         !isGroup && !event.fromMe
-          ? meaningfulProviderContactName(
-              event.metadata?.displayName ?? event.sender.displayName,
-              [event.sender.phone, event.sender.normalizedPhone, event.externalChatId],
-            )
+          ? meaningfulProviderContactName(event.metadata?.displayName ?? event.sender.displayName, [
+              event.sender.phone,
+              event.sender.normalizedPhone,
+              event.externalChatId,
+            ])
           : null;
       const contactNameUpdated = Boolean(
         existingContact &&
-          directDisplayName &&
-          isContactPhonePlaceholder(existingContact.name, [
-            existingContact.phone,
-            existingContact.normalizedPhone,
-            event.externalChatId,
-          ]),
+        directDisplayName &&
+        isContactPhonePlaceholder(existingContact.name, [
+          existingContact.phone,
+          existingContact.normalizedPhone,
+          event.externalChatId,
+        ]),
       );
       const contact = existingContact
         ? await tx.contact.update({
@@ -165,9 +189,7 @@ export class MessagingInboundService {
               },
             },
             update: {
-              name: isGroup
-                ? (groupDisplayName ?? "Grupo WhatsApp")
-                : undefined,
+              name: isGroup ? (groupDisplayName ?? "Grupo WhatsApp") : undefined,
               phone: isGroup ? event.externalChatId : event.sender.phone,
               instance: connection.externalReference,
               instanceIds: [connection.id],
@@ -177,7 +199,7 @@ export class MessagingInboundService {
               tenantId: event.tenantId,
               name: isGroup
                 ? (groupDisplayName ?? "Grupo WhatsApp")
-                : directDisplayName ?? event.sender.phone,
+                : (directDisplayName ?? event.sender.phone),
               phone: isGroup ? event.externalChatId : event.sender.phone,
               normalizedPhone: canonicalPhone,
               instance: connection.externalReference,
@@ -937,11 +959,13 @@ export class MessagingInboundService {
     initialDepartmentId: string | null = contact.departmentId ?? null,
   ) {
     if (event.conversationType === "GROUP") {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${groupConversationLockKey({
-        tenantId: event.tenantId,
-        connectionId: event.connectionId,
-        externalChatId: event.externalChatId,
-      })}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${groupConversationLockKey(
+        {
+          tenantId: event.tenantId,
+          connectionId: event.connectionId,
+          externalChatId: event.externalChatId,
+        },
+      )}, 0))`;
       const existing = await tx.conversation.findFirst({
         where: {
           tenantId: event.tenantId,
@@ -1129,9 +1153,9 @@ export class MessagingInboundService {
       mimeType = mimeType ?? downloaded.mimeType ?? null;
       fileName = fileName ?? downloaded.fileName ?? null;
     } else if (!body && event.media.url?.startsWith("http")) {
-      body = await downloadRemoteMedia(event.media.url, {
-        maxBytes: maxSizeBytes(event.type),
-      });
+      body = await retryTransientMediaAcquisition(() =>
+        downloadRemoteMedia(event.media!.url!, { maxBytes: maxSizeBytes(event.type) }),
+      );
     }
     if (!body) return null;
     return this.mediaStorage.storeDownloaded({
@@ -1186,10 +1210,7 @@ function meaningfulProviderContactName(
   return name;
 }
 
-function isContactPhonePlaceholder(
-  name: string,
-  identities: Array<string | null | undefined>,
-) {
+function isContactPhonePlaceholder(name: string, identities: Array<string | null | undefined>) {
   const nameDigits = phoneIdentityDigits(name);
   if (!nameDigits) return false;
   return identities.some((identity) => {

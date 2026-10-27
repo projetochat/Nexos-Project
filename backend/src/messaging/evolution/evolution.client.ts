@@ -364,13 +364,18 @@ export class EvolutionClient {
   async findMessages(input: {
     instanceName: string;
     remoteJid: string;
+    messageId?: string;
     page?: number;
     pageSize?: number;
   }) {
     const response = await this.request<unknown>(`/chat/findMessages/${input.instanceName}`, {
       method: "POST",
+      // Exact media recovery must remain bounded even if the provider ignores its filters.
+      maxResponseBytes: input.messageId ? 1024 * 1024 : undefined,
       body: {
-        where: { key: { remoteJid: input.remoteJid } },
+        where: {
+          key: { remoteJid: input.remoteJid, ...(input.messageId ? { id: input.messageId } : {}) },
+        },
         page: input.page ?? 1,
         offset: input.pageSize ?? 100,
         additionalFields: { limit: input.pageSize ?? 100 },

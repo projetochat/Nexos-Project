@@ -3,6 +3,8 @@ import {
   IsIn,
   IsInt,
   IsOptional,
+  IsNotEmpty,
+  MaxLength,
   IsString,
   IsUUID,
   Max,
@@ -57,7 +59,9 @@ export class ListConversationsQueryDto {
   status?: "aberta" | "em_andamento" | "aguardando" | "fechada";
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
   departmentId?: string;
 
   @IsOptional()

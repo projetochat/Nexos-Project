@@ -5,6 +5,21 @@ import { EvolutionClient } from "./evolution.client";
 describe("EvolutionClient", () => {
   const originalFetch = globalThis.fetch;
 
+  it("limits historical media lookup to the exact provider message and chat", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ messages: { records: [] } }));
+    globalThis.fetch = fetchMock;
+    await new EvolutionClient().findMessages({
+      instanceName: "instance-a",
+      remoteJid: "chat@s.whatsapp.net",
+      messageId: "original-id",
+      page: 1,
+      pageSize: 10,
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.where).toEqual({ key: { remoteJid: "chat@s.whatsapp.net", id: "original-id" } });
+    expect(body.offset).toBe(10);
+  });
+
   beforeEach(() => {
     process.env.EVOLUTION_BASE_URL = "http://evolution.local";
     process.env.EVOLUTION_API_KEY = "test-key";

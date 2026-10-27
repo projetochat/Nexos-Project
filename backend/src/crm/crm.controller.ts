@@ -6,6 +6,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  HttpException,
   Inject,
   NotFoundException,
   Param,
@@ -1420,6 +1421,9 @@ export class CrmController {
 
     let imported = 0;
     let skipped = 0;
+    let limitReached = 0;
+    let failed = 0;
+    let unchanged = 0;
     const importedContacts: Array<{
       id: string;
       tenantId: string;
@@ -1446,6 +1450,7 @@ export class CrmController {
           continue;
         }
         if (existing.instanceIds.includes(preview.connection.id)) {
+          unchanged += 1;
           continue;
         }
         const nextInstanceIds = [...new Set([...existing.instanceIds, preview.connection.id])];
@@ -1459,8 +1464,10 @@ export class CrmController {
         });
         importedContacts.push(contact);
         imported += 1;
-      } catch {
+      } catch (error) {
         skipped += 1;
+        if (isContactImportLimitError(error)) limitReached += 1;
+        else failed += 1;
       }
     }
 
@@ -1486,6 +1493,8 @@ export class CrmController {
             });
             importedContacts.push(contact);
             imported += 1;
+          } else {
+            unchanged += 1;
           }
           continue;
         }
@@ -1527,8 +1536,10 @@ export class CrmController {
           importedContacts.push(contact);
         }
         imported += 1;
-      } catch {
+      } catch (error) {
         skipped += 1;
+        if (isContactImportLimitError(error)) limitReached += 1;
+        else failed += 1;
       }
     }
 
@@ -1539,6 +1550,9 @@ export class CrmController {
     return {
       total: candidates.length + instanceUpdatePhones.size,
       imported,
+      limitReached,
+      failed,
+      unchanged,
       skipped: Math.max(preview.skipped - activeRegisteredItems.length, 0) + skipped,
     };
   }
@@ -1551,7 +1565,14 @@ export class CrmController {
   ) {
     await this.entitlements.assertTenantOperational(current.tenantId);
     const preview = await this.buildAgendaImportPreview(current.tenantId, dto.connectionId);
+    const [entitlements, active] = await Promise.all([
+      this.entitlements.getEntitlements(current.tenantId),
+      this.prisma.contact.count({ where: { tenantId: current.tenantId, archivedAt: null } }),
+    ]);
+    const configuredLimit = entitlements.limits.maxContacts;
+    const limit = Number.isFinite(configuredLimit) && configuredLimit >= 0 ? configuredLimit : null;
     return {
+      capacity: { limit, active, available: limit === null ? null : Math.max(limit - active, 0) },
       total: preview.total,
       skipped: preview.skipped,
       items: preview.items,
@@ -2093,18 +2114,14 @@ export class CrmController {
         where: {
           tenantId: current.tenantId,
           contactId: id,
-          OR: [
-            { active: true },
-            { invitations: { some: { status: "PENDING" } } },
-          ],
+          OR: [{ active: true }, { invitations: { some: { status: "PENDING" } } }],
         },
         select: { id: true },
       });
       if (protectedPortalAccess) {
         throw new ConflictException({
           code: "CONTACT_EMAIL_PORTAL_ACCESS_ACTIVE",
-          message:
-            "Revogue o acesso ao Portal do Cliente antes de alterar o e-mail deste contato.",
+          message: "Revogue o acesso ao Portal do Cliente antes de alterar o e-mail deste contato.",
         });
       }
     }
@@ -3636,4 +3653,15 @@ function handleContactCatalogUniqueError(
 
 function isPrismaError(error: unknown, code: string) {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function isContactImportLimitError(error: unknown) {
+  if (!(error instanceof HttpException)) return false;
+  const response = error.getResponse();
+  return (
+    typeof response === "object" &&
+    response !== null &&
+    "code" in response &&
+    response.code === "PLAN_LIMIT_CONTACTS_REACHED"
+  );
 }

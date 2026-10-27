@@ -1,3 +1,4 @@
+import { agendaCapacityMessage, agendaImportFeedback } from "@/lib/agenda-import-feedback";
 import { customFieldFormat, formatCustomField, customFieldError } from "@/lib/custom-field-formats";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { CityAutocomplete } from "@/components/international-location-fields";
@@ -391,7 +392,7 @@ type ContactFieldConfig = {
   checkbox?: { description?: string };
 };
 type ImportSource = "agenda" | "excel";
-type ImportProgressStatus = "idle" | "running" | "completed" | "cancelled";
+type ImportProgressStatus = "idle" | "running" | "completed" | "partial" | "cancelled";
 type ImportProgressState = {
   open: boolean;
   source: ImportSource | null;
@@ -409,6 +410,7 @@ type AgendaImportPreviewState = {
   total: number;
   skipped: number;
   items: ApiAgendaImportContact[];
+  capacity?: { limit: number | null; active: number; available: number | null };
   ignoredItems: ApiAgendaImportIgnoredContact[];
   selectedPhones: string[];
 };
@@ -500,6 +502,7 @@ function ContatosPage() {
     loading: false,
     busy: false,
     previewLoaded: false,
+    capacity: undefined,
     connectionId: "",
     total: 0,
     skipped: 0,
@@ -1131,6 +1134,7 @@ function ContatosPage() {
       loading: Boolean(singleConnectionId),
       busy: false,
       previewLoaded: false,
+      capacity: undefined,
       connectionId: singleConnectionId,
       total: 0,
       skipped: 0,
@@ -1152,6 +1156,7 @@ function ContatosPage() {
       loading: true,
       busy: false,
       previewLoaded: false,
+      capacity: undefined,
       connectionId,
       total: 0,
       skipped: 0,
@@ -1170,6 +1175,7 @@ function ContatosPage() {
         previewLoaded: true,
         connectionId,
         total: result.total,
+        capacity: result.capacity,
         skipped: result.skipped,
         items: result.items,
         ignoredItems: result.ignoredItems ?? [],
@@ -1181,6 +1187,7 @@ function ContatosPage() {
         loading: false,
         busy: false,
         previewLoaded: false,
+        capacity: undefined,
         connectionId: "",
         total: 0,
         skipped: 0,
@@ -1199,6 +1206,7 @@ function ContatosPage() {
       loading: false,
       busy: false,
       previewLoaded: false,
+      capacity: undefined,
       connectionId: "",
       total: 0,
       skipped: 0,
@@ -1234,7 +1242,7 @@ function ContatosPage() {
       setImportProgress((current) => {
         if (current.source !== "agenda" || current.status !== "running") return current;
         const nextCurrent = Math.min(current.current + 1, Math.max(current.total - 1, 0));
-        return { ...current, current: nextCurrent, imported: nextCurrent };
+        return { ...current, current: nextCurrent };
       });
     }, 250);
     try {
@@ -1248,6 +1256,7 @@ function ContatosPage() {
         loading: false,
         busy: false,
         previewLoaded: false,
+        capacity: undefined,
         connectionId: "",
         total: 0,
         skipped: 0,
@@ -1255,17 +1264,17 @@ function ContatosPage() {
         ignoredItems: [],
         selectedPhones: [],
       });
+      const feedback = agendaImportFeedback(result);
       setImportProgress({
         open: true,
         source: "agenda",
         current: result.total,
         total: result.total,
         imported: result.imported,
-        status: "completed",
+        status: feedback.partial ? "partial" : "completed",
       });
-      toast.success("Importação concluída", {
-        description: `${formatIntegerPtBr(result.imported)} de ${formatIntegerPtBr(result.total)} contato(s) importado(s).`,
-      });
+      const notify = feedback.partial ? toast.warning : toast.success;
+      notify(feedback.title, { description: feedback.description });
       await load();
     } catch (error) {
       window.clearInterval(progressTimer);
@@ -2336,6 +2345,7 @@ function ContatosPage() {
             connectionId={agendaImportPreview.connectionId}
             total={agendaImportPreview.total}
             skipped={agendaImportPreview.skipped}
+            capacity={agendaImportPreview.capacity}
             items={agendaImportPreview.items}
             ignoredItems={agendaImportPreview.ignoredItems}
             selectedPhones={agendaImportPreview.selectedPhones}
@@ -2344,6 +2354,7 @@ function ContatosPage() {
                 ...current,
                 connectionId,
                 previewLoaded: false,
+                capacity: undefined,
                 total: 0,
                 skipped: 0,
                 items: [],
@@ -2793,6 +2804,7 @@ function AgendaImportPreviewModal({
   connectionId,
   total,
   skipped,
+  capacity,
   items,
   ignoredItems,
   selectedPhones,
@@ -2811,6 +2823,7 @@ function AgendaImportPreviewModal({
   total: number;
   skipped: number;
   items: ApiAgendaImportContact[];
+  capacity?: { limit: number | null; active: number; available: number | null };
   ignoredItems: ApiAgendaImportIgnoredContact[];
   selectedPhones: string[];
   onConnectionIdChange: (connectionId: string) => void;
@@ -2977,6 +2990,7 @@ function AgendaImportPreviewModal({
 
   const primaryAction = requiresConnectionSelection && !hasPreviewLoaded;
   const canShowPreviewControls = previewLoaded && !loading;
+  const capacityMessage = agendaCapacityMessage(capacity);
 
   return (
     <Modal
@@ -3058,6 +3072,15 @@ function AgendaImportPreviewModal({
             </p>
           </div>
         </div>
+
+        {canShowPreviewControls && capacityMessage && (
+          <p
+            role="status"
+            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+          >
+            {capacityMessage}
+          </p>
+        )}
 
         {hasPreviewLoaded && (
           <div className="flex gap-2 border-b border-border">
@@ -3455,9 +3478,11 @@ function ImportProgressModal({
   const statusText =
     status === "completed"
       ? "Importação concluída"
-      : status === "cancelled"
-        ? "Importação cancelada"
-        : "Importando contatos";
+      : status === "partial"
+        ? "Importação parcial"
+        : status === "cancelled"
+          ? "Importação cancelada"
+          : "Importando contatos";
 
   return (
     <Modal
@@ -3480,9 +3505,13 @@ function ImportProgressModal({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="font-semibold text-foreground">
-              {formatIntegerPtBr(imported)} de {formatIntegerPtBr(total)} contatos importados
+              {source === "agenda" && !done
+                ? "Aguardando confirmação da importação"
+                : `${formatIntegerPtBr(imported)} de ${formatIntegerPtBr(total)} contatos importados`}
             </span>
-            <span className="text-muted-foreground">{percent}%</span>
+            <span className="text-muted-foreground">
+              {source === "agenda" && !done ? `${percent}% estimado` : `${percent}%`}
+            </span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-surface-2">
             <div

@@ -493,6 +493,7 @@ export type ApiAgendaImportIgnoredContact = {
 };
 
 export type ApiAgendaImportPreview = {
+  capacity?: { limit: number | null; active: number; available: number | null };
   total: number;
   skipped: number;
   items: ApiAgendaImportContact[];
@@ -2042,13 +2043,17 @@ export const crmApi = {
   importContactsFromAgenda: (
     data: { connectionId?: string | null; selectedPhones?: string[] } = {},
   ) =>
-    apiRequest<{ total: number; imported: number; skipped: number }>(
-      "/crm/contacts/import/agenda",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
-    ),
+    apiRequest<{
+      total: number;
+      imported: number;
+      skipped: number;
+      limitReached?: number;
+      failed?: number;
+      unchanged?: number;
+    }>("/crm/contacts/import/agenda", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   bulkUpdateContacts: (data: {
     contactIds?: string[];
     allFiltered?: boolean;
@@ -2464,6 +2469,11 @@ export const automationApi = {
 };
 
 export const messageApi = {
+  recoverMedia: (conversationId: string, messageId: string) =>
+    apiRequest<{ messageId: string; state: "ready"; recovered: boolean }>(
+      `/conversations/${conversationId}/messages/${messageId}/media/recover`,
+      { method: "POST" },
+    ),
   get: (conversationId: string, messageId: string) =>
     apiRequest<ApiMessage>(`/conversations/${conversationId}/messages/${messageId}`),
   list: (conversationId: string, params: { limit?: number; cursor?: string } = {}) =>

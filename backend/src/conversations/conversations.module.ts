@@ -9,6 +9,7 @@ import { MessagesController } from "./messages.controller";
 import { MessagesService } from "./messages.service";
 import { ContactActionsController } from "./contact-actions.controller";
 import { ConversationPurgeService } from "./conversation-purge.service";
+import { MessageMediaRecoveryService } from "./message-media-recovery.service";
 
 @Module({
   imports: [AuthModule, PrismaModule, MessagingModule, RealtimeModule],
@@ -18,7 +19,7 @@ import { ConversationPurgeService } from "./conversation-purge.service";
     MessagesController,
     GroupsController,
   ],
-  providers: [MessagesService, ConversationPurgeService],
+  providers: [MessagesService, ConversationPurgeService, MessageMediaRecoveryService],
   exports: [MessagesService, ConversationPurgeService],
 })
 export class ConversationsModule {}

@@ -1,6 +1,8 @@
-import { IsUUID } from "class-validator";
+import { IsString, IsNotEmpty, MaxLength } from "class-validator";
 
 export class TransferDepartmentDto {
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
   departmentId!: string;
 }
