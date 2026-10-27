@@ -98,17 +98,29 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Build immutable HML images
+      - name: Verify canonical HML build targets
         shell: bash
         run: |
           set -Eeuo pipefail
           test "$VITE_TRIXUS_API_URL" = "https://api-hom.trixus.com.br/api"
           test "$VITE_TRIXUS_PLATFORM_APP_URL" = "https://hom.trixus.com.br"
           test "$VITE_TRIXUS_TENANT_APP_URL" = "https://hom.trixus.com.br"
+      - name: Build HML backend image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
           docker build --platform linux/amd64 -f backend/Dockerfile \
             --target runtime -t "trixus-hml-release/backend:$GITHUB_SHA" .
+      - name: Build HML migration image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
           docker build --platform linux/amd64 -f backend/Dockerfile \
             --target migrate -t "trixus-hml-release/migrate:$GITHUB_SHA" .
+      - name: Build HML frontend image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
           docker build --platform linux/amd64 -f Dockerfile.frontend \
             --build-arg VITE_TRIXUS_API_URL \
             --build-arg VITE_TRIXUS_PLATFORM_APP_URL \
