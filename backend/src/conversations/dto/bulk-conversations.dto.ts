@@ -6,8 +6,13 @@ import {
   IsBoolean,
   IsIn,
   IsOptional,
+  IsNotEmpty,
+  MaxLength,
   IsString,
   IsUUID,
+  isUUID,
+  maxLength,
+  ValidateBy,
 } from "class-validator";
 
 export class BulkConversationSelectionDto {
@@ -64,7 +69,9 @@ export class BulkConversationSelectionDto {
 
 export class BulkStartConversationsDto extends BulkConversationSelectionDto {
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
   departmentId?: string;
 }
 
@@ -73,7 +80,19 @@ export class BulkTransferConversationsDto extends BulkConversationSelectionDto {
   mode!: "department" | "agent" | "status";
 
   @IsOptional()
-  @IsUUID()
+  @ValidateBy({
+    name: "isBulkTransferTargetId",
+    validator: {
+      validate: (value, args) =>
+        (args?.object as BulkTransferConversationsDto).mode === "department"
+          ? typeof value === "string" && value.length > 0 && maxLength(value, 191)
+          : isUUID(value),
+      defaultMessage: (args) =>
+        (args?.object as BulkTransferConversationsDto).mode === "department"
+          ? "targetId must be a non-empty string of at most 191 characters"
+          : "targetId must be a UUID",
+    },
+  })
   targetId?: string;
 
   @IsOptional()
