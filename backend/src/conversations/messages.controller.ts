@@ -20,11 +20,16 @@ import { PermissionsGuard } from "../auth/permissions.guard";
 import { ListMessagesQueryDto } from "./dto/list-messages-query.dto";
 import { SendMessageDto } from "./dto/send-message.dto";
 import { MessagesService } from "./messages.service";
+import { MessageMediaRecoveryService } from "./message-media-recovery.service";
 
 @Controller("conversations/:conversationId/messages")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class MessagesController {
-  constructor(@Inject(MessagesService) private readonly messages: MessagesService) {}
+  constructor(
+    @Inject(MessagesService) private readonly messages: MessagesService,
+    @Inject(MessageMediaRecoveryService)
+    private readonly mediaRecovery: MessageMediaRecoveryService,
+  ) {}
 
   @Get()
   @RequirePermissions("conversations.read")
@@ -105,6 +110,16 @@ export class MessagesController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     return this.messages.react(conversationId, messageId, dto.emoji ?? null, current);
+  }
+
+  @Post(":messageId/media/recover")
+  @RequirePermissions("conversations.read")
+  recoverMedia(
+    @Param("conversationId") conversationId: string,
+    @Param("messageId") messageId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.mediaRecovery.recover(conversationId, messageId, current);
   }
 
   @Get(":messageId/media/download")

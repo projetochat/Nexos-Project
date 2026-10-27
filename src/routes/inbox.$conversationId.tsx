@@ -19,6 +19,7 @@ import {
   Ticket,
   Reply,
   Download,
+  RefreshCw,
   Eye,
   List,
   ArrowLeft,
@@ -1508,6 +1509,8 @@ export function MessageBubble({
   const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
   const [imagePreviewOpen, setImagePreviewOpen] = React.useState(false);
   const [mediaError, setMediaError] = React.useState(false);
+  const [recoveringMedia, setRecoveringMedia] = React.useState(false);
+  const [mediaRecoveryError, setMediaRecoveryError] = React.useState<string | null>(null);
   const [resendRequest, setResendRequest] = React.useState(0);
   const [actionsOpenRequest, setActionsOpenRequest] = React.useState(0);
   const [actionsOpenPosition, setActionsOpenPosition] = React.useState<{
@@ -1542,20 +1545,46 @@ export function MessageBubble({
   };
 
   const download = async (message: Message = m) => {
-    const blob = await messageApi.downloadMedia(message.conversation_id, message.id);
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = message.media_data?.file_name ?? "media";
-    anchor.click();
-    URL.revokeObjectURL(url);
+    setMediaRecoveryError(null);
+    try {
+      const blob = await messageApi.downloadMedia(message.conversation_id, message.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = message.media_data?.file_name ?? "media";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMediaRecoveryError((error as Error).message);
+      await qc.invalidateQueries({ queryKey: ["trixus", "messages", message.conversation_id] });
+    }
+  };
+
+  const recoverMedia = async () => {
+    if (recoveringMedia) return;
+    setRecoveringMedia(true);
+    setMediaRecoveryError(null);
+    try {
+      await messageApi.recoverMedia(m.conversation_id, m.id);
+      await qc.invalidateQueries({ queryKey: ["trixus", "messages", m.conversation_id] });
+    } catch (error) {
+      setMediaRecoveryError((error as Error).message);
+    } finally {
+      setRecoveringMedia(false);
+    }
   };
 
   const previewDocument = async (message: Message = m) => {
-    const blob = await messageApi.downloadMedia(message.conversation_id, message.id, true);
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener,noreferrer");
-    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    setMediaRecoveryError(null);
+    try {
+      const blob = await messageApi.downloadMedia(message.conversation_id, message.id, true);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (error) {
+      setMediaRecoveryError((error as Error).message);
+      await qc.invalidateQueries({ queryKey: ["trixus", "messages", message.conversation_id] });
+    }
   };
 
   if (m.type === "system") {
@@ -1875,7 +1904,24 @@ export function MessageBubble({
                             : "Disponível"
                           : "Documento em processamento..."}
                     </span>
+                    {mediaRecoveryError && (
+                      <span role="status" className="block text-destructive">
+                        {mediaRecoveryError}
+                      </span>
+                    )}
                   </span>
+                  {!mediaReady && m.direction === "inbound" && !m.deleted_for_everyone && (
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 hover:bg-black/10 disabled:cursor-wait"
+                      aria-label={`Recuperar ${m.media_data.file_name ?? "documento"}`}
+                      title="Tentar recuperar arquivo"
+                      disabled={recoveringMedia}
+                      onClick={() => void recoverMedia()}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${recoveringMedia ? "animate-spin" : ""}`} />
+                    </button>
+                  )}
                   {mediaReady && isPreviewableDocument(m) && (
                     <button
                       type="button"

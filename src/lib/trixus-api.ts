@@ -2464,6 +2464,11 @@ export const automationApi = {
 };
 
 export const messageApi = {
+  recoverMedia: (conversationId: string, messageId: string) =>
+    apiRequest<{ messageId: string; state: "ready"; recovered: boolean }>(
+      `/conversations/${conversationId}/messages/${messageId}/media/recover`,
+      { method: "POST" },
+    ),
   get: (conversationId: string, messageId: string) =>
     apiRequest<ApiMessage>(`/conversations/${conversationId}/messages/${messageId}`),
   list: (conversationId: string, params: { limit?: number; cursor?: string } = {}) =>

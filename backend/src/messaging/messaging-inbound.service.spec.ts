@@ -184,6 +184,110 @@ describe("MessagingInboundService", () => {
     },
   );
 
+  it.each(["FAILED", "PENDING"])(
+    "repairs ordinary duplicate media in %s without creating or sending messages",
+    async (mediaState) => {
+      const prisma = prismaMock();
+      prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+      const existing = {
+        id: "message-existing",
+        conversationId: "conversation-a",
+        mediaStorageKey: null,
+        mediaState,
+      };
+      prisma.message.findFirst.mockResolvedValue(existing);
+      const stored = {
+        objectKey: "isolated/contact.vcf",
+        mimeType: "text/vcard",
+        fileName: "contact.vcf",
+        sizeBytes: 32,
+        checksum: "checksum",
+      };
+      const storeDownloaded = vi.fn().mockResolvedValue(stored);
+      prisma.message.update.mockResolvedValue({
+        ...existing,
+        mediaStorageKey: stored.objectKey,
+        mediaState: "READY",
+      });
+      const realtime = { publishConversationUpdated: vi.fn(), publishMessageCreated: vi.fn() };
+      const outbound = { send: vi.fn() };
+      const service = new MessagingInboundService(
+        prisma as never,
+        { storeDownloaded } as never,
+        realtime as never,
+        undefined,
+        outbound as never,
+      );
+      const result = await service.process(retainedContact());
+      expect(result.duplicate).toBe(true);
+      expect(prisma.message.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ mediaState: "READY", mediaStorageKey: stored.objectKey }),
+        }),
+      );
+      expect(prisma.message.create).not.toHaveBeenCalled();
+      expect(prisma.conversation.update).not.toHaveBeenCalled();
+      expect(realtime.publishMessageCreated).not.toHaveBeenCalled();
+      expect(outbound.send).not.toHaveBeenCalled();
+      expect(realtime.publishConversationUpdated).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "message.media_ready" }),
+      );
+      prisma.message.findFirst.mockResolvedValue({
+        ...existing,
+        mediaStorageKey: stored.objectKey,
+        mediaState: "READY",
+      });
+      await service.process(retainedContact());
+      expect(storeDownloaded).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("preserves an ordinary duplicate when recovery storage fails without retrying storage", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    const existing = {
+      id: "message-existing",
+      conversationId: "conversation-a",
+      mediaStorageKey: null,
+      mediaState: "FAILED",
+    };
+    prisma.message.findFirst.mockResolvedValue(existing);
+    const storeDownloaded = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("storage unavailable"), { code: "ECONNRESET" }));
+    const result = await new MessagingInboundService(
+      prisma as never,
+      { storeDownloaded } as never,
+    ).process(retainedContact());
+    expect(result.message).toEqual(existing);
+    expect(result.duplicate).toBe(true);
+    expect(storeDownloaded).toHaveBeenCalledTimes(1);
+    expect(prisma.message.update).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+  });
+
+  it.each(["FAILED", "PENDING"])(
+    "does not restore deleted duplicate media in %s, including retained delivery",
+    async (mediaState) => {
+      const prisma = prismaMock();
+      prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+      prisma.message.findFirst.mockResolvedValue({
+        id: "message-existing",
+        conversationId: "conversation-a",
+        mediaStorageKey: null,
+        mediaState,
+        interactiveData: { deletedForEveryone: true },
+      });
+      const storeDownloaded = vi.fn();
+      const service = new MessagingInboundService(prisma as never, { storeDownloaded } as never);
+      await service.process(retainedContact());
+      await service.process(retainedContact(), { requireMediaReady: true });
+      expect(storeDownloaded).not.toHaveBeenCalled();
+      expect(prisma.message.update).not.toHaveBeenCalled();
+      expect(prisma.message.create).not.toHaveBeenCalled();
+    },
+  );
+
   it("leaves failed duplicate-media repair pending and does not overwrite the existing message", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());

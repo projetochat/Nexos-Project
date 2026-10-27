@@ -32,6 +32,7 @@ import { groupConversationLockKey } from "../conversations/group-conversation-id
 import { effectivePermissions } from "../auth/effective-permissions";
 import { roleChatScopes } from "../auth/connection-access";
 import { MESSAGE_CLOCK, type MessageClock, SYSTEM_MESSAGE_CLOCK } from "./message-clock";
+import { retryTransientMediaAcquisition } from "./media/retry-media-acquisition";
 
 @Injectable()
 export class MessagingInboundService {
@@ -88,17 +89,39 @@ export class MessagingInboundService {
         where: duplicateWhere,
       });
       if (duplicate) {
+        const duplicateData = duplicate.interactiveData;
+        const deletedForEveryone =
+          duplicateData !== null &&
+          typeof duplicateData === "object" &&
+          !Array.isArray(duplicateData) &&
+          duplicateData.deletedForEveryone === true;
         if (
-          options.requireMediaReady &&
+          !deletedForEveryone &&
           event.media &&
-          (!duplicate.mediaStorageKey || duplicate.mediaState !== MessageMediaState.READY)
+          ((options.requireMediaReady &&
+            (!duplicate.mediaStorageKey || duplicate.mediaState !== MessageMediaState.READY)) ||
+            duplicate.mediaState === MessageMediaState.FAILED ||
+            duplicate.mediaState === MessageMediaState.PENDING)
         ) {
           const stored = await this.downloadInboundMedia(
             event,
             duplicate.conversationId,
-            connection.externalReference,
-          );
-          if (!stored) throw new Error("Mídia retida ainda não disponível para importação.");
+            event.metadata?.providerInstanceName ?? connection.externalReference,
+          ).catch((error) => {
+            if (options.requireMediaReady) throw error;
+            this.logger.warn({
+              event: "messaging.media.duplicate_repair_failed",
+              tenantId: event.tenantId,
+              connectionId: event.connectionId,
+              // Provider errors can contain URLs or response bodies; do not log them here.
+            });
+            return null;
+          });
+          if (!stored) {
+            if (options.requireMediaReady)
+              throw new Error("Mídia retida ainda não disponível para importação.");
+            return { message: duplicate, duplicate: true };
+          }
           const repaired = await tx.message.update({
             where: { id: duplicate.id },
             data: {
@@ -1130,9 +1153,9 @@ export class MessagingInboundService {
       mimeType = mimeType ?? downloaded.mimeType ?? null;
       fileName = fileName ?? downloaded.fileName ?? null;
     } else if (!body && event.media.url?.startsWith("http")) {
-      body = await downloadRemoteMedia(event.media.url, {
-        maxBytes: maxSizeBytes(event.type),
-      });
+      body = await retryTransientMediaAcquisition(() =>
+        downloadRemoteMedia(event.media!.url!, { maxBytes: maxSizeBytes(event.type) }),
+      );
     }
     if (!body) return null;
     return this.mediaStorage.storeDownloaded({
