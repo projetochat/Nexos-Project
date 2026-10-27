@@ -83,7 +83,16 @@ describe("bulk conversation actions", () => {
   });
 
   it("returns per-conversation failures without retrying successful items", async () => {
-    const subject = controller();
+    const subject = new ConversationsController(
+      {
+        conversation: {
+          findMany: vi.fn().mockResolvedValue([{ id: "conversation-a" }, { id: "conversation-b" }]),
+        },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
     vi.spyOn(subject, "assign")
       .mockResolvedValueOnce({} as never)
       .mockRejectedValueOnce(new Error("Destino incompatível com a instância."));

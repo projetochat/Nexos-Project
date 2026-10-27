@@ -21,8 +21,8 @@ describe("dashboard component preferences", () => {
       })),
     ).toEqual([
       { id: "messages", visible: true, visualization: "line", columns: 2 },
-      { id: "ticketRequesterRanking", visible: true, visualization: "bars", columns: 2 },
-      { id: "tag", visible: true, visualization: "columns", columns: 2 },
+      { id: "ticketRequesterRanking", visible: true, visualization: "table", columns: 1 },
+      { id: "tag", visible: true, visualization: "columns", columns: 1 },
       { id: "distribution", visible: true, visualization: "donut", columns: 1 },
       { id: "agent", visible: true, visualization: "columns", columns: 1 },
       { id: "customer", visible: true, visualization: "bars", columns: 1 },
@@ -66,6 +66,44 @@ describe("dashboard component preferences", () => {
       DEFAULT_DASHBOARD_COMPONENTS.find((item) => item.id === "ticketRequesterRanking"),
     ]);
     expect(parseDashboardPreferences({ version: 2, components: migrated })).toEqual(migrated);
+  });
+
+  it("migrates the saved native ranking to a list in one column only once", () => {
+    const savedRanking = {
+      ...DEFAULT_DASHBOARD_COMPONENTS.find((item) => item.id === "ticketRequesterRanking")!,
+      title: "Ranking personalizado",
+      visualization: "bars" as const,
+      columns: 2 as const,
+    };
+
+    expect(parseDashboardPreferences({ version: 2, components: [savedRanking] })).toEqual([
+      { ...savedRanking, visualization: "table", columns: 1 },
+    ]);
+    expect(
+      parseDashboardPreferences({
+        version: 2,
+        nativeRevision: 3,
+        components: [savedRanking],
+      }),
+    ).toEqual([savedRanking]);
+  });
+
+  it("migrates conversations by tag to one column", () => {
+    const savedTag = {
+      ...DEFAULT_DASHBOARD_COMPONENTS.find((item) => item.id === "tag")!,
+      columns: 2 as const,
+    };
+
+    const migrated = parseDashboardPreferences({
+      version: 2,
+      nativeRevision: 3,
+      components: [savedTag],
+    });
+
+    expect(migrated.find((item) => item.id === "tag")).toEqual({
+      ...savedTag,
+      columns: 1,
+    });
   });
 
   it("starts a new component with an empty mandatory title", () => {

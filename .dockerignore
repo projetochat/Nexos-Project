@@ -14,6 +14,13 @@ coverage
 backups
 .continuity
 **/.continuity
+.codex-backups
+.task-backups
+.task-logs
+.task-temp
+.runtime
+.tmp-vitest
+.release-artifacts
 .trixus-storage
 trixus-storage
 tmp

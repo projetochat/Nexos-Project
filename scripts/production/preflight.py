@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 """Read-only inventory of the existing Trixus VPS. Never prints secrets."""
 
+import base64
+import binascii
 import json
 import os
 import platform
@@ -16,6 +18,8 @@ ENV = APP / ".env.vps"
 COMPOSE = APP / "docker-compose.vps.yml"
 STORAGE = Path("/srv/trixus-data")
 PROJECT = "trixus-vps"
+APP_ORIGIN = "https://app.trixus.com.br"
+WEBHOOK_URL = "https://api.trixus.com.br/api/webhooks/evolution"
 
 
 class CheckError(Exception):
@@ -34,6 +38,18 @@ def run(args):
     return result.stdout.strip()
 
 
+def valid_ai_encryption_key(value):
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    try:
+        decoded = (bytes.fromhex(value) if len(value) == 64
+                   else base64.b64decode(value, validate=True))
+    except (ValueError, binascii.Error):
+        return False
+    return len(decoded) == 32
+
+
 def trusted_path(path):
     for entry in (path, *path.parents):
         info = entry.lstat()
@@ -48,9 +64,21 @@ def validate_config(config):
     for name in ("backend", "frontend", "migrate", "postgres", "redis"):
         require(name in services, "Servico ausente: " + name)
     database = services["postgres"]["environment"]
+    backend_env = services["backend"]["environment"]
     migration_url = services["migrate"]["environment"]["DATABASE_URL"]
-    require(services["backend"]["environment"]["DATABASE_URL"] == migration_url,
+    require(backend_env["DATABASE_URL"] == migration_url,
             "API e migrations apontam para bancos diferentes")
+    require(backend_env.get("TRIXUS_ENVIRONMENT") == "production",
+            "Ambiente do backend deve ser production")
+    for name in ("FRONTEND_ORIGIN", "TRIXUS_REALTIME_CORS_ORIGIN",
+                 "TRIXUS_PLATFORM_APP_URL", "TRIXUS_TENANT_APP_URL",
+                 "TRIXUS_PUBLIC_APP_URL"):
+        require(backend_env.get(name) == APP_ORIGIN,
+                name + " deve usar somente app.trixus.com.br")
+    require(backend_env.get("EVOLUTION_WEBHOOK_PUBLIC_URL") == WEBHOOK_URL,
+            "Webhook de producao deve usar api.trixus.com.br")
+    require(valid_ai_encryption_key(backend_env.get("AI_CREDENTIALS_ENCRYPTION_KEY")),
+            "Chave de criptografia de IA ausente ou invalida")
     url = urlparse(migration_url)
     require(url.scheme in ("postgres", "postgresql") and url.hostname == "postgres"
             and url.port in (None, 5432), "Banco externo ao projeto; revisar backup")

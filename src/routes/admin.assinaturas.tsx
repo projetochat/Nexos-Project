@@ -423,17 +423,10 @@ function AssinaturasAdmin() {
         </Button>
       </div>
       {error && <div className="mt-4 text-sm text-destructive">{error}</div>}
-      <div
-        data-platform-card-shell
-        className={
-          viewMode === "cards"
-            ? "mt-4 md:overflow-hidden md:rounded-xl md:border md:border-border md:bg-card md:shadow-card"
-            : "hidden"
-        }
-      >
+      <div data-platform-card-shell className={viewMode === "cards" ? "mt-4 space-y-3" : "hidden"}>
         <div
           data-platform-mobile-list
-          className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:p-4 xl:grid-cols-3"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
         >
           {visibleRows.map((row) => (
             <SubscriptionMobileCard
@@ -455,7 +448,10 @@ function AssinaturasAdmin() {
             </div>
           )}
         </div>
-        <div className="hidden md:block" data-platform-card-pagination>
+        <div
+          className="overflow-hidden rounded-xl border border-border"
+          data-platform-card-pagination
+        >
           {paginationFooter}
         </div>
       </div>

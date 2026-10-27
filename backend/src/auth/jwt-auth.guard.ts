@@ -44,6 +44,7 @@ export class JwtAuthGuard implements CanActivate {
       surface: payload.surface,
       iatMs: payload.iatMs,
       sid: payload.sid,
+      portalAccessId: payload.portalAccessId,
       impersonationSessionId: payload.impersonationSessionId,
       actorPlatformUserId: payload.actorPlatformUserId,
     };
@@ -78,7 +79,27 @@ export class JwtAuthGuard implements CanActivate {
     });
     if (!membership) throw new UnauthorizedException("Membership inativa ou inválida.");
 
-    const roleKey = membership.role.key;
+    let roleKey = membership.role.key;
+    if (payload.portalAccessId) {
+      const portalAccess = await this.prisma.customerPortalAccess.findFirst({
+        where: {
+          id: payload.portalAccessId,
+          tenantId: payload.tenantId,
+          membershipId: payload.membershipId,
+          active: true,
+          contact: { active: true, archivedAt: null },
+          customer: { status: "ACTIVE", archivedAt: null },
+          branch: { status: "ACTIVE", archivedAt: null },
+          OR: [
+            { accessProfile: "FULL_ACCESS" },
+            { department: { active: true, archivedAt: null } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!portalAccess) throw new UnauthorizedException("Acesso ao Portal do Cliente inativo.");
+      roleKey = "customer_portal";
+    }
     const method = request.method.toUpperCase();
     const path = normalizeRequestPath(request.originalUrl || request.path);
     if (isOnboardingStatusRequest(method, path) || isTenantBootstrapRequest(method, path)) {

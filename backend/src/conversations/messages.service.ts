@@ -274,7 +274,32 @@ export class MessagesService {
       },
     });
     if (!message?.mediaStorageKey) throw new NotFoundException("Mídia não encontrada.");
-    const body = await this.mediaStorage.readObject(message.mediaStorageKey);
+    let body: Buffer;
+    try {
+      body = await this.mediaStorage.readObject(message.mediaStorageKey);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const changed = await this.prisma.message.updateMany({
+        where: {
+          id: messageId,
+          tenantId: current.tenantId,
+          conversationId,
+          mediaStorageKey: message.mediaStorageKey,
+        },
+        data: { mediaState: "FAILED" },
+      });
+      if (changed.count > 0) {
+        this.realtime?.publishConversationUpdated({
+          tenantId: current.tenantId,
+          conversationId,
+          reason: "message.media_missing",
+        });
+      }
+      throw new NotFoundException({
+        code: "MEDIA_FILE_MISSING",
+        message: "Arquivo não armazenado.",
+      });
+    }
     const preview = contactCardPreview(
       message.mediaMimeType ?? "",
       message.mediaFileName ?? "",
@@ -549,7 +574,16 @@ export class MessagesService {
             inline_url: `/conversations/${message.conversationId}/messages/${message.id}/media/inline`,
           }
         : message.mediaState
-          ? { state: message.mediaState.toLowerCase() }
+          ? {
+              state: message.mediaState.toLowerCase(),
+              mime_type: message.mediaMimeType,
+              file_name: message.mediaFileName,
+              size: message.mediaSize,
+              caption: message.mediaCaption,
+              width: message.mediaWidth,
+              height: message.mediaHeight,
+              checksum: message.mediaChecksum,
+            }
           : null,
       duration_ms: message.mediaDurationMs,
       reactions: message.reactions

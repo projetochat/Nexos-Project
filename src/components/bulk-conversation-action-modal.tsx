@@ -66,8 +66,8 @@ export function BulkConversationActionModal({
   const [status, setStatus] = React.useState<"fila" | "standby">("fila");
   const copy = ACTION_COPY[action];
   const scopedSelection = React.useMemo<BulkConversationSelection>(
-    () => ({ ...selection, tabs: selectedTabs.length ? selectedTabs : undefined }),
-    [selectedTabs, selection],
+    () => ({ ...selection, action, tabs: selectedTabs.length ? selectedTabs : undefined }),
+    [action, selectedTabs, selection],
   );
   const { data: options, isLoading } = useQuery({
     queryKey: ["trixus", "conversations", "bulk-options", scopedSelection],

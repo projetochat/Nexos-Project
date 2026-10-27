@@ -84,11 +84,40 @@ export class PermissionsGuard implements CanActivate {
       if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
     }
 
+    let effectiveRole = membership.role;
+    if (current.portalAccessId) {
+      const portalAccess = await this.prisma.customerPortalAccess.findFirst({
+        where: {
+          id: current.portalAccessId,
+          tenantId: current.tenantId,
+          membershipId: current.membershipId,
+          active: true,
+          contact: { active: true, archivedAt: null },
+          customer: { status: "ACTIVE", archivedAt: null },
+          branch: { status: "ACTIVE", archivedAt: null },
+          OR: [
+            { accessProfile: "FULL_ACCESS" },
+            { department: { active: true, archivedAt: null } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!portalAccess) throw new UnauthorizedException("Acesso ao Portal do Cliente inativo.");
+      const portalRole = await this.prisma.role.findUnique({
+        where: { tenantId_key: { tenantId: current.tenantId, key: "customer_portal" } },
+        include: { permissions: { select: { permissionId: true } } },
+      });
+      if (!portalRole?.active) {
+        throw new UnauthorizedException("Acesso ao Portal do Cliente inativo.");
+      }
+      effectiveRole = portalRole;
+    }
+
     const permissions = await moduleAwarePermissions(
       this.prisma,
       membership.tenantId,
       membership.tenant.featureOverrides,
-      membership.role,
+      effectiveRole,
     );
     const granted = new Set<string>(permissions);
     const allowed = (required ?? []).every((permission) => granted.has(permission));
@@ -96,13 +125,13 @@ export class PermissionsGuard implements CanActivate {
       !anyRequired?.length || anyRequired.some((permission) => granted.has(permission));
     if (!allowed || !anyAllowed) throw new ForbiddenException("Permissão insuficiente.");
 
-    request.user.roleId = membership.roleId;
-    request.user.roleKey = membership.role.key;
-    request.user.connectionIds = roleConnectionIds(membership.role);
-    request.user.chatDepartmentIds = roleChatDepartmentIds(membership.role);
-    request.user.chatScopes = roleChatPreferences(membership.role);
+    request.user.roleId = effectiveRole.id;
+    request.user.roleKey = effectiveRole.key;
+    request.user.connectionIds = roleConnectionIds(effectiveRole);
+    request.user.chatDepartmentIds = roleChatDepartmentIds(effectiveRole);
+    request.user.chatScopes = roleChatPreferences(effectiveRole);
     request.user.permissions = permissions;
-    request.user.assignedPermissionIds = membership.role.permissions.map(
+    request.user.assignedPermissionIds = effectiveRole.permissions.map(
       (permission) => permission.permissionId,
     );
     return true;

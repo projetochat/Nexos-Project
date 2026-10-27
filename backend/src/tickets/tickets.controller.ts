@@ -40,6 +40,10 @@ import { TicketsService } from "./tickets.service";
 import { RequireTenantFeature } from "../platform/tenant-feature.decorator";
 import { TenantFeatureGuard } from "../platform/tenant-feature.guard";
 import { InviteCustomerContactDto } from "./dto/invite-customer-contact.dto";
+import {
+  LinkCustomerPortalUserDto,
+  UpdateCustomerPortalLoginDto,
+} from "./dto/manage-customer-portal-user.dto";
 
 @Controller("tickets")
 @RequireTenantFeature("tickets")
@@ -59,20 +63,72 @@ export class TicketsController {
     return this.ticketsService.summary(query, current);
   }
 
+  @Get("portal/dashboard")
+  @RequirePermissions("tickets.read")
+  portalDashboard(@Query() query: ListTicketsQueryDto, @CurrentUser() current: AuthenticatedUser) {
+    return this.ticketsService.portalDashboard(query, current);
+  }
+
   @Post()
   @RequirePermissions("tickets.create")
   create(@Body() dto: CreateTicketDto, @CurrentUser() current: AuthenticatedUser) {
     return this.ticketsService.create(dto, current);
   }
 
+  @Get("portal/create-context")
+  @RequirePermissions("tickets.create")
+  portalCreateContext(@CurrentUser() current: AuthenticatedUser) {
+    return this.ticketsService.portalTicketCreateContext(current);
+  }
+
   @Post("portal/contacts/:contactId/invitations")
   @RequirePermissions("contacts.update")
   inviteCustomerContact(
     @Param("contactId") contactId: string,
-    @Body() _dto: InviteCustomerContactDto,
+    @Body() dto: InviteCustomerContactDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.ticketsService.inviteCustomerContact(contactId, current);
+    return this.ticketsService.inviteCustomerContact(contactId, current, dto.customerId);
+  }
+
+  @Get("portal/customers/:customerId/users")
+  @RequirePermissions("contacts.read")
+  listCustomerPortalUsers(
+    @Param("customerId") customerId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.listCustomerPortalUsers(customerId, current);
+  }
+
+  @Post("portal/customers/:customerId/users")
+  @RequirePermissions("contacts.update")
+  linkCustomerPortalUser(
+    @Param("customerId") customerId: string,
+    @Body() dto: LinkCustomerPortalUserDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.linkCustomerPortalUser(customerId, dto, current);
+  }
+
+  @Patch("portal/customers/:customerId/users/:contactId")
+  @RequirePermissions("contacts.update")
+  updateCustomerPortalUser(
+    @Param("customerId") customerId: string,
+    @Param("contactId") contactId: string,
+    @Body() dto: UpdateCustomerPortalLoginDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.updateCustomerPortalUser(customerId, contactId, dto, current);
+  }
+
+  @Delete("portal/customers/:customerId/users/:contactId")
+  @RequirePermissions("contacts.update")
+  revokeCustomerPortalUser(
+    @Param("customerId") customerId: string,
+    @Param("contactId") contactId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.ticketsService.revokeCustomerPortalUser(customerId, contactId, current);
   }
 
   @Get(":id")

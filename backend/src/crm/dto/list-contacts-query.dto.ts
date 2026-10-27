@@ -20,6 +20,10 @@ export class ListContactsQueryDto extends PaginationDto {
 
   @IsOptional()
   @IsString()
+  customerDepartmentId?: string;
+
+  @IsOptional()
+  @IsString()
   customerId?: string;
 
   @IsOptional()

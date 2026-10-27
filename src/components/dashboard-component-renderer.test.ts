@@ -24,6 +24,17 @@ describe("DashboardComponentRenderer height contract", () => {
     expect(source).not.toContain("hasRoom");
   });
 
+  it("uses the exact horizontal-bar maximum to avoid unused plot space", () => {
+    expect(source).toContain("domain={[0, (dataMax: number) => Math.max(1, dataMax)]}");
+  });
+
+  it("compacts both horizontal-bar side reservations without clipping values", () => {
+    expect(source).toContain("right: barValueMarginRight");
+    expect(source).toContain("left: 0");
+    expect(source).toContain("width={Math.min(categoryAxisLayout.width, 80)}");
+    expect(source).toContain("Math.min(72, Math.max(32, longestValue * 7 + 12))");
+  });
+
   it("enlarges and centers generic BI visualizations when maximized", () => {
     expect(source).toContain("useDashboardMaximized()");
     expect(source).toContain('maximized ? "flex items-center justify-center" : ""');

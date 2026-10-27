@@ -163,13 +163,54 @@ export class RealtimeService {
       });
       if (!session) return null;
     }
+    let effectiveRole = membership.role;
+    let portalScope:
+      | {
+          customerId: string;
+          contactId: string;
+          departmentId: string | null;
+          accessProfile: "FULL_ACCESS" | "MANAGER" | "COLLABORATOR";
+        }
+      | undefined;
+    if (context.portalAccessId) {
+      const portalAccess = await this.prisma.customerPortalAccess.findFirst({
+        where: {
+          id: context.portalAccessId,
+          tenantId: context.tenantId,
+          membershipId: context.membershipId,
+          active: true,
+          contact: { active: true, archivedAt: null },
+          customer: { status: "ACTIVE", archivedAt: null },
+          branch: { status: "ACTIVE", archivedAt: null },
+          OR: [
+            { accessProfile: "FULL_ACCESS" },
+            { department: { active: true, archivedAt: null } },
+          ],
+        },
+        select: {
+          customerId: true,
+          contactId: true,
+          departmentId: true,
+          accessProfile: true,
+        },
+      });
+      if (!portalAccess) return null;
+      const portalRole = await this.prisma.role.findUnique({
+        where: { tenantId_key: { tenantId: context.tenantId, key: "customer_portal" } },
+        include: { permissions: { select: { permissionId: true } } },
+      });
+      if (!portalRole?.active) return null;
+      effectiveRole = portalRole;
+      portalScope = portalAccess;
+    }
     return {
       membershipId: membership.id,
-      roleKey: membership.role.key,
-      connectionIds: roleConnectionIds(membership.role),
-      chatDepartmentIds: roleChatDepartmentIds(membership.role),
-      chatScopes: roleChatPreferences(membership.role),
-      permissions: effectivePermissions(membership.role),
+      roleKey: effectiveRole.key,
+      connectionIds: roleConnectionIds(effectiveRole),
+      chatDepartmentIds: roleChatDepartmentIds(effectiveRole),
+      chatScopes: roleChatPreferences(effectiveRole),
+      permissions: effectivePermissions(effectiveRole),
+      portalScope,
     };
   }
 
@@ -190,7 +231,12 @@ export class RealtimeService {
 
   private async publishScoped<T>(room: string, event: RealtimeServerEvent, data: T) {
     if (!this.server) return;
-    const payload = data as { conversationId?: string; connectionId?: string; contactId?: string };
+    const payload = data as {
+      conversationId?: string;
+      connectionId?: string;
+      contactId?: string;
+      ticketId?: string;
+    };
     const sockets = await this.server.in(room).fetchSockets();
     await Promise.all(
       sockets.map(async (socket) => {
@@ -200,6 +246,24 @@ export class RealtimeService {
         if (!scope) return;
         const requiredPermission = realtimeEventPermission(event);
         if (requiredPermission && !scope.permissions.includes(requiredPermission)) return;
+        if (event.startsWith("ticket.") && scope.portalScope) {
+          if (!payload.ticketId) return;
+          const ticket = await this.prisma.ticket.findFirst({
+            where: {
+              id: payload.ticketId,
+              tenantId: context.tenantId,
+              archivedAt: null,
+              customerId: scope.portalScope.customerId,
+              ...(scope.portalScope.accessProfile === "MANAGER"
+                ? { customerDepartmentId: scope.portalScope.departmentId ?? "__missing__" }
+                : scope.portalScope.accessProfile === "COLLABORATOR"
+                  ? { requesterContactId: scope.portalScope.contactId }
+                  : {}),
+            },
+            select: { id: true },
+          });
+          if (!ticket) return;
+        }
         if (payload.conversationId) {
           const conversation = await this.prisma.conversation.findFirst({
             where: {

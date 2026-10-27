@@ -4,7 +4,7 @@ import { CurrentUser } from "./current-user.decorator";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import type { AuthenticatedUser } from "./auth.types";
 import { AuthService } from "./auth.service";
-import { LoginDto } from "./dto/login.dto";
+import { LoginDto, PortalLoginDto } from "./dto/login.dto";
 import { RefreshDto } from "./dto/refresh.dto";
 
 class ForgotPasswordDto {
@@ -58,8 +58,13 @@ class SelectTenantDto {
   @IsString()
   selectionToken!: string;
 
+  @IsOptional()
   @IsString()
-  tenantId!: string;
+  tenantId?: string;
+
+  @IsOptional()
+  @IsString()
+  selectionId?: string;
 }
 
 @Controller("auth")
@@ -79,6 +84,11 @@ export class AuthController {
   @Post("tenant/login")
   tenantLogin(@Body() dto: LoginDto) {
     return this.auth.loginTenant(dto);
+  }
+
+  @Post("portal/login")
+  portalLogin(@Body() dto: PortalLoginDto) {
+    return this.auth.loginPortal(dto);
   }
 
   @Post("refresh")
@@ -113,7 +123,12 @@ export class AuthController {
 
   @Post("tenant/select")
   selectTenant(@Body() dto: SelectTenantDto) {
-    return this.auth.selectTenant(dto.selectionToken, dto.tenantId);
+    return this.auth.selectTenant(dto.selectionToken, dto.tenantId, dto.selectionId);
+  }
+
+  @Post("portal/select")
+  selectPortal(@Body() dto: SelectTenantDto) {
+    return this.auth.selectPortal(dto.selectionToken, dto.tenantId, dto.selectionId);
   }
 
   @Get("me")

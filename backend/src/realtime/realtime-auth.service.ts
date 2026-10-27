@@ -31,6 +31,7 @@ export type RealtimeSocketContext = {
   departmentIds: string[];
   permissions: string[];
   sid?: string;
+  portalAccessId?: string;
   exp: number;
   iatMs?: number;
   impersonationSessionId?: string;
@@ -62,6 +63,7 @@ export class RealtimeAuthService {
         tenantId: payload.tenantId,
         membershipId: payload.membershipId,
         sid: payload.sid,
+        portalAccessId: payload.portalAccessId,
         impersonationSessionId: payload.impersonationSessionId,
       });
     }
@@ -107,19 +109,36 @@ export class RealtimeAuthService {
       });
       if (!session) throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
     }
+    let effectiveRole = membership.role;
+    if (payload.portalAccessId) {
+      await this.assertPortalAccess({
+        portalAccessId: payload.portalAccessId,
+        tenantId: payload.tenantId,
+        membershipId: payload.membershipId,
+      });
+      const portalRole = await this.prisma.role.findUnique({
+        where: { tenantId_key: { tenantId: payload.tenantId, key: "customer_portal" } },
+        include: { permissions: { select: { permissionId: true } } },
+      });
+      if (!portalRole?.active) throw new RealtimeAuthError("REALTIME_MEMBERSHIP_INACTIVE");
+      effectiveRole = portalRole;
+    }
     await this.assertOnboardingCompleted(membership.tenantId);
 
     return {
       userId: membership.userId,
       tenantId: membership.tenantId,
       membershipId: membership.id,
-      roleId: membership.roleId,
-      roleKey: membership.role.key,
+      roleId: effectiveRole.id,
+      roleKey: effectiveRole.key,
       platformRole: membership.user.platformRole,
       surface: "tenant",
-      departmentIds: membership.departments.map((item) => item.departmentId),
-      permissions: effectivePermissions(membership.role),
+      departmentIds: payload.portalAccessId
+        ? []
+        : membership.departments.map((item) => item.departmentId),
+      permissions: effectivePermissions(effectiveRole),
       sid: payload.sid,
+      portalAccessId: payload.portalAccessId,
       exp,
       iatMs: payload.iatMs,
       impersonationSessionId: payload.impersonationSessionId,
@@ -134,6 +153,7 @@ export class RealtimeAuthService {
       | "tenantId"
       | "membershipId"
       | "sid"
+      | "portalAccessId"
       | "exp"
       | "iatMs"
       | "impersonationSessionId"
@@ -154,6 +174,13 @@ export class RealtimeAuthService {
       select: { tenant: { select: { authRevokedAt: true } } },
     });
     if (!membership) throw new RealtimeAuthError("REALTIME_MEMBERSHIP_INACTIVE");
+    if (context.portalAccessId) {
+      await this.assertPortalAccess({
+        portalAccessId: context.portalAccessId,
+        tenantId: context.tenantId,
+        membershipId: context.membershipId,
+      });
+    }
     await this.assertOnboardingCompleted(context.tenantId);
     if (
       membership.tenant.authRevokedAt &&
@@ -181,7 +208,7 @@ export class RealtimeAuthService {
   private async assertPersistedSession(
     context: Pick<
       RealtimeSocketContext,
-      "userId" | "tenantId" | "membershipId" | "sid" | "impersonationSessionId"
+      "userId" | "tenantId" | "membershipId" | "sid" | "portalAccessId" | "impersonationSessionId"
     >,
   ) {
     const session = await this.prisma.authSession.findFirst({
@@ -190,6 +217,7 @@ export class RealtimeAuthService {
         userId: context.userId,
         tenantId: context.tenantId,
         membershipId: context.membershipId,
+        portalAccessId: context.portalAccessId ?? null,
         impersonationSessionId: context.impersonationSessionId ?? null,
         revokedAt: null,
         expiresAt: { gt: new Date() },
@@ -197,6 +225,27 @@ export class RealtimeAuthService {
       select: { id: true },
     });
     if (!session) throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+  }
+
+  private async assertPortalAccess(input: {
+    portalAccessId: string;
+    tenantId: string;
+    membershipId: string;
+  }) {
+    const access = await this.prisma.customerPortalAccess.findFirst({
+      where: {
+        id: input.portalAccessId,
+        tenantId: input.tenantId,
+        membershipId: input.membershipId,
+        active: true,
+        contact: { active: true, archivedAt: null },
+        customer: { status: "ACTIVE", archivedAt: null },
+        branch: { status: "ACTIVE", archivedAt: null },
+        OR: [{ accessProfile: "FULL_ACCESS" }, { department: { active: true, archivedAt: null } }],
+      },
+      select: { id: true },
+    });
+    if (!access) throw new RealtimeAuthError("REALTIME_MEMBERSHIP_INACTIVE");
   }
 
   private async assertOnboardingCompleted(tenantId: string) {

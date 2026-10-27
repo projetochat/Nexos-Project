@@ -34,34 +34,39 @@ describe("Platform responsive card and table views", () => {
     expect(source).toContain(`aria-label="Visualizar ${label} em lista"`);
   });
 
-  it.each(routeSources)("hides only the card footer on mobile in $file", ({ source }) => {
+  it.each(routeSources)("keeps the independent card footer visible in $file", ({ source }) => {
     const cardStart = source.indexOf("data-platform-mobile-list");
     const tableStart = source.indexOf("data-platform-desktop-table", cardStart);
     const cardView = source.slice(cardStart, tableStart);
 
-    expect(cardView).toContain('className="hidden md:block" data-platform-card-pagination');
+    expect(cardView).toContain("data-platform-card-pagination");
+    expect(cardView).toContain('className="overflow-hidden rounded-xl border border-border"');
+    expect(cardView).not.toContain('className="hidden md:block" data-platform-card-pagination');
     expect(cardView).toContain("{paginationFooter}");
     expect(source.match(/\{paginationFooter\}/g)).toHaveLength(2);
   });
 
-  it.each(routeSources)("removes the outer card shell only on mobile in $file", ({ source }) => {
-    const shellStart = source.indexOf("data-platform-card-shell");
-    const mobileListStart = source.indexOf("data-platform-mobile-list", shellStart);
-    const shellOpening = source.slice(shellStart, mobileListStart);
-    const mobileListOpening = source.slice(
-      mobileListStart,
-      source.indexOf(">", mobileListStart) + 1,
-    );
+  it.each(routeSources)(
+    "removes the outer card shell in every breakpoint in $file",
+    ({ source }) => {
+      const shellStart = source.indexOf("data-platform-card-shell");
+      const mobileListStart = source.indexOf("data-platform-mobile-list", shellStart);
+      const shellOpening = source.slice(shellStart, mobileListStart);
+      const mobileListOpening = source.slice(
+        mobileListStart,
+        source.indexOf(">", mobileListStart) + 1,
+      );
 
-    expect(shellStart).toBeGreaterThan(-1);
-    expect(shellOpening).toContain(
-      "md:overflow-hidden md:rounded-xl md:border md:border-border md:bg-card md:shadow-card",
-    );
-    expect(shellOpening).not.toContain("<Card");
-    expect(mobileListOpening).toContain("md:p-4");
-    expect(mobileListOpening).not.toMatch(/\sp-3(?:\s|")/);
-    expect(mobileListOpening).not.toMatch(/\ssm:p-4(?:\s|")/);
-  });
+      expect(shellStart).toBeGreaterThan(-1);
+      expect(shellOpening).toContain("space-y-3");
+      expect(shellOpening).not.toContain("md:bg-card md:shadow-card");
+      expect(shellOpening).not.toContain("md:border");
+      expect(shellOpening).not.toContain("<Card");
+      expect(mobileListOpening).not.toContain("md:p-4");
+      expect(mobileListOpening).not.toMatch(/\sp-3(?:\s|")/);
+      expect(mobileListOpening).not.toMatch(/\ssm:p-4(?:\s|")/);
+    },
+  );
 
   it("preserves actions in cards and lists with each screen's intended presentation", () => {
     const clients = routeSources[0].source;

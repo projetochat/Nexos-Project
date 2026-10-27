@@ -6,6 +6,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  HttpException,
   Inject,
   NotFoundException,
   Param,
@@ -176,6 +177,10 @@ class BulkUpdateContactsDto {
   @IsOptional()
   @IsUUID()
   customerId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  customerDepartmentId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -463,6 +468,11 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findCustomerOrThrow(id, current.tenantId);
+    const city = dto.city?.trim();
+    const state = dto.state?.trim().toUpperCase();
+    if (!city || !state) {
+      throw new BadRequestException("Informe uma cidade válida para a filial.");
+    }
     const archived = await this.prisma.customerBranch.findFirst({
       where: {
         tenantId: current.tenantId,
@@ -476,8 +486,8 @@ export class CrmController {
       return this.prisma.customerBranch.update({
         where: { id: archived.id },
         data: {
-          city: dto.city.trim(),
-          state: dto.state.trim().toUpperCase(),
+          city,
+          state,
           status: dto.status ?? "ACTIVE",
           archivedAt: null,
         },
@@ -488,8 +498,8 @@ export class CrmController {
         tenantId: current.tenantId,
         customerId: id,
         name: dto.name.trim(),
-        city: dto.city.trim(),
-        state: dto.state.trim().toUpperCase(),
+        city,
+        state,
         status: dto.status,
       },
     });
@@ -504,12 +514,17 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findCustomerBranchOrThrow(id, branchId, current.tenantId);
+    const city = dto.city?.trim();
+    const state = dto.state?.trim().toUpperCase();
+    if (!city || !state) {
+      throw new BadRequestException("Informe uma cidade válida para a filial.");
+    }
     return this.prisma.customerBranch.update({
       where: { id: branchId },
       data: {
         name: dto.name.trim(),
-        city: dto.city.trim(),
-        state: dto.state.trim().toUpperCase(),
+        city,
+        state,
         status: dto.status,
       },
     });
@@ -536,11 +551,21 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findCustomerOrThrow(id, current.tenantId);
-    return this.prisma.customerDepartment.findMany({
-      where: { tenantId: current.tenantId, customerId: id, archivedAt: null },
-      include: { managerContact: { select: { id: true, name: true } } },
-      orderBy: [{ name: "asc" }],
-    });
+    return this.prisma.customerDepartment
+      .findMany({
+        where: { tenantId: current.tenantId, customerId: id, archivedAt: null },
+        include: {
+          managerContact: { select: { id: true, name: true } },
+          _count: { select: { contacts: true } },
+        },
+        orderBy: [{ name: "asc" }],
+      })
+      .then((rows) =>
+        rows.map(({ _count, ...department }) => ({
+          ...department,
+          contactCount: _count.contacts,
+        })),
+      );
   }
 
   @Post("customers/:id/departments")
@@ -552,11 +577,17 @@ export class CrmController {
   ) {
     await this.findCustomerOrThrow(id, current.tenantId);
     await this.assertCustomerManager(dto.managerContactId, id, current.tenantId);
+    const name = await normalizeRegistrationText(
+      this.prisma,
+      current.tenantId,
+      "contactDepartments",
+      dto.name,
+    );
     const archived = await this.prisma.customerDepartment.findFirst({
       where: {
         tenantId: current.tenantId,
         customerId: id,
-        name: dto.name.trim(),
+        name,
         archivedAt: { not: null },
       },
       select: { id: true },
@@ -565,6 +596,7 @@ export class CrmController {
       return this.prisma.customerDepartment.update({
         where: { id: archived.id },
         data: {
+          name,
           managerContactId: dto.managerContactId ?? null,
           active: dto.active ?? true,
           archivedAt: null,
@@ -576,7 +608,7 @@ export class CrmController {
       data: {
         tenantId: current.tenantId,
         customerId: id,
-        name: dto.name.trim(),
+        name,
         managerContactId: dto.managerContactId ?? null,
         active: dto.active ?? true,
       },
@@ -594,10 +626,16 @@ export class CrmController {
   ) {
     await this.findCustomerDepartmentOrThrow(id, departmentId, current.tenantId);
     await this.assertCustomerManager(dto.managerContactId, id, current.tenantId);
+    const name = await normalizeRegistrationText(
+      this.prisma,
+      current.tenantId,
+      "contactDepartments",
+      dto.name,
+    );
     return this.prisma.customerDepartment.update({
       where: { id: departmentId },
       data: {
-        name: dto.name.trim(),
+        name,
         managerContactId: dto.managerContactId === undefined ? undefined : dto.managerContactId,
         active: dto.active,
       },
@@ -613,9 +651,15 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findCustomerDepartmentOrThrow(id, departmentId, current.tenantId);
-    return this.prisma.customerDepartment.update({
-      where: { id: departmentId },
-      data: { archivedAt: new Date() },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.contact.updateMany({
+        where: { tenantId: current.tenantId, customerDepartmentId: departmentId },
+        data: { customerDepartmentId: null },
+      });
+      return tx.customerDepartment.update({
+        where: { id: departmentId },
+        data: { archivedAt: new Date() },
+      });
     });
   }
 
@@ -737,6 +781,10 @@ export class CrmController {
     ]);
 
     this.profilePictures.enqueueMissing({
+      tenantId: current.tenantId,
+      contacts: items,
+    });
+    this.profilePictures.enqueuePlaceholderNames({
       tenantId: current.tenantId,
       contacts: items,
     });
@@ -921,9 +969,13 @@ export class CrmController {
           status: true,
         },
       }),
-      this.prisma.contactDepartment.findMany({
+      this.prisma.customerDepartment.findMany({
         where: { tenantId: current.tenantId, archivedAt: null },
-        orderBy: { name: "asc" },
+        orderBy: [{ customer: { name: "asc" } }, { name: "asc" }],
+        include: {
+          customer: { select: { id: true, name: true } },
+          _count: { select: { contacts: true } },
+        },
       }),
       this.prisma.contactProfile.findMany({
         where: { tenantId: current.tenantId, archivedAt: null },
@@ -944,7 +996,19 @@ export class CrmController {
         ownerPhone: connection.ownerPhoneNormalized,
         status: connection.status,
       })),
-      departments: departments.map((item) => this.serializeContactCatalog(item)),
+      departments: departments.map((item) => ({
+        id: item.id,
+        tenantId: item.tenantId,
+        nome: item.name,
+        descricao: item.customer.name,
+        cor: "#3B82F6",
+        customerId: item.customerId,
+        customerName: item.customer.name,
+        active: item.active,
+        contactCount: item._count.contacts,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      })),
       profiles: profiles.map((item) => this.serializeContactCatalog(item)),
       tags: tags.map((tag) => this.serializeTag(tag)),
     };
@@ -1187,7 +1251,7 @@ export class CrmController {
           count: references.length,
           operation: "unlink",
           operationLabel: references.length
-            ? "Precisam ser corrigidos manualmente antes da exclusão."
+            ? "Os conteúdos indicados precisam ser corrigidos antes da exclusão."
             : "Nenhum conteúdo textual será afetado.",
           items: references.slice(0, 10).map((item) => ({
             id: item.id,
@@ -1261,6 +1325,12 @@ export class CrmController {
         where: contactWhere,
         data: {
           customerId: dto.customerId === undefined ? undefined : links.customerId,
+          customerBranchId: dto.customerId === undefined ? undefined : null,
+          customerDepartmentId:
+            dto.customerId !== undefined || dto.customerDepartmentId !== undefined
+              ? links.customerDepartmentId
+              : undefined,
+          customerAccessProfile: dto.customerId === undefined ? undefined : null,
           contactDepartmentId:
             dto.contactDepartmentId === undefined ? undefined : links.contactDepartmentId,
           contactProfileId: dto.contactProfileId === undefined ? undefined : links.contactProfileId,
@@ -1351,6 +1421,9 @@ export class CrmController {
 
     let imported = 0;
     let skipped = 0;
+    let limitReached = 0;
+    let failed = 0;
+    let unchanged = 0;
     const importedContacts: Array<{
       id: string;
       tenantId: string;
@@ -1377,6 +1450,7 @@ export class CrmController {
           continue;
         }
         if (existing.instanceIds.includes(preview.connection.id)) {
+          unchanged += 1;
           continue;
         }
         const nextInstanceIds = [...new Set([...existing.instanceIds, preview.connection.id])];
@@ -1390,8 +1464,10 @@ export class CrmController {
         });
         importedContacts.push(contact);
         imported += 1;
-      } catch {
+      } catch (error) {
         skipped += 1;
+        if (isContactImportLimitError(error)) limitReached += 1;
+        else failed += 1;
       }
     }
 
@@ -1417,6 +1493,8 @@ export class CrmController {
             });
             importedContacts.push(contact);
             imported += 1;
+          } else {
+            unchanged += 1;
           }
           continue;
         }
@@ -1458,8 +1536,10 @@ export class CrmController {
           importedContacts.push(contact);
         }
         imported += 1;
-      } catch {
+      } catch (error) {
         skipped += 1;
+        if (isContactImportLimitError(error)) limitReached += 1;
+        else failed += 1;
       }
     }
 
@@ -1470,6 +1550,9 @@ export class CrmController {
     return {
       total: candidates.length + instanceUpdatePhones.size,
       imported,
+      limitReached,
+      failed,
+      unchanged,
       skipped: Math.max(preview.skipped - activeRegisteredItems.length, 0) + skipped,
     };
   }
@@ -1482,7 +1565,14 @@ export class CrmController {
   ) {
     await this.entitlements.assertTenantOperational(current.tenantId);
     const preview = await this.buildAgendaImportPreview(current.tenantId, dto.connectionId);
+    const [entitlements, active] = await Promise.all([
+      this.entitlements.getEntitlements(current.tenantId),
+      this.prisma.contact.count({ where: { tenantId: current.tenantId, archivedAt: null } }),
+    ]);
+    const configuredLimit = entitlements.limits.maxContacts;
+    const limit = Number.isFinite(configuredLimit) && configuredLimit >= 0 ? configuredLimit : null;
     return {
+      capacity: { limit, active, available: limit === null ? null : Math.max(limit - active, 0) },
       total: preview.total,
       skipped: preview.skipped,
       items: preview.items,
@@ -1503,7 +1593,10 @@ export class CrmController {
       ? await this.resolveInstanceFilterKeys(query.instance, tenantId)
       : [];
     const filterWithoutCustomer = query.customerId === EMPTY_CONTACT_FILTER_VALUE;
-    const filterWithoutDepartment = query.department === EMPTY_CONTACT_FILTER_VALUE;
+    const canonicalDepartmentFilter = query.customerDepartmentId;
+    const filterWithoutCanonicalDepartment =
+      canonicalDepartmentFilter === EMPTY_CONTACT_FILTER_VALUE;
+    const filterWithoutLegacyDepartment = query.department === EMPTY_CONTACT_FILTER_VALUE;
     const filterWithoutTags = query.tagId === EMPTY_CONTACT_FILTER_VALUE;
 
     return {
@@ -1529,11 +1622,15 @@ export class CrmController {
             ],
           }
         : {}),
-      ...(filterWithoutDepartment
-        ? { contactDepartmentId: null }
-        : query.department
-          ? { contactDepartmentId: query.department }
-          : {}),
+      ...(filterWithoutCanonicalDepartment
+        ? { customerDepartmentId: null }
+        : canonicalDepartmentFilter
+          ? { customerDepartmentId: canonicalDepartmentFilter }
+          : filterWithoutLegacyDepartment
+            ? { contactDepartmentId: null }
+            : query.department
+              ? { contactDepartmentId: query.department }
+              : {}),
       ...(filterWithoutTags
         ? {
             tags: {
@@ -2010,6 +2107,24 @@ export class CrmController {
   ) {
     this.assertCanWriteContactAdditionalFields(dto.customFields, current);
     const currentContact = await this.findContactOrThrow(id, current.tenantId);
+    const nextEmail = normalizeEmailUpdate(dto.email);
+    const currentEmail = currentContact.email?.toLowerCase().trim() ?? null;
+    if (dto.email !== undefined && nextEmail !== currentEmail) {
+      const protectedPortalAccess = await this.prisma.customerPortalAccess.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          contactId: id,
+          OR: [{ active: true }, { invitations: { some: { status: "PENDING" } } }],
+        },
+        select: { id: true },
+      });
+      if (protectedPortalAccess) {
+        throw new ConflictException({
+          code: "CONTACT_EMAIL_PORTAL_ACCESS_ACTIVE",
+          message: "Revogue o acesso ao Portal do Cliente antes de alterar o e-mail deste contato.",
+        });
+      }
+    }
     const contactName = dto.name
       ? await normalizeRegistrationText(this.prisma, current.tenantId, "contacts", dto.name)
       : undefined;
@@ -2044,19 +2159,50 @@ export class CrmController {
       }
     }
     const links = await this.resolveContactLinks(dto, current.tenantId, currentContact.customerId);
+    const customerChanged =
+      dto.customerId !== undefined && dto.customerId !== currentContact.customerId;
     try {
       const contact = await this.prisma.$transaction(async (tx) => {
         if (dto.active === false && currentContact.active) {
           const revokedAt = new Date();
-          await tx.userInvitation.updateMany({
-            where: {
-              tenantId: current.tenantId,
-              contactId: id,
-              status: "PENDING",
-            },
-            data: { status: "REVOKED", revokedAt },
-          });
+          const portalAccessIds = (
+            await tx.customerPortalAccess.findMany({
+              where: { tenantId: current.tenantId, contactId: id },
+              select: { id: true },
+            })
+          ).map((access) => access.id);
+          if (portalAccessIds.length) {
+            await tx.userInvitation.updateMany({
+              where: {
+                tenantId: current.tenantId,
+                portalAccessId: { in: portalAccessIds },
+                status: "PENDING",
+              },
+              data: { status: "REVOKED", revokedAt },
+            });
+            await tx.authSession.updateMany({
+              where: {
+                tenantId: current.tenantId,
+                portalAccessId: { in: portalAccessIds },
+                revokedAt: null,
+              },
+              data: { revokedAt },
+            });
+            await tx.customerPortalAccess.updateMany({
+              where: { tenantId: current.tenantId, id: { in: portalAccessIds } },
+              data: { active: false },
+            });
+          }
           if (currentContact.portalMembershipId) {
+            await tx.userInvitation.updateMany({
+              where: {
+                tenantId: current.tenantId,
+                contactId: id,
+                portalAccessId: null,
+                status: "PENDING",
+              },
+              data: { status: "REVOKED", revokedAt },
+            });
             const disabledMembership = await tx.tenantMembership.updateMany({
               where: {
                 id: currentContact.portalMembershipId,
@@ -2070,6 +2216,7 @@ export class CrmController {
                 where: {
                   tenantId: current.tenantId,
                   membershipId: currentContact.portalMembershipId,
+                  portalAccessId: null,
                   revokedAt: null,
                 },
                 data: { revokedAt },
@@ -2108,27 +2255,24 @@ export class CrmController {
                 : currentGroupIdentity
                   ? currentGroupIdentity
                   : (groupContactIdentityFromPhone(dto.phone) ?? normalizePhone(dto.phone)),
-            email: normalizeEmailUpdate(dto.email),
+            email: nextEmail,
             avatarUrl: nullableUpdate(dto.avatarUrl),
             customerId: dto.customerId === undefined ? undefined : links.customerId,
-            customerBranchId:
-              dto.customerId === null
-                ? null
-                : dto.customerBranchId === undefined
-                  ? undefined
-                  : links.customerBranchId,
-            customerDepartmentId:
-              dto.customerId === null
-                ? null
-                : dto.customerDepartmentId === undefined
-                  ? undefined
-                  : links.customerDepartmentId,
-            customerAccessProfile:
-              dto.customerId === null
-                ? null
-                : dto.customerAccessProfile === undefined
-                  ? undefined
-                  : dto.customerAccessProfile,
+            customerBranchId: customerChanged
+              ? links.customerBranchId
+              : dto.customerBranchId === undefined
+                ? undefined
+                : links.customerBranchId,
+            customerDepartmentId: customerChanged
+              ? links.customerDepartmentId
+              : dto.customerDepartmentId === undefined
+                ? undefined
+                : links.customerDepartmentId,
+            customerAccessProfile: customerChanged
+              ? (dto.customerAccessProfile ?? null)
+              : dto.customerAccessProfile === undefined
+                ? undefined
+                : dto.customerAccessProfile,
             departmentId: dto.departmentId === undefined ? undefined : links.departmentId,
             contactDepartmentId:
               dto.contactDepartmentId === undefined ? undefined : links.contactDepartmentId,
@@ -2167,7 +2311,7 @@ export class CrmController {
     @Body() dto: { customerId?: string | null },
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    await this.findContactOrThrow(id, current.tenantId);
+    const existing = await this.findContactOrThrow(id, current.tenantId);
     let customerId: string | null = null;
     if (dto.customerId) {
       const customer = await this.prisma.customer.findFirst({
@@ -2177,9 +2321,15 @@ export class CrmController {
       if (!customer) throw new BadRequestException("Cliente inexistente para esta organização.");
       customerId = customer.id;
     }
+    const customerChanged = existing.customerId !== customerId;
     const contact = await this.prisma.contact.update({
       where: { tenantId_id: { tenantId: current.tenantId, id } },
-      data: { customerId },
+      data: {
+        customerId,
+        customerBranchId: customerChanged ? null : undefined,
+        customerDepartmentId: customerChanged ? null : undefined,
+        customerAccessProfile: customerChanged ? null : undefined,
+      },
       include: contactInclude,
     });
     const serialized = this.serializeContact(contact, {
@@ -2373,7 +2523,7 @@ export class CrmController {
         throw new BadRequestException("Selecione o cliente antes de vincular uma filial.");
       }
       const branch = await this.prisma.customerBranch.findFirst({
-        where: { id: customerBranchId, tenantId, archivedAt: null },
+        where: { id: customerBranchId, tenantId, status: "ACTIVE", archivedAt: null },
         select: { customerId: true },
       });
       if (!branch || (effectiveCustomerId && branch.customerId !== effectiveCustomerId)) {
@@ -2386,7 +2536,7 @@ export class CrmController {
         throw new BadRequestException("Selecione o cliente antes de vincular um departamento.");
       }
       const department = await this.prisma.customerDepartment.findFirst({
-        where: { id: customerDepartmentId, tenantId, archivedAt: null },
+        where: { id: customerDepartmentId, tenantId, active: true, archivedAt: null },
         select: { customerId: true },
       });
       if (!department || (effectiveCustomerId && department.customerId !== effectiveCustomerId)) {
@@ -2401,15 +2551,10 @@ export class CrmController {
       if (!department) throw new BadRequestException("Departamento inexistente para este tenant.");
     }
 
-    let contactDepartment: Awaited<
-      ReturnType<typeof this.prisma.contactDepartment.findFirst>
-    > | null = null;
-    if (dto.contactDepartmentId) {
-      contactDepartment = await this.prisma.contactDepartment.findFirst({
-        where: { id: dto.contactDepartmentId, tenantId, archivedAt: null },
-      });
-      if (!contactDepartment)
-        throw new BadRequestException("Departamento do contato inexistente para este tenant.");
+    if (dto.contactDepartmentId || dto.departmentName?.trim()) {
+      throw new BadRequestException(
+        "Selecione uma empresa e use um departamento cadastrado para esse cliente.",
+      );
     }
 
     let contactProfile: Awaited<ReturnType<typeof this.prisma.contactProfile.findFirst>> | null =
@@ -2473,7 +2618,7 @@ export class CrmController {
       departmentId: dto.departmentId || null,
       contactDepartmentId: dto.contactDepartmentId || null,
       contactProfileId: dto.contactProfileId || null,
-      departmentName: contactDepartment?.name ?? cleanNullable(dto.departmentName),
+      departmentName: cleanNullable(dto.departmentName),
       instance,
       instanceIds: instanceIds.length ? instanceIds : fallbackInstance ? [fallbackInstance] : [],
       tagIds,
@@ -3041,6 +3186,13 @@ export class CrmController {
       : contact.instance
         ? [contact.instance]
         : [];
+    const effectiveDepartment = contact.customerDepartment
+      ? {
+          id: contact.customerDepartment.id,
+          name: contact.customerDepartment.name,
+          source: "CUSTOMER" as const,
+        }
+      : null;
     return {
       id: contact.id,
       tenantId: contact.tenantId,
@@ -3053,10 +3205,14 @@ export class CrmController {
       customerBranch: contact.customerBranch,
       customerDepartmentId: contact.customerDepartmentId,
       customerDepartment: contact.customerDepartment,
+      effectiveDepartment,
+      effectiveDepartmentId: effectiveDepartment?.id ?? null,
       customerAccessProfile: contact.customerAccessProfile,
+      portalLogin: contact.portalLogin,
+      portalAccessActive: contact.portalAccessActive,
       active: contact.active,
       email: contact.email,
-      departamento: contact.departmentName,
+      departamento: effectiveDepartment?.name ?? null,
       departmentId: contact.departmentId,
       contactDepartmentId: contact.contactDepartmentId,
       contactDepartment: contact.contactDepartment
@@ -3497,4 +3653,15 @@ function handleContactCatalogUniqueError(
 
 function isPrismaError(error: unknown, code: string) {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function isContactImportLimitError(error: unknown) {
+  if (!(error instanceof HttpException)) return false;
+  const response = error.getResponse();
+  return (
+    typeof response === "object" &&
+    response !== null &&
+    "code" in response &&
+    response.code === "PLAN_LIMIT_CONTACTS_REACHED"
+  );
 }

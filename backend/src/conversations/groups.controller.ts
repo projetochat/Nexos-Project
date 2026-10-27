@@ -17,7 +17,7 @@ import { IsArray, IsIn, IsOptional, IsString, IsUUID, Length, MaxLength } from "
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { connectionIdAccess, conversationChatScopeAccess } from "../auth/connection-access";
 import {
@@ -32,8 +32,10 @@ import { MessagingProviderError } from "../messaging/messaging.contracts";
 import { PrismaService } from "../prisma/prisma.service";
 import { lockActiveDepartmentForConversation } from "../departments/department-conversation-lock";
 import { GroupsSyncService } from "./groups-sync.service";
+import { groupConversationLockKey } from "./group-conversation-identity";
 import { ConfirmDeletionDto } from "../common/deletion-impact";
 import { ConversationPurgeService } from "./conversation-purge.service";
+import { contactPhoneDuplicateCandidates, normalizePhone } from "../crm/phone-normalization";
 
 class ListGroupsQueryDto {
   @IsOptional()
@@ -217,16 +219,17 @@ export class GroupsController {
       }),
       this.prisma.conversation.count({ where }),
     ]);
+    const uniqueItems = distinctGroupConversations(items, !query.connectionId);
     return paginated(
-      items.map((item) => serializeGroup(item)),
-      total,
+      uniqueItems.map((item) => serializeGroup(item)),
+      Math.max(uniqueItems.length, total - (items.length - uniqueItems.length)),
       page,
       pageSize,
     );
   }
 
   @Get("summary")
-  @RequirePermissions("groups.read")
+  @RequireAnyPermission("groups.read", "messages.send")
   async listSummary(@Query() query: ListGroupsQueryDto, @CurrentUser() current: AuthenticatedUser) {
     const startedAt = Date.now();
     const { page, pageSize, skip } = pagination(query);
@@ -255,16 +258,17 @@ export class GroupsController {
       searched: Boolean(q),
     });
 
+    const uniqueItems = distinctGroupConversations(items, !query.connectionId);
     return paginated(
-      items.map((item) => serializeGroupSummary(item)),
-      total,
+      uniqueItems.map((item) => serializeGroupSummary(item)),
+      Math.max(uniqueItems.length, total - (items.length - uniqueItems.length)),
       page,
       pageSize,
     );
   }
 
   @Get("options/instances")
-  @RequirePermissions("groups.read")
+  @RequireAnyPermission("groups.read", "messages.send")
   async instanceOptions(@CurrentUser() current: AuthenticatedUser) {
     const connections = await this.prisma.messagingConnection.findMany({
       where: {
@@ -354,6 +358,13 @@ export class GroupsController {
       throw new BadRequestException("Evolution não retornou o identificador do grupo.");
 
     const group = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${groupConversationLockKey(
+        {
+          tenantId: current.tenantId,
+          connectionId: connection.id,
+          externalChatId: groupJid,
+        },
+      )}, 0))`;
       const contact = await tx.contact.upsert({
         where: {
           tenantId_normalizedPhone: {
@@ -556,6 +567,7 @@ export class GroupsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const group = await this.resolveManagedGroup(id, current);
+    assertCanManageGroupParticipants(group);
     const name = dto.name.trim();
     await this.evolution.updateGroupSubject({
       instanceName: group.connection!.externalReference!,
@@ -582,6 +594,7 @@ export class GroupsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const group = await this.resolveManagedGroup(id, current);
+    assertCanManageGroupParticipants(group);
     const description = dto.description.trim();
     await this.evolution.updateGroupDescription({
       instanceName: group.connection!.externalReference!,
@@ -660,6 +673,7 @@ export class GroupsController {
       if (!participantIds.length) {
         throw new BadRequestException("Selecione ao menos um participante.");
       }
+      assertParticipantTargetsCanBeManaged(group, participantIds);
       await this.evolution.updateGroupParticipants({
         instanceName: group.connection!.externalReference!,
         groupJid: group.externalChatId!,
@@ -691,6 +705,7 @@ export class GroupsController {
     if (!participantIds.length) {
       throw new BadRequestException("Selecione ao menos um participante.");
     }
+    assertParticipantTargetsCanBeManaged(group, participantIds);
     await this.evolution.updateGroupParticipants({
       instanceName: group.connection!.externalReference!,
       groupJid: group.externalChatId!,
@@ -828,6 +843,7 @@ function serializeGroup(group: GroupConversation) {
     id: group.id,
     tenantId: group.tenantId,
     conversationId: group.id,
+    contactId: group.contactId,
     name,
     externalChatId: group.externalChatId,
     imageUrl: group.groupImageUrl || group.contact.avatarUrl,
@@ -877,6 +893,22 @@ function groupCanManageParticipants(group: GroupConversation) {
   );
 }
 
+function assertParticipantTargetsCanBeManaged(group: GroupConversation, participantIds: string[]) {
+  const requested = new Set(participantIds);
+  const targets = group.participants.filter(
+    (participant) => participant.active && requested.has(participant.externalParticipantId),
+  );
+  if (targets.length !== requested.size) {
+    throw new BadRequestException("Um ou mais participantes não pertencem ao grupo.");
+  }
+  if (targets.some((participant) => participant.isSuperAdmin)) {
+    throw new ForbiddenException("O criador do grupo não pode ser removido ou rebaixado.");
+  }
+  if (targets.some((participant) => participantMatchesConnection(participant, group.connection))) {
+    throw new ForbiddenException("A própria conta de suporte não pode ser alterada por esta ação.");
+  }
+}
+
 function participantMatchesConnection(
   participant: GroupConversation["participants"][number],
   connection: GroupConversation["connection"],
@@ -887,15 +919,33 @@ function participantMatchesConnection(
     .filter((value): value is string => Boolean(value))
     .map((value) => value.trim().toLowerCase());
   if (ownerExternalId && participantIds.includes(ownerExternalId)) return true;
-  const ownerPhone = onlyDigits(connection.ownerPhoneNormalized ?? "");
-  if (!ownerPhone) return false;
-  const participantPhone = onlyDigits(
-    participant.phone ??
-      (participant.externalParticipantId.toLowerCase().includes("@lid")
-        ? ""
-        : participant.externalParticipantId),
+  const ownerPhones = participantIdentityPhoneCandidates(connection.ownerPhoneNormalized);
+  if (!ownerPhones.length) return false;
+  const participantPhones = participantIdentityPhoneCandidates(
+    participant.phone,
+    participant.externalParticipantId,
   );
-  return participantPhone === ownerPhone;
+  return ownerPhones.some((candidate) => participantPhones.includes(candidate));
+}
+
+function participantIdentityPhoneCandidates(...values: Array<string | null | undefined>) {
+  const candidates = new Set<string>();
+  for (const value of values) {
+    if (!value || value.toLowerCase().includes("@lid")) continue;
+    const raw = value.split("@")[0]?.split(":")[0] ?? value;
+    const digits = onlyDigits(raw);
+    if (!digits) continue;
+    for (const candidate of [raw, digits, `+${digits}`]) {
+      try {
+        for (const normalized of contactPhoneDuplicateCandidates(normalizePhone(candidate))) {
+          candidates.add(normalized);
+        }
+      } catch {
+        // Identificadores do provedor que não são telefones válidos não participam do vínculo.
+      }
+    }
+  }
+  return [...candidates];
 }
 
 function serializeGroupSummary(group: GroupConversationSummary) {
@@ -904,6 +954,7 @@ function serializeGroupSummary(group: GroupConversationSummary) {
     id: group.id,
     tenantId: group.tenantId,
     conversationId: group.id,
+    contactId: group.contactId,
     name,
     externalChatId: group.externalChatId,
     imageUrl: group.groupImageUrl || group.contact.avatarUrl,
@@ -923,6 +974,28 @@ function serializeGroupSummary(group: GroupConversationSummary) {
     lastMessagePreview: group.lastMessagePreview,
     lastMessageAt: group.lastMessageAt,
   };
+}
+
+function distinctGroupConversations<
+  T extends {
+    id: string;
+    connectionId: string | null;
+    externalChatId: string | null;
+  },
+>(groups: T[], mergeConnections = false) {
+  const seen = new Set<string>();
+  return groups.filter((group) => {
+    const externalChatId = group.externalChatId?.trim().toLowerCase();
+    const key =
+      group.connectionId && externalChatId
+        ? mergeConnections
+          ? externalChatId
+          : `${group.connectionId}:${externalChatId}`
+        : `conversation:${group.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function groupDescription(value: Prisma.JsonValue | null) {

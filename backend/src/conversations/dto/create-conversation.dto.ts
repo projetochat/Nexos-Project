@@ -1,11 +1,13 @@
-import { IsBoolean, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class CreateConversationDto {
   @IsUUID()
   contactId!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
   departmentId?: string | null;
 
   @IsOptional()
@@ -23,6 +25,10 @@ export class CreateConversationDto {
   @IsOptional()
   @IsBoolean()
   isGroup?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  sourceGroupConversationId?: string;
 
   @IsOptional()
   @IsString()

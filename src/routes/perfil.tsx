@@ -28,9 +28,11 @@ import { organizationApi } from "@/lib/trixus-api";
 import { ROLE_META, useSession } from "@/lib/session";
 import {
   inboxNotificationSoundEnabled,
+  inboxTagNotificationSoundEnabled,
   applyInboxNotificationSoundPreference,
   inboxNotificationQueues,
   setInboxNotificationQueues,
+  setInboxTagNotificationSoundEnabled,
 } from "@/lib/inbox-notification-sound";
 import { Switch } from "@/components/ui/switch";
 import type { QueueId } from "@/lib/queue-prefs";
@@ -59,6 +61,9 @@ function PerfilPage() {
   const [tab, setTab] = React.useState<"general" | "notifications" | "appearance">("general");
   const [soundEnabled, setSoundEnabled] = React.useState(() =>
     inboxNotificationSoundEnabled(useSession.getState().user?.id),
+  );
+  const [tagSoundEnabled, setTagSoundEnabled] = React.useState(() =>
+    inboxTagNotificationSoundEnabled(useSession.getState().user?.id),
   );
   const [savingAvatar, setSavingAvatar] = React.useState(false);
   const [savingSidebarPreference, setSavingSidebarPreference] = React.useState(false);
@@ -203,6 +208,15 @@ function PerfilPage() {
     setSoundEnabled(enabled);
     setNotificationQueues(queues);
     toast.success(enabled ? "Aviso sonoro ativado." : "Aviso sonoro desativado.");
+  };
+
+  const changeTagSoundPreference = (enabled: boolean) => {
+    if (!user) return;
+    setInboxTagNotificationSoundEnabled(user.id, enabled);
+    setTagSoundEnabled(enabled);
+    toast.success(
+      enabled ? "Aviso sonoro de etiquetas ativado." : "Aviso sonoro de etiquetas desativado.",
+    );
   };
 
   const changeSidebarPreference = async (checked: boolean) => {
@@ -427,19 +441,23 @@ function PerfilPage() {
             {tab === "general" ? (
               <>
                 <p className="text-sm font-semibold">Dados Pessoais</p>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4">
                   <Field label="Nome">
                     <Input value={displayName} readOnly />
                   </Field>
                   <Field label="Perfil">
                     <Input value={roleMeta?.label ?? "Usuário"} readOnly />
                   </Field>
-                  <Field label="E-mail">
-                    <Input value={user?.email ?? ""} readOnly />
-                  </Field>
-                  <Field label="Empresa">
-                    <Input value={user?.empresaNome ?? ""} readOnly />
-                  </Field>
+                  <div className="col-span-2 md:col-span-1">
+                    <Field label="E-mail">
+                      <Input value={user?.email ?? ""} readOnly />
+                    </Field>
+                  </div>
+                  <div className="col-span-2 md:col-span-1">
+                    <Field label="Empresa">
+                      <Input value={user?.empresaNome ?? ""} readOnly />
+                    </Field>
+                  </div>
                 </div>
                 <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-border bg-surface-1 p-4">
                   <div>
@@ -460,24 +478,26 @@ function PerfilPage() {
                 </div>
                 <section className="mt-5">
                   <p className="text-sm font-semibold">Alterar senha</p>
-                  <div className="mt-4 grid gap-4 md:grid-cols-3">
-                    <Field label="Senha atual *">
-                      <Input
-                        type="password"
-                        autoComplete="current-password"
-                        value={currentPassword}
-                        onChange={(event) => {
-                          setCurrentPassword(event.target.value);
-                          if (event.target.value)
-                            setRequiredPasswordErrors((current) => ({
-                              ...current,
-                              currentPassword: false,
-                            }));
-                        }}
-                        aria-invalid={requiredPasswordErrors.currentPassword}
-                        className={requiredFieldClassName(requiredPasswordErrors.currentPassword)}
-                      />
-                    </Field>
+                  <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
+                    <div className="col-span-2 md:col-span-1">
+                      <Field label="Senha atual *">
+                        <Input
+                          type="password"
+                          autoComplete="current-password"
+                          value={currentPassword}
+                          onChange={(event) => {
+                            setCurrentPassword(event.target.value);
+                            if (event.target.value)
+                              setRequiredPasswordErrors((current) => ({
+                                ...current,
+                                currentPassword: false,
+                              }));
+                          }}
+                          aria-invalid={requiredPasswordErrors.currentPassword}
+                          className={requiredFieldClassName(requiredPasswordErrors.currentPassword)}
+                        />
+                      </Field>
+                    </div>
                     <Field label="Nova senha *">
                       <PasswordInput
                         value={newPassword}
@@ -566,6 +586,34 @@ function PerfilPage() {
                     checked={soundEnabled}
                     onCheckedChange={changeSoundPreference}
                     aria-label="Aviso sonoro de novas mensagens"
+                  />
+                </div>
+                <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-border bg-surface-1 p-4">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="mt-0.5 rounded-lg bg-primary/10 p-2 text-primary">
+                      {tagSoundEnabled ? (
+                        <Volume2 className="h-4 w-4" />
+                      ) : (
+                        <VolumeX className="h-4 w-4" />
+                      )}
+                    </span>
+                    <div>
+                      <label
+                        htmlFor="profile-tag-notification-sound"
+                        className="text-sm font-medium"
+                      >
+                        Aviso sonoro de etiquetas
+                      </label>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Avisa sobre uma nova conversa passiva com etiqueta sonora ativa.
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="profile-tag-notification-sound"
+                    checked={tagSoundEnabled}
+                    onCheckedChange={changeTagSoundPreference}
+                    aria-label="Aviso sonoro de etiquetas"
                   />
                 </div>
                 <fieldset className="mt-4" disabled={!soundEnabled}>

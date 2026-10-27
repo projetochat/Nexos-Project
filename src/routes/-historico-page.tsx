@@ -317,7 +317,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                             </span>
                           </div>
                           <div
-                            className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-muted-foreground"
+                            className="flex min-w-0 flex-nowrap items-center gap-1.5 text-[10px] text-muted-foreground"
                             aria-label="Instância, departamento e atendente do encerramento"
                           >
                             <span
@@ -327,19 +327,15 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                                 backgroundColor: conversation.connection?.color ?? "#22c55e",
                               }}
                             />
-                            <span className="truncate">
-                              {conversation.connection?.name ?? "Sem instância"}
-                            </span>
-                            <span aria-hidden="true">·</span>
-                            <span className="truncate">
-                              {conversation.department?.nome ?? "Sem departamento"}
-                            </span>
-                            <span aria-hidden="true">·</span>
-                            <span className="truncate">
-                              {conversation.closed_by?.nome ??
-                                conversation.agent?.nome ??
-                                conversation.assigned_membership_name_snapshot ??
-                                "Sem atendente"}
+                            <span className="min-w-0 truncate">
+                              {[
+                                conversation.connection?.name ?? "Sem instância",
+                                conversation.department?.nome ?? "Sem departamento",
+                                conversation.closed_by?.nome ??
+                                  conversation.agent?.nome ??
+                                  conversation.assigned_membership_name_snapshot ??
+                                  "Sem atendente",
+                              ].join(" - ")}
                             </span>
                           </div>
                         </div>

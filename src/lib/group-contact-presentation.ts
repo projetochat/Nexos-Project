@@ -1,4 +1,4 @@
-import { formatBrazilPhoneWithDdi, onlyDigits } from "./input-masks";
+import { formatPhoneVariable, onlyDigits } from "./input-masks";
 import { normalizeOptionLabel } from "./sort-options";
 
 export function matchesGroupContactSearch(
@@ -18,5 +18,5 @@ export function matchesGroupContactSearch(
 
 export function formatGroupContactPhone(value?: string | null) {
   if (!value) return "-";
-  return formatBrazilPhoneWithDdi(value.split("@")[0] ?? value) || value;
+  return formatPhoneVariable(value.split("@")[0] ?? value) || value;
 }

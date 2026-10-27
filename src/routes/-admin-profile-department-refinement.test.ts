@@ -59,12 +59,14 @@ describe("encerramento por inatividade do Departamento", () => {
 
   it("marca os campos condicionais como obrigatórios e mantém o aviso azul do prazo", () => {
     expect(departmentsSource).toContain('<Field label="Tempo sem resposta do cliente *">');
+    expect(departmentsSource).toContain('className="w-full"');
     expect(departmentsSource).toContain('<Field label="Mensagem *">');
     expect(departmentsSource).toContain("data-department-inactivity-notice");
     expect(departmentsSource).toContain(
       "O prazo começa após a mensagem do atendente. Se o cliente responder, a contagem é",
     );
     expect(departmentsSource).toContain("bg-blue-50");
+    expect(departmentsSource).toContain("px-3 py-2 text-xs text-blue-700");
   });
 });
 

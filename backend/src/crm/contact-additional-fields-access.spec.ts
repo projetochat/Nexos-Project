@@ -184,7 +184,7 @@ describe("contact additional fields access", () => {
       prisma as never,
       {} as never,
       {} as never,
-      { enqueueMissing: vi.fn() } as never,
+      { enqueueMissing: vi.fn(), enqueuePlaceholderNames: vi.fn() } as never,
       {} as never,
     );
     const contactReader = {
@@ -230,6 +230,7 @@ describe("contact additional fields access", () => {
     const upsert = vi.fn();
     const prisma = {
       contact: { findFirst: vi.fn().mockResolvedValue(contact), update },
+      customerPortalAccess: { findFirst: vi.fn().mockResolvedValue(null) },
       contactCustomField: { findMany: vi.fn() },
       contactCustomFieldValue: { upsert },
       $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
@@ -259,6 +260,7 @@ describe("contact additional fields access", () => {
       }),
     );
     expect(prisma.contactCustomField.findMany).not.toHaveBeenCalled();
+    expect(prisma.customerPortalAccess.findFirst).toHaveBeenCalledOnce();
     expect(upsert).not.toHaveBeenCalled();
   });
 

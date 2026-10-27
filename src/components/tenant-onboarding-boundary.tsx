@@ -217,10 +217,11 @@ function OnboardingFrame({ children }: { children: React.ReactNode }) {
 
 function PendingForCommonUser({ message }: { message: string | null }) {
   const logout = useSession((state) => state.logout);
+  const loginPath = useSession((state) => state.loginPath);
   const leave = async () => {
     await signOut();
     logout();
-    window.location.assign("/login");
+    window.location.assign(loginPath);
   };
   return (
     <OnboardingFrame>

@@ -71,6 +71,13 @@ export function DashboardComponentRenderer({
   );
   const height = compact ? 200 : 270;
   const valueSuffix = valueMode === "percentage" ? "%" : "";
+  const barValueMarginRight = React.useMemo(() => {
+    const longestValue = normalized.reduce(
+      (length, item) => Math.max(length, formatValue(item.valor, valueSuffix).length),
+      1,
+    );
+    return Math.min(72, Math.max(32, longestValue * 7 + 12));
+  }, [normalized, valueSuffix]);
   const chartContainerRef = React.useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = React.useState(0);
   const categoryAxisLayout = React.useMemo(
@@ -177,13 +184,14 @@ export function DashboardComponentRenderer({
                 layout="vertical"
                 margin={{
                   ...DASHBOARD_CHART_MARGIN,
-                  right: 88,
-                  left: categoryAxisLayout.marginLeft,
+                  right: barValueMarginRight,
+                  left: 0,
                 }}
               >
                 <CartesianGrid stroke="var(--border)" horizontal={false} />
                 <XAxis
                   type="number"
+                  domain={[0, (dataMax: number) => Math.max(1, dataMax)]}
                   stroke="var(--muted-foreground)"
                   tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
                   fontSize={10}
@@ -196,7 +204,7 @@ export function DashboardComponentRenderer({
                   stroke="var(--muted-foreground)"
                   tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
                   fontSize={10}
-                  width={categoryAxisLayout.width}
+                  width={Math.min(categoryAxisLayout.width, 80)}
                   tickFormatter={(value) =>
                     formatDashboardAxisLabelToWidth(value, categoryAxisLayout.maxLabelWidth)
                   }

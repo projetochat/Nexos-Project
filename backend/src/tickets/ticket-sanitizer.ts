@@ -1,3 +1,4 @@
+import { parseTicketImageReference } from "./ticket-image-reference";
 const allowedTags = new Set([
   "a",
   "b",
@@ -72,8 +73,11 @@ export function sanitizeFileName(value: string | null | undefined) {
 
 function sanitizeAttributes(tag: string, attrs: string) {
   const safeAttributes: string[] = [];
+  const seen = new Set<string>();
   for (const match of attrs.matchAll(attrPattern)) {
     const key = match[1].toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
     const value = match[3] ?? match[4] ?? match[5] ?? "";
     const safeValue = sanitizeAttribute(tag, key, value);
     if (safeValue !== null) safeAttributes.push(`${key}="${escapeHtmlAttr(safeValue)}"`);
@@ -157,6 +161,7 @@ function safeLink(value: string) {
 function safeImageSource(value: string) {
   const trimmed = value.trim();
   if (trimmed.length > 14_000_000) return null;
+  if (parseTicketImageReference(trimmed)) return trimmed;
   return /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(trimmed)
     ? trimmed
     : null;

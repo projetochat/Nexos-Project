@@ -19,12 +19,21 @@ import {
   Ticket,
   Reply,
   Download,
+  RefreshCw,
+  Eye,
   List,
   ArrowLeft,
   ContactRound,
   Phone,
   Forward,
   Ban,
+  Sparkles,
+  FileText,
+  Image as ImageIcon,
+  AlertTriangle,
+  Search,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
@@ -38,6 +47,7 @@ import { InboxLayout } from "./inbox.index";
 import { Avatar, Button, CloseButton, Field, Input, Select } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MessageStatusIcon } from "@/components/message-status-icon";
+import { TicketRichTextContent } from "@/components/ticket-rich-text-content";
 import { DepartmentIcon } from "@/components/department-icon";
 import { MessageActionsMenu } from "@/components/message-actions-menu";
 import { MessageEmojiPicker } from "@/components/message-emoji-picker";
@@ -50,12 +60,13 @@ import { useDisclosure } from "@/hooks/use-disclosure";
 import { formatBrazilPhoneWithDdi, maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,
+  aiApi,
   crmApi,
   messageApi,
   organizationApi,
   quickReplyApi,
-  ticketApi,
   type ApiMessage,
+  type ApiAiTicketDraft,
   type ApiQuickReply as QuickReply,
   type ApiTag as Tag,
   TrixusApiError,
@@ -85,12 +96,14 @@ import { useChatPerms } from "@/lib/perms";
 import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
+import { ticketContactRequirements } from "@/lib/ticket-contact-readiness";
 import {
   filesFromTransfer,
   messageMediaType,
   sendMediaQueue,
   type MessageMediaType,
 } from "@/lib/message-media-queue";
+import { formatMessageAttachmentSize } from "@/lib/message-attachment";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import {
@@ -106,6 +119,7 @@ import {
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
 import { PendingMediaPreview } from "@/components/pending-media-preview";
+import { TicketEditor } from "./chamados";
 import {
   CALL_UNAVAILABLE_MESSAGE,
   ConversationCallButton,
@@ -253,6 +267,17 @@ function isContactCardMessage(message: Message) {
   const fileName = message.media_data?.file_name ?? "";
   const mimeType = message.media_data?.mime_type ?? "";
   return message.type === "document" && (mimeType === "text/vcard" || /\.vcf$/i.test(fileName));
+}
+
+function isPreviewableDocument(message: Message) {
+  const mimeType = message.media_data?.mime_type?.toLowerCase() ?? "";
+  const fileName = message.media_data?.file_name?.toLowerCase() ?? "";
+  return (
+    mimeType === "application/pdf" ||
+    mimeType === "text/plain" ||
+    mimeType === "text/csv" ||
+    /\.(pdf|txt|csv)$/.test(fileName)
+  );
 }
 
 function ContactCardMessage({
@@ -440,6 +465,16 @@ function ConversationPage() {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const messageRefs = React.useRef(new Map<string, HTMLDivElement>());
   const [highlightedMessageId, setHighlightedMessageId] = React.useState<string | null>(null);
+  const [messageSearchOpen, setMessageSearchOpen] = React.useState(false);
+  const [messageSearch, setMessageSearch] = React.useState("");
+  const [messageSearchIndex, setMessageSearchIndex] = React.useState(0);
+  const messageSearchMatches = React.useMemo(() => {
+    const needle = messageSearch.trim().toLocaleLowerCase("pt-BR");
+    if (!needle) return [];
+    return orderedMessages
+      .filter((message) => message.content?.toLocaleLowerCase("pt-BR").includes(needle))
+      .map((message) => message.id);
+  }, [messageSearch, orderedMessages]);
   const latestMessageId = orderedMessages.at(-1)?.id;
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -457,6 +492,19 @@ function ConversationPage() {
     );
   }, []);
 
+  React.useEffect(() => {
+    setMessageSearchIndex(0);
+    if (messageSearchMatches[0]) scrollToMessage(messageSearchMatches[0]);
+  }, [messageSearchMatches, scrollToMessage]);
+
+  const navigateMessageSearch = (direction: -1 | 1) => {
+    if (!messageSearchMatches.length) return;
+    const next =
+      (messageSearchIndex + direction + messageSearchMatches.length) % messageSearchMatches.length;
+    setMessageSearchIndex(next);
+    scrollToMessage(messageSearchMatches[next]);
+  };
+
   const transferModal = useDisclosure();
   const startDepartmentModal = useDisclosure();
   const [startDepartmentId, setStartDepartmentId] = React.useState("");
@@ -468,6 +516,50 @@ function ConversationPage() {
 
   const [closing, setClosing] = React.useState(false);
   const [gerando, setGerando] = React.useState(false);
+  const [aiTicketDraft, setAiTicketDraft] = React.useState<ApiAiTicketDraft | null>(null);
+  const [ticketEditorOpen, setTicketEditorOpen] = React.useState(false);
+  const [ticketEditorAiExecutionId, setTicketEditorAiExecutionId] = React.useState<
+    string | undefined
+  >();
+  const ticketReadinessModal = useDisclosure();
+  const [editContactRequestKey, setEditContactRequestKey] = React.useState(0);
+  const canReadTicketContact = perms.visualiza_contatos;
+  const ticketContact = useQuery({
+    queryKey: ["trixus", "contacts", conv?.contact_id, conversationScope],
+    queryFn: () => crmApi.getContact(conv!.contact_id!),
+    enabled: canReadTicketContact && Boolean(conv?.contact_id),
+  });
+  const ticketCustomerId = ticketContact.data?.customer_id ?? "";
+  const ticketCustomerBranches = useQuery({
+    queryKey: ["trixus", "customer-branches", "ticket-readiness", ticketCustomerId],
+    queryFn: () => crmApi.listCustomerBranches(ticketCustomerId),
+    enabled: Boolean(ticketCustomerId),
+  });
+  const ticketCustomerDepartments = useQuery({
+    queryKey: ["trixus", "customer-departments", "ticket-readiness", ticketCustomerId],
+    queryFn: () => crmApi.listCustomerDepartments(ticketCustomerId),
+    enabled: Boolean(ticketCustomerId),
+  });
+  const ticketRequirements = React.useMemo(
+    () =>
+      ticketContactRequirements(
+        ticketContact.data,
+        ticketCustomerBranches.data,
+        ticketCustomerDepartments.data,
+      ),
+    [ticketContact.data, ticketCustomerBranches.data, ticketCustomerDepartments.data],
+  );
+  const ticketReadinessLoading =
+    ticketContact.isLoading ||
+    (Boolean(ticketCustomerId) &&
+      (ticketCustomerBranches.isLoading || ticketCustomerDepartments.isLoading));
+  const ticketReadinessError =
+    ticketContact.isError || ticketCustomerBranches.isError || ticketCustomerDepartments.isError;
+  const ticketContactReady =
+    canReadTicketContact &&
+    !ticketReadinessLoading &&
+    !ticketReadinessError &&
+    ticketRequirements.every((requirement) => requirement.complete);
 
   React.useEffect(() => {
     if (
@@ -535,37 +627,27 @@ function ConversationPage() {
     }
   };
 
-  const handleGerarChamado = async () => {
+  const handleGenerateTicketWithAi = async () => {
     if (!user || !conv.protocolo) return;
-    const departmentId = conv.department_id;
-    if (!departmentId) {
-      systemToast.error("Defina um departamento para a conversa antes de gerar o chamado.");
-      return;
-    }
-
     setGerando(true);
     try {
-      const ticket = await ticketApi.create({
-        title: `Chamado aberto pelo Chat - ${conv.protocolo}`,
-        descriptionHtml: `<p>Chamado gerado a partir da conversa ${conv.protocolo}.</p>`,
-        category: "SUPORTE",
-        priority: "NORMAL",
-        departmentId,
-        requesterContactId: conv.contact_id,
-        customerId: conv.contact?.customer_id ?? conv.contact?.customer?.id ?? null,
-        conversationId: conv.id,
-        // O chamado nasce na fila do departamento. A atribuição da conversa pode estar
-        // desatualizada ou não pertencer ao departamento, o que bloqueava a criação.
-        assignedMembershipId: null,
-      });
-      await qc.invalidateQueries({ queryKey: ["tickets"] });
-      navigate({ to: "/chamados", search: { conversationId: undefined, ticketId: ticket.id } });
-      systemToast.success(`Chamado ${ticket.protocol} gerado`);
+      const draft = await aiApi.createTicketDraft(conv.id);
+      setAiTicketDraft(draft);
     } catch (e) {
-      systemToast.error((e as Error).message || "Não foi possível gerar o chamado.");
+      systemToast.error(
+        (e as Error).message || "Não foi possível analisar a conversa para gerar o chamado.",
+      );
+      setTicketEditorAiExecutionId(undefined);
+      setTicketEditorOpen(true);
     } finally {
       setGerando(false);
     }
+  };
+
+  const handleGerarChamado = () => {
+    if (!user || !conv.protocolo) return;
+    setTicketEditorAiExecutionId(undefined);
+    setTicketEditorOpen(true);
   };
 
   return (
@@ -600,19 +682,31 @@ function ConversationPage() {
                     )}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+                <div className="flex min-w-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground">
                   {perms.visualiza_numero && conv.contact?.telefone && (
-                    <span>{maskBrazilPhone(conv.contact.telefone)}</span>
+                    <span className="shrink-0">{maskBrazilPhone(conv.contact.telefone)}</span>
+                  )}
+                  {perms.visualiza_numero && conv.contact?.telefone && conv.protocolo && (
+                    <span aria-hidden="true">-</span>
+                  )}
+                  {conv.protocolo && (
+                    <span className="truncate">
+                      Protocolo: <span className="font-mono">#{conv.protocolo}</span>
+                    </span>
                   )}
                 </div>
-                {conv.protocolo && (
-                  <p className="truncate text-[11px] text-muted-foreground">
-                    Protocolo: <span className="font-mono">#{conv.protocolo}</span>
-                  </p>
-                )}
               </div>
             </button>
             <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Buscar mensagens na conversa"
+                title="Buscar mensagens"
+                onClick={() => setMessageSearchOpen((current) => !current)}
+              >
+                <Search className="h-4 w-4" />
+              </Button>
               {canSend && (
                 <ConversationCallButton
                   enabled
@@ -666,6 +760,67 @@ function ConversationPage() {
             </div>
           </header>
 
+          {messageSearchOpen && (
+            <div className="flex items-center gap-2 border-b border-border bg-surface-1 px-3 py-2">
+              <div className="relative min-w-0 flex-1">
+                <Input
+                  value={messageSearch}
+                  onChange={(event) => setMessageSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || !messageSearchMatches.length) return;
+                    event.preventDefault();
+                    navigateMessageSearch(event.shiftKey ? -1 : 1);
+                  }}
+                  className="pr-10"
+                  placeholder="Buscar nesta conversa"
+                  aria-label="Buscar nesta conversa"
+                  autoFocus
+                />
+                {messageSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setMessageSearch("")}
+                    className="absolute right-3 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Limpar busca na conversa"
+                    title="Limpar busca"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {messageSearchMatches.length
+                  ? `${messageSearchIndex + 1}/${messageSearchMatches.length}`
+                  : "0/0"}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Ocorrência anterior"
+                disabled={!messageSearchMatches.length}
+                onClick={() => navigateMessageSearch(-1)}
+              >
+                <ChevronUp className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Próxima ocorrência"
+                disabled={!messageSearchMatches.length}
+                onClick={() => navigateMessageSearch(1)}
+              >
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+              <CloseButton
+                aria-label="Fechar busca de mensagens"
+                onClick={() => {
+                  setMessageSearchOpen(false);
+                  setMessageSearch("");
+                }}
+              />
+            </div>
+          )}
+
           {!contactActive && (
             <div
               role="alert"
@@ -709,7 +864,7 @@ function ConversationPage() {
                   const isLead = conv.originated_as_lead ?? conv.is_lead;
                   const line = isLead ? "bg-info/40" : "bg-success/40";
                   const pill = isLead
-                    ? "border-info/40 bg-blue-50 text-info dark:bg-blue-950"
+                    ? "border-info/40 bg-blue-100 text-info dark:bg-blue-950"
                     : "border-success/40 bg-emerald-50 text-success dark:bg-emerald-950";
                   const openingLabel = isLead ? "NOVO LEAD" : "NOVA CONVERSA";
                   const label = `${openingLabel} — ${fmtLogStamp(new Date(conv.created_at).getTime())}`;
@@ -837,12 +992,16 @@ function ConversationPage() {
                   onClick={() =>
                     navigate({
                       to: "/chamados",
-                      search: { conversationId: conv.id, ticketId: undefined },
+                      search: {
+                        conversationId: undefined,
+                        ticketId: undefined,
+                        aiExecutionId: undefined,
+                      },
                     })
                   }
                   className="w-full"
                 >
-                  Ver chamados relacionados
+                  Ver chamados
                 </Button>
               </div>
             )}
@@ -865,6 +1024,10 @@ function ConversationPage() {
               <ContactPanel
                 contactId={conv.contact.id}
                 conversationId={conv.id}
+                editRequestKey={editContactRequestKey}
+                onContactUpdated={() => {
+                  setPanelOpen(false);
+                }}
                 canBlock={
                   !conv.is_group &&
                   conv.connection?.providerType === "evolution" &&
@@ -980,8 +1143,269 @@ function ConversationPage() {
           await navigate({ to: "/inbox" });
         }}
       />
+      <Modal
+        open={ticketReadinessModal.open}
+        onClose={ticketReadinessModal.hide}
+        title="Verificação para abertura do chamado"
+        description="Confira se o contato possui todos os dados obrigatórios antes de continuar."
+        size="sm"
+        footer={
+          <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" size="sm" onClick={ticketReadinessModal.hide}>
+              Cancelar
+            </Button>
+            {ticketReadinessError ? (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  void ticketContact.refetch();
+                  if (ticketCustomerId) {
+                    void ticketCustomerBranches.refetch();
+                    void ticketCustomerDepartments.refetch();
+                  }
+                }}
+              >
+                Tentar novamente
+              </Button>
+            ) : !ticketContactReady ? (
+              perms.pode_editar_contato && canReadTicketContact ? (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={ticketReadinessLoading || !conv.contact_id || !conv.contact}
+                  onClick={() => {
+                    ticketReadinessModal.hide();
+                    setPanelOpen(true);
+                    setEditContactRequestKey((current) => current + 1);
+                  }}
+                >
+                  Configurar contato
+                </Button>
+              ) : null
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={gerando}
+                onClick={() => {
+                  ticketReadinessModal.hide();
+                  void handleGenerateTicketWithAi();
+                }}
+              >
+                {gerando ? "Gerando…" : "Gerar chamado com IA"}
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          {!ticketContactReady && (
+            <div
+              role="alert"
+              className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning-foreground"
+            >
+              {!canReadTicketContact
+                ? "Você não possui permissão para validar os dados do contato. Solicite o acesso de visualização de contatos antes de continuar."
+                : !conv.contact_id || !conv.contact
+                  ? "A conversa não possui um solicitante vinculado. Vincule o contato antes de abrir o chamado."
+                  : ticketReadinessError
+                    ? "Não foi possível validar o cadastro agora. Tente novamente antes de continuar."
+                    : ticketReadinessLoading
+                      ? "Verificando o cadastro do contato…"
+                      : "Complete os dados pendentes do contato antes de avançar."}
+            </div>
+          )}
+          <ul className="divide-y divide-border rounded-lg border border-border">
+            {ticketRequirements.map((requirement) => (
+              <li key={requirement.key} className="flex items-center gap-3 px-3 py-2.5">
+                {requirement.complete ? (
+                  <CircleCheckBig className="h-4 w-4 shrink-0 text-success" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{requirement.label}</p>
+                  <p className="truncate text-xs text-muted-foreground">{requirement.value}</p>
+                </div>
+                <span
+                  className={`text-xs font-medium ${
+                    requirement.complete ? "text-success" : "text-warning-foreground"
+                  }`}
+                >
+                  {requirement.complete ? "OK" : "Pendente"}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {!ticketContactReady &&
+            !ticketReadinessLoading &&
+            !ticketReadinessError &&
+            canReadTicketContact &&
+            !perms.pode_editar_contato && (
+              <p className="text-xs text-muted-foreground">
+                Solicite a um usuário com permissão para editar contatos que complete o cadastro.
+              </p>
+            )}
+        </div>
+      </Modal>
+      <AiTicketPreviewModal
+        draft={aiTicketDraft}
+        onClose={() => setAiTicketDraft(null)}
+        onConfirm={() => {
+          const executionId = aiTicketDraft?.executionId;
+          if (!executionId) return;
+          setAiTicketDraft(null);
+          setTicketEditorAiExecutionId(executionId);
+          setTicketEditorOpen(true);
+        }}
+      />
+      <TicketEditor
+        open={ticketEditorOpen}
+        initialConversationId={conv.id}
+        initialAiExecutionId={ticketEditorAiExecutionId}
+        onClose={() => {
+          setTicketEditorOpen(false);
+          setTicketEditorAiExecutionId(undefined);
+        }}
+        onSaved={() => {
+          setTicketEditorOpen(false);
+          setTicketEditorAiExecutionId(undefined);
+          void qc.invalidateQueries({ queryKey: ["tickets"] });
+        }}
+      />
     </InboxLayout>
   );
+}
+
+function AiTicketPreviewModal({
+  draft,
+  onClose,
+  onConfirm,
+}: {
+  draft: ApiAiTicketDraft | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!draft) return null;
+  const suggestion = draft.suggested;
+  const details = [
+    ["Cliente", suggestion.customerName ?? "Não identificado"],
+    ["Departamento", suggestion.departmentName ?? "Não identificado"],
+    ["Solicitante", suggestion.requesterContactName ?? "Não identificado"],
+    ["Filial de origem", suggestion.originBranchName ?? "Não identificada"],
+    [
+      "Prioridade",
+      suggestion.priority === "ALTISSIMA"
+        ? "Altíssima"
+        : suggestion.priority === "NORMAL"
+          ? "Média"
+          : titleCase(suggestion.priority),
+    ],
+    ["Tipo", suggestion.category === "DEV" ? "Desenvolvimento (DEV)" : "Suporte"],
+  ];
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Prévia do chamado gerado pela IA"
+      description={`Revise a análise do agente ${draft.agent.name} antes de continuar.`}
+      size="lg"
+      className="max-w-4xl"
+      footer={
+        <>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="button" variant="primary" size="sm" onClick={onConfirm}>
+            Revisar e criar chamado
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Sparkles className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="font-semibold">{draft.title}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+              {draft.summary}
+            </p>
+          </div>
+        </div>
+
+        <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border p-4 sm:grid-cols-3">
+          {details.map(([label, value]) => (
+            <div key={label} className="min-w-0">
+              <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+              <dd className="mt-1 break-words text-sm font-semibold">{value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">Descrição sugerida</h3>
+          <div className="max-h-56 overflow-y-auto rounded-xl border border-border bg-surface-1 p-4 text-sm">
+            <TicketRichTextContent html={draft.descriptionHtml} />
+          </div>
+        </div>
+
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">
+            Evidências e anexos ({draft.evidence.length})
+          </h3>
+          {draft.evidence.length ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {draft.evidence.map((evidence) => (
+                <div
+                  key={evidence.messageId}
+                  className="flex min-w-0 items-center gap-3 rounded-lg border border-border p-3"
+                >
+                  {evidence.mimeType?.startsWith("image/") ? (
+                    <ImageIcon className="h-4 w-4 shrink-0 text-primary" />
+                  ) : (
+                    <FileText className="h-4 w-4 shrink-0 text-primary" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {evidence.fileName ?? `Evidência ${evidence.ordinal}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {evidence.interpreted ? "Analisada pela IA" : "Será mantida como anexo"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+              Nenhuma mídia ou anexo foi encontrado nesta conversa.
+            </p>
+          )}
+        </div>
+
+        {draft.warnings.length > 0 && (
+          <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
+            <div className="flex gap-2 text-sm font-semibold text-warning">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              Revise os pontos abaixo
+            </div>
+            <ul className="mt-2 list-disc space-y-1 pl-6 text-sm text-muted-foreground">
+              {draft.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function titleCase(value: string) {
+  return value.charAt(0) + value.slice(1).toLocaleLowerCase("pt-BR");
 }
 
 function StartedServiceLog({
@@ -1085,6 +1509,8 @@ export function MessageBubble({
   const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
   const [imagePreviewOpen, setImagePreviewOpen] = React.useState(false);
   const [mediaError, setMediaError] = React.useState(false);
+  const [recoveringMedia, setRecoveringMedia] = React.useState(false);
+  const [mediaRecoveryError, setMediaRecoveryError] = React.useState<string | null>(null);
   const [resendRequest, setResendRequest] = React.useState(0);
   const [actionsOpenRequest, setActionsOpenRequest] = React.useState(0);
   const [actionsOpenPosition, setActionsOpenPosition] = React.useState<{
@@ -1119,13 +1545,46 @@ export function MessageBubble({
   };
 
   const download = async (message: Message = m) => {
-    const blob = await messageApi.downloadMedia(message.conversation_id, message.id);
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = message.media_data?.file_name ?? "media";
-    anchor.click();
-    URL.revokeObjectURL(url);
+    setMediaRecoveryError(null);
+    try {
+      const blob = await messageApi.downloadMedia(message.conversation_id, message.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = message.media_data?.file_name ?? "media";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMediaRecoveryError((error as Error).message);
+      await qc.invalidateQueries({ queryKey: ["trixus", "messages", message.conversation_id] });
+    }
+  };
+
+  const recoverMedia = async () => {
+    if (recoveringMedia) return;
+    setRecoveringMedia(true);
+    setMediaRecoveryError(null);
+    try {
+      await messageApi.recoverMedia(m.conversation_id, m.id);
+      await qc.invalidateQueries({ queryKey: ["trixus", "messages", m.conversation_id] });
+    } catch (error) {
+      setMediaRecoveryError((error as Error).message);
+    } finally {
+      setRecoveringMedia(false);
+    }
+  };
+
+  const previewDocument = async (message: Message = m) => {
+    setMediaRecoveryError(null);
+    try {
+      const blob = await messageApi.downloadMedia(message.conversation_id, message.id, true);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (error) {
+      setMediaRecoveryError((error as Error).message);
+      await qc.invalidateQueries({ queryKey: ["trixus", "messages", message.conversation_id] });
+    }
   };
 
   if (m.type === "system") {
@@ -1170,7 +1629,7 @@ export function MessageBubble({
       : isLead || isConversationOpening
         ? {
             line: "bg-primary/40",
-            pill: "border-primary/40 bg-blue-50 text-primary dark:bg-blue-950",
+            pill: "border-primary/40 bg-blue-100 text-primary dark:bg-blue-950",
           }
         : isStarted
           ? {
@@ -1426,23 +1885,65 @@ export function MessageBubble({
                 <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
               )}
               {m.type === "document" && !isContactCardMessage(m) && m.media_data && (
-                <button
-                  type="button"
-                  onClick={mediaReady ? () => void download() : undefined}
-                  disabled={!mediaReady}
+                <div
                   className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
                     mine ? "border-black/10 bg-black/5" : "border-border/60 bg-surface-2"
                   } ${mediaReady ? "" : "opacity-70"}`}
                 >
-                  <Download className="h-4 w-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">
-                    {mediaState === "failed"
-                      ? "Documento indisponivel"
-                      : mediaReady
-                        ? (m.media_data.file_name ?? "Documento")
-                        : "Documento em processamento..."}
+                  <FileText className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">
+                      {m.media_data.file_name ?? "Documento"}
+                    </span>
+                    <span className="block truncate opacity-70">
+                      {mediaState === "failed"
+                        ? "Arquivo não armazenado"
+                        : mediaReady
+                          ? m.media_data.size
+                            ? formatMessageAttachmentSize(m.media_data.size)
+                            : "Disponível"
+                          : "Documento em processamento..."}
+                    </span>
+                    {mediaRecoveryError && (
+                      <span role="status" className="block text-destructive">
+                        {mediaRecoveryError}
+                      </span>
+                    )}
                   </span>
-                </button>
+                  {!mediaReady && m.direction === "inbound" && !m.deleted_for_everyone && (
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 hover:bg-black/10 disabled:cursor-wait"
+                      aria-label={`Recuperar ${m.media_data.file_name ?? "documento"}`}
+                      title="Tentar recuperar arquivo"
+                      disabled={recoveringMedia}
+                      onClick={() => void recoverMedia()}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${recoveringMedia ? "animate-spin" : ""}`} />
+                    </button>
+                  )}
+                  {mediaReady && isPreviewableDocument(m) && (
+                    <button
+                      type="button"
+                      className="rounded-md p-1.5 hover:bg-black/10"
+                      aria-label={`Visualizar ${m.media_data.file_name ?? "documento"}`}
+                      title="Visualizar"
+                      onClick={() => void previewDocument()}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 hover:bg-black/10 disabled:cursor-not-allowed"
+                    aria-label={`Baixar ${m.media_data.file_name ?? "documento"}`}
+                    title={mediaReady ? "Baixar" : "Arquivo indisponível para download"}
+                    disabled={!mediaReady}
+                    onClick={mediaReady ? () => void download() : undefined}
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
+                </div>
               )}
               {m.link_preview && <LinkPreviewCard preview={m.link_preview} mine={mine} />}
               {m.content &&
@@ -2964,7 +3465,7 @@ function Composer({
                 ref={fileRef}
                 type="file"
                 multiple
-                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                accept="image/*,video/*,.pdf,.txt,.csv,.rtf,.vcf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.zip,.rar,.7z,.gz,.tar"
                 className="hidden"
                 onChange={onFilePick}
               />
@@ -3096,11 +3597,15 @@ export function ContactPanel({
   contactId,
   conversationId,
   canBlock,
+  editRequestKey,
+  onContactUpdated,
   onClose,
 }: {
   contactId: string;
   conversationId?: string;
   canBlock?: boolean;
+  editRequestKey?: number;
+  onContactUpdated?: () => void;
   onClose: () => void;
 }) {
   const perms = useChatPerms();
@@ -3110,6 +3615,10 @@ export function ContactPanel({
   const tagsModal = useDisclosure();
 
   const editModal = useDisclosure();
+  const setEditModalOpen = editModal.set;
+  React.useEffect(() => {
+    if (editRequestKey) setEditModalOpen(true);
+  }, [editRequestKey, setEditModalOpen]);
   const [confirmingBlock, setConfirmingBlock] = React.useState(false);
   const [blocking, setBlocking] = React.useState(false);
   const [blocked, setBlocked] = React.useState(false);
@@ -3384,11 +3893,12 @@ export function ContactPanel({
             }
             onSubmit={async (data) => {
               await crmApi.updateContact(contactId, contactPayload(data));
-              qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
+              await qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
               qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
               qc.invalidateQueries({ queryKey: ["trixus", "contact_protocols", contactId] });
               qc.invalidateQueries({ queryKey: ["operations", "history"] });
               editModal.hide();
+              onContactUpdated?.();
             }}
           />
         )}

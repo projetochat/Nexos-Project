@@ -47,9 +47,21 @@ describe("pending onboarding route boundary", () => {
     await expect(guard.canActivate(context as never)).resolves.toBe(true);
     expect(request.user.roleKey).toBe("tenant_admin");
   });
+
+  it("does not inherit the internal administrator exception in a portal session", async () => {
+    const { guard, context } = setupGuard(
+      "tenant_admin",
+      "POST",
+      "/api/departments",
+      "portal-access-a",
+    );
+    await expect(guard.canActivate(context as never)).rejects.toMatchObject({
+      response: { code: "ONBOARDING_PENDING" },
+    });
+  });
 });
 
-function setupGuard(roleKey: string, method: string, originalUrl: string) {
+function setupGuard(roleKey: string, method: string, originalUrl: string, portalAccessId?: string) {
   const payload = {
     sub: "user-a",
     tenantId: "tenant-a",
@@ -60,6 +72,7 @@ function setupGuard(roleKey: string, method: string, originalUrl: string) {
     surface: "tenant",
     aud: "trixus-tenant",
     typ: "access",
+    portalAccessId,
   } as const;
   const auth = {
     verifyToken: vi.fn().mockResolvedValue(payload),
@@ -70,6 +83,7 @@ function setupGuard(roleKey: string, method: string, originalUrl: string) {
     tenantMembership: {
       findFirst: vi.fn().mockResolvedValue({ role: { key: roleKey } }),
     },
+    customerPortalAccess: { findFirst: vi.fn().mockResolvedValue({ id: portalAccessId }) },
   };
   const request = {
     method,

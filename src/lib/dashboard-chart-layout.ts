@@ -66,7 +66,7 @@ export function dashboardCategoryAxisLayout(labels: unknown[], containerWidth: n
     0,
   );
   const maxLabelWidth = Math.max(58, Math.min(190, availableWidth * 0.38));
-  const width = Math.min(Math.max(76, longestLabelWidth + 18), Math.max(76, maxLabelWidth + 12));
+  const width = Math.min(Math.max(32, longestLabelWidth + 18), Math.max(32, maxLabelWidth + 12));
 
   return {
     maxLabelWidth,

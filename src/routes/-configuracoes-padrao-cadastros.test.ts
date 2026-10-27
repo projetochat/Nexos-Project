@@ -13,7 +13,7 @@ describe("D29 registration uppercase settings", () => {
     expect(layoutSource.indexOf('label: "Padrão de Cadastros"')).toBeLessThan(
       layoutSource.indexOf('label: "Campos Adicionais"'),
     );
-    expect(layoutSource).toContain("CaseSensitive");
+    expect(layoutSource).toContain("RegistrationCaseIcon");
     expect(layoutSource).toContain("lg:grid-cols-[264px_minmax(0,1fr)]");
   });
 

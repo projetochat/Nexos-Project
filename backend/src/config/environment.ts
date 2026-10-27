@@ -13,9 +13,21 @@ const REQUIRED_PRODUCTION_VALUES = [
   "TRIXUS_EMAIL_FROM",
   "TENANT_ADMIN_PROVISIONING_MODE",
   "TRIXUS_ENVIRONMENT",
+  "AI_CREDENTIALS_ENCRYPTION_KEY",
 ] as const;
 
 const TRIXUS_ENVIRONMENTS = ["production", "homologation", "staging"] as const;
+
+const DEPLOYMENT_CONTRACTS = {
+  production: {
+    appOrigin: "https://app.trixus.com.br",
+    webhookUrl: "https://api.trixus.com.br/api/webhooks/evolution",
+  },
+  homologation: {
+    appOrigin: "https://hom.trixus.com.br",
+    webhookUrl: "https://api-hom.trixus.com.br/api/webhooks/evolution",
+  },
+} as const;
 
 export function validateEnvironment(input: Environment): Environment {
   const environment = normalizedEnvironment(input);
@@ -33,6 +45,7 @@ export function validateEnvironment(input: Environment): Environment {
   ) {
     errors.push("TRIXUS_ENVIRONMENT must be production, homologation or staging");
   }
+  validateDeploymentContract(environment, errors);
 
   validateUrl(environment.DATABASE_URL, "DATABASE_URL", ["postgres:", "postgresql:"], errors);
   validateHttpsList(environment.FRONTEND_ORIGIN, "FRONTEND_ORIGIN", errors);
@@ -63,6 +76,7 @@ export function validateEnvironment(input: Environment): Environment {
 
   validateSecret(environment.JWT_SECRET, "JWT_SECRET", errors);
   validateSecret(environment.JWT_REFRESH_SECRET, "JWT_REFRESH_SECRET", errors);
+  validateAiEncryptionKey(environment.AI_CREDENTIALS_ENCRYPTION_KEY, errors);
   validateNonPlaceholder(environment.RESEND_API_KEY, "RESEND_API_KEY", errors);
   if (environment.TRIXUS_EXPOSE_LOCAL_TOKENS === "true") {
     errors.push("TRIXUS_EXPOSE_LOCAL_TOKENS must not be true in production");
@@ -141,6 +155,43 @@ export function validateEnvironment(input: Environment): Environment {
     throw new Error(`Invalid production configuration: ${errors.join("; ")}`);
   }
   return environment;
+}
+
+function validateAiEncryptionKey(value: string, errors: string[]) {
+  if (!value) return;
+  let decoded: Buffer;
+  try {
+    decoded = /^[0-9a-f]{64}$/i.test(value)
+      ? Buffer.from(value, "hex")
+      : Buffer.from(value, "base64");
+  } catch {
+    decoded = Buffer.alloc(0);
+  }
+  if (decoded.byteLength !== 32) {
+    errors.push("AI_CREDENTIALS_ENCRYPTION_KEY must encode exactly 32 bytes");
+  }
+  validateNonPlaceholder(value, "AI_CREDENTIALS_ENCRYPTION_KEY", errors);
+}
+
+function validateDeploymentContract(environment: Record<string, string>, errors: string[]) {
+  const name = environment.TRIXUS_ENVIRONMENT as keyof typeof DEPLOYMENT_CONTRACTS;
+  const contract = DEPLOYMENT_CONTRACTS[name];
+  if (!contract) return;
+
+  for (const variable of [
+    "FRONTEND_ORIGIN",
+    "TRIXUS_REALTIME_CORS_ORIGIN",
+    "TRIXUS_PLATFORM_APP_URL",
+    "TRIXUS_TENANT_APP_URL",
+    "TRIXUS_PUBLIC_APP_URL",
+  ] as const) {
+    if (environment[variable] !== contract.appOrigin) {
+      errors.push(`${variable} must be exactly ${contract.appOrigin} in ${name}`);
+    }
+  }
+  if (environment.EVOLUTION_WEBHOOK_PUBLIC_URL !== contract.webhookUrl) {
+    errors.push(`EVOLUTION_WEBHOOK_PUBLIC_URL must be exactly ${contract.webhookUrl} in ${name}`);
+  }
 }
 
 function normalizedEnvironment(input: Environment): Record<string, string> {

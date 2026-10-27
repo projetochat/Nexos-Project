@@ -421,7 +421,7 @@ function Page() {
                       </div>
                     )}
                   </div>
-                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-border pt-3">
                     {canView && (
                       <Button
                         variant="ghost"
@@ -725,7 +725,8 @@ function ConnectionForm({
                 </span>
                 <span className="text-base font-semibold">API Oficial</span>
                 <span className="mt-0.5 text-sm text-muted-foreground">
-                  Meta Business (Em Breve)
+                  <span className="block">Meta Business</span>
+                  <span className="block">(Em breve)</span>
                 </span>
               </button>
             </div>

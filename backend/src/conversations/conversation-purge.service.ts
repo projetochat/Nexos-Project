@@ -83,6 +83,7 @@ export class ConversationPurgeService {
         where: { tenantId, requesterContactId: id },
         data: { requesterContactId: null },
       });
+      await this.revokeContactPortalAccesses(tx, id, tenantId);
       await this.purgeConversationsInTransaction(tx, state.conversations, tenantId);
       const deleted = await tx.contact.deleteMany({
         where: { id, tenantId, updatedAt: state.contact.updatedAt },
@@ -100,6 +101,37 @@ export class ConversationPurgeService {
     if (result.kind === "changed") return changedDeletion(result.impact);
     const cleanup = await this.cleanupMedia(result.mediaStorageKeys);
     return { status: "deleted" as const, cleanup };
+  }
+
+  private async revokeContactPortalAccesses(
+    tx: Prisma.TransactionClient,
+    contactId: string,
+    tenantId: string,
+  ) {
+    const portalAccessIds = (
+      await tx.customerPortalAccess.findMany({
+        where: { tenantId, contactId },
+        select: { id: true },
+      })
+    ).map((access) => access.id);
+    if (!portalAccessIds.length) return;
+    const revokedAt = new Date();
+    await tx.userInvitation.updateMany({
+      where: {
+        tenantId,
+        portalAccessId: { in: portalAccessIds },
+        status: "PENDING",
+      },
+      data: { status: "REVOKED", revokedAt },
+    });
+    await tx.authSession.updateMany({
+      where: { tenantId, portalAccessId: { in: portalAccessIds }, revokedAt: null },
+      data: { revokedAt },
+    });
+    await tx.customerPortalAccess.updateMany({
+      where: { tenantId, id: { in: portalAccessIds } },
+      data: { active: false },
+    });
   }
 
   private async contactImpactFromDatabase(db: DatabaseClient, id: string, tenantId: string) {

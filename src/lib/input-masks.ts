@@ -1,10 +1,11 @@
 import {
   formatBrazilPhoneWithDdi,
   formatPhoneForDisplay,
+  formatPhoneVariable,
   onlyPhoneDigits,
 } from "../../backend/src/common/phone-display";
 
-export { formatBrazilPhoneWithDdi, formatPhoneForDisplay };
+export { formatBrazilPhoneWithDdi, formatPhoneForDisplay, formatPhoneVariable };
 
 export function onlyDigits(value: string) {
   return onlyPhoneDigits(value);

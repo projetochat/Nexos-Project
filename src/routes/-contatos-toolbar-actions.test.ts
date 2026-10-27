@@ -39,7 +39,7 @@ describe("contacts toolbar and duplicate action styles", () => {
     const mobileStart = contactsSource.indexOf('<div className="space-y-3 md:hidden">');
     const listStart = contactsSource.indexOf('{viewMode === "list"', mobileStart);
     const cardsStart = contactsSource.indexOf(
-      '<div className="hidden gap-3 p-4 md:grid md:grid-cols-3">',
+      '<div className="hidden gap-3 md:grid md:grid-cols-3">',
       listStart,
     );
     const cardsEnd = contactsSource.indexOf("data-contacts-list-footer", cardsStart);
@@ -48,7 +48,7 @@ describe("contacts toolbar and duplicate action styles", () => {
 
     for (const cardView of [mobileCards, desktopCards]) {
       expect(cardView).toContain(
-        '<div className="flex justify-end border-t border-border px-3 py-2">',
+        '<div className="mx-3 flex justify-end border-t border-border py-2">',
       );
       expect(cardView).toContain("<ContactActions");
     }
@@ -56,7 +56,7 @@ describe("contacts toolbar and duplicate action styles", () => {
     const desktopTable = contactsSource.slice(listStart, cardsStart);
     expect(desktopTable).toContain('<td className="sticky right-0 bg-card px-3 py-3');
     expect(desktopTable).not.toContain(
-      '<div className="flex justify-end border-t border-border px-3 py-2">',
+      '<div className="mx-3 flex justify-end border-t border-border py-2">',
     );
   });
 });

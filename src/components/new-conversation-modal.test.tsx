@@ -196,6 +196,7 @@ beforeEach(() => {
       {
         id: "group-a",
         conversationId: "group-conversation-a",
+        contactId: "group-contact-a",
         name: "Grupo Financeiro",
         imageUrl: null,
         participantsCount: 8,
@@ -390,7 +391,12 @@ describe("new conversation contact picker", () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
-  it("keeps independent contact and group tabs and opens an existing group conversation", async () => {
+  it("keeps independent contact and group tabs and starts a group conversation", async () => {
+    mocks.create.mockResolvedValueOnce({
+      id: "group-conversation-a",
+      status: "em_andamento",
+      is_group: true,
+    });
     await mount();
     expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain(
       "Contatos",
@@ -411,10 +417,92 @@ describe("new conversation contact picker", () => {
         ) as HTMLButtonElement
       ).click(),
     );
+    await flush();
+
+    expect(mocks.create).toHaveBeenCalledWith({
+      contactId: "group-contact-a",
+      connectionId: "a",
+      departmentId: "department-a",
+      assignToSelf: true,
+      reuseExistingOpen: true,
+      isGroup: true,
+      sourceGroupConversationId: "group-conversation-a",
+    });
 
     expect(mocks.navigate).toHaveBeenCalledWith({
       to: "/inbox/$conversationId",
       params: { conversationId: "group-conversation-a" },
+    });
+  });
+
+  it("positions an already open group conversation without creating another cycle", async () => {
+    mocks.connections = [
+      { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
+    ];
+    mocks.listConversations.mockImplementation(async ({ status }: { status?: string }) => ({
+      items:
+        status === "em_andamento"
+          ? [
+              {
+                id: "group-existing",
+                status: "em_andamento",
+                is_group: true,
+                connection_id: "a",
+                connection: { id: "a" },
+              },
+            ]
+          : [],
+    }));
+    await mount();
+    await act(async () => button("Grupos").click());
+    await flush();
+    await act(async () =>
+      (
+        document.querySelector(
+          '[aria-label="Nova conversa com o grupo Grupo Financeiro"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    await flush();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: "/inbox/$conversationId",
+      params: { conversationId: "group-existing" },
+    });
+  });
+
+  it("opens the department picker before creating a new group cycle", async () => {
+    mocks.role = "admin";
+    mocks.connections = [
+      { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
+    ];
+    await mount();
+    await act(async () => button("Grupos").click());
+    await flush();
+    await act(async () =>
+      (
+        document.querySelector(
+          '[aria-label="Nova conversa com o grupo Grupo Financeiro"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    await flush();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Escolher Instância e Departamento");
+    await act(async () => button("Comercial").click());
+    await act(async () => button("Iniciar Atendimento").click());
+    await flush();
+
+    expect(mocks.create).toHaveBeenCalledWith({
+      contactId: "group-contact-a",
+      connectionId: "a",
+      departmentId: "department-a",
+      assignToSelf: true,
+      reuseExistingOpen: true,
+      isGroup: true,
+      sourceGroupConversationId: "group-conversation-a",
     });
   });
   it("starts a conversation without requiring or sending a first message", async () => {

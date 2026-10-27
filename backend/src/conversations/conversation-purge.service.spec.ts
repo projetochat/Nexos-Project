@@ -50,6 +50,43 @@ function conversationDb() {
 }
 
 describe("ConversationPurgeService", () => {
+  it("revokes only the selected contact portal accesses before removing the contact", async () => {
+    const tx = {
+      customerPortalAccess: {
+        findMany: vi.fn().mockResolvedValue([{ id: "access-a" }, { id: "access-b" }]),
+        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+      },
+      userInvitation: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      authSession: { updateMany: vi.fn().mockResolvedValue({ count: 2 }) },
+      tenantMembership: { updateMany: vi.fn() },
+    };
+    const service = new ConversationPurgeService(tx as never, {} as never);
+
+    await service["revokeContactPortalAccesses"](tx as never, "contact-a", "tenant-a");
+
+    expect(tx.userInvitation.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        portalAccessId: { in: ["access-a", "access-b"] },
+        status: "PENDING",
+      },
+      data: { status: "REVOKED", revokedAt: expect.any(Date) },
+    });
+    expect(tx.authSession.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        portalAccessId: { in: ["access-a", "access-b"] },
+        revokedAt: null,
+      },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(tx.customerPortalAccess.updateMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", id: { in: ["access-a", "access-b"] } },
+      data: { active: false },
+    });
+    expect(tx.tenantMembership.updateMany).not.toHaveBeenCalled();
+  });
+
   it("unlinks tickets and campaign recipients before deleting the conversation, then cleans media", async () => {
     const { prisma, tx } = conversationDb();
     const storage = { deleteObject: vi.fn().mockResolvedValue(undefined) };

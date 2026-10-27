@@ -1,3 +1,4 @@
+import { avatarInitials } from "@/lib/avatar-initials";
 import * as React from "react";
 import {
   setNativeInputValue,
@@ -289,19 +290,26 @@ export function SearchInput({
   onChange,
   placeholder,
   className = "",
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   className?: string;
+  invalid?: boolean;
 }) {
   return (
     <div
-      className={`flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 transition focus-within:border-primary ${className}`}
+      className={`flex min-h-10 items-center gap-2 rounded-lg border bg-surface-1 px-3 transition ${
+        invalid
+          ? "border-destructive focus-within:border-destructive"
+          : "border-border focus-within:border-primary"
+      } ${className}`}
     >
       <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
       <input
         value={value}
+        aria-invalid={invalid}
         onChange={(event) => onChange(event.target.value)}
         className="min-w-0 flex-1 border-0 bg-transparent py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0"
         placeholder={placeholder}
@@ -406,12 +414,7 @@ export function Avatar({
   className?: string;
   src?: string | null;
 }) {
-  const initials = name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+  const initials = avatarInitials(name);
   return (
     <span
       className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-brand font-semibold text-white shadow-card ${className}`}

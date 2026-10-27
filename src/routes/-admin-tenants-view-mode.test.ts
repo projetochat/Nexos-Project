@@ -21,7 +21,7 @@ describe("alternância de visualização das tenants", () => {
     expect(source).toContain("data-platform-desktop-table");
     expect(source).toContain('viewMode === "cards"');
     expect(source).toContain('viewMode === "list"');
-    expect(source).toContain("sm:grid-cols-2 md:p-4 xl:grid-cols-3");
+    expect(source).toContain("sm:grid-cols-2 xl:grid-cols-3");
     expect(source).toContain('className={viewMode === "list" ? "overflow-hidden p-0" : "hidden"}');
   });
 
@@ -43,17 +43,15 @@ describe("alternância de visualização das tenants", () => {
     expect(source).toContain('<MoreVertical className="h-4 w-4" />');
   });
 
-  it("aplica o mesmo shell e rodapé integrado à grade e aos cards", () => {
+  it("mantém os cards sem balão externo e usa rodapé independente", () => {
     expect(source).toContain(
       '<thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground',
     );
     expect(source).toContain("data-platform-card-shell");
-    expect(source).toContain(
-      '? "md:overflow-hidden md:rounded-xl md:border md:border-border md:bg-card md:shadow-card"',
-    );
-    expect(source).toContain(
-      'className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:p-4 xl:grid-cols-3"',
-    );
+    expect(source).toContain('? "space-y-3"');
+    expect(source).toContain('className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"');
+    expect(source).toContain('className="overflow-hidden rounded-xl border border-border"');
+    expect(source).not.toContain("md:bg-card md:shadow-card");
     expect(source.match(/\{paginationFooter\}/g)).toHaveLength(2);
     expect(source).toContain('ariaLabelPrefix="tenants"');
   });

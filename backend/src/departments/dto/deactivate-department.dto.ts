@@ -1,12 +1,22 @@
 import { Type } from "class-transformer";
-import { IsArray, IsOptional, IsUUID, ValidateNested } from "class-validator";
+import {
+  IsArray,
+  IsString,
+  IsNotEmpty,
+  MaxLength,
+  IsOptional,
+  IsUUID,
+  ValidateNested,
+} from "class-validator";
 
 export class DepartmentMigrationTargetDto {
   @IsOptional()
   @IsUUID()
   connectionId?: string | null;
 
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
   departmentId!: string;
 }
 

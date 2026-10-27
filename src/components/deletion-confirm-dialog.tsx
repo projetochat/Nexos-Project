@@ -88,6 +88,7 @@ type DeletionConfirmDialogProps = {
   compactDescription?: React.ReactNode;
   showRecordDetails?: boolean;
   confirmLabel?: string;
+  initialFocus?: "cancel" | "confirm";
   /** Stable domain + record key. Changing it reloads an open dialog. */
   resourceKey: string;
   onOpenChange: (open: boolean) => void;
@@ -113,6 +114,7 @@ export function DeletionConfirmDialog({
   compactDescription,
   showRecordDetails = true,
   confirmLabel,
+  initialFocus = "cancel",
   resourceKey,
   onOpenChange,
   loadImpact,
@@ -135,6 +137,8 @@ export function DeletionConfirmDialog({
   const onConfirmRef = React.useRef(onConfirm);
   const resourceKeyRef = React.useRef(resourceKey);
   const cancelRef = React.useRef<HTMLButtonElement>(null);
+  const confirmButtonId = React.useId();
+  const initialFocusAppliedRef = React.useRef(false);
 
   React.useEffect(() => {
     loadImpactRef.current = loadImpact;
@@ -192,6 +196,7 @@ export function DeletionConfirmDialog({
       setAnnouncement("");
       setPhase("idle");
       setBusy(false);
+      initialFocusAppliedRef.current = false;
       return;
     }
     submitController.current?.abort();
@@ -212,6 +217,18 @@ export function DeletionConfirmDialog({
 
   const isBusy = phase !== "idle";
   const isCommitting = phase === "submitting";
+
+  React.useEffect(() => {
+    if (!open || !impact || phase !== "idle" || initialFocusAppliedRef.current) return;
+    initialFocusAppliedRef.current = true;
+    window.requestAnimationFrame(() => {
+      const target =
+        initialFocus === "confirm" && !impact.blockedReason
+          ? document.getElementById(confirmButtonId)
+          : cancelRef.current;
+      target?.focus({ preventScroll: true });
+    });
+  }, [confirmButtonId, impact, initialFocus, open, phase]);
   const showChangedImpact = React.useCallback(
     (next: DeletionImpactPreview, message?: string) => {
       replaceImpact(next);
@@ -305,7 +322,7 @@ export function DeletionConfirmDialog({
         onOverlayClick={() => handleOpenChange(false)}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-          window.requestAnimationFrame(() => cancelRef.current?.focus({ preventScroll: true }));
+          cancelRef.current?.focus({ preventScroll: true });
         }}
       >
         <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
@@ -436,19 +453,20 @@ export function DeletionConfirmDialog({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-surface-1 px-4 py-3 sm:flex-row sm:justify-end">
+        <div className="flex shrink-0 flex-row justify-end gap-2 border-t border-border bg-surface-1 px-4 py-3">
           <AlertDialogCancel
             ref={cancelRef}
             disabled={isCommitting}
-            className="mt-0 h-8 w-full rounded-lg sm:w-auto sm:min-w-20"
+            className="mt-0 h-8 min-w-20 rounded-lg"
           >
             Cancelar
           </AlertDialogCancel>
           <Button
+            id={confirmButtonId}
             type="button"
             variant="destructive"
             size="sm"
-            className="h-8 w-full rounded-lg whitespace-normal sm:w-auto sm:min-w-20"
+            className="h-8 min-w-20 rounded-lg whitespace-normal"
             disabled={
               !impact ||
               isBusy ||

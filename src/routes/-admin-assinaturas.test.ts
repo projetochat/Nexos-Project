@@ -114,10 +114,10 @@ describe("tela administrativa de assinaturas", () => {
     expect(source).toContain('aria-label="Visualizar assinaturas em lista"');
     expect(source).toContain('viewMode === "cards"');
     expect(source).toContain('viewMode === "list"');
-    expect(source).toContain("sm:grid-cols-2 md:p-4 xl:grid-cols-3");
+    expect(source).toContain("sm:grid-cols-2 xl:grid-cols-3");
   });
 
-  it("aplica o mesmo rodapé integrado à grade e aos cards", () => {
+  it("mantém os cards sem balão externo e usa rodapé independente", () => {
     expect(source).toContain('<thead className="bg-surface-2">');
     expect(source).toContain("<GridPaginationFooter");
     expect(source).toContain("visible={visibleRows.length}");
@@ -126,9 +126,9 @@ describe("tela administrativa de assinaturas", () => {
     expect(source).toContain("{visibleRows.map((row) => {");
     expect(source).toContain("{visibleRows.map((row) => (");
     expect(source).toContain("data-platform-card-shell");
-    expect(source).toContain(
-      '? "mt-4 md:overflow-hidden md:rounded-xl md:border md:border-border md:bg-card md:shadow-card"',
-    );
+    expect(source).toContain('? "mt-4 space-y-3"');
+    expect(source).toContain('className="overflow-hidden rounded-xl border border-border"');
+    expect(source).not.toContain("md:bg-card md:shadow-card");
   });
 
   it("cria a assinatura sem permitir que o usuário envie um status manual", () => {

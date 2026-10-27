@@ -225,4 +225,61 @@ describe("profile permission enforcement", () => {
 
     await expect(guard.canActivate(context as never)).resolves.toBe(true);
   });
+
+  it("keeps the customer portal role when the underlying membership is an administrator", async () => {
+    const prisma = {
+      tenantMembership: {
+        findFirst: vi.fn().mockResolvedValue({
+          roleId: "role-admin",
+          tenantId: "tenant-a",
+          tenant: { featureOverrides: null },
+          role: {
+            id: "role-admin",
+            key: "tenant_admin",
+            metadata: {},
+            permissions: [{ permissionId: "users.create" }],
+          },
+        }),
+      },
+      customerPortalAccess: { findFirst: vi.fn().mockResolvedValue({ id: "access-a" }) },
+      role: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "role-portal",
+          key: "customer_portal",
+          active: true,
+          metadata: {},
+          permissions: [{ permissionId: "tickets.read" }],
+        }),
+      },
+      tenantSubscription: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const guard = new PermissionsGuard(
+      {
+        getAllAndOverride: (key: string) => (key === "permissions" ? ["tickets.read"] : undefined),
+      } as never,
+      prisma as never,
+    );
+    const request = {
+      user: {
+        userId: "user-a",
+        tenantId: "tenant-a",
+        membershipId: "member-a",
+        portalAccessId: "access-a",
+        surface: "tenant",
+      },
+    };
+    const context = {
+      getHandler() {},
+      getClass() {},
+      switchToHttp: () => ({ getRequest: () => request }),
+    };
+
+    await expect(guard.canActivate(context as never)).resolves.toBe(true);
+    expect(request.user).toMatchObject({
+      roleId: "role-portal",
+      roleKey: "customer_portal",
+      permissions: ["tickets.read"],
+      assignedPermissionIds: ["tickets.read"],
+    });
+  });
 });

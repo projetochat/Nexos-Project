@@ -70,6 +70,66 @@ function controllerWith(prisma: Record<string, unknown>) {
 }
 
 describe("vínculo de contato existente ao cliente", () => {
+  it("limpa filial, departamento e perfil ao trocar a empresa pelo endpoint direto", async () => {
+    const updated = contact({ customerId: "customer-new" });
+    const update = vi.fn().mockResolvedValue(updated);
+    const prisma = {
+      customer: { findFirst: vi.fn().mockResolvedValue({ id: "customer-new" }) },
+      contact: {
+        findFirst: vi.fn().mockResolvedValue(
+          contact({
+            customerBranchId: "branch-old",
+            customerDepartmentId: "department-old",
+            customerAccessProfile: "MANAGER",
+          }),
+        ),
+        update,
+      },
+    };
+    const { controller } = controllerWith(prisma);
+
+    await controller.updateContactCustomer("contact-a", { customerId: "customer-new" }, current);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          customerId: "customer-new",
+          customerBranchId: null,
+          customerDepartmentId: null,
+          customerAccessProfile: null,
+        },
+      }),
+    );
+  });
+
+  it("preserva filial, departamento e perfil quando a empresa não mudou", async () => {
+    const existing = contact({
+      customerId: "customer-old",
+      customerBranchId: "branch-old",
+      customerDepartmentId: "department-old",
+      customerAccessProfile: "MANAGER",
+    });
+    const update = vi.fn().mockResolvedValue(existing);
+    const prisma = {
+      customer: { findFirst: vi.fn().mockResolvedValue({ id: "customer-old" }) },
+      contact: { findFirst: vi.fn().mockResolvedValue(existing), update },
+    };
+    const { controller } = controllerWith(prisma);
+
+    await controller.updateContactCustomer("contact-a", { customerId: "customer-old" }, current);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          customerId: "customer-old",
+          customerBranchId: undefined,
+          customerDepartmentId: undefined,
+          customerAccessProfile: undefined,
+        },
+      }),
+    );
+  });
+
   it("exige confirmação antes de transferir um contato vinculado a outro cliente", async () => {
     const existing = contact({
       customer: { id: "customer-old", name: "Cliente atual", color: "#111111" },

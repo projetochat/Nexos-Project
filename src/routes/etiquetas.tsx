@@ -416,19 +416,6 @@ export function EtiquetaForm({
           <Switch checked={active} onCheckedChange={setActive} aria-label="Ativo" />
           <span>Ativo</span>
         </label>
-        <label className="mb-4 flex min-h-7 items-center justify-between gap-4 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-          <span>
-            <span className="block font-medium">Aviso sonoro em nova conversa</span>
-            <span className="block text-xs text-muted-foreground">
-              Toca uma única vez quando esta etiqueta estiver em uma nova conversa passiva.
-            </span>
-          </span>
-          <Switch
-            checked={notifyOnNewConversation}
-            onCheckedChange={setNotifyOnNewConversation}
-            aria-label="Aviso sonoro em nova conversa"
-          />
-        </label>
         <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
           <Field
             label="Nome *"
@@ -472,6 +459,19 @@ export function EtiquetaForm({
             placeholder="Como esta etiqueta será utilizada"
           />
         </Field>
+        <label className="mt-4 flex min-h-7 items-center justify-between gap-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-100">
+          <span>
+            <span className="block font-medium">Aviso sonoro em nova conversa</span>
+            <span className="block text-xs text-blue-700 dark:text-blue-300">
+              Toca uma única vez quando esta etiqueta estiver em uma nova conversa passiva.
+            </span>
+          </span>
+          <Switch
+            checked={notifyOnNewConversation}
+            onCheckedChange={setNotifyOnNewConversation}
+            aria-label="Aviso sonoro em nova conversa"
+          />
+        </label>
       </fieldset>
     </Modal>
   );

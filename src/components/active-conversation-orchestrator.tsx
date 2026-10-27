@@ -26,12 +26,14 @@ import {
   type ApiConversation,
   type ApiContactInstanceOption,
   type ApiMessageContactPickerItem,
+  type ApiWhatsappGroupSummary,
 } from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 
 export type ActiveConversationRequest = {
   key: number;
   contact: ApiMessageContactPickerItem;
+  group?: ApiWhatsappGroupSummary;
   firstMessagePreview?: string | null;
 };
 
@@ -43,8 +45,11 @@ type Props = {
 
 const ACTIVE_CONVERSATION_STATUSES = new Set(["aberta", "em_andamento", "aguardando"]);
 
-function isReusableActiveConversation(conversation: Pick<ApiConversation, "status" | "is_group">) {
-  return !conversation.is_group && ACTIVE_CONVERSATION_STATUSES.has(conversation.status);
+function isReusableActiveConversation(
+  conversation: Pick<ApiConversation, "status" | "is_group">,
+  isGroup: boolean,
+) {
+  return conversation.is_group === isGroup && ACTIVE_CONVERSATION_STATUSES.has(conversation.status);
 }
 
 export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: Props) {
@@ -125,8 +130,11 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
   const submitting = React.useRef(false);
 
   const existingOpenConversations = React.useMemo(
-    () => (existingConversationsQuery.data ?? []).filter(isReusableActiveConversation),
-    [existingConversationsQuery.data],
+    () =>
+      (existingConversationsQuery.data ?? []).filter((conversation) =>
+        isReusableActiveConversation(conversation, Boolean(request?.group)),
+      ),
+    [existingConversationsQuery.data, request?.group],
   );
 
   const close = React.useCallback(() => {
@@ -170,12 +178,18 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
           departmentId: selectedDepartmentId,
           assignToSelf: true,
           reuseExistingOpen: true,
+          ...(request.group
+            ? {
+                isGroup: true,
+                sourceGroupConversationId: request.group.conversationId,
+              }
+            : {}),
           ...(request.firstMessagePreview
             ? { firstMessagePreview: request.firstMessagePreview }
             : {}),
         };
         let conversation = await conversationApi.create(payload);
-        if (!isReusableActiveConversation(conversation)) {
+        if (!isReusableActiveConversation(conversation, Boolean(request.group))) {
           // A conversa pode ter sido encerrada entre a consulta preliminar e a
           // resposta da criação. Repita uma vez para o backend criar/retornar o
           // ciclo ativo atual, mas nunca navegue para o ID encerrado.
@@ -184,7 +198,7 @@ export function ActiveConversationOrchestrator({ request, onCancel, onOpened }: 
           });
           conversation = await conversationApi.create(payload);
         }
-        if (!isReusableActiveConversation(conversation)) {
+        if (!isReusableActiveConversation(conversation, Boolean(request.group))) {
           throw new Error("O servidor não retornou uma conversa ativa.");
         }
         setInboxTab("ativas");

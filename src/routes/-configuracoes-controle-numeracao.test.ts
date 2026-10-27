@@ -35,8 +35,19 @@ describe("Configurações · Controle de Numeração", () => {
     expect(numbering).toContain("organizationApi.updateProtocolSettings");
   });
 
-  it("usa o padrão visual azul nas orientações informativas", () => {
-    expect(numbering).toContain("border-blue-200 bg-blue-50");
-    expect(numbering).toContain("text-blue-800");
+  it("remove os avisos azuis e aplica os novos contratos de formato", () => {
+    expect(numbering).not.toContain("border-blue-200 bg-blue-50");
+    expect(numbering.indexOf('value: "CUSTOM"')).toBeLessThan(
+      numbering.indexOf('value: "SEQUENCE"'),
+    );
+    expect(numbering).toContain("[2, 3, 4, 5, 6, 7, 8, 9, 10]");
+    expect(numbering).toContain('disabled={item.format !== "CUSTOM"}');
+  });
+
+  it("separa os cabeçalhos dos módulos com o mesmo fundo dos painéis da IA", () => {
+    expect(numbering).toContain("flex items-center gap-3 border-b border-border px-3 py-3 sm:px-4");
+    expect(numbering).toContain(
+      'backgroundColor: "color-mix(in srgb, var(--surface-1) 98%, var(--foreground) 2%)"',
+    );
   });
 });

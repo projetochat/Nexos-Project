@@ -324,15 +324,8 @@ function FinanceiroAdmin() {
       </div>
 
       {error && <div className="mt-4 text-sm text-destructive">{error}</div>}
-      <div
-        data-platform-card-shell
-        className={
-          viewMode === "cards"
-            ? "mt-4 md:overflow-hidden md:rounded-xl md:border md:border-border md:bg-card md:shadow-card"
-            : "hidden"
-        }
-      >
-        <div data-platform-mobile-list className="grid gap-3 sm:grid-cols-2 md:p-4 xl:grid-cols-3">
+      <div data-platform-card-shell className={viewMode === "cards" ? "mt-4 space-y-3" : "hidden"}>
+        <div data-platform-mobile-list className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {pagedRows.map((row) => (
             <article key={row.id} className="rounded-xl border border-border bg-surface-1 p-4">
               <div className="flex items-start">
@@ -389,7 +382,10 @@ function FinanceiroAdmin() {
             </div>
           )}
         </div>
-        <div className="hidden md:block" data-platform-card-pagination>
+        <div
+          className="overflow-hidden rounded-xl border border-border"
+          data-platform-card-pagination
+        >
           {paginationFooter}
         </div>
       </div>

@@ -11,7 +11,7 @@ import {
 describe("app surface routing", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_TRIXUS_PLATFORM_APP_URL", "https://app.trixus.com.br");
-    vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "https://chat.trixus.com.br");
+    vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "https://app.trixus.com.br");
   });
 
   afterEach(() => vi.unstubAllEnvs());
@@ -22,7 +22,9 @@ describe("app surface routing", () => {
     expect(loginEndpointForSurface("unified")).toBe("/auth/login");
   });
 
-  it("uses an explicit login endpoint for each production surface", () => {
+  it("supports explicitly configured split surfaces outside the unified production build", () => {
+    vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "https://chat.trixus.com.br");
+
     expect(appSurfaceForHostname("app.trixus.com.br")).toBe("platform");
     expect(appSurfaceForHostname("chat.trixus.com.br")).toBe("tenant");
     expect(appTitleForHostname("app.trixus.com.br")).toBe("Trixus | App");
@@ -61,6 +63,8 @@ describe("app surface routing", () => {
   });
 
   it("redirects routes to their correct origin without copying secrets", () => {
+    vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "https://chat.trixus.com.br");
+
     expect(
       surfaceRedirect({ hostname: "app.trixus.com.br", pathname: "/inbox/conversation-1" }),
     ).toBe("https://chat.trixus.com.br/inbox/conversation-1");
@@ -85,13 +89,11 @@ describe("app surface routing", () => {
     expect(appSurfaceForHostname("unexpected.example.test")).toBe("unknown");
     expect(
       surfaceRedirect({ hostname: "unexpected.example.test", pathname: "/admin?token=secret" }),
-    ).toBe("https://chat.trixus.com.br/login");
+    ).toBe("https://app.trixus.com.br/login");
   });
 
   it("rejects non-HTTP redirect origins from configuration", () => {
     vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "javascript:alert(1)");
-    expect(surfaceRedirect({ hostname: "app.trixus.com.br", pathname: "/inbox" })).toBe(
-      "https://chat.trixus.com.br/inbox",
-    );
+    expect(surfaceRedirect({ hostname: "app.trixus.com.br", pathname: "/inbox" })).toBeNull();
   });
 });

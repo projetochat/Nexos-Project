@@ -23,6 +23,7 @@ import { RolesModule } from "./roles/roles.module";
 import { TicketsModule } from "./tickets/tickets.module";
 import { UsersModule } from "./users/users.module";
 import { validateEnvironment } from "./config/environment";
+import { AiModule } from "./ai/ai.module";
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { validateEnvironment } from "./config/environment";
     CampaignsModule,
     HealthModule,
     SchedulesModule,
+    AiModule,
   ],
 })
 export class AppModule {}

@@ -33,6 +33,31 @@ describe("PACK 11 customer contracts", () => {
     expect(await validate(branch)).not.toHaveLength(0);
   });
 
+  it.each([undefined, null, "", "   "])(
+    "rejects a branch without a valid city: %s",
+    async (city) => {
+      const branch = plainToInstance(CustomerBranchDto, {
+        name: "Matriz",
+        city,
+        state: "GO",
+        status: "ACTIVE",
+      });
+
+      expect(await validate(branch)).not.toHaveLength(0);
+    },
+  );
+
+  it("accepts a branch with city and state", async () => {
+    const branch = plainToInstance(CustomerBranchDto, {
+      name: "Matriz",
+      city: "Goiânia",
+      state: "GO",
+      status: "ACTIVE",
+    });
+
+    expect(await validate(branch)).toHaveLength(0);
+  });
+
   it("accepts a customer department with an assigned manager", async () => {
     const dto = plainToInstance(CustomerDepartmentDto, {
       name: "Financeiro",

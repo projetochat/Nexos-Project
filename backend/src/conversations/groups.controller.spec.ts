@@ -279,9 +279,56 @@ describe("GroupsController", () => {
     );
     expect(result.items[0]).toMatchObject({
       id: "group-a",
+      contactId: "contact-a",
       participantsCount: 1015,
     });
     expect(result.items[0]).not.toHaveProperty("participants");
+  });
+
+  it("lists one card when the same provider group was registered twice", async () => {
+    const first = { ...baseGroup, _count: { participants: 1 } };
+    const duplicate = {
+      ...first,
+      id: "group-duplicate",
+      createdAt: new Date("2026-09-01T09:00:00.000Z"),
+    };
+    const prisma = {
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([first, duplicate]),
+        count: vi.fn().mockResolvedValue(2),
+      },
+      $transaction: vi.fn().mockResolvedValue([[first, duplicate], 2]),
+    };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    const result = await controller.listSummary({ page: "1", pageSize: "12" }, current as never);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.id).toBe("group-a");
+    expect(result.total).toBe(1);
+  });
+
+  it("lists a shared provider group once in the combined instance view", async () => {
+    const first = { ...baseGroup, _count: { participants: 2 } };
+    const sameGroupOtherInstance = {
+      ...first,
+      id: "group-other-instance",
+      connectionId: "connection-b",
+      connection: { ...first.connection, id: "connection-b", name: "Instância B" },
+    };
+    const prisma = {
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([first, sameGroupOtherInstance]),
+        count: vi.fn().mockResolvedValue(2),
+      },
+      $transaction: vi.fn().mockResolvedValue([[first, sameGroupOtherInstance], 2]),
+    };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    const result = await controller.listSummary({ page: "1", pageSize: "12" }, current as never);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.total).toBe(1);
   });
 
   it("limits the group list to paired instance and department scopes", async () => {
@@ -525,7 +572,7 @@ describe("GroupsController", () => {
       ],
     };
     const prisma = { conversation: { findFirst: vi.fn().mockResolvedValue(group) } };
-    const evolution = { updateGroupParticipants: vi.fn() };
+    const evolution = { updateGroupParticipants: vi.fn(), updateGroupSubject: vi.fn() };
     const controller = new GroupsController(prisma as never, evolution as never, {} as never);
 
     await expect(
@@ -536,5 +583,89 @@ describe("GroupsController", () => {
       ),
     ).rejects.toThrow("não possui privilégio para gerenciar participantes");
     expect(evolution.updateGroupParticipants).not.toHaveBeenCalled();
+
+    await expect(
+      controller.updateName("group-a", { name: "Novo nome" }, current as never),
+    ).rejects.toThrow("não possui privilégio para gerenciar participantes");
+    expect(evolution.updateGroupSubject).not.toHaveBeenCalled();
+  });
+
+  it("blocks changes to the creator and to the connected admin itself", async () => {
+    const connectedAdmin = {
+      id: "participant-admin",
+      displayName: "Instância A",
+      phone: "5562992728679",
+      lid: null,
+      externalParticipantId: "5562992728679@s.whatsapp.net",
+      isAdmin: true,
+      isSuperAdmin: false,
+      active: true,
+      lastSeenAt: new Date("2026-09-02T09:00:00.000Z"),
+    };
+    const creator = {
+      ...connectedAdmin,
+      id: "participant-creator",
+      displayName: "Douglas",
+      phone: "5511999999999",
+      externalParticipantId: "5511999999999@s.whatsapp.net",
+      isSuperAdmin: true,
+    };
+    const prisma = {
+      conversation: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ ...baseGroup, participants: [creator, connectedAdmin] }),
+      },
+    };
+    const evolution = { updateGroupParticipants: vi.fn() };
+    const controller = new GroupsController(prisma as never, evolution as never, {} as never);
+
+    await expect(
+      controller.updateAdmins(
+        "group-a",
+        { action: "demote", participantIds: [creator.externalParticipantId] },
+        current as never,
+      ),
+    ).rejects.toThrow("criador do grupo não pode ser removido ou rebaixado");
+
+    await expect(
+      controller.updateAdmins(
+        "group-a",
+        { action: "demote", participantIds: [connectedAdmin.externalParticipantId] },
+        current as never,
+      ),
+    ).rejects.toThrow("própria conta de suporte não pode ser alterada");
+    expect(evolution.updateGroupParticipants).not.toHaveBeenCalled();
+  });
+
+  it("recognizes the connected support identity across the Brazilian ninth-digit variant", async () => {
+    const group = {
+      ...baseGroup,
+      connection: {
+        ...baseGroup.connection,
+        ownerExternalId: null,
+        ownerPhoneNormalized: "+5562981147652",
+      },
+      participants: [
+        {
+          id: "participant-support",
+          displayName: "Suporte",
+          phone: "556281147652",
+          lid: null,
+          externalParticipantId: "556281147652@s.whatsapp.net",
+          isAdmin: false,
+          isSuperAdmin: false,
+          active: true,
+          lastSeenAt: new Date("2026-09-02T09:00:00.000Z"),
+        },
+      ],
+    };
+    const prisma = { conversation: { findFirst: vi.fn().mockResolvedValue(group) } };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    const result = await controller.detail("group-a", current as never);
+
+    expect(result.canManageParticipants).toBe(false);
+    expect(result.participants[0]).toMatchObject({ isCurrentInstance: true });
   });
 });

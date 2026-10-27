@@ -2,9 +2,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   inboxNotificationSoundEnabled,
+  inboxTagNotificationSoundEnabled,
   applyInboxNotificationSoundPreference,
   isInboundConversationUpdate,
   setInboxNotificationSoundEnabled,
+  setInboxTagNotificationSoundEnabled,
   inboxNotificationQueues,
   setInboxNotificationQueues,
   shouldNotifyInboxUpdate,
@@ -141,5 +143,22 @@ describe("isInboundConversationUpdate", () => {
         "user-a",
       ),
     ).toBe(false);
+  });
+
+  it("keeps tag sounds independent from message sounds", () => {
+    const event = {
+      eventId: "tag-independent",
+      event: "conversation.updated" as const,
+      version: 1 as const,
+      occurredAt: "2026-10-23T12:00:00Z",
+      data: { reason: "inbound.created", tagNotification: true },
+    };
+    setInboxNotificationSoundEnabled("user-a", false);
+    expect(inboxTagNotificationSoundEnabled("user-a")).toBe(true);
+    expect(shouldNotifyInboxUpdate(event, "user-a")).toBe(true);
+
+    setInboxNotificationSoundEnabled("user-a", true);
+    setInboxTagNotificationSoundEnabled("user-a", false);
+    expect(shouldNotifyInboxUpdate(event, "user-a")).toBe(false);
   });
 });

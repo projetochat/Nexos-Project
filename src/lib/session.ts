@@ -5,10 +5,12 @@ import {
   completeRequiredPasswordChangeWithTrixusApi,
   hydrateWithTrixusApi,
   loginWithTrixusApi,
+  loginCustomerPortalWithTrixusApi,
   logoutFromTrixusApi,
   readStoredHandoffImpersonation,
   readStoredPlatformImpersonation,
   selectTenantWithTrixusApi,
+  selectCustomerPortalWithTrixusApi,
   TrixusApiError,
   type RequiredPasswordChange,
   type TenantSelectionRequired,
@@ -22,6 +24,7 @@ import { effectiveSessionPermissions } from "@/lib/access-permissions";
    ============================================================ */
 
 export type Role = "super_admin" | "admin" | "supervisor" | "operator";
+export type LoginPath = "/login" | "/login/portal-cliente";
 
 export type SessionUser = {
   id: string;
@@ -41,7 +44,12 @@ export type SessionUser = {
   chatBackgroundColor?: string;
   chatBackgroundMode?: "IMAGE" | "COLOR";
   permissions?: string[];
+  portalAccessId?: string;
+  portalAccessProfile?: "COLLABORATOR" | "MANAGER" | "FULL_ACCESS";
 };
+
+export const CUSTOMER_PORTAL_TICKETS_PATH = "/portal-cliente/chamados" as const;
+export const CUSTOMER_PORTAL_DASHBOARD_PATH = "/portal-cliente/dashboard" as const;
 
 export const ROLE_META: Record<Role, { label: string; scope: string }> = {
   super_admin: { label: "Super Admin", scope: "Plataforma Trixus" },
@@ -49,6 +57,10 @@ export const ROLE_META: Record<Role, { label: string; scope: string }> = {
   supervisor: { label: "Supervisor", scope: "Empresa" },
   operator: { label: "Atendente", scope: "Central de Atendimento" },
 };
+
+export function loginPathForRoleKey(roleKey?: string): LoginPath {
+  return roleKey === "customer_portal" ? "/login/portal-cliente" : "/login";
+}
 
 export const TENANT_ROUTE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   "/": ["dashboard.read"],
@@ -71,6 +83,8 @@ export const TENANT_ROUTE_PERMISSIONS: Readonly<Record<string, readonly string[]
   "/automacoes": ["automations.read"],
   "/agente-ia": ["ai_agents.read"],
   "/chamados": ["tickets.read"],
+  [CUSTOMER_PORTAL_TICKETS_PATH]: ["tickets.read"],
+  [CUSTOMER_PORTAL_DASHBOARD_PATH]: ["tickets.read"],
   "/configuracoes": ["settings.manage"],
   "/relatorios": ["contacts.read", "conversations.read", "campaigns.read", "tickets.read"],
 };
@@ -119,7 +133,14 @@ export function canAccessTenantRoute(
   const route = matchingTenantRoute(pathname);
   if (!route) return false;
   if (route === "/campanhas" && modules?.campaigns === false) return false;
-  if ((route === "/clientes" || route === "/chamados") && modules?.tickets === false) return false;
+  if (
+    (route === "/clientes" ||
+      route === "/chamados" ||
+      route === CUSTOMER_PORTAL_TICKETS_PATH ||
+      route === CUSTOMER_PORTAL_DASHBOARD_PATH) &&
+    modules?.tickets === false
+  )
+    return false;
   const required = TENANT_ROUTE_PERMISSIONS[route];
   return required.some((permission) => permissions?.includes(permission));
 }
@@ -134,8 +155,46 @@ export function tenantHomeForPermissions(
   );
 }
 
+export function homeForSession(
+  roleKey?: string,
+  permissions?: readonly string[],
+  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
+  portalAccessProfile?: SessionUser["portalAccessProfile"],
+): string {
+  return roleKey === "customer_portal"
+    ? portalAccessProfile === "FULL_ACCESS"
+      ? CUSTOMER_PORTAL_DASHBOARD_PATH
+      : CUSTOMER_PORTAL_TICKETS_PATH
+    : tenantHomeForPermissions(permissions, modules);
+}
+
+export function canAccessSessionRoute(
+  pathname: string,
+  roleKey?: string,
+  permissions?: readonly string[],
+  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
+  portalAccessProfile?: SessionUser["portalAccessProfile"],
+): boolean {
+  const isPortalTicketsRoute =
+    pathname === CUSTOMER_PORTAL_TICKETS_PATH ||
+    pathname.startsWith(`${CUSTOMER_PORTAL_TICKETS_PATH}/`);
+  const isPortalDashboardRoute =
+    pathname === CUSTOMER_PORTAL_DASHBOARD_PATH ||
+    pathname.startsWith(`${CUSTOMER_PORTAL_DASHBOARD_PATH}/`);
+  if (roleKey === "customer_portal") {
+    if (isPortalDashboardRoute && portalAccessProfile !== "FULL_ACCESS") return false;
+    return (
+      (isPortalTicketsRoute || isPortalDashboardRoute) &&
+      canAccessTenantRoute(pathname, permissions, modules)
+    );
+  }
+  if (isPortalTicketsRoute || isPortalDashboardRoute) return false;
+  return canAccessTenantRoute(pathname, permissions, modules);
+}
+
 type SessionState = {
   user: SessionUser | null;
+  loginPath: LoginPath;
   impersonating: {
     sessionId: string;
     empresaId: string;
@@ -165,10 +224,18 @@ export const useSession = create<SessionState>()(
   persist(
     (set) => ({
       user: null,
+      loginPath: "/login",
       impersonating: null,
       hydrated: false,
       error: null,
-      loginAs: (user) => set({ user, impersonating: null, hydrated: true, error: null }),
+      loginAs: (user) =>
+        set({
+          user,
+          loginPath: loginPathForRoleKey(user.roleKey),
+          impersonating: null,
+          hydrated: true,
+          error: null,
+        }),
       logout: () => set({ user: null, impersonating: null, error: null }),
       impersonate: (input) => set({ impersonating: input }),
       stopImpersonation: () => set({ impersonating: null }),
@@ -187,7 +254,11 @@ export const useSession = create<SessionState>()(
               ),
             }
           : null;
-        return { ...currentState, ...persisted, user };
+        const loginPath =
+          persisted.loginPath === "/login/portal-cliente" || persisted.loginPath === "/login"
+            ? persisted.loginPath
+            : loginPathForRoleKey(user?.roleKey);
+        return { ...currentState, ...persisted, user, loginPath };
       },
     },
   ),
@@ -210,6 +281,7 @@ export async function hydrateSession(
     const user = await hydrateWithTrixusApi();
     useSession.setState({
       user,
+      loginPath: loginPathForRoleKey(user.roleKey),
       impersonating: handoffImpersonation
         ? {
             sessionId: handoffImpersonation.id,
@@ -259,6 +331,16 @@ export async function signIn(
   return null;
 }
 
+export async function signInCustomerPortal(
+  login: string,
+  password: string,
+): Promise<TenantSelectionRequired | null> {
+  const result = await loginCustomerPortalWithTrixusApi(login, password);
+  if ("tenantSelectionRequired" in result) return result;
+  useSession.getState().loginAs(result);
+  return null;
+}
+
 export async function completeRequiredPasswordChange(input: {
   setupToken: string;
   newPassword: string;
@@ -272,12 +354,21 @@ export async function completeRequiredPasswordChange(input: {
 
 export async function selectTenant(input: {
   selectionToken: string;
-  tenantId: string;
+  selectionId?: string;
+  tenantId?: string;
 }): Promise<RequiredPasswordChange | null> {
   const result = await selectTenantWithTrixusApi(input);
   if ("passwordChangeRequired" in result) return result;
   useSession.getState().loginAs(result);
   return null;
+}
+
+export async function selectCustomerPortal(input: {
+  selectionToken: string;
+  selectionId: string;
+}): Promise<void> {
+  const result = await selectCustomerPortalWithTrixusApi(input);
+  useSession.getState().loginAs(result);
 }
 
 export async function acceptTenantInvitation(input: {

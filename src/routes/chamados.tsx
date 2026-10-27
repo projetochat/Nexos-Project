@@ -1,7 +1,9 @@
+import { messageImageReference } from "@/lib/ticket-image-reference";
+import { validateTicketSearch, type TicketSearch } from "@/lib/ticket-search";
 import { RichTextEditor } from "@/components/ticket-rich-text-editor";
 import { TicketRichTextContent } from "@/components/ticket-rich-text-content";
 import * as React from "react";
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Ban,
@@ -19,6 +21,7 @@ import {
   Paperclip,
   Plus,
   Send,
+  Sparkles,
   Ticket,
   Trash2,
 } from "lucide-react";
@@ -47,20 +50,23 @@ import {
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { num } from "@/lib/format";
-import { formatPhoneForDisplay } from "@/lib/input-masks";
+import { formatPhoneForDisplay, formatPhoneVariable } from "@/lib/input-masks";
 import { showRequiredFieldsToast } from "@/lib/required-fields";
 import {
   conversationApi,
+  aiApi,
   crmApi,
   messageApi,
   organizationApi,
   ticketApi,
   type ApiConversation,
+  type ApiAiTicketDraft,
   type ApiMessage,
   type ApiCustomer,
   type ApiDepartment,
   type ApiTicket,
   type ApiTicketAttachment,
+  type ApiTicketComment,
   type ApiTicketCategory,
   type ApiTicketPriority,
   type ApiTicketStatus,
@@ -72,18 +78,19 @@ import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/chamados")({
-  validateSearch: (search) => ({
-    conversationId: typeof search.conversationId === "string" ? search.conversationId : undefined,
-    ticketId: typeof search.ticketId === "string" ? search.ticketId : undefined,
-  }),
+  validateSearch: validateTicketSearch,
   head: () => ({
     meta: [
       { title: "Trixus" },
       { name: "description", content: "Chamados gerenciados pela API Trixus." },
     ],
   }),
-  component: ChamadosPage,
+  component: InternalChamadosRoute,
 });
+
+function InternalChamadosRoute() {
+  return <ChamadosPage mode="internal" search={Route.useSearch()} />;
+}
 
 const statuses: ApiTicketStatus[] = [
   "NOVO",
@@ -95,12 +102,12 @@ const statuses: ApiTicketStatus[] = [
   "REPROVADO",
   "CANCELADO",
 ];
-const priorities: ApiTicketPriority[] = ["BAIXA", "NORMAL", "ALTA", "URGENTE", "ALTISSIMA"];
+const priorities: ApiTicketPriority[] = ["BAIXA", "NORMAL", "ALTA", "ALTISSIMA"];
 const categories: ApiTicketCategory[] = ["SUPORTE", "DEV", "FINANCEIRO", "OPERACIONAL"];
 const listKey = ["tickets", "list"] as const;
 const summaryKey = ["tickets", "summary"] as const;
 const maxAttachmentSizeMb = 10;
-const maxAttachmentCount = 10;
+const maxAttachmentCount = 20;
 const allowedAttachmentMimeTypes = new Set([
   "application/pdf",
   "image/png",
@@ -109,19 +116,25 @@ const allowedAttachmentMimeTypes = new Set([
   "text/plain",
 ]);
 
-function ChamadosPage() {
+export function ChamadosPage({
+  mode,
+  search,
+}: {
+  mode: "internal" | "customer_portal";
+  search: TicketSearch;
+}) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const permissions = useSession((state) => state.user?.permissions ?? []);
-  const isCustomerPortal = useSession((state) => state.user?.roleKey === "customer_portal");
+  const isCustomerPortal = mode === "customer_portal";
+  const portalAccessId = useSession((state) => state.user?.portalAccessId);
   const canView = permissions.includes("tickets.read");
   const canCreate = permissions.includes("tickets.create");
   const canUpdate = permissions.includes("tickets.update");
   const canUpdateStatus = canUpdate;
   const canComment = canUpdate;
   const canUploadAttachment = canUpdate;
-  const canDeleteAttachment = permissions.includes("tickets.delete");
   const canDelete = permissions.includes("tickets.delete");
-  const search = useSearch({ from: "/chamados" });
   const novo = useDisclosure();
   const setNewTicketOpen = novo.set;
   const [query, setQuery] = React.useState("");
@@ -165,11 +178,11 @@ function ChamadosPage() {
     pageSize,
   };
   const tickets = useQuery({
-    queryKey: [...listKey, params],
+    queryKey: [...listKey, mode, portalAccessId ?? "internal", params],
     queryFn: () => ticketApi.list(params),
   });
   const ticketSummary = useQuery({
-    queryKey: [...summaryKey, params],
+    queryKey: [...summaryKey, mode, portalAccessId ?? "internal", params],
     queryFn: () =>
       ticketApi.summary({
         search: params.search,
@@ -178,7 +191,6 @@ function ChamadosPage() {
         departmentId: params.departmentId,
         conversationId: params.conversationId,
       }),
-    enabled: !isCustomerPortal,
   });
   const options = useTicketOptions(!isCustomerPortal);
   const totalPages = Math.max(1, tickets.data?.totalPages ?? page);
@@ -214,8 +226,19 @@ function ChamadosPage() {
   );
 
   React.useEffect(() => {
-    if (search.conversationId && canCreate) setNewTicketOpen(true);
-  }, [canCreate, search.conversationId, setNewTicketOpen]);
+    if ((search.conversationId || search.aiExecutionId) && canCreate) setNewTicketOpen(true);
+  }, [canCreate, search.aiExecutionId, search.conversationId, setNewTicketOpen]);
+
+  const closeNewTicketEditor = React.useCallback(() => {
+    setNewTicketOpen(false);
+    if (!search.conversationId) return;
+    void navigate({
+      to: "/inbox/$conversationId",
+      params: { conversationId: search.conversationId },
+      replace: true,
+      resetScroll: false,
+    });
+  }, [navigate, search.conversationId, setNewTicketOpen]);
 
   React.useEffect(() => {
     if (search.ticketId) {
@@ -265,7 +288,7 @@ function ChamadosPage() {
                   : "lg:grid-cols-[minmax(280px,1.6fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_minmax(150px,.7fr)]"
             }`}
           >
-            <div className="col-span-2 lg:col-span-1">
+            <div className="order-1 min-w-0 lg:order-none">
               <Field label="Busca">
                 <SearchInput
                   value={query}
@@ -275,45 +298,54 @@ function ChamadosPage() {
               </Field>
             </div>
             {!isCustomerPortal && (
-              <Field label="Cliente">
-                <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-                  <option value="">Todos</option>
-                  {options.customers.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.nome}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+              <div className="order-3 lg:order-none">
+                <Field label="Cliente">
+                  <Select
+                    value={customerId}
+                    onChange={(event) => setCustomerId(event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {options.customers.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nome}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
             )}
             {!isCustomerPortal && (
-              <Field label="Departamento">
+              <div className="order-4 lg:order-none">
+                <Field label="Departamento">
+                  <Select
+                    value={departmentId}
+                    onChange={(event) => setDepartmentId(event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {options.departments.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            )}
+            <div className="order-2 min-w-0 lg:order-none">
+              <Field label="Status">
                 <Select
-                  value={departmentId}
-                  onChange={(event) => setDepartmentId(event.target.value)}
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value as ApiTicketStatus | "")}
                 >
                   <option value="">Todos</option>
-                  {options.departments.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
+                  {statuses.map((item) => (
+                    <option key={item} value={item}>
+                      {statusLabel(item)}
                     </option>
                   ))}
                 </Select>
               </Field>
-            )}
-            <Field label="Status">
-              <Select
-                value={status}
-                onChange={(event) => setStatus(event.target.value as ApiTicketStatus | "")}
-              >
-                <option value="">Todos</option>
-                {statuses.map((item) => (
-                  <option key={item} value={item}>
-                    {statusLabel(item)}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            </div>
             {hasFilters && (
               <div className="flex items-end">
                 <ClearFiltersButton onClick={clearFilters} />
@@ -322,32 +354,25 @@ function ChamadosPage() {
           </div>
         </Card>
 
-        {!isCustomerPortal && (
-          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-            <SummaryCard label="Novos" value={summary.new} tone="green" icon={<Ticket />} />
-            <SummaryCard
-              label="Aguardando aprovação"
-              value={summary.approval}
-              tone="purple"
-              icon={<Clock3 />}
-            />
-            <SummaryCard label="Na fila" value={summary.queue} tone="green" icon={<ListChecks />} />
-            <SummaryCard label="Em execução" value={summary.running} tone="amber" icon={<Send />} />
-            <SummaryCard
-              label="Concluída"
-              value={summary.done}
-              tone="blue"
-              icon={<CheckCircle2 />}
-            />
-            <SummaryCard
-              label="Validados"
-              value={summary.validated}
-              tone="validated"
-              icon={<CheckCircle2 />}
-            />
-            <SummaryCard label="Reprovados" value={summary.rejected} tone="red" icon={<Ban />} />
-          </div>
-        )}
+        <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+          <SummaryCard label="Novos" value={summary.new} tone="green" icon={<Ticket />} />
+          <SummaryCard
+            label="Aguardando aprovação"
+            value={summary.approval}
+            tone="purple"
+            icon={<Clock3 />}
+          />
+          <SummaryCard label="Na fila" value={summary.queue} tone="green" icon={<ListChecks />} />
+          <SummaryCard label="Em execução" value={summary.running} tone="amber" icon={<Send />} />
+          <SummaryCard label="Concluída" value={summary.done} tone="blue" icon={<CheckCircle2 />} />
+          <SummaryCard
+            label="Validados"
+            value={summary.validated}
+            tone="validated"
+            icon={<CheckCircle2 />}
+          />
+          <SummaryCard label="Reprovados" value={summary.rejected} tone="red" icon={<Ban />} />
+        </div>
 
         <div
           className="mb-3 hidden justify-end gap-1 md:flex"
@@ -398,15 +423,8 @@ function ChamadosPage() {
           />
         ) : (
           <>
-            <Card
-              className={viewMode === "cards" ? "overflow-hidden p-0" : "hidden"}
-              padding={false}
-            >
-              <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-3">
-                <div className="col-span-full flex items-center justify-between text-sm text-muted-foreground">
-                  <span>{num(tickets.data.total)} chamados encontrados</span>
-                  <span>Ordenar por</span>
-                </div>
+            <div className={viewMode === "cards" ? "block" : "hidden"}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {tickets.data.items.map((ticket) => (
                   <div
                     key={ticket.id}
@@ -485,8 +503,10 @@ function ChamadosPage() {
                   </div>
                 ))}
               </div>
-              {paginationFooter}
-            </Card>
+              <div className="mt-3 overflow-hidden rounded-xl border border-border">
+                {paginationFooter}
+              </div>
+            </div>
             <Card
               className={viewMode === "list" ? "overflow-hidden p-0" : "hidden"}
               padding={false}
@@ -495,16 +515,16 @@ function ChamadosPage() {
                 <table className="w-full min-w-[1100px] table-fixed text-sm">
                   <thead className="bg-surface-2">
                     <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      <th className="w-20 px-3 py-3">ID</th>
-                      <th className="w-[290px] px-3 py-3">Título</th>
-                      <th className="px-4 py-3">Prioridade</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Tipo</th>
-                      <th className="px-4 py-3">Cliente</th>
-                      <th className="px-4 py-3">Solicitante</th>
-                      <th className="px-4 py-3">Dt. abertura</th>
-                      <th className="px-4 py-3">Dt. conclusão</th>
-                      <th className="w-20 px-4 py-3 text-center">Ações</th>
+                      <th className="w-32 px-3 py-3">ID</th>
+                      <th className="w-[260px] px-3 py-3">Título</th>
+                      <th className="px-3 py-3">Prioridade</th>
+                      <th className="px-3 py-3">Status</th>
+                      <th className="px-3 py-3">Tipo</th>
+                      <th className="px-3 py-3">Cliente</th>
+                      <th className="px-3 py-3">Solicitante</th>
+                      <th className="px-3 py-3">Dt. abertura</th>
+                      <th className="px-3 py-3">Dt. conclusão</th>
+                      <th className="w-16 px-3 py-3 text-center">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -517,36 +537,36 @@ function ChamadosPage() {
                           setDetailMode("manage");
                         }}
                       >
-                        <td className="px-3 py-3 font-mono text-xs">
+                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">
                           {ticket.protocol.replace(/^#/, "")}
                         </td>
-                        <td className="max-w-[290px] truncate px-3 py-3 font-sans font-semibold text-foreground underline-offset-2 hover:underline">
+                        <td className="max-w-[260px] truncate px-3 py-3 font-sans font-semibold text-foreground underline-offset-2 hover:underline">
                           {ticket.title}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           <StatusDot color={priorityDot(ticket.priority)} />
                           {priorityLabel(ticket.priority)}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           <StatusDot color={statusDot(ticket.status)} />
                           {statusLabel(ticket.status)}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           <span className="rounded-full border border-primary/40 px-2 py-0.5 text-xs text-primary">
                             {categoryLabel(ticket.category)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-xs">
+                        <td className="px-3 py-3 text-xs">
                           {ticket.customer?.name ?? "Sem vínculo"}
                         </td>
-                        <td className="px-4 py-3 text-xs">
+                        <td className="px-3 py-3 text-xs">
                           {ticket.requesterContact?.name ?? ticket.createdByMembership.user.name}
                         </td>
-                        <td className="px-4 py-3 text-xs">{formatDate(ticket.createdAt)}</td>
-                        <td className="px-4 py-3 text-xs">
+                        <td className="px-3 py-3 text-xs">{formatDate(ticket.createdAt)}</td>
+                        <td className="px-3 py-3 text-xs">
                           {ticket.closedAt ? formatDate(ticket.closedAt) : "-"}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3 py-3 text-center">
                           {canView && (
                             <Button
                               type="button"
@@ -569,7 +589,7 @@ function ChamadosPage() {
                   </tbody>
                 </table>
               </div>
-              {paginationFooter}
+              <div className="hidden md:block">{paginationFooter}</div>
             </Card>
           </>
         )}
@@ -579,7 +599,8 @@ function ChamadosPage() {
             open={novo.open}
             customerPortal={isCustomerPortal}
             initialConversationId={search.conversationId}
-            onClose={novo.hide}
+            initialAiExecutionId={search.aiExecutionId}
+            onClose={closeNewTicketEditor}
             onSaved={(ticket) => {
               novo.hide();
               setSelectedId(ticket.id);
@@ -600,7 +621,6 @@ function ChamadosPage() {
           canUpdateStatus={detailMode === "manage" && canUpdateStatus}
           canComment={detailMode === "manage" && canComment}
           canUploadAttachment={detailMode === "manage" && canUploadAttachment}
-          canDeleteAttachment={detailMode === "manage" && canDeleteAttachment}
           canDelete={detailMode === "manage" && canDelete}
           customerPortal={isCustomerPortal}
           onDelete={(ticket) => setDeletingTicket(ticket)}
@@ -755,6 +775,8 @@ function DateRow({ label, value }: { label: string; value: string }) {
 
 function DialogBubble({
   side,
+  ticketId,
+  attachments,
   initials: avatar,
   author,
   date,
@@ -766,6 +788,8 @@ function DialogBubble({
   onEdit,
 }: {
   side: "left" | "right";
+  ticketId: string;
+  attachments: ApiTicketAttachment[];
   initials: string;
   author: string;
   date: string;
@@ -776,6 +800,10 @@ function DialogBubble({
   tone: "gray" | "blue" | "green" | "orange" | "red";
   onEdit?: () => void;
 }) {
+  const previewRef = React.useRef<HTMLDivElement>(null);
+  const previewContentRef = React.useRef<HTMLDivElement>(null);
+  const [hasOverflow, setHasOverflow] = React.useState(false);
+  const [showFullDialog, setShowFullDialog] = React.useState(false);
   const toneClass = {
     blue: "bg-blue-50/90",
     green: "bg-emerald-50/90",
@@ -790,37 +818,104 @@ function DialogBubble({
       {avatar}
     </span>
   );
-  return (
-    <div className={`flex items-start gap-3 ${side === "right" ? "justify-end" : "justify-start"}`}>
-      {side === "left" && avatarNode}
-      <div className={`group relative max-w-[86%] rounded-xl px-4 py-3 ${toneClass}`}>
-        {onEdit && (
-          <button
-            type="button"
-            aria-label="Editar diálogo"
-            onClick={onEdit}
-            className="absolute right-2 top-2 rounded-md p-1 opacity-0 transition hover:bg-black/5 group-hover:opacity-100 focus:opacity-100"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
-        )}
-        <div className="flex flex-wrap gap-x-4 text-xs">
-          <strong>{author}</strong>
-          <span className="text-muted-foreground">{date}</span>
-          {editedDate && <span className="text-muted-foreground">Editado em {editedDate}</span>}
-        </div>
-        {title && <h3 className="mt-2 border-b border-border pb-2 font-semibold">{title}</h3>}
-        {bodyHtml ? (
-          <TicketRichTextContent
-            html={bodyHtml}
-            className="mt-2 break-words text-sm [&_a]:text-primary [&_a]:underline [&_img]:my-2 [&_img]:max-h-[32rem] [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
-          />
-        ) : (
-          <p className="mt-2 whitespace-pre-wrap text-sm">{body}</p>
-        )}
+
+  React.useEffect(() => {
+    const preview = previewRef.current;
+    const previewContent = previewContentRef.current;
+    if (!preview || !previewContent) return;
+    const updateOverflow = () => setHasOverflow(preview.scrollHeight > preview.clientHeight + 1);
+    const frame = window.requestAnimationFrame(updateOverflow);
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateOverflow);
+      return () => {
+        window.cancelAnimationFrame(frame);
+        window.removeEventListener("resize", updateOverflow);
+      };
+    }
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(preview);
+    observer.observe(previewContent);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [attachments, body, bodyHtml, date, editedDate, title]);
+
+  const renderDialogContent = () => (
+    <>
+      <div className="flex flex-wrap gap-x-4 text-xs">
+        <strong>{author}</strong>
+        <span className="text-muted-foreground">{date}</span>
+        {editedDate && <span className="text-muted-foreground">Editado em {editedDate}</span>}
       </div>
-      {side === "right" && avatarNode}
-    </div>
+      {title && <h3 className="mt-2 border-b border-border pb-2 font-semibold">{title}</h3>}
+      {bodyHtml ? (
+        <TicketRichTextContent
+          html={bodyHtml}
+          className="mt-2 break-words text-sm [&_a]:text-primary [&_a]:underline [&_img]:my-2 [&_img]:max-h-[32rem] [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
+        />
+      ) : (
+        <p className="mt-2 whitespace-pre-wrap text-sm">{body}</p>
+      )}
+      <DialogAttachments ticketId={ticketId} items={attachments} />
+    </>
+  );
+
+  return (
+    <>
+      <div
+        className={`flex items-start gap-3 ${side === "right" ? "justify-end" : "justify-start"}`}
+      >
+        {side === "left" && avatarNode}
+        <div
+          className={`group relative w-full max-w-[50%] overflow-hidden rounded-xl ${toneClass}`}
+        >
+          {onEdit && (
+            <button
+              type="button"
+              aria-label="Editar diálogo"
+              onClick={onEdit}
+              className="absolute right-2 top-2 z-10 rounded-md p-1 opacity-0 transition hover:bg-black/5 group-hover:opacity-100 focus:opacity-100"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          )}
+          <div ref={previewRef} className="max-h-[280px] overflow-hidden px-4 py-3">
+            <div ref={previewContentRef}>{renderDialogContent()}</div>
+          </div>
+          {hasOverflow && (
+            <div className="absolute inset-x-0 bottom-0 flex justify-end bg-gradient-to-t from-surface-2 via-surface-2/95 to-transparent px-3 pb-2 pt-8">
+              <button
+                type="button"
+                aria-label="Abrir diálogo completo"
+                title="Abrir diálogo completo"
+                onClick={() => setShowFullDialog(true)}
+                className="grid h-8 min-w-10 place-items-center rounded-lg border border-border bg-card px-2 shadow-sm transition hover:bg-surface-1"
+              >
+                <MoreHorizontal className="h-5 w-5" />
+              </button>
+            </div>
+          )}
+        </div>
+        {side === "right" && avatarNode}
+      </div>
+      <Modal
+        open={showFullDialog}
+        onClose={() => setShowFullDialog(false)}
+        title="Diálogo completo"
+        description={`${author} · ${date}`}
+        size="lg"
+        className="max-w-3xl"
+        layerClassName="z-[260]"
+        footer={
+          <Button variant="primary" size="sm" onClick={() => setShowFullDialog(false)}>
+            Fechar
+          </Button>
+        }
+      >
+        <div className={`rounded-xl px-4 py-3 ${toneClass}`}>{renderDialogContent()}</div>
+      </Modal>
+    </>
   );
 }
 
@@ -894,7 +989,7 @@ function statusDot(status: ApiTicketStatus) {
 
 function priorityDot(priority: ApiTicketPriority) {
   return {
-    BAIXA: "#60a5fa",
+    BAIXA: "#86efac",
     NORMAL: "#9ca3af",
     ALTA: "#ef4444",
     URGENTE: "#ef4444",
@@ -962,11 +1057,12 @@ function TicketEditorSelect<T extends string>({
   );
 }
 
-function TicketEditor({
+export function TicketEditor({
   open,
   onClose,
   onSaved,
   initialConversationId,
+  initialAiExecutionId,
   initialTicket,
   clone = false,
   customerPortal = false,
@@ -975,6 +1071,7 @@ function TicketEditor({
   onClose: () => void;
   onSaved: (ticket: ApiTicket) => void;
   initialConversationId?: string;
+  initialAiExecutionId?: string;
   initialTicket?: ApiTicket | null;
   clone?: boolean;
   customerPortal?: boolean;
@@ -987,9 +1084,22 @@ function TicketEditor({
   });
   const initialMessages = useQuery({
     queryKey: ["tickets", "prefill-conversation-messages", initialConversationId],
-    queryFn: () =>
-      messageApi.list(initialConversationId!, { limit: 100 }).then((page) => page.items),
+    queryFn: async () => {
+      const items: ApiMessage[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await messageApi.list(initialConversationId!, { limit: 100, cursor });
+        items.push(...page.items);
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+      return items;
+    },
     enabled: open && !!initialConversationId,
+  });
+  const initialAiDraft = useQuery<ApiAiTicketDraft>({
+    queryKey: ["tickets", "ai-prefill", initialAiExecutionId],
+    queryFn: () => aiApi.getExecution(initialAiExecutionId!),
+    enabled: open && !!initialAiExecutionId,
   });
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -1007,10 +1117,13 @@ function TicketEditor({
   const [attachments, setAttachments] = React.useState<File[]>([]);
   const [requiredErrors, setRequiredErrors] = React.useState<Record<string, boolean>>({});
   const [busy, setBusy] = React.useState(false);
+  const [summaryBusy, setSummaryBusy] = React.useState<"conversation" | "ai" | null>(null);
+  const [generatedAiExecutionId, setGeneratedAiExecutionId] = React.useState<string | null>(null);
   const submittingRef = React.useRef(false);
   const initializedSessionRef = React.useRef<string | null>(null);
   const conversationPrefillRef = React.useRef<string | null>(null);
   const descriptionPrefillRef = React.useRef<string | null>(null);
+  const aiPrefillRef = React.useRef<string | null>(null);
   const dirtyFieldsRef = React.useRef({
     title: false,
     description: false,
@@ -1020,11 +1133,16 @@ function TicketEditor({
     assignee: false,
   });
   const defaultDepartmentId = options.departments[0]?.id ?? "";
-  const sessionKey = `${initialTicket?.id ?? "new"}:${clone}:${initialConversationId ?? ""}`;
+  const sessionKey = `${initialTicket?.id ?? "new"}:${clone}:${initialConversationId ?? ""}:${initialAiExecutionId ?? ""}`;
   const requesterContacts = useQuery({
     queryKey: ["tickets", "requester-contacts", requesterSearch],
     queryFn: () => crmApi.listContacts({ q: requesterSearch.trim() || undefined, pageSize: 20 }),
-    enabled: open,
+    enabled: open && !customerPortal,
+  });
+  const portalCreateContext = useQuery({
+    queryKey: ["tickets", "portal-create-context"],
+    queryFn: ticketApi.portalCreateContext,
+    enabled: open && customerPortal && !initialTicket,
   });
   const customerDepartments = useQuery({
     queryKey: ["tickets", "customer-departments", customerId],
@@ -1042,12 +1160,14 @@ function TicketEditor({
       initializedSessionRef.current = null;
       conversationPrefillRef.current = null;
       descriptionPrefillRef.current = null;
+      aiPrefillRef.current = null;
       return;
     }
     if (initializedSessionRef.current === sessionKey) return;
     initializedSessionRef.current = sessionKey;
     conversationPrefillRef.current = null;
     descriptionPrefillRef.current = null;
+    aiPrefillRef.current = null;
     dirtyFieldsRef.current = {
       title: false,
       description: false,
@@ -1060,7 +1180,7 @@ function TicketEditor({
     setDescription(initialTicket?.descriptionHtmlSanitized ?? initialTicket?.descriptionText ?? "");
     setCategory(initialTicket?.category ?? "SUPORTE");
     setPriority(initialTicket?.priority ?? "NORMAL");
-    setDepartmentId(initialTicket?.department?.id ?? (customerPortal ? "portal-context" : ""));
+    setDepartmentId(initialTicket?.department?.id ?? "");
     setContactId(initialTicket?.requesterContact?.id ?? "");
     setRequesterSearch(initialTicket?.requesterContact?.name ?? "");
     setRequesterResultsOpen(false);
@@ -1071,7 +1191,42 @@ function TicketEditor({
     setAssignedMembershipId(initialTicket?.assignedMembership?.id ?? "");
     setAttachments([]);
     setRequiredErrors({});
+    setSummaryBusy(null);
+    setGeneratedAiExecutionId(null);
   }, [clone, customerPortal, initialConversationId, initialTicket, open, sessionKey]);
+
+  React.useEffect(() => {
+    const context = portalCreateContext.data;
+    if (!open || !customerPortal || initialTicket || !context) return;
+    setDepartmentId(context.serviceDepartment.id);
+    setContactId(context.contact.id);
+    setRequesterSearch(context.contact.name);
+    setCustomerId(context.customer.id);
+    setCustomerDepartmentId(context.department.id);
+    setOriginBranchId(context.branch.id);
+  }, [customerPortal, initialTicket, open, portalCreateContext.data]);
+
+  React.useEffect(() => {
+    const draft = initialAiDraft.data;
+    if (!open || initialTicket || !initialAiExecutionId || !draft) return;
+    if (aiPrefillRef.current === initialAiExecutionId) return;
+    aiPrefillRef.current = initialAiExecutionId;
+    const suggested = draft.suggested;
+    setTitle(draft.title);
+    setDescription(draft.descriptionHtml);
+    setCategory(suggested.category);
+    setPriority(suggested.priority);
+    if (suggested.departmentId) setDepartmentId(suggested.departmentId);
+    if (!initialConversationId) {
+      if (suggested.requesterContactId) {
+        setContactId(suggested.requesterContactId);
+        setRequesterSearch(suggested.requesterContactName ?? "");
+      }
+      if (suggested.customerId) setCustomerId(suggested.customerId);
+      if (suggested.originBranchId) setOriginBranchId(suggested.originBranchId);
+    }
+    if (initialConversationId) setConversationId(initialConversationId);
+  }, [initialAiDraft.data, initialAiExecutionId, initialConversationId, initialTicket, open]);
 
   React.useEffect(() => {
     setRequiredErrors((current) => {
@@ -1105,33 +1260,76 @@ function TicketEditor({
     }
     if (!dirtyFieldsRef.current.customer) {
       setCustomerId(conversation.contact?.customer_id ?? conversation.contact?.customer?.id ?? "");
+      setCustomerDepartmentId(conversation.contact?.customerDepartmentId ?? "");
+      setOriginBranchId(conversation.contact?.customerBranchId ?? "");
     }
-    if (!dirtyFieldsRef.current.department) {
+    if (
+      !dirtyFieldsRef.current.department &&
+      (!initialAiExecutionId || !initialAiDraft.data?.suggested.departmentId)
+    ) {
       setDepartmentId(conversation.department_id ?? defaultDepartmentId);
     }
     if (!dirtyFieldsRef.current.assignee) {
       setAssignedMembershipId(conversation.assigned_membership_id ?? "");
     }
-    if (!dirtyFieldsRef.current.title) {
-      setTitle(
-        `Chamado aberto pelo Chat - ${conversation.protocolo ?? conversation.id.slice(0, 8)}`,
-      );
-    }
-  }, [defaultDepartmentId, initialConversation.data, initialTicket, open, sessionKey]);
+  }, [
+    defaultDepartmentId,
+    initialAiDraft.data?.suggested.departmentId,
+    initialAiExecutionId,
+    initialConversation.data,
+    initialTicket,
+    open,
+    sessionKey,
+  ]);
 
-  React.useEffect(() => {
+  const generateConversationSummary = async () => {
     const conversation = initialConversation.data;
     const messages = initialMessages.data;
-    if (!open || initialTicket || !conversation || !messages?.length) return;
-    const prefillKey = `${sessionKey}:${conversation.id}`;
-    if (descriptionPrefillRef.current === prefillKey) return;
-    descriptionPrefillRef.current = prefillKey;
-    if (!dirtyFieldsRef.current.description) {
-      setDescription(buildConversationTicketDescription(conversation, messages));
+    if (!conversation || !messages) {
+      toast.error("A conversa ainda está sendo carregada. Tente novamente em instantes.");
+      return;
     }
-  }, [initialConversation.data, initialMessages.data, initialTicket, open, sessionKey]);
+    setSummaryBusy("conversation");
+    try {
+      const html = await buildConversationTicketDescription(conversation, messages);
+      dirtyFieldsRef.current.description = true;
+      descriptionPrefillRef.current = `${sessionKey}:${conversation.id}`;
+      setGeneratedAiExecutionId(null);
+      setDescription(html);
+    } catch (error) {
+      toast.error((error as Error).message || "Não foi possível importar a conversa.");
+    } finally {
+      setSummaryBusy(null);
+    }
+  };
+
+  const generateAiSummary = async () => {
+    if (!initialConversationId) return;
+    setSummaryBusy("ai");
+    try {
+      const draft = await aiApi.createTicketDraft(initialConversationId);
+      dirtyFieldsRef.current.title = true;
+      dirtyFieldsRef.current.description = true;
+      setGeneratedAiExecutionId(draft.executionId);
+      setTitle(draft.title);
+      setDescription(draft.descriptionHtml);
+      toast.success("Resumo por IA adicionado ao descritivo.");
+    } catch (error) {
+      toast.error((error as Error).message || "Não foi possível gerar o resumo por IA.");
+    } finally {
+      setSummaryBusy(null);
+    }
+  };
 
   const submit = async () => {
+    if (customerPortal && !initialTicket && !portalCreateContext.data) {
+      toast.error(
+        portalCreateContext.error instanceof Error
+          ? portalCreateContext.error.message
+          : "Aguarde o carregamento dos dados do seu acesso.",
+      );
+      return;
+    }
     const nextRequiredErrors: Record<string, boolean> = {};
     const pendingFields: string[] = [];
     if (!title.trim()) {
@@ -1191,6 +1389,7 @@ function TicketEditor({
           customerDepartmentId: customerDepartmentId || null,
           originBranchId: originBranchId || null,
           conversationId: conversationId || null,
+          aiExecutionId: generatedAiExecutionId || initialAiExecutionId || null,
           assignedMembershipId: assignedMembershipId || null,
         });
       }
@@ -1239,11 +1438,11 @@ function TicketEditor({
         known.add(key);
         return true;
       });
-      const available = Math.max(0, maxAttachmentCount - current.length);
-      if (unique.length > available) {
-        toast.error(`É possível anexar até ${maxAttachmentCount} arquivos por chamado.`);
+      const availableSlots = Math.max(0, maxAttachmentCount - current.length);
+      if (unique.length > availableSlots) {
+        toast.error(`É possível adicionar no máximo ${maxAttachmentCount} arquivos por chamado.`);
       }
-      return [...current, ...unique.slice(0, available)];
+      return [...current, ...unique.slice(0, availableSlots)];
     });
   };
 
@@ -1265,7 +1464,7 @@ function TicketEditor({
             variant="primary"
             size="sm"
             className="save-action-button"
-            disabled={busy}
+            disabled={busy || (customerPortal && !initialTicket && !portalCreateContext.data)}
             onClick={submit}
           >
             {busy ? "Salvando..." : initialTicket && !clone ? "Salvar" : "Salvar Chamado"}
@@ -1277,7 +1476,14 @@ function TicketEditor({
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
           <Field label="Cliente *">
             {customerPortal ? (
-              <Input value="Definido pelo seu acesso" readOnly />
+              <Input
+                value={
+                  portalCreateContext.data?.customer.name ??
+                  (portalCreateContext.isError ? "Não foi possível carregar" : "Carregando...")
+                }
+                readOnly
+                aria-readonly="true"
+              />
             ) : (
               <Select
                 value={customerId}
@@ -1299,7 +1505,14 @@ function TicketEditor({
           </Field>
           <Field label="Departamento *">
             {customerPortal ? (
-              <Input value="Definido pelo seu acesso" readOnly />
+              <Input
+                value={
+                  portalCreateContext.data?.department.name ??
+                  (portalCreateContext.isError ? "Não foi possível carregar" : "Carregando...")
+                }
+                readOnly
+                aria-readonly="true"
+              />
             ) : (
               <Select
                 value={customerDepartmentId}
@@ -1318,7 +1531,14 @@ function TicketEditor({
           </Field>
           <Field label="Solicitante *">
             {customerPortal ? (
-              <Input value="Você" readOnly />
+              <Input
+                value={
+                  portalCreateContext.data?.contact.name ??
+                  (portalCreateContext.isError ? "Não foi possível carregar" : "Carregando...")
+                }
+                readOnly
+                aria-readonly="true"
+              />
             ) : (
               <div
                 className="relative"
@@ -1377,7 +1597,14 @@ function TicketEditor({
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
           <Field label="Filial de origem *">
             {customerPortal ? (
-              <Input value="Definida pelo seu acesso" readOnly />
+              <Input
+                value={
+                  portalCreateContext.data?.branch.name ??
+                  (portalCreateContext.isError ? "Não foi possível carregar" : "Carregando...")
+                }
+                readOnly
+                aria-readonly="true"
+              />
             ) : (
               <Select
                 value={originBranchId}
@@ -1400,13 +1627,11 @@ function TicketEditor({
               ariaLabel="Prioridade"
               value={priority}
               onChange={setPriority}
-              options={priorities
-                .filter((item) => item !== "BAIXA")
-                .map((item) => ({
-                  value: item,
-                  label: priorityLabel(item),
-                  color: priorityDot(item),
-                }))}
+              options={priorities.map((item) => ({
+                value: item,
+                label: priorityLabel(item),
+                color: priorityDot(item),
+              }))}
             />
           </Field>
           <Field label="Tipo do Chamado *" asLabel={false}>
@@ -1436,6 +1661,31 @@ function TicketEditor({
             aria-invalid={Boolean(requiredErrors.title)}
           />
         </Field>
+        {initialConversationId && !initialTicket && !clone && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={
+                summaryBusy !== null || initialConversation.isLoading || initialMessages.isLoading
+              }
+              onClick={() => void generateConversationSummary()}
+            >
+              {summaryBusy === "conversation" ? "Gerando…" : "Gerar resumo"}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={summaryBusy !== null}
+              onClick={() => void generateAiSummary()}
+            >
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+              {summaryBusy === "ai" ? "Gerando com IA…" : "Gerar resumo IA"}
+            </Button>
+          </div>
+        )}
         <Field label="Descrição *" asLabel={false}>
           <RichTextEditor
             value={description}
@@ -1444,6 +1694,8 @@ function TicketEditor({
               setDescription(value);
             }}
             invalid={Boolean(requiredErrors.description)}
+            resizable
+            imageActions
           />
         </Field>
         <div className="rounded-lg border border-dashed border-border bg-surface-1 p-3">
@@ -1471,7 +1723,7 @@ function TicketEditor({
           </label>
           {attachments.length > 0 && (
             <div
-              className="mt-2 grid max-h-28 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2"
+              className="mt-2 grid max-h-40 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3"
               aria-label="Arquivos selecionados"
             >
               {attachments.map((file) => {
@@ -1529,7 +1781,6 @@ function TicketDetail({
   canUpdateStatus,
   canComment,
   canUploadAttachment,
-  canDeleteAttachment,
   canDelete,
   onDelete,
   customerPortal,
@@ -1542,7 +1793,6 @@ function TicketDetail({
   canUpdateStatus: boolean;
   canComment: boolean;
   canUploadAttachment: boolean;
-  canDeleteAttachment: boolean;
   canDelete: boolean;
   onDelete: (ticket: ApiTicket) => void;
   customerPortal: boolean;
@@ -1568,7 +1818,9 @@ function TicketDetail({
     enabled: !!ticketId,
   });
   const [comment, setComment] = React.useState("");
+  const [dialogAttachments, setDialogAttachments] = React.useState<File[]>([]);
   const [busy, setBusy] = React.useState(false);
+  const [detailTab, setDetailTab] = React.useState<"summary" | "attachments">("summary");
   const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
   const currentUserId = useSession((state) => state.user?.id);
   const [action, setAction] = React.useState<
@@ -1581,6 +1833,8 @@ function TicketDetail({
   React.useEffect(() => {
     setAction("reply");
     setComment("");
+    setDialogAttachments([]);
+    setDetailTab("summary");
     setEditingCommentId(null);
   }, [ticketId]);
 
@@ -1636,26 +1890,40 @@ function TicketDetail({
     setBusy(true);
     try {
       const bodyHtml = /<[^>]+>/.test(comment) ? comment : textToHtml(comment);
+      let savedComment: ApiTicketComment;
       if (editingCommentId) {
-        await ticketApi.updateComment(ticketId, editingCommentId, bodyHtml);
+        savedComment = await ticketApi.updateComment(ticketId, editingCommentId, bodyHtml);
       } else if (action === "transfer") {
         if (!assignedMembershipId) throw new Error("Selecione uma fila ou responsável.");
         if (!item?.department?.id) throw new Error("O chamado precisa de um departamento.");
-        await ticketApi.transfer(ticketId, {
+        savedComment = await ticketApi.transfer(ticketId, {
           bodyHtml,
           departmentId: item.department.id,
           assignedMembershipId,
         });
       } else if (action === "approval") {
-        await ticketApi.requestApproval(ticketId, { bodyHtml });
+        const result = await ticketApi.requestApproval(ticketId, { bodyHtml });
+        savedComment = result.comment;
       } else if (action === "solve") {
-        await ticketApi.solve(ticketId, bodyHtml);
+        savedComment = await ticketApi.solve(ticketId, bodyHtml);
       } else if (action === "cancel") {
-        await ticketApi.cancel(ticketId, bodyHtml);
+        savedComment = await ticketApi.cancel(ticketId, bodyHtml);
       } else {
-        await ticketApi.respond(ticketId, bodyHtml);
+        savedComment = await ticketApi.respond(ticketId, bodyHtml);
+      }
+      if (dialogAttachments.length) {
+        const results = await Promise.allSettled(
+          dialogAttachments.map((file) =>
+            ticketApi.uploadAttachment(ticketId, file, savedComment.id),
+          ),
+        );
+        const failed = results.filter((result) => result.status === "rejected").length;
+        if (failed) {
+          toast.error(`O diálogo foi registrado, mas ${failed} anexo(s) não foram enviados.`);
+        }
       }
       setComment("");
+      setDialogAttachments([]);
       setEditingCommentId(null);
       setAction("reply");
       refresh();
@@ -1664,6 +1932,35 @@ function TicketDetail({
     } finally {
       setBusy(false);
     }
+  };
+
+  const addDialogAttachments = (selectedFiles: File[]) => {
+    const accepted = selectedFiles.filter((file) => {
+      if (!allowedAttachmentMimeTypes.has(file.type.toLowerCase())) {
+        toast.error(`${file.name} não possui um formato permitido.`);
+        return false;
+      }
+      if (file.size <= maxAttachmentSizeMb * 1024 * 1024) return true;
+      toast.error(`${file.name} excede o limite permitido de ${maxAttachmentSizeMb} MB.`);
+      return false;
+    });
+    setDialogAttachments((current) => {
+      const known = new Set(
+        current.map((file) => `${file.name}:${file.size}:${file.lastModified}`),
+      );
+      const unique = accepted.filter((file) => {
+        const key = `${file.name}:${file.size}:${file.lastModified}`;
+        if (known.has(key)) return false;
+        known.add(key);
+        return true;
+      });
+      const existingCount = attachments.data?.length ?? 0;
+      const availableSlots = Math.max(0, maxAttachmentCount - existingCount - current.length);
+      if (unique.length > availableSlots) {
+        toast.error(`É possível manter no máximo ${maxAttachmentCount} arquivos por chamado.`);
+      }
+      return [...current, ...unique.slice(0, availableSlots)];
+    });
   };
 
   return (
@@ -1719,6 +2016,8 @@ function TicketDetail({
             <div className="space-y-3">
               <DialogBubble
                 side="left"
+                ticketId={item.id}
+                attachments={(attachments.data ?? []).filter((attachment) => !attachment.commentId)}
                 initials={initials(item.createdByMembership.user.name)}
                 author={item.requesterContact?.name ?? item.createdByMembership.user.name}
                 date={formatDate(item.createdAt)}
@@ -1730,7 +2029,11 @@ function TicketDetail({
               {comments.data?.map((entry) => (
                 <DialogBubble
                   key={entry.id}
-                  side="right"
+                  side={entry.authorMembership.user.id === currentUserId ? "right" : "left"}
+                  ticketId={item.id}
+                  attachments={(attachments.data ?? []).filter(
+                    (attachment) => attachment.commentId === entry.id,
+                  )}
                   initials={initials(entry.authorMembership.user.name)}
                   author={entry.authorMembership.user.name}
                   date={formatDate(entry.createdAt)}
@@ -1743,6 +2046,7 @@ function TicketDetail({
                       ? () => {
                           setEditingCommentId(entry.id);
                           setComment(entry.bodyHtmlSanitized ?? textToHtml(entry.bodyText));
+                          setDialogAttachments([]);
                           setAction("reply");
                         }
                       : undefined
@@ -1850,12 +2154,69 @@ function TicketDetail({
                 <div className="mt-3">
                   <RichTextEditor value={comment} onChange={setComment} />
                 </div>
+                {canUploadAttachment && (
+                  <div className="mt-3 rounded-lg border border-dashed border-border bg-card/70 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium">Anexos deste diálogo</p>
+                        <p className="text-xs text-muted-foreground">
+                          Os arquivos aparecerão acima deste diálogo depois de adicioná-lo.
+                        </p>
+                      </div>
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface-1">
+                        <Paperclip className="h-3.5 w-3.5" /> Selecionar arquivos
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg,.webp,.txt"
+                          multiple
+                          className="hidden"
+                          disabled={busy}
+                          onChange={(event) => {
+                            addDialogAttachments(Array.from(event.target.files ?? []));
+                            event.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {dialogAttachments.length > 0 && (
+                      <div
+                        className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
+                        aria-label="Anexos selecionados para o diálogo"
+                      >
+                        {dialogAttachments.map((file, index) => (
+                          <div
+                            key={`${file.name}-${file.size}-${index}`}
+                            className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2 text-sm"
+                          >
+                            <span className="min-w-0 truncate" title={file.name}>
+                              {file.name}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Remover arquivo ${file.name}`}
+                              onClick={() =>
+                                setDialogAttachments((current) =>
+                                  current.filter((_, fileIndex) => fileIndex !== index),
+                                )
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="mt-3 flex justify-end gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => {
                       setComment("");
+                      setDialogAttachments([]);
                       setEditingCommentId(null);
                       setAction("reply");
                     }}
@@ -1875,134 +2236,167 @@ function TicketDetail({
             )}
           </section>
           <aside className="order-1 border-b border-border pb-4 lg:order-2 lg:border-b-0 lg:border-l lg:pl-5">
-            <div className="mb-4 flex gap-5 border-b border-border text-sm">
-              <button className="border-b-2 border-primary px-1 pb-2 font-semibold">Resumo</button>
-              <span className="pb-2 text-muted-foreground">
+            <div
+              className="mb-4 flex gap-5 border-b border-border text-sm"
+              role="tablist"
+              aria-label="Detalhes do chamado"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={detailTab === "summary"}
+                className={`px-1 pb-2 ${
+                  detailTab === "summary"
+                    ? "border-b-2 border-primary font-semibold text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setDetailTab("summary")}
+              >
+                Resumo
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={detailTab === "attachments"}
+                className={`px-1 pb-2 ${
+                  detailTab === "attachments"
+                    ? "border-b-2 border-primary font-semibold text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setDetailTab("attachments")}
+              >
                 Anexos ({attachments.data?.length ?? 0})
-              </span>
+              </button>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <ReadonlyField label="Cliente" value={item.customer?.name ?? "Sem vínculo"} />
-              <ReadonlyField
-                label="Departamento"
-                value={item.customerDepartment?.name ?? item.department?.name ?? "Sem departamento"}
-              />
-              <ReadonlyField
-                label="Solicitante"
-                value={item.requesterContact?.name ?? item.createdByMembership.user.name}
-              />
-              <ReadonlyField
-                label="Filial de origem"
-                value={item.originBranch?.name ?? "Sem filial"}
-              />
-              <Field label="Prioridade *">
-                {canUpdate && !customerPortal ? (
-                  <Select
-                    value={item.priority}
-                    onChange={async (event) => {
-                      await ticketApi.update(item.id, {
-                        priority: event.target.value as ApiTicketPriority,
-                      });
-                      refresh();
-                    }}
-                  >
-                    {priorities.map((value) => (
-                      <option key={value} value={value}>
-                        {priorityLabel(value)}
+            {detailTab === "summary" ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <ReadonlyField label="Cliente" value={item.customer?.name ?? "Sem vínculo"} />
+                  <ReadonlyField
+                    label="Departamento"
+                    value={
+                      item.customerDepartment?.name ?? item.department?.name ?? "Sem departamento"
+                    }
+                  />
+                  <ReadonlyField
+                    label="Solicitante"
+                    value={item.requesterContact?.name ?? item.createdByMembership.user.name}
+                  />
+                  <ReadonlyField
+                    label="Filial de origem"
+                    value={item.originBranch?.name ?? "Sem filial"}
+                  />
+                  <Field label="Prioridade *">
+                    {canUpdate && !customerPortal ? (
+                      <Select
+                        value={item.priority === "URGENTE" ? "ALTA" : item.priority}
+                        onChange={async (event) => {
+                          await ticketApi.update(item.id, {
+                            priority: event.target.value as ApiTicketPriority,
+                          });
+                          refresh();
+                        }}
+                      >
+                        {priorities.map((value) => (
+                          <option key={value} value={value}>
+                            {priorityLabel(value)}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Input value={priorityLabel(item.priority)} readOnly />
+                    )}
+                  </Field>
+                  <ReadonlyField label="Tipo do Chamado" value={categoryLabel(item.category)} />
+                </div>
+                <div className="my-4 border-t border-border pt-4">
+                  <h3 className="mb-3 font-semibold">Datas</h3>
+                  <DateRow label="Data de abertura" value={formatDate(item.createdAt)} />
+                  <DateRow
+                    label="Data de aprovação"
+                    value={item.approvedAt ? formatDate(item.approvedAt) : "-"}
+                  />
+                  <DateRow
+                    label="Data de início"
+                    value={item.startedAt ? formatDate(item.startedAt) : "-"}
+                  />
+                  <DateRow
+                    label="Data da solução"
+                    value={item.solvedAt ? formatDate(item.solvedAt) : "-"}
+                  />
+                  <DateRow
+                    label="Data de validação"
+                    value={item.validatedAt ? formatDate(item.validatedAt) : "-"}
+                  />
+                  <DateRow label="Última atualização" value={formatDate(item.updatedAt)} />
+                </div>
+                <div className="border-t border-border pt-4">
+                  <Field label="Status atual">
+                    {canUpdateStatus && !customerPortal ? (
+                      <Select
+                        value={item.status}
+                        onChange={async (event) => {
+                          await ticketApi.updateStatus(
+                            item.id,
+                            event.target.value as ApiTicketStatus,
+                          );
+                          refresh();
+                        }}
+                      >
+                        {statuses.map((value) => (
+                          <option key={value} value={value}>
+                            {statusLabel(value)}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Input value={statusLabel(item.status)} readOnly />
+                    )}
+                  </Field>
+                  <Field label="Sub-status">
+                    <Select
+                      value={item.substatus ?? "OPENED_IN_SANKHYA"}
+                      disabled={!canUpdate || customerPortal}
+                      onChange={async (event) => {
+                        await ticketApi.update(item.id, {
+                          substatus: event.target.value as ApiTicketSubstatus,
+                        });
+                        refresh();
+                      }}
+                    >
+                      <option value="OPENED_IN_SANKHYA">Chamado aberto na Sankhya</option>
+                      <option value="FORWARDED_TO_THIRD_PARTY">
+                        Chamado encaminhado para terceiro
                       </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <Input value={priorityLabel(item.priority)} readOnly />
-                )}
-              </Field>
-              <ReadonlyField label="Tipo do Chamado" value={categoryLabel(item.category)} />
-            </div>
-            <div className="my-4 border-t border-border pt-4">
-              <h3 className="mb-3 font-semibold">Datas</h3>
-              <DateRow label="Data de abertura" value={formatDate(item.createdAt)} />
-              <DateRow
-                label="Data de aprovação"
-                value={item.approvedAt ? formatDate(item.approvedAt) : "-"}
-              />
-              <DateRow
-                label="Data de início"
-                value={item.startedAt ? formatDate(item.startedAt) : "-"}
-              />
-              <DateRow
-                label="Data da solução"
-                value={item.solvedAt ? formatDate(item.solvedAt) : "-"}
-              />
-              <DateRow
-                label="Data de validação"
-                value={item.validatedAt ? formatDate(item.validatedAt) : "-"}
-              />
-              <DateRow label="Última atualização" value={formatDate(item.updatedAt)} />
-            </div>
-            <div className="border-t border-border pt-4">
-              <Field label="Status atual">
-                {canUpdateStatus && !customerPortal ? (
-                  <Select
-                    value={item.status}
-                    onChange={async (event) => {
-                      await ticketApi.updateStatus(item.id, event.target.value as ApiTicketStatus);
-                      refresh();
-                    }}
-                  >
-                    {statuses.map((value) => (
-                      <option key={value} value={value}>
-                        {statusLabel(value)}
-                      </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <Input value={statusLabel(item.status)} readOnly />
-                )}
-              </Field>
-              <Field label="Sub-status">
-                <Select
-                  value={item.substatus ?? "OPENED_IN_SANKHYA"}
-                  disabled={!canUpdate || customerPortal}
-                  onChange={async (event) => {
-                    await ticketApi.update(item.id, {
-                      substatus: event.target.value as ApiTicketSubstatus,
-                    });
-                    refresh();
-                  }}
-                >
-                  <option value="OPENED_IN_SANKHYA">Chamado aberto na Sankhya</option>
-                  <option value="FORWARDED_TO_THIRD_PARTY">
-                    Chamado encaminhado para terceiro
-                  </option>
-                  <option value="WAITING">Aguardando</option>
-                  <option value="WAITING_INFRASTRUCTURE">Aguardando posição da infra</option>
-                </Select>
-              </Field>
-              <p className="mt-3 text-xs text-muted-foreground">Responsável atual</p>
-              <div className="mt-1 flex items-center gap-2 font-semibold">
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 text-sm text-primary">
-                  {initials(item.assignedMembership?.user.name ?? "Fila")}
-                </span>
-                {item.assignedMembership?.user.name ?? "Fila"}
-              </div>
-              {!customerPortal && (
-                <>
-                  <p className="mt-4 text-xs text-muted-foreground">Etiquetas</p>
-                  <Button variant="ghost" size="sm" className="mt-1">
-                    <Plus className="h-4 w-4" /> Adicionar etiqueta
-                  </Button>
-                </>
-              )}
-            </div>
-            <div className="mt-5">
+                      <option value="WAITING">Aguardando</option>
+                      <option value="WAITING_INFRASTRUCTURE">Aguardando posição da infra</option>
+                    </Select>
+                  </Field>
+                  <p className="mt-3 text-xs text-muted-foreground">Responsável atual</p>
+                  <div className="mt-1 flex items-center gap-2 font-semibold">
+                    <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 text-sm text-primary">
+                      {initials(item.assignedMembership?.user.name ?? "Fila")}
+                    </span>
+                    {item.assignedMembership?.user.name ?? "Fila"}
+                  </div>
+                  {!customerPortal && (
+                    <>
+                      <p className="mt-4 text-xs text-muted-foreground">Etiquetas</p>
+                      <Button variant="ghost" size="sm" className="mt-1">
+                        <Plus className="h-4 w-4" /> Adicionar etiqueta
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
               <Attachments
                 ticketId={item.id}
                 items={attachments.data ?? []}
-                onChanged={refresh}
-                canUpload={canUploadAttachment}
-                canDelete={canDeleteAttachment}
+                loading={attachments.isLoading}
+                error={attachments.error instanceof Error ? attachments.error.message : null}
               />
-            </div>
+            )}
           </aside>
         </div>
       )}
@@ -2013,46 +2407,129 @@ function TicketDetail({
 function Attachments({
   ticketId,
   items,
-  onChanged,
-  canUpload,
-  canDelete,
+  loading,
+  error,
 }: {
   ticketId: string;
   items: ApiTicketAttachment[];
-  onChanged: () => void;
-  canUpload: boolean;
-  canDelete: boolean;
+  loading: boolean;
+  error: string | null;
 }) {
-  const [busy, setBusy] = React.useState(false);
-  const upload = async (selectedFiles: File[]) => {
-    const available = Math.max(0, maxAttachmentCount - items.length);
-    if (selectedFiles.length > available) {
-      toast.error(`É possível manter até ${maxAttachmentCount} arquivos por chamado.`);
-    }
-    const files = selectedFiles.slice(0, available).filter((file) => {
-      if (!allowedAttachmentMimeTypes.has(file.type.toLowerCase())) {
-        toast.error(`${file.name} não possui um formato permitido.`);
-        return false;
-      }
-      if (file.size <= maxAttachmentSizeMb * 1024 * 1024) return true;
-      toast.error(`${file.name} excede o limite permitido de ${maxAttachmentSizeMb} MB.`);
-      return false;
-    });
-    if (!files.length) return;
-    setBusy(true);
-    try {
-      const results = await Promise.allSettled(
-        files.map((file) => ticketApi.uploadAttachment(ticketId, file)),
-      );
-      const failed = results.filter((result) => result.status === "rejected").length;
-      if (failed) toast.error(`${failed} anexo(s) não foram enviados.`);
-      if (failed < results.length) toast.success(`${results.length - failed} anexo(s) enviados.`);
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
-  const download = async (attachment: ApiTicketAttachment) => {
+  return (
+    <section role="tabpanel" aria-label="Anexos do chamado">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold">Anexos do chamado</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Índice de todos os arquivos vinculados aos diálogos deste chamado.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={loading || items.length === 0}
+          onClick={() => void downloadAllTicketAttachments(ticketId, items)}
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Baixar todos
+        </Button>
+      </div>
+      {loading && <p className="text-sm text-muted-foreground">Carregando anexos...</p>}
+      {!loading && error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          Não foi possível carregar os anexos. {error}
+        </div>
+      )}
+      {!loading && !error && (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <Card key={item.id} className="flex items-center justify-between gap-3 p-3">
+              <div className="min-w-0">
+                <button
+                  type="button"
+                  className="block max-w-full truncate text-left text-sm font-medium underline-offset-2 hover:underline"
+                  title={item.originalName}
+                  onClick={() => void previewTicketAttachment(ticketId, item)}
+                >
+                  {item.originalName}
+                </button>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {formatAttachmentSize(item.sizeBytes)} · {formatDate(item.createdAt)} · Anexado
+                  por {item.uploadedBy.name}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Visualizar anexo ${item.originalName}`}
+                  onClick={() => void previewTicketAttachment(ticketId, item)}
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Baixar anexo ${item.originalName}`}
+                  onClick={() => void downloadTicketAttachment(ticketId, item)}
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              </div>
+            </Card>
+          ))}
+          {items.length === 0 && (
+            <div className="rounded-lg border border-dashed border-border p-5 text-center">
+              <Paperclip className="mx-auto h-5 w-5 text-muted-foreground" />
+              <p className="mt-2 text-sm font-medium">Nenhum anexo neste chamado</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Os arquivos enviados junto aos diálogos aparecerão nesta aba.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DialogAttachments({
+  ticketId,
+  items,
+}: {
+  ticketId: string;
+  items: ApiTicketAttachment[];
+}) {
+  if (!items.length) return null;
+  return (
+    <section className="mt-3 border-t border-border/70 pt-3" aria-label="Anexos do diálogo">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold">
+        <Paperclip className="h-3.5 w-3.5" />
+        Anexos
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {items.map((attachment) => (
+          <a
+            key={attachment.id}
+            href="#"
+            className="min-w-0 truncate text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+            title={attachment.originalName}
+            onClick={(event) => {
+              event.preventDefault();
+              void previewTicketAttachment(ticketId, attachment);
+            }}
+          >
+            {attachment.originalName}
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+async function downloadTicketAttachment(ticketId: string, attachment: ApiTicketAttachment) {
+  try {
     const blob = await ticketApi.download(ticketId, attachment.id);
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -2060,86 +2537,135 @@ function Attachments({
     anchor.download = attachment.originalName;
     anchor.click();
     URL.revokeObjectURL(url);
+  } catch (error) {
+    toast.error((error as Error).message);
+  }
+}
+
+async function downloadAllTicketAttachments(ticketId: string, attachments: ApiTicketAttachment[]) {
+  try {
+    const entries = await Promise.all(
+      attachments.map(async (attachment) => ({
+        name: attachment.originalName,
+        data: new Uint8Array(
+          await (await ticketApi.download(ticketId, attachment.id)).arrayBuffer(),
+        ),
+        date: new Date(attachment.createdAt),
+      })),
+    );
+    const zip = createStoredZip(entries);
+    const url = URL.createObjectURL(zip);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `anexos-${ticketId}.zip`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    toast.error(`Não foi possível baixar todos os anexos. ${(error as Error).message}`);
+  }
+}
+
+function createStoredZip(
+  entries: Array<{ name: string; data: Uint8Array<ArrayBuffer>; date: Date }>,
+) {
+  const encoder = new TextEncoder();
+  const names = new Map<string, number>();
+  const localParts: BlobPart[] = [];
+  const centralParts: BlobPart[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const count = names.get(entry.name) ?? 0;
+    names.set(entry.name, count + 1);
+    const name = count === 0 ? entry.name : duplicateZipName(entry.name, count + 1);
+    const nameBytes = encoder.encode(name);
+    const checksum = crc32(entry.data);
+    const { dosDate, dosTime } = toDosDateTime(entry.date);
+    const local = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(local.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0x0800, true);
+    localView.setUint16(10, dosTime, true);
+    localView.setUint16(12, dosDate, true);
+    localView.setUint32(14, checksum, true);
+    localView.setUint32(18, entry.data.length, true);
+    localView.setUint32(22, entry.data.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    local.set(nameBytes, 30);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(central.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(12, dosTime, true);
+    centralView.setUint16(14, dosDate, true);
+    centralView.setUint32(16, checksum, true);
+    centralView.setUint32(20, entry.data.length, true);
+    centralView.setUint32(24, entry.data.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint32(42, offset, true);
+    central.set(nameBytes, 46);
+
+    localParts.push(local, entry.data);
+    centralParts.push(central);
+    offset += local.length + entry.data.length;
+  }
+
+  const centralSize = centralParts.reduce((size, part) => size + (part as Uint8Array).length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, entries.length, true);
+  endView.setUint16(10, entries.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, offset, true);
+  return new Blob([...localParts, ...centralParts, end], { type: "application/zip" });
+}
+
+function duplicateZipName(name: string, occurrence: number) {
+  const extensionIndex = name.lastIndexOf(".");
+  if (extensionIndex <= 0) return `${name} (${occurrence})`;
+  return `${name.slice(0, extensionIndex)} (${occurrence})${name.slice(extensionIndex)}`;
+}
+
+function toDosDateTime(value: Date) {
+  const date = Number.isNaN(value.getTime()) ? new Date() : value;
+  const year = Math.max(1980, date.getFullYear());
+  return {
+    dosDate: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+    dosTime: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
   };
-  const preview = async (attachment: ApiTicketAttachment) => {
+}
+
+function crc32(data: Uint8Array) {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+async function previewTicketAttachment(ticketId: string, attachment: ApiTicketAttachment) {
+  try {
     const blob = await ticketApi.preview(ticketId, attachment.id);
     const url = URL.createObjectURL(blob);
     window.open(url, "_blank", "noopener,noreferrer");
     window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-  };
-  return (
-    <section>
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Atrixus privados</h3>
-        {canUpload && (
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface-1">
-            <Paperclip className="h-3.5 w-3.5" /> {busy ? "Enviando..." : "Anexar"}
-            <input
-              type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.webp,.txt"
-              multiple
-              className="hidden"
-              disabled={busy}
-              onChange={(event) => {
-                void upload(Array.from(event.target.files ?? []));
-                event.target.value = "";
-              }}
-            />
-          </label>
-        )}
-      </div>
-      <div className="space-y-2">
-        {items.map((item) => (
-          <Card key={item.id} className="flex items-center justify-between gap-3 p-3">
-            <button
-              type="button"
-              className="min-w-0 truncate text-left text-sm underline-offset-2 hover:underline"
-              title={item.originalName}
-              onClick={() => preview(item)}
-            >
-              {item.originalName}
-            </button>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>{Math.ceil(item.sizeBytes / 1024)} KB</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Visualizar atrixus"
-                onClick={() => preview(item)}
-              >
-                <Eye className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Baixar atrixus"
-                onClick={() => download(item)}
-              >
-                <Download className="h-4 w-4" />
-              </Button>
-              {canDelete && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="trash-action"
-                  aria-label="Remover atrixus"
-                  onClick={async () => {
-                    await ticketApi.deleteAttachment(ticketId, item.id);
-                    onChanged();
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </Card>
-        ))}
-        {items.length === 0 && (
-          <p className="text-sm text-muted-foreground">Nenhum atrixus disponível.</p>
-        )}
-      </div>
-    </section>
-  );
+  } catch (error) {
+    toast.error((error as Error).message);
+  }
+}
+
+function formatAttachmentSize(sizeBytes: number) {
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${Math.ceil(sizeBytes / 1024)} KB`;
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function useTicketOptions(enabled: boolean) {
@@ -2184,33 +2710,94 @@ function useSessionUserName() {
   return useSession((state) => state.user?.nome ?? "Usuário atual");
 }
 
-function buildConversationTicketDescription(conversation: ApiConversation, messages: ApiMessage[]) {
+async function buildConversationTicketDescription(
+  conversation: ApiConversation,
+  messages: ApiMessage[],
+) {
+  const conversationReference = String(conversation.protocolo ?? conversation.id).replace(/^#/, "");
   const header = [
-    `Histórico importado da conversa ${conversation.protocolo ?? conversation.id}`,
+    `Histórico importado da conversa: #${conversationReference}`,
     `Contato: ${conversation.contact?.nome ?? "Sem contato"}`,
-    conversation.contact?.telefone ? `Telefone: ${conversation.contact.telefone}` : null,
+    conversation.contact?.telefone
+      ? `Telefone: ${formatPhoneVariable(conversation.contact.telefone)}`
+      : null,
     conversation.department?.nome ? `Departamento: ${conversation.department.nome}` : null,
   ].filter(Boolean);
   const ordered = [...messages].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
   );
-  const lines = ordered.map((message) => {
+  const summarySeparator = "=============================";
+  const blocks: string[] = [
+    `<p><span style="font-size: 1.5em; font-weight: bold">${escapeHtml(String(header[0]))}</span><br>${summarySeparator}<br>${header
+      .slice(1)
+      .map((item, index) => {
+        const text = String(item);
+        const separator = text.indexOf(":");
+        const prefix = index === 0 ? "" : "<br>";
+        return separator > 0
+          ? `${prefix}<strong>${escapeHtml(text.slice(0, separator + 1))}</strong>${escapeHtml(text.slice(separator + 1))}`
+          : `${prefix}${escapeHtml(text)}`;
+      })
+      .join(
+        "",
+      )}<br>${summarySeparator}<br><strong>Segue abaixo o histórico da conversa:</strong><br>${summarySeparator}</p>`,
+    "<p><br></p>",
+  ];
+  for (const message of ordered) {
     const author =
       message.direction === "inbound"
         ? (message.participant?.name ?? conversation.contact?.nome ?? "Contato")
         : message.sender === "agent"
           ? "Atendente"
           : "Sistema";
-    const type = messageTypeLabel(message.type);
-    const content =
-      message.content && !message.content.startsWith("[")
-        ? message.content
-        : message.media_data?.file_name
-          ? `${type}: ${message.media_data.file_name}`
-          : type;
-    return `${author} [${formatDate(message.created_at)}]: ${content}`;
-  });
-  return [...header, "", ...lines].join("\n");
+    const parts = [
+      `<p><strong>${escapeHtml(author)}:</strong> ${escapeHtml(`[${formatDate(message.created_at)}]`)}</p>`,
+    ];
+    if (
+      message.type === "image" &&
+      message.media_data &&
+      (!message.media_data.state || message.media_data.state === "ready")
+    ) {
+      const source = messageImageReference(conversation.id, message.id);
+      const alt = escapeHtml(message.media_data.file_name ?? "Imagem da conversa");
+      parts.push(`<img src="${source}" alt="${alt}">`);
+    } else if (message.media_data?.file_name && message.type !== "text") {
+      parts.push(
+        `<p><em>${escapeHtml(`${messageTypeLabel(message.type)}: ${message.media_data.file_name} — disponível na seção Anexos.`)}</em></p>`,
+      );
+    }
+    const content = message.media_data?.caption || message.content;
+    if (content && !/^\[(?:imagem|documento|áudio|audio|vídeo|video)\]$/i.test(content.trim())) {
+      parts.push(`<p>${whatsAppTextToHtml(content)}</p>`);
+    }
+    blocks.push(`<div>${parts.join("")}</div>`);
+  }
+  return blocks.join("");
+}
+
+function whatsAppTextToHtml(value: string) {
+  const parts = value.split(
+    /(\*\*[^*\n][\s\S]*?[^*\n]\*\*|\*[^*\n][^*\n]*?[^*\n]\*|_[^_\n][^_\n]*?[^_\n]_|~[^~\n][^~\n]*?[^~\n]~|```[\s\S]*?```|`[^`\n]+`)/g,
+  );
+  return parts
+    .map((part) => {
+      if (!part) return "";
+      if (part.startsWith("**") && part.endsWith("**"))
+        return `<strong>${escapeHtml(part.slice(2, -2))}</strong>`;
+      if (part.startsWith("*") && part.endsWith("*"))
+        return `<strong>${escapeHtml(part.slice(1, -1))}</strong>`;
+      if (part.startsWith("_") && part.endsWith("_"))
+        return `<em>${escapeHtml(part.slice(1, -1))}</em>`;
+      if (part.startsWith("~") && part.endsWith("~"))
+        return `<s>${escapeHtml(part.slice(1, -1))}</s>`;
+      if (part.startsWith("```") && part.endsWith("```"))
+        return `<span>${escapeHtml(part.slice(3, -3))}</span>`;
+      if (part.startsWith("`") && part.endsWith("`"))
+        return `<span>${escapeHtml(part.slice(1, -1))}</span>`;
+      return escapeHtml(part);
+    })
+    .join("")
+    .replace(/\r?\n/g, "<br>");
 }
 
 function messageTypeLabel(type: ApiMessage["type"]) {
@@ -2260,9 +2847,9 @@ function priorityLabel(priority: ApiTicketPriority) {
   return (
     {
       BAIXA: "Baixa",
-      NORMAL: "Normal",
+      NORMAL: "Média",
       ALTA: "Alta",
-      URGENTE: "Urgente",
+      URGENTE: "Alta",
       ALTISSIMA: "Altíssima",
     } satisfies Record<ApiTicketPriority, string>
   )[priority];
@@ -2284,8 +2871,7 @@ function statusTone(status: ApiTicketStatus) {
   return "info";
 }
 function priorityTone(priority: ApiTicketPriority) {
-  if (priority === "URGENTE") return "destructive";
-  if (priority === "ALTA") return "warning";
+  if (priority === "URGENTE" || priority === "ALTA") return "destructive";
   if (priority === "BAIXA") return "default";
   return "info";
 }

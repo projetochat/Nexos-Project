@@ -7,10 +7,10 @@ import {
   Plug,
   Shield,
   SlidersHorizontal,
-  CaseSensitive,
   ListOrdered,
 } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { RegistrationCaseIcon } from "@/components/registration-case-icon";
 import { SectionHeader } from "@/components/ui-kit";
 import { useSession } from "@/lib/session";
 
@@ -29,7 +29,11 @@ const TABS = [
   },
   { to: "/configuracoes/permissoes", label: "Permissões", icon: Shield },
   { to: "/configuracoes/integracoes", label: "Integrações", icon: Plug },
-  { to: "/configuracoes/padrao-cadastros", label: "Padrão de Cadastros", icon: CaseSensitive },
+  {
+    to: "/configuracoes/padrao-cadastros",
+    label: "Padrão de Cadastros",
+    icon: RegistrationCaseIcon,
+  },
   { to: "/configuracoes/campos-contato", label: "Campos Adicionais", icon: ListPlus },
   { to: "/configuracoes/variaveis", label: "Variáveis", icon: Braces },
 ] as const;

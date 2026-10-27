@@ -63,6 +63,14 @@ describe("ConversationsController contact variable context", () => {
         customerId: "customer-a",
         email: "ana@exemplo.com",
         departmentName: "Legado",
+        customerDepartmentId: "customer-department-a",
+        customerDepartment: {
+          id: "customer-department-a",
+          tenantId: contactDepartmentTenantId,
+          name: "Financeiro",
+          active: false,
+          archivedAt: null,
+        },
         contactDepartmentId: "contact-department-a",
         contactDepartment: {
           id: "contact-department-a",
@@ -82,7 +90,7 @@ describe("ConversationsController contact variable context", () => {
     };
   }
 
-  it("serializes the registered contact department when it belongs to the conversation tenant", () => {
+  it("serializes the customer department even when it became inactive", () => {
     const controller = new ConversationsController(
       {} as never,
       {} as never,
@@ -93,6 +101,42 @@ describe("ConversationsController contact variable context", () => {
     expect(
       controller["serialize"](conversation("tenant-a") as never, current()).contact,
     ).toMatchObject({
+      contactDepartmentId: "customer-department-a",
+      contactDepartment: { id: "customer-department-a", nome: "Financeiro", cor: "#3B82F6" },
+    });
+  });
+
+  it("uses the conversation group image in the chat avatar", () => {
+    const controller = new ConversationsController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const value = {
+      ...conversation("tenant-a"),
+      isGroup: true,
+      groupImageUrl: "https://example.test/group.jpg",
+    };
+
+    expect(controller["serialize"](value as never, current()).contact.avatar_url).toBe(
+      "https://example.test/group.jpg",
+    );
+  });
+
+  it("keeps the tenant-safe legacy department as a read-only transition fallback", () => {
+    const controller = new ConversationsController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const value = conversation("tenant-a");
+    value.contact.customerDepartmentId = null as never;
+    value.contact.customerDepartment = null as never;
+
+    expect(controller["serialize"](value as never, current()).contact).toMatchObject({
+      departamento: "Financeiro",
       contactDepartmentId: "contact-department-a",
       contactDepartment: { id: "contact-department-a", nome: "Financeiro", cor: "#123456" },
     });

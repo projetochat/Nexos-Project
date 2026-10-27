@@ -6,9 +6,9 @@ import {
   Clock,
   MessagesSquare,
   PauseCircle,
-  Pencil,
   Play,
   RefreshCw,
+  Settings,
   UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -34,6 +34,7 @@ import { useSession } from "@/lib/session";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
+  DASHBOARD_NATIVE_REVISION,
   DEFAULT_DASHBOARD_COMPONENTS,
   dashboardColumnClass,
   parseDashboardPreferences,
@@ -136,7 +137,11 @@ function Dashboard() {
   }, [dashboardConfigurationQuery.data, dashboardConfigurationQuery.isSuccess]);
   const saveDashboardMutation = useMutation({
     mutationFn: (components: DashboardComponentConfig[]) =>
-      operationsApi.updateDashboardConfiguration({ version: 2, components }),
+      operationsApi.updateDashboardConfiguration({
+        version: 2,
+        nativeRevision: DASHBOARD_NATIVE_REVISION,
+        components,
+      }),
     onSuccess: (result) => {
       queryClient.setQueryData(["operations", "dashboard", "configuration"], result);
     },
@@ -339,11 +344,11 @@ function Dashboard() {
                   variant="secondary"
                   size="sm"
                   onClick={() => setEditingDashboard(true)}
-                  title="Editar Dashboard"
-                  aria-label="Editar Dashboard"
+                  title="Config. Dashboard"
+                  aria-label="Config. Dashboard"
                 >
-                  <Pencil className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Editar Dashboard</span>
+                  <Settings className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Config. Dashboard</span>
                 </Button>
               )}
             </div>
@@ -488,7 +493,7 @@ function Dashboard() {
             {visibleComponents.length === 0 && (
               <Card className="md:col-span-4">
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  Nenhum componente visível. Use “Editar Dashboard” para configurar a tela.
+                  Nenhum componente visível. Use “Config. Dashboard” para configurar a tela.
                 </p>
               </Card>
             )}

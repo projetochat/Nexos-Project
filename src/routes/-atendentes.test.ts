@@ -105,5 +105,8 @@ it("alterna entre cards e lista de atendentes no desktop", () => {
   expect(source).toContain(
     'className={viewMode === "list" ? "hidden overflow-hidden p-0 md:block" : "hidden"}',
   );
-  expect(source.match(/\{paginationControls\}/g)).toHaveLength(2);
+  expect(source.match(/\{paginationControls\}/g)).toHaveLength(3);
+  expect(source).toContain(
+    'className="flex items-center justify-between gap-2 overflow-hidden rounded-xl border border-border bg-surface-2 px-3 py-1.5 text-xs text-muted-foreground sm:px-4"',
+  );
 });

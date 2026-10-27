@@ -1,9 +1,10 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { CaseSensitive, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/modal";
+import { RegistrationCaseIcon } from "@/components/registration-case-icon";
 import { Card } from "@/components/ui-kit";
 import { organizationApi, type ApiRegistrationCaseKey } from "@/lib/trixus-api";
 
@@ -74,7 +75,7 @@ function RegistrationCasePage() {
       <Card>
         <div className="mb-4 flex items-start gap-3">
           <div className="rounded-lg bg-primary/10 p-2 text-primary">
-            <CaseSensitive className="h-5 w-5" />
+            <RegistrationCaseIcon className="h-5 w-5" />
           </div>
           <div>
             <h2 className="text-base font-semibold">Padrão de Cadastros em Maiúsculas</h2>

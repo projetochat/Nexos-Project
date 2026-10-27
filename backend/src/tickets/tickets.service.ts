@@ -1,3 +1,9 @@
+import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
+import {
+  parseTicketImageReference,
+  ticketImageSources,
+  replaceTicketImageSources,
+} from "./ticket-image-reference";
 import {
   BadRequestException,
   ConflictException,
@@ -20,6 +26,14 @@ import {
 import { normalizeRegistrationText } from "../common/registration-case";
 import {
   Prisma,
+  AiExecutionStatus,
+  ConversationStatus,
+  CustomerAccessProfile,
+  MessageDirection,
+  MessageStatus,
+  MessageType,
+  MessagingConnectionStatus,
+  MessagingProviderType,
   ProtocolModule,
   TicketAttachmentStatus,
   TicketApprovalKind,
@@ -33,13 +47,19 @@ import { nextProtocol } from "../common/protocol-numbering";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
+import { MessagingMediaStorageService } from "../messaging/media/messaging-media-storage.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
+import { OUTBOX_MESSAGING_OUTBOUND_REQUESTED } from "../queue/messaging-outbound.queue";
 import { AttachmentSecurityScanner } from "./attachment-security-scanner";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketCommentDto } from "./dto/create-ticket-comment.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { UpdateTicketDto } from "./dto/update-ticket.dto";
 import { UpdateTicketCommentDto } from "./dto/update-ticket-comment.dto";
+import {
+  LinkCustomerPortalUserDto,
+  UpdateCustomerPortalLoginDto,
+} from "./dto/manage-customer-portal-user.dto";
 import {
   DecideTicketApprovalDto,
   RequestTicketApprovalDto,
@@ -75,6 +95,19 @@ const transitions: Record<TicketStatus, TicketStatus[]> = {
   REPROVADO: ["EM_EXECUCAO", "AGUARDANDO_APROVACAO", "CANCELADO"],
 };
 
+type PreparedTicketAttachment = {
+  id: string;
+  sourceMessageId: string | null;
+  originalReference?: string;
+  ordinal: number;
+  objectKey: string;
+  fileName: string;
+  mimeType: string;
+  body: Buffer;
+  checksum: string;
+  scanStatus: "NOT_SCANNED";
+};
+
 @Injectable()
 export class TicketsService {
   constructor(
@@ -85,6 +118,8 @@ export class TicketsService {
     @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
     @Inject(TicketAttachmentCleanupService)
     private readonly attachmentCleanup: TicketAttachmentCleanupService,
+    @Inject(MessagingMediaStorageService)
+    private readonly messagingMediaStorage: MessagingMediaStorageService,
     @Optional()
     @Inject(TransactionalEmailService)
     private readonly email?: TransactionalEmailService,
@@ -125,87 +160,617 @@ export class TicketsService {
     return { total: grouped.reduce((total, item) => total + item._count._all, 0), counts };
   }
 
-  async inviteCustomerContact(contactId: string, current: AuthenticatedUser) {
+  async portalDashboard(query: ListTicketsQueryDto, current: AuthenticatedUser) {
+    if (current.roleKey !== "customer_portal") {
+      throw new ForbiddenException("Dashboard disponível somente no Portal do Cliente.");
+    }
+    const access = await this.portalAccess(current);
+    if (!access?.active || access.accessProfile !== CustomerAccessProfile.FULL_ACCESS) {
+      throw new ForbiddenException("Dashboard disponível somente para o perfil Acesso Full.");
+    }
+    const where = await this.visibleWhere(current, query);
+    const [tickets, departments, branches] = await Promise.all([
+      this.prisma.ticket.findMany({
+        where,
+        orderBy: { createdAt: "asc" },
+        select: {
+          status: true,
+          priority: true,
+          category: true,
+          createdAt: true,
+          solvedAt: true,
+          closedAt: true,
+          validatedAt: true,
+          customerDepartmentId: true,
+          originBranchId: true,
+          customerDepartment: { select: { id: true, name: true } },
+          originBranch: { select: { id: true, name: true } },
+        },
+      }),
+      this.prisma.customerDepartment.findMany({
+        where: {
+          tenantId: current.tenantId,
+          customerId: access.customerId,
+          active: true,
+          archivedAt: null,
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      this.prisma.customerBranch.findMany({
+        where: {
+          tenantId: current.tenantId,
+          customerId: access.customerId,
+          status: "ACTIVE",
+          archivedAt: null,
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+    ]);
+    const countStatuses = (statuses: TicketStatus[]) =>
+      tickets.filter((ticket) => statuses.includes(ticket.status)).length;
+    const finishedDurations = tickets
+      .map((ticket) => {
+        const finishedAt = ticket.validatedAt ?? ticket.closedAt ?? ticket.solvedAt;
+        return finishedAt ? finishedAt.getTime() - ticket.createdAt.getTime() : null;
+      })
+      .filter((duration): duration is number => duration !== null && duration >= 0);
+    const averageResolutionHours = finishedDurations.length
+      ? Math.round(
+          (finishedDurations.reduce((total, duration) => total + duration, 0) /
+            finishedDurations.length /
+            3_600_000) *
+            10,
+        ) / 10
+      : null;
+    return {
+      filters: { departments, branches },
+      metrics: {
+        total: tickets.length,
+        open: countStatuses([
+          TicketStatus.ABERTO,
+          TicketStatus.AGUARDANDO,
+          TicketStatus.NOVO,
+          TicketStatus.NA_FILA,
+        ]),
+        inProgress: countStatuses([TicketStatus.EM_ANDAMENTO, TicketStatus.EM_EXECUCAO]),
+        awaitingApproval: countStatuses([TicketStatus.AGUARDANDO_APROVACAO]),
+        awaitingValidation: countStatuses([TicketStatus.CONCLUIDA]),
+        completed: countStatuses([
+          TicketStatus.RESOLVIDO,
+          TicketStatus.FECHADO,
+          TicketStatus.VALIDADO,
+        ]),
+        rejected: countStatuses([TicketStatus.REPROVADO]),
+        canceled: countStatuses([TicketStatus.CANCELADO]),
+        averageResolutionHours,
+      },
+      byDepartment: aggregateDashboardDimension(
+        tickets.map((ticket) => ({
+          id: ticket.customerDepartmentId,
+          label: ticket.customerDepartment?.name,
+        })),
+        "Sem departamento",
+      ),
+      byBranch: aggregateDashboardDimension(
+        tickets.map((ticket) => ({ id: ticket.originBranchId, label: ticket.originBranch?.name })),
+        "Sem filial",
+      ),
+      byCategory: aggregateDashboardDimension(
+        tickets.map((ticket) => ({
+          id: ticket.category,
+          label: ticketCategoryLabel(ticket.category),
+        })),
+        "Sem tipo",
+      ),
+      byPriority: aggregateDashboardDimension(
+        tickets.map((ticket) => ({
+          id: ticket.priority,
+          label: ticketPriorityLabel(ticket.priority),
+        })),
+        "Sem prioridade",
+      ),
+    };
+  }
+
+  async listCustomerPortalUsers(customerId: string, current: AuthenticatedUser) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, tenantId: current.tenantId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!customer) throw new NotFoundException("Cliente não encontrado.");
+
+    const accesses = await this.prisma.customerPortalAccess.findMany({
+      where: {
+        tenantId: current.tenantId,
+        customerId,
+        revokedAt: null,
+        contact: {
+          archivedAt: null,
+          NOT: { normalizedPhone: { startsWith: "group:" } },
+        },
+      },
+      orderBy: [{ contact: { name: "asc" } }],
+      include: {
+        contact: true,
+        branch: { select: { id: true, name: true } },
+        department: { select: { id: true, name: true } },
+        membership: { include: { role: true } },
+        invitations: {
+          where: { status: "PENDING" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, expiresAt: true },
+        },
+        _count: {
+          select: { invitations: { where: { status: "ACCEPTED" } } },
+        },
+      },
+    });
+    const now = Date.now();
+    return accesses.map((access) => {
+      const invitation = access.invitations[0] ?? null;
+      const pending = Boolean(invitation && invitation.expiresAt.getTime() > now);
+      const expired = Boolean(invitation && invitation.expiresAt.getTime() <= now);
+      const active =
+        !invitation &&
+        access.active &&
+        access.contact.active &&
+        access.membership?.status === "ACTIVE" &&
+        (access._count?.invitations ?? 0) > 0;
+      return {
+        contact: {
+          id: access.contact.id,
+          name: access.contact.name,
+          email: access.contact.email,
+          phone: access.contact.phone,
+          active: access.contact.active,
+        },
+        login: access.login,
+        accessProfile: access.accessProfile,
+        branch: access.branch,
+        department: access.department,
+        accessStatus: active
+          ? ("ACTIVE" as const)
+          : pending
+            ? ("PENDING" as const)
+            : expired
+              ? ("EXPIRED" as const)
+              : ("DISABLED" as const),
+        invitation,
+      };
+    });
+  }
+
+  async linkCustomerPortalUser(
+    customerId: string,
+    dto: LinkCustomerPortalUserDto,
+    current: AuthenticatedUser,
+  ) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, tenantId: current.tenantId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!customer) throw new NotFoundException("Cliente não encontrado.");
     const contact = await this.prisma.contact.findFirst({
       where: {
-        id: contactId,
+        id: dto.contactId,
         tenantId: current.tenantId,
         archivedAt: null,
         active: true,
-        customerId: { not: null },
-        email: { not: null },
-        customerAccessProfile: { not: null },
+        NOT: { normalizedPhone: { startsWith: "group:" } },
       },
-      include: { customer: { select: { id: true, name: true } }, portalMembership: true },
+      select: { id: true, customerId: true, email: true },
     });
-    if (!contact?.email || !contact.customer) {
+    if (!contact) throw new NotFoundException("Contato não encontrado ou inativo.");
+    const normalizedLogin = dto.login.trim().toLowerCase();
+    const email = customerPortalIdentityEmail(current.tenantId, contact.id, contact.email);
+    if (normalizedLogin.includes("@") && !contact.email) {
       throw new BadRequestException(
-        "Contato ativo com cliente, perfil e e-mail é obrigatório para liberar o acesso.",
+        "Cadastre o e-mail do contato somente para utilizá-lo como login.",
       );
     }
-    if (contact.portalMembership?.status === "ACTIVE") {
-      await this.prisma.contact.update({
-        where: { tenantId_id: { tenantId: current.tenantId, id: contact.id } },
-        data: { portalAccessActive: true },
-      });
-      return { status: "active" as const, contactId: contact.id };
+    if (normalizedLogin.includes("@") && normalizedLogin !== email) {
+      throw new BadRequestException(
+        "Para usar outro e-mail, atualize primeiro o cadastro do contato.",
+      );
     }
-    const email = contact.email.toLowerCase().trim();
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email },
-      include: { memberships: { where: { tenantId: current.tenantId }, include: { role: true } } },
+    const existingAccess = await this.prisma.customerPortalAccess.findFirst({
+      where: { tenantId: current.tenantId, customerId, contactId: contact.id },
+      select: {
+        id: true,
+        active: true,
+        revokedAt: true,
+        userId: true,
+        membershipId: true,
+        user: { select: { email: true } },
+        membership: { select: { user: { select: { email: true } } } },
+        invitations: {
+          where: { status: "PENDING" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { expiresAt: true },
+        },
+      },
     });
-    const existingMembership = existingUser?.memberships[0];
-    if (existingMembership && existingMembership.role.key !== "customer_portal") {
-      throw new ConflictException({ code: "CONTACT_EMAIL_ALREADY_TENANT_MEMBER" });
-    }
-    if (existingMembership?.status === "ACTIVE") {
-      await this.prisma.contact.update({
-        where: { tenantId_id: { tenantId: current.tenantId, id: contact.id } },
-        data: { portalMembershipId: existingMembership.id, portalAccessActive: true },
+    const associationMatchesEmail = this.portalAssociationMatchesEmail(existingAccess, email);
+    await this.assertPortalLoginIdentity(
+      normalizedLogin,
+      email,
+      current.tenantId,
+      existingAccess?.id,
+      associationMatchesEmail ? existingAccess?.userId : undefined,
+    );
+    const pendingInvitation = existingAccess?.invitations[0];
+    if (
+      (!existingAccess?.revokedAt && existingAccess?.active) ||
+      (!existingAccess?.revokedAt &&
+        pendingInvitation &&
+        pendingInvitation.expiresAt.getTime() > Date.now())
+    ) {
+      throw new ConflictException({
+        code: "CUSTOMER_PORTAL_ACCESS_ALREADY_EXISTS",
+        message: "Este contato já possui acesso ao portal deste cliente.",
       });
-      return { status: "active" as const, contactId: contact.id };
     }
 
-    this.email?.assertInvitationDeliveryReady();
-    const token = randomBytes(32).toString("base64url");
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60_000);
-    const invitation = await this.prisma.$transaction(async (tx) => {
-      const role = await tx.role.upsert({
-        where: { tenantId_key: { tenantId: current.tenantId, key: "customer_portal" } },
-        create: {
-          tenantId: current.tenantId,
-          key: "customer_portal",
-          name: "Portal do cliente",
-          description: "Acesso restrito do cliente aos próprios chamados.",
-          system: true,
-          active: true,
+    const assignment = await this.resolvePortalAccessAssignment(
+      customerId,
+      dto.accessProfile,
+      dto.customerDepartmentId,
+      dto.customerBranchId,
+      current,
+    );
+
+    const accessData = {
+      login: normalizedLogin,
+      accessProfile: assignment.accessProfile,
+      departmentId: assignment.customerDepartmentId,
+      branchId: assignment.customerBranchId,
+      active: false,
+      revokedAt: null,
+      userId: null,
+      membershipId: null,
+    };
+    const access = existingAccess
+      ? await this.prisma.customerPortalAccess.update({
+          where: { id: existingAccess.id },
+          data: accessData,
+        })
+      : await this.prisma.customerPortalAccess.create({
+          data: {
+            tenantId: current.tenantId,
+            customerId,
+            contactId: contact.id,
+            ...accessData,
+          },
+        });
+    return this.inviteCustomerPortalAccess(access.id, current);
+  }
+
+  async revokeCustomerPortalUser(
+    customerId: string,
+    contactId: string,
+    current: AuthenticatedUser,
+  ) {
+    const access = await this.prisma.customerPortalAccess.findFirst({
+      where: { tenantId: current.tenantId, customerId, contactId, revokedAt: null },
+      include: {
+        customer: { select: { name: true } },
+        department: { select: { name: true } },
+        branch: { select: { name: true } },
+        contact: {
+          include: {
+            customerDepartment: { select: { name: true } },
+            customerBranch: { select: { name: true } },
+          },
         },
-        update: { active: true },
-      });
-      const portalPermissions = ["tickets.read", "tickets.create", "tickets.update"];
-      await tx.rolePermission.deleteMany({
-        where: { roleId: role.id, permissionId: { notIn: portalPermissions } },
-      });
-      await tx.rolePermission.createMany({
-        data: portalPermissions.map((permissionId) => ({
-          roleId: role.id,
-          permissionId,
-        })),
-        skipDuplicates: true,
-      });
+      },
+    });
+    if (!access) throw new NotFoundException("Acesso do contato não encontrado.");
+    const revokedAt = new Date();
+    await this.prisma.$transaction(async (tx) => {
       await tx.userInvitation.updateMany({
-        where: {
-          tenantId: current.tenantId,
-          email,
-          status: "PENDING",
+        where: { tenantId: current.tenantId, portalAccessId: access.id, status: "PENDING" },
+        data: { status: "REVOKED", revokedAt },
+      });
+      await tx.authSession.updateMany({
+        where: { tenantId: current.tenantId, portalAccessId: access.id, revokedAt: null },
+        data: { revokedAt },
+      });
+      await tx.customerPortalAccess.update({
+        where: { id: access.id },
+        data: {
+          active: false,
+          revokedAt,
+          userId: null,
+          membershipId: null,
         },
-        data: { status: "REVOKED", revokedAt: new Date() },
+      });
+    });
+    const removalContent = customerPortalWhatsAppRemoval({
+      contactName: access.contact.name,
+      customerName: access.customer.name,
+      login: access.login,
+      profileName: customerPortalAccessProfileLabel(access.accessProfile),
+      departmentName:
+        access.department?.name ?? access.contact.customerDepartment?.name ?? "Não definido",
+      branchName: access.branch?.name ?? access.contact.customerBranch?.name ?? "Não definida",
+    });
+    const delivery = await this.queueCustomerPortalMessageByWhatsApp({
+      contact: access.contact,
+      content: removalContent,
+      clientMessageId: `portal-access-removal:${access.id}:${revokedAt.getTime()}`,
+      current,
+    }).catch((error: unknown) => ({
+      delivered: false as const,
+      queued: false as const,
+      provider: "whatsapp" as const,
+      error: portalDeliveryErrorMessage(error),
+    }));
+    return { revoked: true as const, contactId, delivery };
+  }
+
+  async updateCustomerPortalUser(
+    customerId: string,
+    contactId: string,
+    dto: UpdateCustomerPortalLoginDto,
+    current: AuthenticatedUser,
+  ) {
+    const access = await this.prisma.customerPortalAccess.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        customerId,
+        contactId,
+        revokedAt: null,
+        contact: { archivedAt: null },
+      },
+      include: {
+        contact: { select: { id: true, email: true } },
+        user: { select: { email: true } },
+        membership: { select: { user: { select: { email: true } } } },
+      },
+    });
+    if (!access) throw new NotFoundException("Acesso do contato não encontrado.");
+    const normalizedLogin = dto.login.trim().toLowerCase();
+    const email = customerPortalIdentityEmail(
+      current.tenantId,
+      access.contact.id,
+      access.contact.email,
+    );
+    if (normalizedLogin.includes("@") && !access.contact.email) {
+      throw new BadRequestException(
+        "Cadastre o e-mail do contato somente para utilizá-lo como login.",
+      );
+    }
+    if (!this.portalAssociationMatchesEmail(access, email)) {
+      throw new ConflictException({
+        code: "PORTAL_ACCESS_IDENTITY_MISMATCH",
+        message:
+          "O e-mail do contato não corresponde à identidade vinculada. Revogue o acesso antes de criar um novo vínculo.",
+      });
+    }
+    if (normalizedLogin.includes("@") && normalizedLogin !== email) {
+      throw new BadRequestException(
+        "Para usar outro e-mail, atualize primeiro o cadastro do contato.",
+      );
+    }
+    await this.assertPortalLoginIdentity(
+      normalizedLogin,
+      email,
+      current.tenantId,
+      access.id,
+      access.userId,
+    );
+
+    const assignment = await this.resolvePortalAccessAssignment(
+      customerId,
+      dto.accessProfile,
+      dto.customerDepartmentId,
+      dto.customerBranchId,
+      current,
+    );
+
+    const accessData = {
+      login: normalizedLogin,
+      accessProfile: assignment.accessProfile,
+      departmentId: assignment.customerDepartmentId,
+      branchId: assignment.customerBranchId,
+    };
+
+    if (dto.active === false) {
+      const revokedAt = new Date();
+      await this.prisma.$transaction(async (tx) => {
+        await tx.customerPortalAccess.update({
+          where: { id: access.id },
+          data: { ...accessData, active: false },
+        });
+        await tx.userInvitation.updateMany({
+          where: {
+            tenantId: current.tenantId,
+            portalAccessId: access.id,
+            status: "PENDING",
+          },
+          data: { status: "REVOKED", revokedAt },
+        });
+        await tx.authSession.updateMany({
+          where: { tenantId: current.tenantId, portalAccessId: access.id, revokedAt: null },
+          data: { revokedAt },
+        });
+      });
+      return {
+        contactId: access.contact.id,
+        login: normalizedLogin,
+        active: false,
+        status: "disabled" as const,
+        ...assignment,
+      };
+    }
+
+    await this.prisma.customerPortalAccess.update({
+      where: { id: access.id },
+      data: accessData,
+    });
+
+    if (dto.active === true && !access.active) {
+      return this.inviteCustomerPortalAccess(access.id, current, { forceDelivery: true });
+    }
+    return {
+      contactId: access.contact.id,
+      login: normalizedLogin,
+      ...(dto.active === true ? { active: true, status: "active" as const } : {}),
+      ...assignment,
+    };
+  }
+
+  private async resolvePortalAccessAssignment(
+    customerId: string,
+    accessProfile: CustomerAccessProfile,
+    customerDepartmentId: string | null | undefined,
+    customerBranchId: string | null | undefined,
+    current: AuthenticatedUser,
+  ) {
+    if (!customerBranchId) {
+      throw new BadRequestException("Filial de lotação é obrigatória para o acesso ao portal.");
+    }
+    if (accessProfile !== CustomerAccessProfile.FULL_ACCESS && !customerDepartmentId) {
+      throw new BadRequestException(
+        "Departamento de lotação é obrigatório para Gerente e Colaborador.",
+      );
+    }
+    const [department, branch] = await Promise.all([
+      customerDepartmentId
+        ? this.prisma.customerDepartment.findFirst({
+            where: {
+              id: customerDepartmentId,
+              tenantId: current.tenantId,
+              customerId,
+              active: true,
+              archivedAt: null,
+            },
+            select: { id: true },
+          })
+        : Promise.resolve(null),
+      this.prisma.customerBranch.findFirst({
+        where: {
+          id: customerBranchId,
+          tenantId: current.tenantId,
+          customerId,
+          status: "ACTIVE",
+          archivedAt: null,
+        },
+        select: { id: true },
+      }),
+    ]);
+    if (accessProfile !== CustomerAccessProfile.FULL_ACCESS && !department) {
+      throw new BadRequestException("Departamento de lotação inválido ou inativo.");
+    }
+    if (!branch) throw new BadRequestException("Filial de lotação inválida ou inativa.");
+    return {
+      accessProfile,
+      customerDepartmentId:
+        accessProfile === CustomerAccessProfile.FULL_ACCESS ? null : department!.id,
+      customerBranchId: branch.id,
+    };
+  }
+
+  async inviteCustomerContact(contactId: string, current: AuthenticatedUser, customerId?: string) {
+    const accesses = await this.prisma.customerPortalAccess.findMany({
+      where: {
+        tenantId: current.tenantId,
+        contactId,
+        customerId,
+        revokedAt: null,
+        contact: { archivedAt: null, active: true },
+      },
+      select: { id: true },
+    });
+    if (!accesses.length) {
+      throw new BadRequestException(
+        "Contato ativo com acesso ao portal é obrigatório para reenviar o convite.",
+      );
+    }
+    if (accesses.length > 1) {
+      throw new ConflictException({
+        code: "CUSTOMER_PORTAL_ACCESS_SELECTION_REQUIRED",
+        message: "Selecione o cliente para reenviar o convite deste contato.",
+      });
+    }
+    return this.inviteCustomerPortalAccess(accesses[0].id, current);
+  }
+
+  private async inviteCustomerPortalAccess(
+    accessId: string,
+    current: AuthenticatedUser,
+    options: { forceDelivery?: boolean } = {},
+  ) {
+    const access = await this.prisma.customerPortalAccess.findFirst({
+      where: { id: accessId, tenantId: current.tenantId, revokedAt: null },
+      include: {
+        customer: { select: { id: true, name: true } },
+        department: { select: { name: true } },
+        branch: { select: { name: true } },
+        membership: { include: { user: { select: { email: true } } } },
+        user: { select: { email: true } },
+        contact: {
+          include: {
+            customerDepartment: { select: { name: true } },
+            customerBranch: { select: { name: true } },
+          },
+        },
+        invitations: {
+          where: { status: "ACCEPTED" },
+          orderBy: { acceptedAt: "desc" },
+          take: 1,
+          select: { id: true },
+        },
+      },
+    });
+    if (!access || !access.contact.active || access.contact.archivedAt) {
+      throw new BadRequestException(
+        "Contato ativo com acesso ao portal é obrigatório para liberar o acesso.",
+      );
+    }
+    const email = customerPortalIdentityEmail(
+      current.tenantId,
+      access.contact.id,
+      access.contact.email,
+    );
+    if (!this.portalAssociationMatchesEmail(access, email)) {
+      throw new ConflictException({
+        code: "PORTAL_ACCESS_IDENTITY_MISMATCH",
+        message:
+          "O e-mail do contato não corresponde à identidade vinculada. Revogue o acesso antes de criar um novo vínculo.",
+      });
+    }
+    if (
+      access.active &&
+      access.membership?.status === "ACTIVE" &&
+      (access.invitations?.length ?? 0) > 0 &&
+      !options.forceDelivery
+    ) {
+      return { status: "active" as const, contactId: access.contact.id };
+    }
+
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60_000);
+    const invitation = await this.prisma.$transaction(async (tx) => {
+      const role = await this.ensureCustomerPortalRole(tx, current.tenantId);
+      const revokedAt = new Date();
+      await tx.customerPortalAccess.update({
+        where: { id: access.id },
+        data: { active: false },
+      });
+      await tx.authSession.updateMany({
+        where: { tenantId: current.tenantId, portalAccessId: access.id, revokedAt: null },
+        data: { revokedAt },
       });
       return tx.userInvitation.create({
         data: {
           tenantId: current.tenantId,
-          contactId: contact.id,
+          contactId: access.contact.id,
+          portalAccessId: access.id,
           email,
           roleId: role.id,
           tokenHash: hashPortalToken(token),
@@ -214,33 +779,348 @@ export class TicketsService {
         },
       });
     });
-    const acceptUrl = `${tenantAppUrl()}/login?invite=${encodeURIComponent(token)}`;
-    try {
-      const delivery = this.email
-        ? await this.email.sendCustomerPortalInvitation({
+    const acceptUrl = `${tenantAppUrl()}/login/portal-cliente?invite=${encodeURIComponent(token)}`;
+    const contact = {
+      id: access.contact.id,
+      name: access.contact.name,
+      phone: access.contact.phone,
+      normalizedPhone: access.contact.normalizedPhone,
+      instance: access.contact.instance,
+      instanceIds: access.contact.instanceIds,
+      customer: access.customer,
+    };
+    const usesEmailLogin = access.login.includes("@");
+    const invitationDetails = {
+      login: access.login,
+      profileName: customerPortalAccessProfileLabel(access.accessProfile),
+      departmentName:
+        access.department?.name ?? access.contact.customerDepartment?.name ?? "Não definido",
+      branchName: access.branch?.name ?? access.contact.customerBranch?.name ?? "Não definida",
+    };
+    const emailAttempt = usesEmailLogin
+      ? Promise.resolve().then(async () => {
+          if (!this.email) return { delivered: false, provider: "local-preview" as const };
+          this.email.assertInvitationDeliveryReady();
+          return this.email.sendCustomerPortalInvitation({
             to: email,
-            contactName: contact.name,
-            customerName: contact.customer.name,
+            contactName: access.contact.name,
+            customerName: access.customer.name,
+            ...invitationDetails,
             acceptUrl,
             expiresAt,
-          })
-        : { delivered: false, provider: "local-preview" as const };
-      return {
-        id: invitation.id,
-        contactId: contact.id,
-        email,
-        status: "pending" as const,
-        expiresAt,
-        delivery,
-        ...(exposeLocalTokens() ? { acceptUrl } : {}),
-      };
-    } catch (error) {
+          });
+        })
+      : Promise.resolve(null);
+    const whatsappAttempt = this.queueCustomerPortalInvitationByWhatsApp({
+      invitationId: invitation.id,
+      contact,
+      ...invitationDetails,
+      acceptUrl,
+      expiresAt,
+      current,
+    });
+    const [emailResult, whatsappResult] = await Promise.allSettled([emailAttempt, whatsappAttempt]);
+    const emailDelivery =
+      emailResult.status === "fulfilled"
+        ? emailResult.value
+        : {
+            delivered: false,
+            provider: "email" as const,
+            error: portalDeliveryErrorMessage(emailResult.reason),
+          };
+    const whatsappDelivery =
+      whatsappResult.status === "fulfilled"
+        ? whatsappResult.value
+        : {
+            delivered: false,
+            provider: "whatsapp" as const,
+            error: portalDeliveryErrorMessage(whatsappResult.reason),
+          };
+    const emailSucceeded = Boolean(emailDelivery?.delivered);
+    const whatsappSucceeded = Boolean(
+      whatsappDelivery.delivered || ("queued" in whatsappDelivery && whatsappDelivery.queued),
+    );
+    if (!emailSucceeded && !whatsappSucceeded) {
       await this.prisma.userInvitation.updateMany({
         where: { id: invitation.id, tenantId: current.tenantId, status: "PENDING" },
         data: { status: "REVOKED", revokedAt: new Date() },
       });
-      throw error;
+      if (!usesEmailLogin && whatsappResult.status === "rejected") throw whatsappResult.reason;
+      throw new BadRequestException(
+        "Não foi possível enviar o acesso por e-mail nem por WhatsApp. Verifique os canais e tente novamente.",
+      );
     }
+    const delivery = whatsappSucceeded ? whatsappDelivery : emailDelivery!;
+    return {
+      id: invitation.id,
+      contactId: access.contact.id,
+      email,
+      status: "pending" as const,
+      expiresAt,
+      delivery,
+      deliveries: { email: emailDelivery, whatsapp: whatsappDelivery },
+      ...(exposeLocalTokens() ? { acceptUrl } : {}),
+    };
+  }
+
+  private async ensureCustomerPortalRole(tx: Prisma.TransactionClient, tenantId: string) {
+    const role = await tx.role.upsert({
+      where: { tenantId_key: { tenantId, key: "customer_portal" } },
+      create: {
+        tenantId,
+        key: "customer_portal",
+        name: "Portal do cliente",
+        description: "Acesso restrito do cliente aos próprios chamados.",
+        system: true,
+        active: true,
+      },
+      update: { active: true },
+    });
+    const portalPermissions = ["tickets.read", "tickets.create", "tickets.update"];
+    await tx.rolePermission.deleteMany({
+      where: { roleId: role.id, permissionId: { notIn: portalPermissions } },
+    });
+    await tx.rolePermission.createMany({
+      data: portalPermissions.map((permissionId) => ({ roleId: role.id, permissionId })),
+      skipDuplicates: true,
+    });
+    return role;
+  }
+
+  private async assertPortalLoginIdentity(
+    login: string,
+    email: string,
+    tenantId: string,
+    excludeAccessId?: string,
+    knownUserId?: string | null,
+  ) {
+    const normalizedEmail = email.toLowerCase().trim();
+    const emailUser = knownUserId
+      ? { id: knownUserId }
+      : await this.prisma.user.findUnique({
+          where: { email: normalizedEmail },
+          select: { id: true },
+        });
+    const sameLoginAccesses = await this.prisma.customerPortalAccess.findMany({
+      where: {
+        tenantId,
+        login,
+        id: excludeAccessId ? { not: excludeAccessId } : undefined,
+      },
+      select: {
+        userId: true,
+        user: { select: { email: true } },
+        contact: { select: { email: true } },
+      },
+    });
+    const differentIdentity = sameLoginAccesses.some((candidate) => {
+      if (candidate.userId && emailUser?.id && candidate.userId === emailUser.id) return false;
+      if (candidate.user?.email?.toLowerCase().trim() === normalizedEmail) return false;
+      return candidate.contact.email?.toLowerCase().trim() !== normalizedEmail;
+    });
+    if (differentIdentity) {
+      throw new ConflictException({
+        code: "PORTAL_LOGIN_IDENTITY_CONFLICT",
+        message: "Este login já pertence a outra pessoa. Informe outro login.",
+      });
+    }
+  }
+
+  private portalAssociationMatchesEmail(
+    access:
+      | {
+          userId?: string | null;
+          membershipId?: string | null;
+          user?: { email: string } | null;
+          membership?: { user?: { email: string } | null } | null;
+        }
+      | null
+      | undefined,
+    email: string,
+  ) {
+    if (!access) return true;
+    const associatedEmails = [access.user?.email, access.membership?.user?.email]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => value.toLowerCase().trim());
+    if (!associatedEmails.length) return !access.userId && !access.membershipId;
+    return associatedEmails.every((value) => value === email.toLowerCase().trim());
+  }
+
+  private async customerPortalMembershipForEmail(email: string, current: AuthenticatedUser) {
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      include: { memberships: { where: { tenantId: current.tenantId }, include: { role: true } } },
+    });
+    return existingUser?.memberships[0];
+  }
+
+  private async queueCustomerPortalInvitationByWhatsApp(input: {
+    invitationId: string;
+    contact: {
+      id: string;
+      name: string;
+      phone: string;
+      normalizedPhone: string;
+      instance: string | null;
+      instanceIds: string[];
+      customer: { id: string; name: string };
+    };
+    login: string;
+    profileName: string;
+    departmentName: string;
+    branchName: string;
+    acceptUrl: string;
+    expiresAt: Date;
+    current: AuthenticatedUser;
+  }) {
+    const content = customerPortalWhatsAppInvitation({
+      contactName: input.contact.name,
+      customerName: input.contact.customer.name,
+      login: input.login,
+      profileName: input.profileName,
+      departmentName: input.departmentName,
+      branchName: input.branchName,
+      acceptUrl: input.acceptUrl,
+      expiresAt: input.expiresAt,
+    });
+    return this.queueCustomerPortalMessageByWhatsApp({
+      contact: input.contact,
+      content,
+      clientMessageId: `portal-invitation:${input.invitationId}`,
+      current: input.current,
+    });
+  }
+
+  private async queueCustomerPortalMessageByWhatsApp(input: {
+    contact: {
+      id: string;
+      instance: string | null;
+      instanceIds: string[];
+    };
+    content: string;
+    clientMessageId: string;
+    current: AuthenticatedUser;
+  }) {
+    const instanceKeys = [
+      ...new Set([...input.contact.instanceIds, input.contact.instance]),
+    ].filter((value): value is string => Boolean(value?.trim()));
+    if (!instanceKeys.length) {
+      throw new BadRequestException(
+        "Vincule uma instância de WhatsApp ao contato antes de enviar o acesso.",
+      );
+    }
+    const connections = await this.prisma.messagingConnection.findMany({
+      where: {
+        tenantId: input.current.tenantId,
+        archivedAt: null,
+        serviceEnabled: true,
+        status: MessagingConnectionStatus.CONNECTED,
+        providerType: {
+          in: [MessagingProviderType.EVOLUTION, MessagingProviderType.META_CLOUD],
+        },
+        externalReference: { not: null },
+        OR: [
+          { id: { in: instanceKeys } },
+          { name: { in: instanceKeys } },
+          { externalReference: { in: instanceKeys } },
+        ],
+      },
+      select: { id: true, name: true, externalReference: true },
+    });
+    const connection = instanceKeys
+      .map((key) =>
+        connections.find(
+          (item) => item.id === key || item.name === key || item.externalReference === key,
+        ),
+      )
+      .find((item) => item !== undefined);
+    if (!connection) {
+      throw new BadRequestException(
+        "Nenhuma instância de WhatsApp vinculada ao contato está conectada.",
+      );
+    }
+
+    const queued = await this.prisma.$transaction(async (tx) => {
+      const startedAt = new Date();
+      const outboundAt = new Date(startedAt.getTime() + 1);
+      const closedAt = new Date(startedAt.getTime() + 2);
+      const { protocol } = await nextProtocol(
+        tx,
+        input.current.tenantId,
+        ProtocolModule.CHAT,
+        startedAt,
+      );
+      const startNote = `Conversa iniciada - protocolo ${protocol}.`;
+      const endNote = `Conversa encerrada - protocolo ${protocol}.`;
+      const conversation = await tx.conversation.create({
+        data: {
+          tenantId: input.current.tenantId,
+          contactId: input.contact.id,
+          connectionId: connection.id,
+          assignedMembershipId: input.current.membershipId,
+          status: ConversationStatus.FECHADA,
+          protocol,
+          createdAt: startedAt,
+          closedAt,
+          lastMessagePreview: endNote,
+          lastMessageAt: closedAt,
+        },
+        select: { id: true },
+      });
+      await tx.message.createMany({
+        data: [
+          {
+            tenantId: input.current.tenantId,
+            conversationId: conversation.id,
+            direction: MessageDirection.SYSTEM,
+            type: MessageType.SYSTEM,
+            authorMembershipId: input.current.membershipId,
+            content: startNote,
+            createdAt: startedAt,
+          },
+          {
+            tenantId: input.current.tenantId,
+            conversationId: conversation.id,
+            direction: MessageDirection.SYSTEM,
+            type: MessageType.SYSTEM,
+            authorMembershipId: input.current.membershipId,
+            content: endNote,
+            createdAt: closedAt,
+          },
+        ],
+      });
+      const message = await tx.message.create({
+        data: {
+          tenantId: input.current.tenantId,
+          conversationId: conversation.id,
+          connectionId: connection.id,
+          direction: MessageDirection.OUTBOUND,
+          type: MessageType.TEXT,
+          status: MessageStatus.QUEUED,
+          authorMembershipId: input.current.membershipId,
+          content: input.content,
+          clientMessageId: input.clientMessageId,
+          queuedAt: outboundAt,
+          createdAt: outboundAt,
+        },
+        select: { id: true },
+      });
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.current.tenantId,
+          type: OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
+          aggregateId: message.id,
+          payload: { tenantId: input.current.tenantId, messageId: message.id },
+        },
+      });
+      return { conversationId: conversation.id, messageId: message.id, protocol };
+    });
+    return {
+      delivered: false,
+      queued: true as const,
+      provider: "whatsapp" as const,
+      ...queued,
+    };
   }
 
   async detail(id: string, current: AuthenticatedUser) {
@@ -256,12 +1136,13 @@ export class TicketsService {
           ...dto,
           departmentId: portalContext.serviceDepartmentId,
           requesterUserId: current.userId,
-          requesterContactId: portalContext.contact.id,
-          customerId: portalContext.contact.customerId!,
-          customerDepartmentId: portalContext.contact.customerDepartmentId!,
-          originBranchId: portalContext.contact.customerBranchId!,
+          requesterContactId: portalContext.contactId,
+          customerId: portalContext.customerId,
+          customerDepartmentId: portalContext.customerDepartmentId,
+          originBranchId: portalContext.customerBranchId,
           assignedMembershipId: null,
           conversationId: undefined,
+          aiExecutionId: undefined,
         }
       : dto;
     const departmentId = await this.resolveDepartment(input.departmentId, current);
@@ -269,6 +1150,28 @@ export class TicketsService {
       ? await this.resolveAssignee(input.assignedMembershipId, departmentId, current)
       : null;
     const relations = await this.resolveRelations(input, current);
+    const aiExecution = input.aiExecutionId
+      ? await this.prisma.aiExecution.findFirst({
+          where: {
+            tenantId: current.tenantId,
+            id: input.aiExecutionId,
+            status: AiExecutionStatus.COMPLETED,
+            conversationId: relations.conversationId ?? "",
+          },
+          select: {
+            id: true,
+            agentId: true,
+            functionality: true,
+            conversationId: true,
+            resultJson: true,
+          },
+        })
+      : null;
+    if (input.aiExecutionId && !aiExecution) {
+      throw new BadRequestException(
+        "A análise de IA não é válida para a conversa informada ou ainda não foi concluída.",
+      );
+    }
     const approvalPlan = await this.initialApprovalPlan(
       input.category ?? TicketCategory.SUPORTE,
       relations.requesterContactId ?? null,
@@ -282,72 +1185,241 @@ export class TicketsService {
       "ticketTitles",
       sanitizePlainText(input.title, 180),
     );
-    const html = sanitizeTicketHtml(input.descriptionHtml);
+    let html = sanitizeTicketHtml(input.descriptionHtml);
+    const imageSources = ticketImageSources(html);
+    const referencedMessageIds: string[] = [];
+    for (const source of imageSources) {
+      const reference = parseTicketImageReference(source)!;
+      if (reference.kind === "message") {
+        if (
+          !relations.conversationId ||
+          reference.conversationId !== relations.conversationId ||
+          portalContext
+        ) {
+          throw new BadRequestException("A imagem não pertence à conversa informada.");
+        }
+        referencedMessageIds.push(reference.messageId);
+      }
+    }
     const descriptionText = htmlToText(html);
     if (!descriptionText) throw new BadRequestException("Descrição do chamado obrigatoria.");
-    const ticket = await this.prisma.$transaction(async (tx) => {
-      const counter = await tx.ticketProtocolCounter.upsert({
-        where: { tenantId: current.tenantId },
-        create: { tenantId: current.tenantId, lastNumber: 1 },
-        update: { lastNumber: { increment: 1 } },
+    if (referencedMessageIds.length) {
+      if (!current.permissions?.includes("conversations.read")) {
+        throw new ForbiddenException("Sem permissão para importar imagens da conversa.");
+      }
+      const visible = await this.prisma.conversation.findFirst({
+        where: {
+          AND: [
+            { id: relations.conversationId!, tenantId: current.tenantId, archivedAt: null },
+            conversationVisibilityWhere(current),
+          ],
+        },
       });
-      const protocol = (
-        await nextProtocol(
-          tx,
-          current.tenantId,
-          ProtocolModule.TICKET,
-          new Date(),
-          counter.lastNumber,
+      if (!visible) throw new NotFoundException("Conversa não encontrada.");
+    }
+    const ticketId = randomUUID();
+    const aiAttachments = aiExecution
+      ? await this.prepareAiEvidenceAttachments(
+          ticketId,
+          aiExecution.conversationId,
+          aiExecution.resultJson,
+          current,
+          referencedMessageIds,
         )
-      ).protocol;
-      const created = await tx.ticket.create({
-        data: {
-          tenantId: current.tenantId,
-          number: counter.lastNumber,
-          protocol,
-          title,
-          descriptionHtmlSanitized: html,
-          descriptionText,
-          status: approvalPlan ? TicketStatus.AGUARDANDO_APROVACAO : TicketStatus.NOVO,
-          priority: input.priority ?? TicketPriority.NORMAL,
-          category: input.category ?? TicketCategory.SUPORTE,
-          departmentId,
-          assignedMembershipId,
-          createdByMembershipId: current.membershipId,
-          ...relations,
-        },
-        include: ticketInclude,
-      });
-      await tx.ticketHistory.create({
-        data: {
-          tenantId: current.tenantId,
-          ticketId: created.id,
-          actorMembershipId: current.membershipId,
-          event: "ticket.created",
-          toValue: protocol,
-        },
-      });
-      if (approvalPlan) {
-        await tx.ticketApproval.create({
+      : relations.conversationId
+        ? await this.prepareManualConversationAttachments(
+            ticketId,
+            relations.conversationId,
+            current,
+            referencedMessageIds,
+          )
+        : [];
+    const copiedImageCount = imageSources.filter(
+      (source) => parseTicketImageReference(source)?.kind === "attachment",
+    ).length;
+    if (aiAttachments.length + copiedImageCount > 10) {
+      throw new BadRequestException("A importação permite no máximo 10 anexos por chamado.");
+    }
+    const copiedImages = await this.prepareReferencedTicketImages(ticketId, imageSources, current);
+    aiAttachments.push(...copiedImages);
+    if (aiAttachments.length > 10) {
+      throw new BadRequestException("A importação permite no máximo 10 anexos por chamado.");
+    }
+    if (aiAttachments.length) {
+      const usage = await this.entitlements.getUsage(current.tenantId);
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxStorageBytes",
+        usage.storageBytes,
+        aiAttachments.reduce((sum, attachment) => sum + attachment.body.byteLength, 0),
+      );
+    }
+    const imageReplacements = new Map<string, string>();
+    for (const source of imageSources) {
+      const reference = parseTicketImageReference(source)!;
+      const attachment = aiAttachments.find((item) =>
+        reference.kind === "message"
+          ? item.sourceMessageId === reference.messageId
+          : item.originalReference === source,
+      );
+      if (!attachment || !/^image\/(?:png|jpeg|gif|webp)$/i.test(attachment.mimeType)) {
+        throw new BadRequestException(
+          "Uma imagem da descrição não está disponível para importação.",
+        );
+      }
+      imageReplacements.set(
+        source,
+        `/ticket-images/tickets/${ticketId}/attachments/${attachment.id}`,
+      );
+    }
+    html = replaceTicketImageSources(html, imageReplacements);
+    const storedAiObjectKeys: string[] = [];
+    try {
+      for (const attachment of aiAttachments) {
+        storedAiObjectKeys.push(attachment.objectKey);
+        await this.storage.completeUpload({
+          objectKey: attachment.objectKey,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.body.byteLength,
+          body: attachment.body,
+        });
+      }
+    } catch (error) {
+      await Promise.all(
+        storedAiObjectKeys.map((key) => this.storage.deleteObject(key).catch(() => undefined)),
+      );
+      throw error;
+    }
+    let ticket: TicketWithRelations;
+    try {
+      ticket = await this.prisma.$transaction(async (tx) => {
+        const highestTicket = await tx.ticket.aggregate({
+          where: { tenantId: current.tenantId },
+          _max: { number: true },
+        });
+        const highestNumber = highestTicket._max.number ?? 0;
+        await tx.ticketProtocolCounter.upsert({
+          where: { tenantId: current.tenantId },
+          create: { tenantId: current.tenantId, lastNumber: highestNumber },
+          update: { lastNumber: { increment: 0 } },
+        });
+        await tx.ticketProtocolCounter.updateMany({
+          where: { tenantId: current.tenantId, lastNumber: { lt: highestNumber } },
+          data: { lastNumber: highestNumber },
+        });
+        const counter = await tx.ticketProtocolCounter.update({
+          where: { tenantId: current.tenantId },
+          data: { lastNumber: { increment: 1 } },
+        });
+        const protocol = (
+          await nextProtocol(
+            tx,
+            current.tenantId,
+            ProtocolModule.TICKET,
+            new Date(),
+            counter.lastNumber,
+          )
+        ).protocol;
+        const created = await tx.ticket.create({
+          data: {
+            id: ticketId,
+            tenantId: current.tenantId,
+            number: counter.lastNumber,
+            protocol,
+            title,
+            descriptionHtmlSanitized: html,
+            descriptionText,
+            status: approvalPlan ? TicketStatus.AGUARDANDO_APROVACAO : TicketStatus.NOVO,
+            priority: input.priority ?? TicketPriority.NORMAL,
+            category: input.category ?? TicketCategory.SUPORTE,
+            departmentId,
+            assignedMembershipId,
+            createdByMembershipId: current.membershipId,
+            aiExecutionId: aiExecution?.id ?? null,
+            aiAssisted: !!aiExecution,
+            ...relations,
+          },
+          include: ticketInclude,
+        });
+        await tx.ticketHistory.create({
           data: {
             tenantId: current.tenantId,
             ticketId: created.id,
-            requestedByMembershipId: current.membershipId,
-            ...approvalPlan,
+            actorMembershipId: current.membershipId,
+            event: "ticket.created",
+            toValue: protocol,
+            metadata: aiExecution
+              ? {
+                  origin: "CHAT_WHATSAPP",
+                  aiAssisted: true,
+                  aiAgentId: aiExecution.agentId,
+                  aiExecutionId: aiExecution.id,
+                  aiFunctionality: aiExecution.functionality,
+                  conversationId: aiExecution.conversationId,
+                }
+              : undefined,
           },
         });
-        await this.recordHistory(
-          created.id,
-          current,
-          "ticket.approval.requested",
-          null,
-          approvalPlan.kind,
-          tx,
-          { automatic: true },
-        );
-      }
-      return created;
-    });
+        for (const attachment of aiAttachments) {
+          await tx.ticketAttachment.create({
+            data: {
+              id: attachment.id,
+              tenantId: current.tenantId,
+              ticketId: created.id,
+              uploadedByMembershipId: current.membershipId,
+              storageProvider: this.storage.provider,
+              objectKey: attachment.objectKey,
+              originalNameSanitized: attachment.fileName,
+              mimeType: attachment.mimeType,
+              sizeBytes: attachment.body.byteLength,
+              checksum: attachment.checksum,
+              sourceMessageId: attachment.sourceMessageId,
+              status: TicketAttachmentStatus.READY,
+              scanStatus: attachment.scanStatus,
+            },
+          });
+          await this.recordHistory(
+            created.id,
+            current,
+            "attachment.created.from_chat",
+            attachment.sourceMessageId,
+            attachment.id,
+            tx,
+            { aiExecutionId: aiExecution?.id, evidenceOrdinal: attachment.ordinal },
+          );
+        }
+        if (approvalPlan) {
+          await tx.ticketApproval.create({
+            data: {
+              tenantId: current.tenantId,
+              ticketId: created.id,
+              requestedByMembershipId: current.membershipId,
+              ...approvalPlan,
+            },
+          });
+          await this.recordHistory(
+            created.id,
+            current,
+            "ticket.approval.requested",
+            null,
+            approvalPlan.kind,
+            tx,
+            { automatic: true },
+          );
+        }
+        return aiAttachments.length
+          ? tx.ticket.findUniqueOrThrow({
+              where: { tenantId_id: { tenantId: current.tenantId, id: created.id } },
+              include: ticketInclude,
+            })
+          : created;
+      });
+    } catch (error) {
+      await Promise.all(
+        storedAiObjectKeys.map((key) => this.storage.deleteObject(key).catch(() => undefined)),
+      );
+      throw error;
+    }
     this.realtime.publishTicketCreated({
       tenantId: current.tenantId,
       ticketId: ticket.id,
@@ -378,6 +1450,7 @@ export class TicketsService {
     }
     if (dto.descriptionHtml !== undefined) {
       const html = sanitizeTicketHtml(dto.descriptionHtml);
+      await this.validatePersistedTicketImages(html, existing.id, current);
       data.descriptionHtmlSanitized = html;
       data.descriptionText = htmlToText(html);
     }
@@ -786,6 +1859,7 @@ export class TicketsService {
   async createComment(id: string, dto: CreateTicketCommentDto, current: AuthenticatedUser) {
     const ticket = await this.findVisibleTicket(id, current);
     const html = sanitizeTicketHtml(dto.bodyHtml);
+    await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = htmlToText(html);
     if (!bodyText) throw new BadRequestException("Comentário obrigatório.");
     const comment = await this.prisma.$transaction(async (tx) => {
@@ -842,6 +1916,7 @@ export class TicketsService {
       throw new ForbiddenException("Somente o autor pode editar este diálogo.");
     }
     const html = sanitizeTicketHtml(dto.bodyHtml);
+    await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = htmlToText(html);
     if (!bodyText) throw new BadRequestException("Diálogo obrigatório.");
     const editedAt = new Date();
@@ -921,6 +1996,7 @@ export class TicketsService {
     const ticket = await this.findVisibleTicket(id, current);
     const target = await this.resolveApprovalTarget(ticket, dto, current);
     const html = sanitizeTicketHtml(dto.bodyHtml);
+    await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = htmlToText(html);
     if (!bodyText) throw new BadRequestException("Resposta obrigatória.");
     const result = await this.prisma.$transaction(async (tx) => {
@@ -991,6 +2067,7 @@ export class TicketsService {
     await this.assertApprovalActor(approval, current);
     const approved = dto.decision === "APPROVED";
     const html = dto.bodyHtml ? sanitizeTicketHtml(dto.bodyHtml) : null;
+    if (html) await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = html ? htmlToText(html) : approved ? "Aprovação concedida." : "";
     if (!approved && !bodyText) throw new BadRequestException("Comentário da recusa obrigatório.");
     const now = new Date();
@@ -1095,6 +2172,7 @@ export class TicketsService {
     await this.assertSolutionValidator(ticket, current);
     const approved = dto.decision === "APPROVED";
     const html = dto.bodyHtml ? sanitizeTicketHtml(dto.bodyHtml) : null;
+    if (html) await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = html ? htmlToText(html) : approved ? "Solução aprovada." : "";
     if (!approved && !bodyText) throw new BadRequestException("Comentário da recusa obrigatório.");
     const now = new Date();
@@ -1144,6 +2222,23 @@ export class TicketsService {
   async uploadAttachment(id: string, req: Request, current: AuthenticatedUser) {
     await this.entitlements.assertFeature(current.tenantId, "storage");
     const ticket = await this.findVisibleTicket(id, current);
+    const requestedCommentId = decodeHeader(req.headers["x-comment-id"]);
+    const commentId = requestedCommentId
+      ? await this.prisma.ticketComment
+          .findFirst({
+            where: {
+              id: requestedCommentId,
+              tenantId: current.tenantId,
+              ticketId: ticket.id,
+              archivedAt: null,
+            },
+            select: { id: true },
+          })
+          .then((comment) => comment?.id ?? null)
+      : null;
+    if (requestedCommentId && !commentId) {
+      throw new BadRequestException("Diálogo do anexo não encontrado neste chamado.");
+    }
     const originalName = decodeHeader(req.headers["x-file-name"]) ?? "arquivo";
     const declaredMimeType = String(req.headers["content-type"] ?? "application/octet-stream")
       .split(";")[0]
@@ -1177,6 +2272,7 @@ export class TicketsService {
         id: attachmentId,
         tenantId: current.tenantId,
         ticketId: ticket.id,
+        commentId,
         uploadedByMembershipId: current.membershipId,
         storageProvider: this.storage.provider,
         objectKey,
@@ -1202,6 +2298,15 @@ export class TicketsService {
         const updated = await tx.ticketAttachment.update({
           where: { tenantId_id: { tenantId: current.tenantId, id: created.id } },
           data: { status: TicketAttachmentStatus.READY, scanStatus },
+          include: {
+            uploadedByMembership: {
+              select: {
+                id: true,
+                presentationName: true,
+                user: { select: { name: true } },
+              },
+            },
+          },
         });
         await this.recordHistory(ticket.id, current, "attachment.created", null, updated.id, tx);
         return updated;
@@ -1237,6 +2342,15 @@ export class TicketsService {
         ticketId: ticket.id,
         deletedAt: null,
         status: TicketAttachmentStatus.READY,
+      },
+      include: {
+        uploadedByMembership: {
+          select: {
+            id: true,
+            presentationName: true,
+            user: { select: { name: true } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -1294,7 +2408,9 @@ export class TicketsService {
       assignedMembershipId: query.assignedMembershipId,
       requesterContactId: query.requesterContactId,
       customerId: query.customerId,
+      customerDepartmentId: query.customerDepartmentId,
       conversationId: query.conversationId,
+      originBranchId: query.originBranchId,
       createdAt:
         query.createdFrom || query.createdTo
           ? {
@@ -1324,70 +2440,175 @@ export class TicketsService {
   }
 
   private async applyVisibility(where: Prisma.TicketWhereInput, current: AuthenticatedUser) {
-    // Temporary approved policy: ticket permissions grant tenant-wide visibility.
-    // The controller/guard remains responsible for requiring the appropriate ticket permission.
+    // D-008 remains tenant-wide for internal attendants. D-012 defines the
+    // customer-portal scope by the access profile stored on the linked contact.
     if (current.roleKey !== "customer_portal") return where;
-    const contact = await this.portalContact(current);
-    if (!contact?.portalAccessActive || contact.active === false || !contact.customerId) {
+    const access = await this.portalAccess(current);
+    if (
+      !access?.active ||
+      access.contact.active === false ||
+      !access.customerId ||
+      !access.accessProfile
+    ) {
       return { AND: [where, { id: "__customer_portal_without_active_contact__" }] };
     }
-    const scope: Prisma.TicketWhereInput =
-      contact.customerAccessProfile === "FULL_ACCESS"
-        ? { customerId: contact.customerId }
-        : contact.customerAccessProfile === "MANAGER"
+    let scope: Prisma.TicketWhereInput;
+    if (!access.branchId || access.branch?.status !== "ACTIVE" || access.branch.archivedAt) {
+      return { AND: [where, { id: "__customer_portal_without_active_branch__" }] };
+    }
+    if (access.accessProfile === CustomerAccessProfile.FULL_ACCESS) {
+      scope = { customerId: access.customerId };
+    } else {
+      if (!access.departmentId || !access.department?.active || access.department.archivedAt) {
+        return { AND: [where, { id: "__customer_portal_without_active_assignment__" }] };
+      }
+      scope =
+        access.accessProfile === CustomerAccessProfile.MANAGER
           ? {
-              customerId: contact.customerId,
-              customerDepartmentId: contact.customerDepartmentId ?? "__none__",
-              originBranchId: contact.customerBranchId ?? "__none__",
+              customerId: access.customerId,
+              customerDepartmentId: access.departmentId,
             }
-          : { customerId: contact.customerId, requesterContactId: contact.id };
+          : {
+              customerId: access.customerId,
+              requesterContactId: access.contactId,
+            };
+    }
     return { AND: [where, scope] };
+  }
+
+  async portalTicketCreateContext(current: AuthenticatedUser) {
+    if (current.roleKey !== "customer_portal") {
+      throw new ForbiddenException("Contexto disponível somente para o Portal do Cliente.");
+    }
+    const context = await this.portalCreateContext(current);
+    if (!context) throw new ForbiddenException("O acesso do cliente não está configurado.");
+    return {
+      customer: { id: context.customerId, name: context.customerName },
+      department: {
+        id: context.customerDepartmentId,
+        name: context.customerDepartmentName,
+      },
+      contact: { id: context.contactId, name: context.contactName },
+      branch: { id: context.customerBranchId, name: context.customerBranchName },
+      serviceDepartment: {
+        id: context.serviceDepartmentId,
+        name: context.serviceDepartmentName,
+      },
+    };
   }
 
   private async portalCreateContext(current: AuthenticatedUser) {
     if (current.roleKey !== "customer_portal") return null;
-    const contact = await this.portalContact(current);
+    const access = await this.portalAccess(current);
     if (
-      !contact?.portalAccessActive ||
-      contact.active === false ||
-      !contact.customerId ||
-      !contact.customerDepartmentId ||
-      !contact.customerBranchId ||
-      !contact.customerDepartment ||
-      !contact.customerDepartment.active ||
-      contact.customerDepartment.archivedAt ||
-      contact.customerBranch?.status !== "ACTIVE" ||
-      contact.customerBranch.archivedAt
+      !access?.active ||
+      access.contact.active === false ||
+      !access.customerId ||
+      !access.accessProfile
     ) {
-      throw new ForbiddenException(
-        "O acesso do cliente precisa estar vinculado a cliente, departamento e filial ativos.",
-      );
+      throw new ForbiddenException("O acesso do cliente não está ativo ou configurado.");
     }
-    const serviceDepartment = await this.prisma.department.findFirst({
+    const customerDepartmentId =
+      access.departmentId ?? access.contact.customerDepartment?.id ?? null;
+    const customerBranchId = access.branchId;
+    if (!customerBranchId)
+      throw new ForbiddenException(
+        "O acesso do cliente precisa estar vinculado a uma filial ativa.",
+      );
+    if (!customerDepartmentId)
+      throw new ForbiddenException(
+        "O contato precisa estar vinculado a um departamento ativo para abrir chamados.",
+      );
+    const [customerDepartment, customerBranch] = await Promise.all([
+      this.prisma.customerDepartment.findFirst({
+        where: {
+          id: customerDepartmentId,
+          tenantId: current.tenantId,
+          customerId: access.customerId,
+          active: true,
+          archivedAt: null,
+        },
+        select: { id: true, name: true },
+      }),
+      this.prisma.customerBranch.findFirst({
+        where: {
+          id: customerBranchId,
+          tenantId: current.tenantId,
+          customerId: access.customerId,
+          status: "ACTIVE",
+          archivedAt: null,
+        },
+        select: { id: true, name: true },
+      }),
+    ]);
+    if (!customerDepartment || !customerBranch) {
+      throw new ForbiddenException("A filial ou o departamento selecionado não está ativo.");
+    }
+    const matchedServiceDepartment = await this.prisma.department.findFirst({
       where: {
         tenantId: current.tenantId,
         active: true,
-        name: { equals: contact.customerDepartment.name, mode: "insensitive" },
+        name: { equals: customerDepartment.name, mode: "insensitive" },
       },
-      select: { id: true },
+      select: { id: true, name: true },
     });
+    const serviceDepartment =
+      matchedServiceDepartment ??
+      (await this.prisma.department.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          active: true,
+          name: { equals: "Atendimento", mode: "insensitive" },
+        },
+        select: { id: true, name: true },
+      }));
     if (!serviceDepartment) {
       throw new ConflictException({ code: "TICKET_SERVICE_DEPARTMENT_MAPPING_REQUIRED" });
     }
-    return { contact, serviceDepartmentId: serviceDepartment.id };
+    return {
+      contactId: access.contactId,
+      contactName: access.contact.name,
+      customerId: access.customerId,
+      customerName: access.customer.name,
+      customerDepartmentId,
+      customerDepartmentName: customerDepartment.name,
+      customerBranchId,
+      customerBranchName: customerBranch.name,
+      serviceDepartmentId: serviceDepartment.id,
+      serviceDepartmentName: serviceDepartment.name,
+    };
   }
 
-  private portalContact(current: AuthenticatedUser) {
-    return this.prisma.contact.findFirst({
+  private portalAccess(current: AuthenticatedUser) {
+    if (!current.portalAccessId) return Promise.resolve(null);
+    return this.prisma.customerPortalAccess.findFirst({
       where: {
+        id: current.portalAccessId,
         tenantId: current.tenantId,
-        portalMembershipId: current.membershipId,
+        membershipId: current.membershipId,
         active: true,
-        archivedAt: null,
+        revokedAt: null,
+        contact: { active: true, archivedAt: null },
+        customer: { status: "ACTIVE", archivedAt: null },
+        branch: { status: "ACTIVE", archivedAt: null },
+        OR: [
+          { accessProfile: CustomerAccessProfile.FULL_ACCESS },
+          { department: { active: true, archivedAt: null } },
+        ],
       },
       include: {
-        customerDepartment: { select: { id: true, name: true, active: true, archivedAt: true } },
-        customerBranch: { select: { id: true, status: true, archivedAt: true } },
+        customer: { select: { id: true, name: true } },
+        contact: {
+          select: {
+            id: true,
+            name: true,
+            active: true,
+            archivedAt: true,
+            customerDepartment: { select: { id: true, name: true } },
+          },
+        },
+        department: { select: { id: true, name: true, active: true, archivedAt: true } },
+        branch: { select: { id: true, name: true, status: true, archivedAt: true } },
       },
     });
   }
@@ -1456,27 +2677,11 @@ export class TicketsService {
         select: {
           id: true,
           customerId: true,
-          customerBranchId: true,
-          customerDepartmentId: true,
         },
       });
       if (!contact) throw new BadRequestException("Contact inválido.");
       if (dto.customerId && contact.customerId && dto.customerId !== contact.customerId) {
         throw new BadRequestException("Solicitante não pertence ao cliente informado.");
-      }
-      if (
-        dto.originBranchId &&
-        contact.customerBranchId &&
-        dto.originBranchId !== contact.customerBranchId
-      ) {
-        throw new BadRequestException("Filial deve corresponder ao vínculo do solicitante.");
-      }
-      if (
-        dto.customerDepartmentId &&
-        contact.customerDepartmentId &&
-        dto.customerDepartmentId !== contact.customerDepartmentId
-      ) {
-        throw new BadRequestException("Departamento deve corresponder ao vínculo do solicitante.");
       }
       data.requesterContactId = contact.id;
       data.customerId = dto.customerId ?? contact.customerId ?? undefined;
@@ -1571,6 +2776,7 @@ export class TicketsService {
   ) {
     const ticket = await this.findVisibleTicket(id, current);
     const html = sanitizeTicketHtml(bodyHtml);
+    await this.validatePersistedTicketImages(html, ticket.id, current);
     const bodyText = htmlToText(html);
     if (!bodyText) throw new BadRequestException("Resposta obrigatória.");
     const comment = await this.prisma.$transaction(async (tx) => {
@@ -1623,29 +2829,37 @@ export class TicketsService {
   } | null> {
     if (category === TicketCategory.DEV) {
       if (!customerId) throw new BadRequestException("Cliente obrigatório para chamado DEV.");
-      const contractManager = await this.prisma.contact.findFirst({
+      const contractManager = await this.prisma.customerPortalAccess.findFirst({
         where: {
           tenantId: current.tenantId,
           customerId,
-          customerAccessProfile: "FULL_ACCESS",
-          archivedAt: null,
+          accessProfile: CustomerAccessProfile.FULL_ACCESS,
+          active: true,
+          revokedAt: null,
+          contact: { active: true, archivedAt: null },
         },
-        select: { id: true },
+        select: { contactId: true },
       });
       if (!contractManager) {
         throw new ConflictException({ code: "TICKET_CONTRACT_MANAGER_REQUIRED" });
       }
       return {
         kind: TicketApprovalKind.DEVELOPMENT,
-        approverContactId: contractManager.id,
+        approverContactId: contractManager.contactId,
       };
     }
     if (!requesterContactId) return null;
-    const requester = await this.prisma.contact.findFirst({
-      where: { tenantId: current.tenantId, id: requesterContactId, archivedAt: null },
-      select: { customerAccessProfile: true },
+    const requester = await this.prisma.customerPortalAccess.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        contactId: requesterContactId,
+        customerId: customerId ?? undefined,
+        active: true,
+        revokedAt: null,
+      },
+      select: { accessProfile: true },
     });
-    if (requester?.customerAccessProfile !== "COLLABORATOR") return null;
+    if (requester?.accessProfile !== CustomerAccessProfile.COLLABORATOR) return null;
     if (!customerDepartmentId) {
       throw new ConflictException({ code: "TICKET_CUSTOMER_DEPARTMENT_REQUIRED" });
     }
@@ -1656,12 +2870,28 @@ export class TicketsService {
         customerId: customerId ?? undefined,
         archivedAt: null,
       },
-      select: { managerContactId: true },
+      select: { id: true },
     });
-    if (!department?.managerContactId) {
+    if (!department) {
+      throw new ConflictException({ code: "TICKET_CUSTOMER_DEPARTMENT_REQUIRED" });
+    }
+    const manager = await this.prisma.customerPortalAccess.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        customerId: customerId ?? undefined,
+        departmentId: department.id,
+        accessProfile: CustomerAccessProfile.MANAGER,
+        active: true,
+        revokedAt: null,
+        contact: { active: true, archivedAt: null },
+      },
+      select: { contactId: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    if (!manager) {
       throw new ConflictException({ code: "TICKET_DEPARTMENT_MANAGER_REQUIRED" });
     }
-    return { kind: TicketApprovalKind.SUPPORT, approverContactId: department.managerContactId };
+    return { kind: TicketApprovalKind.SUPPORT, approverContactId: manager.contactId };
   }
 
   private async resolveApprovalTarget(
@@ -1693,8 +2923,13 @@ export class TicketsService {
         where: {
           tenantId: current.tenantId,
           id: dto.approverContactId,
-          customerId: ticket.customerId ?? undefined,
           archivedAt: null,
+          customerPortalAccesses: {
+            some: {
+              customerId: ticket.customerId ?? undefined,
+              active: true,
+            },
+          },
         },
       });
       if (!contact) throw new BadRequestException("Aprovador inválido.");
@@ -1728,49 +2963,241 @@ export class TicketsService {
     if (!actor || actor.customerId !== ticket.customerId) {
       throw new ForbiddenException("Usuário não autorizado a validar esta solução.");
     }
-    const requester = ticket.requesterContact;
-    const requesterProfile = requester?.customerAccessProfile;
-    if (requesterProfile === "FULL_ACCESS") {
-      if (actor.id === requester?.id) return;
-    } else if (requesterProfile === "MANAGER") {
-      if (actor.customerAccessProfile === "FULL_ACCESS" || actor.id === requester?.id) return;
-    } else if (requesterProfile === "COLLABORATOR") {
-      if (actor.customerAccessProfile === "FULL_ACCESS" || actor.id === requester?.id) return;
-      if (ticket.customerDepartment?.managerContactId === actor.id) return;
-    }
+    if (actor.customerAccessProfile === CustomerAccessProfile.FULL_ACCESS) return;
+    if (
+      actor.customerAccessProfile === CustomerAccessProfile.MANAGER &&
+      actor.customerDepartmentId &&
+      actor.customerDepartmentId === ticket.customerDepartmentId
+    )
+      return;
+    if (
+      actor.customerAccessProfile === CustomerAccessProfile.COLLABORATOR &&
+      actor.id === ticket.requesterContactId
+    )
+      return;
     throw new ForbiddenException("Usuário não autorizado a validar esta solução.");
   }
 
   private async actorCustomerContact(current: AuthenticatedUser) {
-    const linked = await this.prisma.contact.findFirst({
-      where: {
-        tenantId: current.tenantId,
-        portalMembershipId: current.membershipId,
-        portalAccessActive: true,
-        active: true,
-        archivedAt: null,
-      },
-      select: { id: true, customerId: true, customerAccessProfile: true },
-    });
-    if (linked) return linked;
-    const membership = await this.prisma.tenantMembership.findFirst({
-      where: { tenantId: current.tenantId, id: current.membershipId, status: "ACTIVE" },
-      select: { user: { select: { email: true } } },
-    });
-    if (!membership?.user.email) return null;
-    return this.prisma.contact.findFirst({
-      where: {
-        tenantId: current.tenantId,
-        email: { equals: membership.user.email, mode: "insensitive" },
-        active: true,
-        archivedAt: null,
-      },
-      select: { id: true, customerId: true, customerAccessProfile: true },
-    });
+    if (current.roleKey !== "customer_portal" || !current.portalAccessId) return null;
+    const access = await this.portalAccess(current);
+    if (!access?.active || !access.contact.active || access.contact.archivedAt) return null;
+    return {
+      id: access.contactId,
+      customerId: access.customerId,
+      customerDepartmentId: access.departmentId,
+      customerAccessProfile: access.accessProfile,
+    };
   }
 
   private isCustomerActor(current: AuthenticatedUser) {
     return current.roleKey.startsWith("customer_");
+  }
+
+  private async prepareAiEvidenceAttachments(
+    ticketId: string,
+    conversationId: string,
+    resultJson: Prisma.JsonValue,
+    current: AuthenticatedUser,
+    referencedImageIds: string[] = [],
+  ): Promise<PreparedTicketAttachment[]> {
+    const result = jsonRecord(resultJson);
+    const evidence = Array.isArray(result.evidence) ? result.evidence : [];
+    const ordinalByMessageId = new Map<string, number>();
+    for (const item of evidence) {
+      const record = jsonRecord(item);
+      const messageId = typeof record.messageId === "string" ? record.messageId : "";
+      const ordinal = Number(record.ordinal);
+      if (messageId && !ordinalByMessageId.has(messageId)) {
+        ordinalByMessageId.set(
+          messageId,
+          Number.isFinite(ordinal) ? ordinal : ordinalByMessageId.size + 1,
+        );
+      }
+    }
+    const messageIds = [
+      ...new Set([...ordinalByMessageId.keys()].slice(0, 10).concat(referencedImageIds)),
+    ];
+    if (messageIds.length > 10) {
+      throw new BadRequestException("A importação permite no máximo 10 anexos por chamado.");
+    }
+    if (!messageIds.length) return [];
+    await this.entitlements.assertFeature(current.tenantId, "storage");
+    const messages = await this.prisma.message.findMany({
+      where: {
+        tenantId: current.tenantId,
+        conversationId,
+        id: { in: messageIds },
+        mediaStorageKey: { not: null },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        mediaStorageKey: true,
+        mediaMimeType: true,
+        mediaFileName: true,
+        mediaChecksum: true,
+      },
+    });
+    if (
+      referencedImageIds.some(
+        (id) =>
+          !messages.some(
+            (message) =>
+              message.id === id &&
+              /^image\/(?:png|jpeg|gif|webp)$/i.test(message.mediaMimeType ?? ""),
+          ),
+      )
+    ) {
+      throw new BadRequestException("Uma imagem da descrição não está disponível para importação.");
+    }
+    const prepared: PreparedTicketAttachment[] = [];
+    let totalSize = 0;
+    for (const message of messages) {
+      const mimeType = (message.mediaMimeType ?? "application/octet-stream").toLowerCase();
+      const body = await this.messagingMediaStorage.readObject(message.mediaStorageKey!);
+      this.validateAttachment(mimeType, body.byteLength);
+      const detectedMimeType = detectMimeType(body, mimeType);
+      if (detectedMimeType !== mimeType) {
+        throw canonicalException(
+          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+          "ATTACHMENT_MIME_MISMATCH",
+          "Uma evidência da conversa possui tipo de arquivo inválido.",
+        );
+      }
+      totalSize += body.byteLength;
+      const id = randomUUID();
+      const fileName = sanitizeFileName(
+        message.mediaFileName ?? `evidencia-${prepared.length + 1}`,
+      );
+      prepared.push({
+        id,
+        sourceMessageId: message.id,
+        ordinal: ordinalByMessageId.get(message.id) ?? prepared.length + 1,
+        objectKey: `tenants/${current.tenantId}/tickets/${ticketId}/${id}/${fileName}`,
+        fileName,
+        mimeType,
+        body,
+        checksum: message.mediaChecksum ?? createHash("sha256").update(body).digest("hex"),
+        scanStatus: await this.scanner.scan(),
+      });
+    }
+    const usage = await this.entitlements.getUsage(current.tenantId);
+    await this.entitlements.assertWithinLimit(
+      current.tenantId,
+      "maxStorageBytes",
+      usage.storageBytes,
+      totalSize,
+    );
+    return prepared;
+  }
+
+  private async prepareManualConversationAttachments(
+    ticketId: string,
+    conversationId: string,
+    current: AuthenticatedUser,
+    referencedImageIds: string[] = [],
+  ): Promise<PreparedTicketAttachment[]> {
+    const messages = await this.prisma.message.findMany({
+      where: {
+        tenantId: current.tenantId,
+        conversationId,
+        mediaStorageKey: { not: null },
+        mediaMimeType: { not: null },
+        NOT: { mediaMimeType: { startsWith: "image/", mode: "insensitive" } },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: 10,
+      select: { id: true },
+    });
+    if (!messages.length && !referencedImageIds.length) return [];
+    return this.prepareAiEvidenceAttachments(
+      ticketId,
+      conversationId,
+      {
+        evidence: messages.map((message, index) => ({
+          messageId: message.id,
+          ordinal: index + 1,
+        })),
+      },
+      current,
+      referencedImageIds,
+    );
+  }
+
+  private async validatePersistedTicketImages(
+    html: string,
+    ticketId: string,
+    current: AuthenticatedUser,
+  ) {
+    for (const source of ticketImageSources(html)) {
+      const reference = parseTicketImageReference(source)!;
+      if (reference.kind !== "attachment" || reference.ticketId !== ticketId) {
+        throw new BadRequestException("A imagem não pertence a este chamado.");
+      }
+      const attachment = await this.findAttachment(ticketId, reference.attachmentId, current);
+      if (
+        attachment.status !== TicketAttachmentStatus.READY ||
+        attachment.deletedAt ||
+        !/^image\/(?:png|jpeg|gif|webp)$/i.test(attachment.mimeType)
+      ) {
+        throw new BadRequestException("Imagem do chamado indisponível.");
+      }
+    }
+  }
+
+  private async prepareReferencedTicketImages(
+    ticketId: string,
+    sources: string[],
+    current: AuthenticatedUser,
+  ): Promise<PreparedTicketAttachment[]> {
+    const references = sources
+      .map((source) => ({ source, reference: parseTicketImageReference(source)! }))
+      .filter((item) => item.reference.kind === "attachment");
+    if (references.length > 10)
+      throw new BadRequestException("A importação permite no máximo 10 anexos por chamado.");
+    if (references.length && !current.permissions?.includes("tickets.read")) {
+      throw new ForbiddenException("Sem permissão para copiar imagens de chamados.");
+    }
+    if (references.length) await this.entitlements.assertFeature(current.tenantId, "storage");
+    const prepared: PreparedTicketAttachment[] = [];
+    for (const { source, reference } of references) {
+      if (reference.kind !== "attachment") continue;
+      // Cloning copies an authorized image into storage owned by the new ticket.
+      await this.findVisibleTicket(reference.ticketId, current);
+      const attachment = await this.findAttachment(
+        reference.ticketId,
+        reference.attachmentId,
+        current,
+      );
+      if (
+        attachment.status !== TicketAttachmentStatus.READY ||
+        attachment.deletedAt ||
+        !/^image\/(?:png|jpeg|gif|webp)$/i.test(attachment.mimeType)
+      ) {
+        throw new BadRequestException("Imagem do chamado indisponível.");
+      }
+      const body = (await this.storage.getDownloadObject(attachment.objectKey)).body;
+      this.validateAttachment(attachment.mimeType, body.byteLength);
+      if (detectMimeType(body, attachment.mimeType) !== attachment.mimeType) {
+        throw new BadRequestException("Uma imagem do chamado possui tipo de arquivo inválido.");
+      }
+      const id = randomUUID();
+      const fileName = sanitizeFileName(attachment.originalNameSanitized);
+      prepared.push({
+        id,
+        originalReference: source,
+        sourceMessageId: attachment.sourceMessageId,
+        ordinal: prepared.length + 1,
+        fileName,
+        mimeType: attachment.mimeType,
+        body,
+        checksum: createHash("sha256").update(body).digest("hex"),
+        scanStatus: await this.scanner.scan(),
+        objectKey: `tenants/${current.tenantId}/tickets/${ticketId}/${id}/${fileName}`,
+      });
+    }
+    return prepared;
   }
 
   private assertInternalActor(current: AuthenticatedUser) {
@@ -1780,9 +3207,7 @@ export class TicketsService {
   }
 
   private validateAttachment(mimeType: string, sizeBytes: number) {
-    if (
-      !["application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain"].includes(mimeType)
-    ) {
+    if (!ticketAttachmentMimeTypes.has(mimeType)) {
       throw canonicalException(
         HttpStatus.UNSUPPORTED_MEDIA_TYPE,
         "ATTACHMENT_MIME_NOT_ALLOWED",
@@ -1810,6 +3235,32 @@ export class TicketsService {
     if (!attachment) throw new NotFoundException("Atrixus não encontrado.");
     return attachment;
   }
+}
+
+const ticketAttachmentMimeTypes = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "text/plain",
+  "text/vcard",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "audio/ogg",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/webm",
+  "video/mp4",
+  "video/3gpp",
+  "video/webm",
+]);
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 const ticketInclude = {
@@ -1937,6 +3388,14 @@ function serializeComment(comment: {
 
 function serializeAttachment(attachment: {
   id: string;
+  commentId?: string | null;
+  uploadedByMembershipId?: string | null;
+  uploadedByNameSnapshot?: string | null;
+  uploadedByMembership?: {
+    id: string;
+    presentationName: string | null;
+    user: { name: string };
+  } | null;
   originalNameSanitized: string;
   mimeType: string;
   sizeBytes: number;
@@ -1947,6 +3406,15 @@ function serializeAttachment(attachment: {
 }) {
   return {
     id: attachment.id,
+    commentId: attachment.commentId ?? null,
+    uploadedBy: {
+      id: attachment.uploadedByMembership?.id ?? attachment.uploadedByMembershipId ?? "deleted",
+      name:
+        attachment.uploadedByMembership?.presentationName?.trim() ||
+        attachment.uploadedByMembership?.user.name ||
+        attachment.uploadedByNameSnapshot?.trim() ||
+        "Usuário removido",
+    },
     originalName: attachment.originalNameSanitized,
     mimeType: attachment.mimeType,
     sizeBytes: attachment.sizeBytes,
@@ -1959,6 +3427,130 @@ function serializeAttachment(attachment: {
 
 function hashPortalToken(value: string) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function customerPortalIdentityEmail(tenantId: string, contactId: string, email?: string | null) {
+  const registeredEmail = email?.trim().toLowerCase();
+  if (registeredEmail) return registeredEmail;
+  const identityHash = createHash("sha256")
+    .update(`${tenantId}:${contactId}`)
+    .digest("hex")
+    .slice(0, 40);
+  return `portal-${identityHash}@identity.trixus.invalid`;
+}
+
+function portalDeliveryErrorMessage(error: unknown) {
+  if (error instanceof HttpException) {
+    const response = error.getResponse();
+    if (typeof response === "string") return response;
+    if (response && typeof response === "object" && "message" in response) {
+      const message = response.message;
+      if (typeof message === "string") return message;
+      if (Array.isArray(message)) return message.join(" ");
+    }
+  }
+  return error instanceof Error ? error.message : "Falha ao enviar o acesso.";
+}
+
+function customerPortalWhatsAppInvitation(input: {
+  contactName: string;
+  customerName: string;
+  login: string;
+  profileName: string;
+  departmentName: string;
+  branchName: string;
+  acceptUrl: string;
+  expiresAt: Date;
+}) {
+  const expiresAt = new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(input.expiresAt);
+  return [
+    `Olá, ${input.contactName}!`,
+    "",
+    `Seu acesso ao Portal do Cliente da ${input.customerName} foi criado.`,
+    "",
+    "Dados do acesso:",
+    `Nome: ${input.contactName}`,
+    `Login: ${input.login}`,
+    `Perfil: ${input.profileName}`,
+    `Departamento: ${input.departmentName}`,
+    `Filial: ${input.branchName}`,
+    "",
+    `Crie sua senha e acesse: ${input.acceptUrl}`,
+    "",
+    `Este link é válido até ${expiresAt}.`,
+  ].join("\n");
+}
+
+function customerPortalWhatsAppRemoval(input: {
+  contactName: string;
+  customerName: string;
+  login: string;
+  profileName: string;
+  departmentName: string;
+  branchName: string;
+}) {
+  return [
+    `Olá, ${input.contactName}!`,
+    "",
+    `Informamos que seu acesso ao Portal do Cliente da ${input.customerName} foi removido.`,
+    "",
+    "Dados do acesso removido:",
+    `Nome: ${input.contactName}`,
+    `Login: ${input.login}`,
+    `Perfil: ${input.profileName}`,
+    `Departamento: ${input.departmentName}`,
+    `Filial: ${input.branchName}`,
+    "",
+    "A partir de agora, este login não poderá mais acessar o portal dessa empresa.",
+    "Em caso de dúvida, entre em contato com a empresa responsável pelo seu acesso.",
+  ].join("\n");
+}
+
+function customerPortalAccessProfileLabel(value: CustomerAccessProfile) {
+  if (value === CustomerAccessProfile.FULL_ACCESS) return "Acesso Full";
+  if (value === CustomerAccessProfile.MANAGER) return "Gerente";
+  return "Colaborador";
+}
+
+function aggregateDashboardDimension(
+  values: Array<{ id: string | null; label: string | null | undefined }>,
+  fallbackLabel: string,
+) {
+  const counts = new Map<string, { id: string | null; label: string; count: number }>();
+  for (const value of values) {
+    const key = value.id ?? "__none__";
+    const current = counts.get(key);
+    if (current) {
+      current.count += 1;
+    } else {
+      counts.set(key, {
+        id: value.id,
+        label: value.label?.trim() || fallbackLabel,
+        count: 1,
+      });
+    }
+  }
+  return [...counts.values()].sort(
+    (left, right) => right.count - left.count || left.label.localeCompare(right.label, "pt-BR"),
+  );
+}
+
+function ticketCategoryLabel(value: TicketCategory) {
+  if (value === TicketCategory.DEV) return "Desenvolvimento";
+  if (value === TicketCategory.FINANCEIRO) return "Financeiro";
+  if (value === TicketCategory.OPERACIONAL) return "Operacional";
+  return "Suporte";
+}
+
+function ticketPriorityLabel(value: TicketPriority) {
+  if (value === TicketPriority.BAIXA) return "Baixa";
+  if (value === TicketPriority.ALTA || value === TicketPriority.URGENTE) return "Alta";
+  if (value === TicketPriority.ALTISSIMA) return "Altíssima";
+  return "Média";
 }
 
 function exposeLocalTokens() {

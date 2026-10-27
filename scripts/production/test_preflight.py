@@ -13,7 +13,18 @@ def config():
                                          "POSTGRES_PASSWORD": "test@password"}},
             "redis": {},
             "migrate": {"environment": {"DATABASE_URL": url}},
-            "backend": {"environment": {"DATABASE_URL": url},
+            "backend": {"environment": {
+                            "DATABASE_URL": url,
+                            "TRIXUS_ENVIRONMENT": "production",
+                            "FRONTEND_ORIGIN": "https://app.trixus.com.br",
+                            "TRIXUS_REALTIME_CORS_ORIGIN": "https://app.trixus.com.br",
+                            "TRIXUS_PLATFORM_APP_URL": "https://app.trixus.com.br",
+                            "TRIXUS_TENANT_APP_URL": "https://app.trixus.com.br",
+                            "TRIXUS_PUBLIC_APP_URL": "https://app.trixus.com.br",
+                            "EVOLUTION_WEBHOOK_PUBLIC_URL":
+                                "https://api.trixus.com.br/api/webhooks/evolution",
+                            "AI_CREDENTIALS_ENCRYPTION_KEY": "ab" * 32,
+                        },
                         "ports": [{"host_ip": "127.0.0.1", "published": "3001"}],
                         "volumes": [{"type": "bind", "source": "/srv/trixus-data",
                                      "target": "/var/lib/trixus/storage"}]},
@@ -38,6 +49,15 @@ class PreflightTest(unittest.TestCase):
             lambda c: c["services"]["backend"]["ports"][0].update(host_ip="0.0.0.0"),
             lambda c: c["services"]["postgres"]["environment"].update(POSTGRES_DB="glpi"),
             lambda c: c["services"]["migrate"]["environment"].update(DATABASE_URL="postgresql://localhost/glpi"),
+            lambda c: c["services"]["backend"]["environment"].update(
+                TRIXUS_TENANT_APP_URL="https://chat.trixus.com.br"),
+            lambda c: c["services"]["backend"]["environment"].update(
+                TRIXUS_PUBLIC_APP_URL="https://hom.trixus.com.br"),
+            lambda c: c["services"]["backend"]["environment"].update(
+                EVOLUTION_WEBHOOK_PUBLIC_URL=
+                    "https://api-hom.trixus.com.br/api/webhooks/evolution"),
+            lambda c: c["services"]["backend"]["environment"].update(
+                AI_CREDENTIALS_ENCRYPTION_KEY="invalid"),
         ]
         for mutation in mutations:
             with self.subTest(mutation=mutation):

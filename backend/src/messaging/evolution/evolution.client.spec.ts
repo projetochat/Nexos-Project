@@ -5,6 +5,21 @@ import { EvolutionClient } from "./evolution.client";
 describe("EvolutionClient", () => {
   const originalFetch = globalThis.fetch;
 
+  it("limits historical media lookup to the exact provider message and chat", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ messages: { records: [] } }));
+    globalThis.fetch = fetchMock;
+    await new EvolutionClient().findMessages({
+      instanceName: "instance-a",
+      remoteJid: "chat@s.whatsapp.net",
+      messageId: "original-id",
+      page: 1,
+      pageSize: 10,
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.where).toEqual({ key: { remoteJid: "chat@s.whatsapp.net", id: "original-id" } });
+    expect(body.offset).toBe(10);
+  });
+
   beforeEach(() => {
     process.env.EVOLUTION_BASE_URL = "http://evolution.local";
     process.env.EVOLUTION_API_KEY = "test-key";
@@ -314,6 +329,29 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("rejects an invalid group-list envelope instead of treating it as an empty snapshot", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ unexpected: true }));
+
+    await expect(
+      new EvolutionClient().fetchGroups({ instanceName: "instance-a" }),
+    ).rejects.toMatchObject({ code: MessagingErrorCode.INVALID_PROVIDER_PAYLOAD });
+  });
+
+  it("rejects a partially malformed group list", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        response([
+          { id: "120363405324564520@g.us", subject: "Grupo válido" },
+          { subject: "Sem id" },
+        ]),
+      );
+
+    await expect(
+      new EvolutionClient().fetchGroups({ instanceName: "instance-a" }),
+    ).rejects.toMatchObject({ code: MessagingErrorCode.INVALID_PROVIDER_PAYLOAD });
+  });
+
   it("maps detailed group participants from Evolution responses", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       response({
@@ -358,6 +396,114 @@ describe("EvolutionClient", () => {
     });
   });
 
+  it("includes the group creator when Evolution returns the owner outside participants", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      response({
+        id: "120363405324564520@g.us",
+        subject: "Trixus - MELHORIAS",
+        owner: "5562981147652@s.whatsapp.net",
+        participants: [
+          {
+            id: "5562996171414@s.whatsapp.net",
+            name: "FLOWID-LOCALHOST",
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      new EvolutionClient().findGroupInfo({
+        instanceName: "instance-a",
+        groupJid: "120363405324564520@g.us",
+      }),
+    ).resolves.toMatchObject({
+      participants: [
+        expect.objectContaining({
+          externalParticipantId: "5562996171414@s.whatsapp.net",
+          isSuperAdmin: false,
+        }),
+        expect.objectContaining({
+          externalParticipantId: "5562981147652@s.whatsapp.net",
+          phone: "5562981147652",
+          isAdmin: true,
+          isSuperAdmin: true,
+        }),
+      ],
+    });
+  });
+
+  it("marks an owner already present in participants as creator without duplicating it", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      response({
+        id: "120363405324564520@g.us",
+        subject: "Trixus - MELHORIAS",
+        owner: "5562981147652@s.whatsapp.net",
+        participants: [
+          {
+            id: "5562981147652@s.whatsapp.net",
+            name: "Douglas Rezende",
+            admin: "admin",
+          },
+        ],
+      }),
+    );
+
+    const group = await new EvolutionClient().findGroupInfo({
+      instanceName: "instance-a",
+      groupJid: "120363405324564520@g.us",
+    });
+
+    expect(group?.participants).toEqual([
+      expect.objectContaining({
+        externalParticipantId: "5562981147652@s.whatsapp.net",
+        displayName: "Douglas Rezende",
+        isAdmin: true,
+        isSuperAdmin: true,
+      }),
+    ]);
+  });
+
+  it("maps the real LID and phoneNumber shape returned for group participants", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      response({
+        id: "120363428331401226@g.us",
+        subject: "Trixus - MELHORIAS",
+        owner: "186311537357054@lid",
+        participants: [
+          {
+            id: "178215842742477@lid",
+            phoneNumber: "556296171414@s.whatsapp.net",
+            admin: null,
+          },
+          {
+            id: "186311537357054@lid",
+            phoneNumber: "556281147652@s.whatsapp.net",
+            admin: "superadmin",
+          },
+        ],
+      }),
+    );
+
+    const group = await new EvolutionClient().findGroupInfo({
+      instanceName: "instance-a",
+      groupJid: "120363428331401226@g.us",
+    });
+
+    expect(group?.participants).toEqual([
+      expect.objectContaining({
+        externalParticipantId: "178215842742477@lid",
+        phone: "556296171414",
+        isSuperAdmin: false,
+      }),
+      expect.objectContaining({
+        externalParticipantId: "186311537357054@lid",
+        phone: "556281147652",
+        isAdmin: true,
+        isSuperAdmin: true,
+      }),
+    ]);
+  });
+
   it("keeps group descriptions and does not treat LIDs as phone numbers", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       response({
@@ -368,7 +514,7 @@ describe("EvolutionClient", () => {
           {
             id: "123456789012345@lid",
             pushName: "Instância A",
-            admin: "superadmin",
+            admin: "SuperAdmin",
           },
         ],
       }),

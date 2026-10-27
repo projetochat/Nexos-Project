@@ -7,7 +7,8 @@ const instances = readFileSync(new URL("./instancias.tsx", import.meta.url), "ut
 
 describe("consistência das ações e toggles solicitados", () => {
   it("usa nos editores internos de Grupo o mesmo size sm do botão do card", () => {
-    const modalStart = groups.indexOf('title={canManage ? "Editar Grupo"');
+    const modalStart = groups.indexOf('title={canManageGroupParticipants ? "Editar Grupo"');
+    expect(modalStart).toBeGreaterThanOrEqual(0);
     const participantsStart = groups.indexOf("Participantes", modalStart);
     const editorHeader = groups.slice(modalStart, participantsStart);
 

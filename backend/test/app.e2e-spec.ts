@@ -209,7 +209,7 @@ describe("Trixus API organization and RBAC", () => {
         .send({ email, password: "demo1234" })
         .expect(403)
         .expect(({ body }) => {
-          expect(body.code).toBe("USER_WITHOUT_ACTIVE_MEMBERSHIP");
+          expect(body.code).toBe("INTERNAL_ACCESS_DENIED");
         });
     } finally {
       await prisma.user.delete({ where: { email } });
@@ -508,7 +508,7 @@ describe("Trixus API organization and RBAC", () => {
         .send({ email: "admin-orbit@trixus.app", password: "demo1234", tenantSlug: "orbit" })
         .expect(403)
         .expect(({ body }) => {
-          expect(body.code).toBe("USER_WITHOUT_ACTIVE_MEMBERSHIP");
+          expect(body.code).toBe("INTERNAL_ACCESS_DENIED");
         });
 
       await request(app.getHttpServer())
@@ -976,6 +976,12 @@ describe("Trixus API organization and RBAC", () => {
       .expect(201);
 
     const customerId = customerResponse.body.id as string;
+    const customerDepartmentResponse = await request(app.getHttpServer())
+      .post(`/api/crm/customers/${customerId}/departments`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: `Suporte Sprint ${suffix}` })
+      .expect(201);
+    const customerDepartmentId = customerDepartmentResponse.body.id as string;
     const tagResponse = await request(app.getHttpServer())
       .post("/api/tags")
       .set("Authorization", `Bearer ${token}`)
@@ -991,7 +997,7 @@ describe("Trixus API organization and RBAC", () => {
         phone,
         email: `contato-${suffix}@example.com`,
         customerId,
-        departmentName: "Suporte",
+        customerDepartmentId,
         companyRole: "GERENTE",
         instance: "FLOWID",
         tagIds: [tagId],
@@ -1060,7 +1066,7 @@ describe("Trixus API organization and RBAC", () => {
         name: `Contato Restaurado ${suffix}`,
         phone,
         customerId,
-        departmentName: "Suporte",
+        customerDepartmentId,
       })
       .expect(201)
       .expect(({ body }) => {
@@ -1100,6 +1106,12 @@ describe("Trixus API organization and RBAC", () => {
       where: { tenant: { slug: "acme" }, archivedAt: null },
     });
     const phone = uniqueBrazilianMobilePhone();
+    const customerDepartmentResponse = await request(app.getHttpServer())
+      .post(`/api/crm/customers/${customer.id}/departments`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: `Departamento Duplicidade ${Date.now()}` })
+      .expect(201);
+    const customerDepartmentId = customerDepartmentResponse.body.id as string;
 
     await request(app.getHttpServer())
       .post("/api/crm/contacts")
@@ -1114,7 +1126,7 @@ describe("Trixus API organization and RBAC", () => {
         name: "Campo desconhecido",
         phone,
         customerId: customer.id,
-        departmentName: "Suporte",
+        customerDepartmentId,
         unexpected: true,
       })
       .expect(400);
@@ -1126,7 +1138,7 @@ describe("Trixus API organization and RBAC", () => {
         name: "Duplicado A",
         phone,
         customerId: customer.id,
-        departmentName: "Suporte",
+        customerDepartmentId,
       })
       .expect(201);
 
@@ -1137,7 +1149,7 @@ describe("Trixus API organization and RBAC", () => {
         name: "Duplicado B",
         phone,
         customerId: customer.id,
-        departmentName: "Suporte",
+        customerDepartmentId,
       })
       .expect(409)
       .expect(({ body }) => {
@@ -1151,7 +1163,6 @@ describe("Trixus API organization and RBAC", () => {
       .send({
         name: "Mesmo telefone outro tenant",
         phone,
-        departmentName: "Suporte Orbit",
       })
       .expect(201);
   });
@@ -2887,6 +2898,51 @@ describe("Trixus API organization and RBAC", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .expect(200)
       .expect("Content-Disposition", /inline/);
+
+    // Persisted image references survive cloning and deletion of the source attachment.
+    const pngBody = Buffer.from("89504e470d0a1a0a00000000", "hex");
+    const image = await request(app.getHttpServer())
+      .post(`/api/tickets/${created.body.id}/attachments`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Content-Type", "image/png")
+      .set("X-File-Name", "conversation.png")
+      .set("X-File-Size", String(pngBody.length))
+      .send(pngBody)
+      .expect(201);
+    const cloned = await request(app.getHttpServer())
+      .post("/api/tickets")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: `Imagem persistida ${suffix}`,
+        departmentId: department.id,
+        descriptionHtml: `<p>Imagem da conversa</p><img src="/ticket-images/tickets/${created.body.id}/attachments/${image.body.id}">`,
+      })
+      .expect(201);
+    const copiedImage = await prisma.ticketAttachment.findFirstOrThrow({
+      where: { tenantId: department.tenantId, ticketId: cloned.body.id, mimeType: "image/png" },
+    });
+    expect(cloned.body.descriptionHtmlSanitized).toContain(
+      `/ticket-images/tickets/${cloned.body.id}/attachments/${copiedImage.id}`,
+    );
+    expect(cloned.body.descriptionHtmlSanitized).not.toMatch(/data:|blob:/);
+    await request(app.getHttpServer())
+      .delete(`/api/tickets/${created.body.id}/attachments/${image.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${cloned.body.id}/attachments/${copiedImage.id}/inline`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual(pngBody);
+      });
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${cloned.body.id}/attachments/${copiedImage.id}/inline`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${cloned.body.id}/attachments/${copiedImage.id}/inline`)
+      .set("Authorization", `Bearer ${orbitToken}`)
+      .expect(404);
 
     await request(app.getHttpServer())
       .post(`/api/tickets/${created.body.id}/attachments`)

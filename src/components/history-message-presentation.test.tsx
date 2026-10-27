@@ -3,7 +3,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
-import type { ApiMessage } from "@/lib/trixus-api";
+import { messageApi, type ApiMessage } from "@/lib/trixus-api";
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => ({}),
   lazyRouteComponent: () => () => null,
@@ -11,11 +11,13 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("../routes/contatos", () => ({ ContactFormModal: () => null, contactPayload: vi.fn() }));
 vi.mock("@/lib/session", () => ({
+  CUSTOMER_PORTAL_DASHBOARD_PATH: "/portal-cliente/dashboard",
+  CUSTOMER_PORTAL_TICKETS_PATH: "/portal-cliente/chamados",
   useSession: (selector: (state: unknown) => unknown) =>
     selector({ user: { id: "viewer", chatBubbleColor: null, chatBubbleTextColor: null } }),
 }));
 vi.mock("@/lib/trixus-api", () => ({
-  messageApi: { downloadMedia: vi.fn(async () => new Blob(["media"])) },
+  messageApi: { downloadMedia: vi.fn(async () => new Blob(["media"])), recoverMedia: vi.fn() },
 }));
 import { MessageBubble } from "../routes/inbox.$conversationId";
 it("preserves formatting, renders media, positions reactions outside and keeps history read-only", async () => {
@@ -252,9 +254,45 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
     await render({
       ...base,
       type: "document",
-      media_data: { file_name: "relatorio.pdf", state: "ready" },
+      media_data: {
+        file_name: "relatorio.pdf",
+        mime_type: "application/pdf",
+        size: 2048,
+        state: "ready",
+      },
     } as ApiMessage);
     expect(host.textContent).toContain("relatorio.pdf");
+    expect(host.textContent).toContain("2 KB");
+    expect(host.querySelector('[aria-label="Visualizar relatorio.pdf"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Baixar relatorio.pdf"]')).not.toBeNull();
+
+    await render({
+      ...base,
+      type: "document",
+      media_data: {
+        file_name: "documentos.zip",
+        mime_type: "application/zip",
+        state: "ready",
+      },
+    } as ApiMessage);
+    expect(host.querySelector('[aria-label="Visualizar documentos.zip"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Baixar documentos.zip"]')).not.toBeNull();
+
+    await render({
+      ...base,
+      type: "document",
+      media_data: {
+        file_name: "arquivo-antigo.zip",
+        mime_type: "application/zip",
+        state: "failed",
+      },
+    } as ApiMessage);
+    expect(host.textContent).toContain("arquivo-antigo.zip");
+    expect(host.textContent).toContain("Arquivo não armazenado");
+    expect(
+      (host.querySelector('[aria-label="Baixar arquivo-antigo.zip"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
     await render({ ...base, deleted_for_everyone: true });
     const inboundDeleted = host.querySelector('[data-message-id="one"] [data-deleted-message]')!;
     const inboundDeletedContent = inboundDeleted.previousElementSibling!;
@@ -497,6 +535,91 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
     await renderSystemLog("Conversa encerrada via remoção da instância");
     expect(host.querySelector("[data-service-closed-log]")).toBeNull();
     expect(host.textContent).toContain("CONVERSA ENCERRADA VIA REMOÇÃO DA INSTÂNCIA");
+  } finally {
+    await React.act(async () => root.unmount());
+    client.clear();
+    host.remove();
+  }
+});
+
+it("recovers a failed received document only on an explicit click and displays failure", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  const recover = vi.mocked(messageApi.recoverMedia);
+  recover.mockReset();
+  let finish!: (value: { messageId: string; state: "ready"; recovered: boolean }) => void;
+  recover.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const m: ApiMessage = {
+    id: "recover-one",
+    tenantId: "synthetic-tenant",
+    conversation_id: "history",
+    author_id: null,
+    author_membership_id: null,
+    author_name: null,
+    type: "document",
+    direction: "inbound",
+    sender: "contact",
+    content: "",
+    created_at: "2026-10-27T12:00:00Z",
+    updated_at: "2026-10-27T12:00:00Z",
+    read_at: null,
+    status: "delivered",
+    duration_ms: null,
+    reactions: [],
+    media_data: {
+      state: "failed",
+      file_name: "recover.pdf",
+      mime_type: "application/pdf",
+      size: null,
+      caption: null,
+      width: null,
+      height: null,
+      checksum: null,
+    },
+  };
+  try {
+    await React.act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <MessageBubble
+            m={m}
+            agents={[]}
+            galleryImages={[]}
+            contactName="Contato sintético"
+            readOnly
+          />
+        </QueryClientProvider>,
+      );
+    });
+    expect(recover).not.toHaveBeenCalled();
+    const button = host.querySelector('[aria-label="Recuperar recover.pdf"]') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    await React.act(async () => {
+      button.click();
+    });
+    expect(recover).toHaveBeenCalledWith("history", "recover-one");
+    expect(button.disabled).toBe(true);
+    await React.act(async () => {
+      finish({ messageId: "recover-one", state: "ready", recovered: true });
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["trixus", "messages", "history"] });
+    expect(button.disabled).toBe(false);
+    recover.mockRejectedValueOnce(new Error("Arquivo indisponível na origem."));
+    await React.act(async () => {
+      button.click();
+    });
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(
+      "Arquivo indisponível na origem.",
+    );
   } finally {
     await React.act(async () => root.unmount());
     client.clear();

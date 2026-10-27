@@ -78,4 +78,44 @@ describe("ticket rich text editor", () => {
       container.remove();
     }
   });
+
+  it("allows resizing the description and selecting an image to copy or remove", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+    const execCommand = vi.fn(() => true);
+    Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+    try {
+      await act(async () =>
+        root.render(
+          <RichTextEditor
+            value={'<p>Texto</p><img src="data:image/png;base64,AAAA" alt="Captura">'}
+            onChange={onChange}
+            resizable
+            imageActions
+          />,
+        ),
+      );
+      const editor = container.querySelector<HTMLElement>('[role="textbox"]')!;
+      const image = editor.querySelector("img")!;
+      expect(editor.className).toContain("resize-y");
+      expect(editor.className).toContain("ai-prompt-scroll");
+
+      await act(async () => image.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      expect(image.classList.contains("ticket-editor-selected-image")).toBe(true);
+      const copy = container.querySelector<HTMLButtonElement>('[aria-label="Copiar imagem"]')!;
+      await act(async () => copy.click());
+      expect(execCommand).toHaveBeenCalledWith("copy");
+
+      const remove = container.querySelector<HTMLButtonElement>('[aria-label="Remover imagem"]')!;
+      await act(async () => remove.click());
+      expect(editor.querySelector("img")).toBeNull();
+      expect(onChange).toHaveBeenLastCalledWith("<p>Texto</p>");
+    } finally {
+      await act(async () => root.unmount());
+      window.getSelection()?.removeAllRanges();
+      container.remove();
+    }
+  });
 });

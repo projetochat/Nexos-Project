@@ -182,7 +182,7 @@ describe("DeletionConfirmDialog", () => {
     for (const action of [cancel, confirm]) {
       expect(action.className).toContain("h-8");
       expect(action.className).toContain("rounded-lg");
-      expect(action.className).toContain("sm:min-w-20");
+      expect(action.className).toContain("min-w-20");
     }
     expect(cancel.className).toContain("bg-surface-2");
     expect(confirm.className).toContain("bg-destructive");

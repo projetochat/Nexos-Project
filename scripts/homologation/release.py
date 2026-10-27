@@ -4,6 +4,8 @@
 The runner accepts only an immutable three-image archive. Paths, project names,
 URLs and operations are fixed here so a HML release cannot target production.
 """
+import base64
+import binascii
 import copy
 import gzip
 import hashlib
@@ -203,6 +205,18 @@ def _published_port(service, target):
     return published
 
 
+def valid_ai_encryption_key(value):
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    try:
+        decoded = (bytes.fromhex(value) if len(value) == 64
+                   else base64.b64decode(value, validate=True))
+    except (ValueError, binascii.Error):
+        return False
+    return len(decoded) == 32
+
+
 def validate_config(config):
     require(config.get("name") == PROJECT, "Projeto Compose nao e homologacao")
     services = config.get("services", {})
@@ -213,6 +227,15 @@ def validate_config(config):
     migration_url = services["migrate"]["environment"]["DATABASE_URL"]
     require(backend_env.get("DATABASE_URL") == migration_url,
             "Backend e migration apontam para bancos diferentes")
+    require(backend_env.get("TRIXUS_ENVIRONMENT") == "homologation",
+            "Ambiente do backend deve ser homologation")
+    for name in ("FRONTEND_ORIGIN", "TRIXUS_REALTIME_CORS_ORIGIN",
+                 "TRIXUS_PLATFORM_APP_URL", "TRIXUS_TENANT_APP_URL",
+                 "TRIXUS_PUBLIC_APP_URL"):
+        require(backend_env.get(name) == "https://hom.trixus.com.br",
+                name + " deve usar hom.trixus.com.br")
+    require(valid_ai_encryption_key(backend_env.get("AI_CREDENTIALS_ENCRYPTION_KEY")),
+            "Chave de criptografia de IA ausente ou invalida")
     url = urlparse(migration_url)
     require(url.scheme in ("postgres", "postgresql") and url.hostname == "postgres"
             and url.port in (None, 5432), "Banco principal externo ao projeto HML")

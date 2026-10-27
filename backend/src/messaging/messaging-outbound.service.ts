@@ -500,6 +500,9 @@ export class MessagingOutboundService {
         contact: {
           include: {
             customer: { select: { tenantId: true, name: true, archivedAt: true } },
+            customerDepartment: {
+              select: { tenantId: true, name: true, active: true, archivedAt: true },
+            },
             contactDepartment: {
               select: { tenantId: true, name: true, archivedAt: true },
             },
@@ -552,10 +555,13 @@ export class MessagingOutboundService {
         email: conversation.contact.email,
         instance: conversation.connection.name,
         department:
-          conversation.contact.contactDepartment?.tenantId === input.tenantId &&
-          !conversation.contact.contactDepartment.archivedAt
-            ? conversation.contact.contactDepartment.name
-            : conversation.contact.departmentName,
+          conversation.contact.customerDepartment?.tenantId === input.tenantId &&
+          !conversation.contact.customerDepartment.archivedAt
+            ? conversation.contact.customerDepartment.name
+            : conversation.contact.contactDepartment?.tenantId === input.tenantId &&
+                !conversation.contact.contactDepartment.archivedAt
+              ? conversation.contact.contactDepartment.name
+              : conversation.contact.departmentName,
         customer:
           conversation.contact.customer?.tenantId === input.tenantId &&
           !conversation.contact.customer.archivedAt
@@ -1624,6 +1630,9 @@ export class MessagingOutboundService {
             email: true,
             departmentName: true,
             customer: { select: { tenantId: true, name: true, archivedAt: true } },
+            customerDepartment: {
+              select: { tenantId: true, name: true, active: true, archivedAt: true },
+            },
             contactDepartment: {
               select: { tenantId: true, name: true, archivedAt: true },
             },
@@ -1656,10 +1665,13 @@ export class MessagingOutboundService {
         email: conversation.contact.email,
         instance: conversation.connection?.name,
         department:
-          conversation.contact.contactDepartment?.tenantId === tenantId &&
-          !conversation.contact.contactDepartment.archivedAt
-            ? conversation.contact.contactDepartment.name
-            : (conversation.department?.name ?? conversation.contact.departmentName),
+          conversation.contact.customerDepartment?.tenantId === tenantId &&
+          !conversation.contact.customerDepartment.archivedAt
+            ? conversation.contact.customerDepartment.name
+            : conversation.contact.contactDepartment?.tenantId === tenantId &&
+                !conversation.contact.contactDepartment.archivedAt
+              ? conversation.contact.contactDepartment.name
+              : conversation.contact.departmentName,
         customer:
           conversation.contact.customer?.tenantId === tenantId &&
           !conversation.contact.customer.archivedAt
@@ -1915,7 +1927,16 @@ export class MessagingOutboundService {
             inline_url: `/conversations/${message.conversationId}/messages/${message.id}/media/inline`,
           }
         : message.mediaState
-          ? { state: message.mediaState.toLowerCase() }
+          ? {
+              state: message.mediaState.toLowerCase(),
+              mime_type: message.mediaMimeType,
+              file_name: message.mediaFileName,
+              size: message.mediaSize,
+              caption: message.mediaCaption,
+              width: message.mediaWidth,
+              height: message.mediaHeight,
+              checksum: message.mediaChecksum,
+            }
           : null,
       duration_ms: message.mediaDurationMs,
       reactions: (message.reactions ?? [])
