@@ -126,6 +126,7 @@ describe("MessagingInboundService", () => {
         { requireMediaReady: true, suppressAutomaticReply: true },
       ),
     ).rejects.toThrow("isolated storage failure");
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 120000 });
     expect(committed).not.toHaveBeenCalled();
     expect(prisma.message.create).not.toHaveBeenCalled();
     expect(prisma.conversation.update).not.toHaveBeenCalled();
@@ -192,10 +193,15 @@ describe("MessagingInboundService", () => {
       const existing = {
         id: "message-existing",
         conversationId: "conversation-a",
+        connectionId: "connection-a",
+        externalMessageId: "retained-contact",
+        direction: MessageDirection.INBOUND,
+        type: MessageType.DOCUMENT,
         mediaStorageKey: null,
         mediaState,
       };
       prisma.message.findFirst.mockResolvedValue(existing);
+      prisma.conversation.findFirst.mockResolvedValue(conversation());
       const stored = {
         objectKey: "isolated/contact.vcf",
         mimeType: "text/vcard",
@@ -209,7 +215,10 @@ describe("MessagingInboundService", () => {
         mediaStorageKey: stored.objectKey,
         mediaState: "READY",
       });
-      const realtime = { publishConversationUpdated: vi.fn(), publishMessageCreated: vi.fn() };
+      const realtime = {
+        publishConversationUpdated: vi.fn(),
+        publishMessageCreated: vi.fn(),
+      };
       const outbound = { send: vi.fn() };
       const service = new MessagingInboundService(
         prisma as never,
@@ -222,7 +231,10 @@ describe("MessagingInboundService", () => {
       expect(result.duplicate).toBe(true);
       expect(prisma.message.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ mediaState: "READY", mediaStorageKey: stored.objectKey }),
+          data: expect.objectContaining({
+            mediaState: "READY",
+            mediaStorageKey: stored.objectKey,
+          }),
         }),
       );
       expect(prisma.message.create).not.toHaveBeenCalled();
@@ -242,16 +254,78 @@ describe("MessagingInboundService", () => {
     },
   );
 
+  it.each([
+    { fromMe: true, providerId: "retained-contact", recovered: true },
+    { fromMe: true, providerId: "foreign-provider", recovered: false },
+    { fromMe: false, providerId: "retained-contact", recovered: false },
+  ])(
+    "revalidates legacy provider identity for media %j",
+    async ({ fromMe, providerId, recovered }) => {
+      const prisma = prismaMock();
+      prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+      prisma.conversation.findFirst.mockResolvedValue(conversation());
+      const existing = {
+        id: "message-existing",
+        tenantId: "tenant-a",
+        conversationId: "conversation-a",
+        connectionId: "connection-a",
+        externalMessageId: null,
+        providerMessageId: providerId,
+        providerChatId: "5511987654321@s.whatsapp.net",
+        type: MessageType.DOCUMENT,
+        direction: fromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
+        mediaState: "PENDING",
+        mediaStorageKey: null,
+      };
+      // Deliberately return this row from admission even for the mismatched cases,
+      // proving that phase two independently rejects a stale/wrong identity.
+      prisma.message.findFirst.mockResolvedValue(existing);
+      prisma.message.update.mockImplementation(async ({ data }) => ({
+        ...existing,
+        ...data,
+      }));
+      const storage = {
+        storeDownloaded: vi.fn().mockResolvedValue({
+          objectKey: "isolated/legacy.pdf",
+          mimeType: "application/pdf",
+          fileName: "legacy.pdf",
+          sizeBytes: 32,
+          checksum: "checksum",
+        }),
+      };
+      const realtime = {
+        publishConversationUpdated: vi.fn(),
+        publishMessageCreated: vi.fn(),
+      };
+      const result = await new MessagingInboundService(
+        prisma as never,
+        storage as never,
+        realtime as never,
+      ).process({ ...retainedContact(), fromMe }, { suppressAutomaticReply: true });
+      expect(result.duplicate).toBe(true);
+      expect(result.message.mediaState).toBe(recovered ? "READY" : "PENDING");
+      expect(storage.storeDownloaded).toHaveBeenCalledTimes(recovered ? 1 : 0);
+      expect(prisma.message.create).not.toHaveBeenCalled();
+      expect(prisma.conversation.update).not.toHaveBeenCalled();
+      expect(realtime.publishMessageCreated).not.toHaveBeenCalled();
+    },
+  );
+
   it("preserves an ordinary duplicate when recovery storage fails without retrying storage", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
     const existing = {
       id: "message-existing",
       conversationId: "conversation-a",
+      connectionId: "connection-a",
+      externalMessageId: "retained-contact",
+      direction: MessageDirection.INBOUND,
+      type: MessageType.DOCUMENT,
       mediaStorageKey: null,
       mediaState: "FAILED",
     };
     prisma.message.findFirst.mockResolvedValue(existing);
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
     const storeDownloaded = vi
       .fn()
       .mockRejectedValue(Object.assign(new Error("storage unavailable"), { code: "ECONNRESET" }));
@@ -324,6 +398,51 @@ describe("MessagingInboundService", () => {
     ).toBe(true);
     expect(storeDownloaded).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "preserves bytes after an ambiguous phase-two commit (lookupEmpty=%s)",
+    async (lookupEmpty) => {
+      const prisma = prismaMock();
+      prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+      prisma.contact.findFirst.mockResolvedValue(contact());
+      prisma.contact.update.mockResolvedValue(contact());
+      prisma.conversation.findFirst.mockResolvedValue(conversation());
+      prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
+      configurePersistedMedia(prisma);
+      prisma.$transaction.mockImplementation(async (callback, options) => {
+        const value = await callback(prisma);
+        if (options?.timeout === 120000) {
+          if (lookupEmpty) prisma.message.findFirst.mockResolvedValue(null);
+          throw new Error("synthetic commit acknowledgement lost");
+        }
+        return value;
+      });
+      const storage = {
+        storeDownloaded: vi.fn().mockResolvedValue({
+          objectKey: "isolated/committed.pdf",
+          mimeType: "application/pdf",
+          fileName: "committed.pdf",
+          sizeBytes: 32,
+          checksum: "checksum",
+        }),
+        deleteObject: vi.fn(),
+      };
+      const realtime = {
+        publishMessageCreated: vi.fn(),
+        publishConversationUpdated: vi.fn(),
+        publishUnreadUpdated: vi.fn(),
+      };
+      const result = await new MessagingInboundService(
+        prisma as never,
+        storage as never,
+        realtime as never,
+      ).process(retainedContact(), { suppressAutomaticReply: true });
+      if (!lookupEmpty) expect(result.message.mediaState).toBe("READY");
+      expect(storage.deleteObject).not.toHaveBeenCalled();
+      expect(realtime.publishMessageCreated).toHaveBeenCalledOnce();
+      expect(prisma.message.updateMany).not.toHaveBeenCalled();
+    },
+  );
 
   it("queues the configured welcome message when a direct conversation starts", async () => {
     const prisma = prismaMock();
@@ -1672,14 +1791,11 @@ describe("MessagingInboundService", () => {
   it("downloads inbound media through Evolution before falling back to encrypted provider URLs", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
-    prisma.message.findFirst.mockResolvedValue(null);
+    configurePersistedMedia(prisma);
     prisma.contact.findFirst.mockResolvedValue(contact());
     prisma.contact.update.mockResolvedValue(contact());
     prisma.conversation.findFirst.mockResolvedValue(conversation());
-    prisma.message.create.mockResolvedValue({
-      id: "message-media",
-      conversationId: "conversation-a",
-    });
+
     prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
     const mediaStorage = {
       storeDownloaded: vi.fn().mockResolvedValue({
@@ -1730,23 +1846,32 @@ describe("MessagingInboundService", () => {
     expect(fetchSpy).not.toHaveBeenCalledWith("https://mmg.whatsapp.net/v/media.enc");
     expect(prisma.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
+        mediaStorageKey: null,
+        mediaState: "PENDING",
+      }),
+    });
+    expect(prisma.message.update).toHaveBeenCalledWith({
+      where: { tenantId_id: { tenantId: "tenant-a", id: "message-media" } },
+      data: expect.objectContaining({
         mediaStorageKey: "tenants/t/messages/media.jpg",
+        mediaMimeType: "image/jpeg",
         mediaState: "READY",
       }),
+    });
+    expect(prisma.$transaction).toHaveBeenNthCalledWith(1, expect.any(Function), undefined);
+    expect(prisma.$transaction).toHaveBeenNthCalledWith(2, expect.any(Function), {
+      timeout: 120000,
     });
   });
 
   it("accepts downloaded WhatsApp voice audio with opus codec MIME parameters", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
-    prisma.message.findFirst.mockResolvedValue(null);
+    configurePersistedMedia(prisma);
     prisma.contact.findFirst.mockResolvedValue(contact());
     prisma.contact.update.mockResolvedValue(contact());
     prisma.conversation.findFirst.mockResolvedValue(conversation());
-    prisma.message.create.mockResolvedValue({
-      id: "message-audio",
-      conversationId: "conversation-a",
-    });
+
     prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
     const mediaStorage = {
       storeDownloaded: vi.fn().mockImplementation(async (input) => ({
@@ -1790,10 +1915,22 @@ describe("MessagingInboundService", () => {
     expect(prisma.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         type: MessageType.VOICE,
+        mediaStorageKey: null,
+        mediaMimeType: "audio/ogg; codecs=opus",
+        mediaState: "PENDING",
+      }),
+    });
+    expect(prisma.message.update).toHaveBeenCalledWith({
+      where: { tenantId_id: { tenantId: "tenant-a", id: "message-media" } },
+      data: expect.objectContaining({
         mediaStorageKey: "tenants/t/messages/audio.oga",
         mediaMimeType: "audio/ogg",
         mediaState: "READY",
       }),
+    });
+    expect(prisma.$transaction).toHaveBeenNthCalledWith(1, expect.any(Function), undefined);
+    expect(prisma.$transaction).toHaveBeenNthCalledWith(2, expect.any(Function), {
+      timeout: 120000,
     });
   });
 });
@@ -1910,6 +2047,19 @@ function prismaMock() {
     $transaction: vi.fn(async (callback) => callback(prisma)),
   };
   return prisma;
+}
+
+function configurePersistedMedia(prisma: ReturnType<typeof prismaMock>) {
+  let persisted: Record<string, unknown> | null = null;
+  prisma.message.findFirst.mockImplementation(async () => persisted);
+  prisma.message.create.mockImplementation(async ({ data }) => {
+    persisted = { ...data, id: "message-media" };
+    return persisted;
+  });
+  prisma.message.update.mockImplementation(async ({ data }) => {
+    persisted = { ...persisted, ...data };
+    return persisted;
+  });
 }
 
 function retainedContact() {

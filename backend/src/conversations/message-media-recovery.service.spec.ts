@@ -274,15 +274,23 @@ describe("MessageMediaRecoveryService", () => {
     expect(f.storage.deleteObject).toHaveBeenCalledWith("new-object");
   });
 
-  it("preserves new bytes if an ambiguous commit may have referenced them", async () => {
-    const f = fixture();
-    f.prisma.$transaction.mockImplementation(async (callback) => {
-      await callback(f.prisma);
-      throw new Error("commit result unknown");
-    });
-    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
-      "commit result unknown",
-    );
-    expect(f.storage.deleteObject).not.toHaveBeenCalled();
-  });
+  it.each(["referenced", "empty", "unavailable"])(
+    "preserves bytes after an ambiguous commit regardless of fresh lookup: %s",
+    async (lookup) => {
+      const f = fixture();
+      f.prisma.message.findFirst.mockResolvedValueOnce(f.message).mockResolvedValueOnce(f.message);
+      if (lookup === "empty") f.prisma.message.findFirst.mockResolvedValue(null);
+      if (lookup === "unavailable")
+        f.prisma.message.findFirst.mockRejectedValue(new Error("lookup unavailable"));
+      f.prisma.$transaction.mockImplementation(async (callback) => {
+        await callback(f.prisma);
+        throw new Error("commit result unknown");
+      });
+      await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+        "commit result unknown",
+      );
+      expect(f.prisma.message.findFirst).toHaveBeenCalledTimes(2);
+      expect(f.storage.deleteObject).not.toHaveBeenCalled();
+    },
+  );
 });

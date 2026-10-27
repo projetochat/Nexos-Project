@@ -69,13 +69,29 @@ export class MessagingInboundService {
     const groupContactIdentity = `group:${event.externalChatId}`;
     const canonicalPhone = isGroup ? groupContactIdentity : normalizedPhoneCandidates[0];
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const strictObjects: string[] = [];
+    const acquireStrictMedia = async (
+      ...args: Parameters<MessagingInboundService["downloadInboundMedia"]>
+    ) => {
+      const stored = await this.downloadInboundMedia(...args);
+      if (stored) strictObjects.push(stored.objectKey);
+      return stored;
+    };
+    let strictCallbackCompleted = false;
+    const persistMessage = async (tx: Prisma.TransactionClient) => {
       await lockMessagingServiceState(tx, event.tenantId, event.connectionId);
       const connection = await tx.messagingConnection.findFirst({
         where: { id: event.connectionId, tenantId: event.tenantId },
       });
       if (!connection) throw new Error("Messaging connection not found for tenant.");
       if (connection.serviceEnabled === false) throw new MessagingServicePausedError();
+      // Persisted duplicates need no writes in admission; media acquires its own identity lock.
+      if (!options.requireMediaReady && event.media) {
+        const persisted = await tx.message.findFirst({
+          where: this.duplicateWhere(event, connection),
+        });
+        if (persisted) return { message: persisted, duplicate: true };
+      }
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${this.duplicateLockKey(
         event,
         connection,
@@ -96,6 +112,7 @@ export class MessagingInboundService {
           !Array.isArray(duplicateData) &&
           duplicateData.deletedForEveryone === true;
         if (
+          options.requireMediaReady &&
           !deletedForEveryone &&
           event.media &&
           ((options.requireMediaReady &&
@@ -103,7 +120,7 @@ export class MessagingInboundService {
             duplicate.mediaState === MessageMediaState.FAILED ||
             duplicate.mediaState === MessageMediaState.PENDING)
         ) {
-          const stored = await this.downloadInboundMedia(
+          const stored = await acquireStrictMedia(
             event,
             duplicate.conversationId,
             event.metadata?.providerInstanceName ?? connection.externalReference,
@@ -133,6 +150,7 @@ export class MessagingInboundService {
               mediaState: MessageMediaState.READY,
             },
           });
+          strictCallbackCompleted = true;
           return { message: repaired, duplicate: true, mediaRepaired: true };
         }
         return { message: duplicate, duplicate: true };
@@ -258,21 +276,23 @@ export class MessagingInboundService {
           },
         });
       }
-      const downloadedMedia = await this.downloadInboundMedia(
-        event,
-        conversation.id,
-        event.metadata?.providerInstanceName ?? connection.externalReference,
-      ).catch((error) => {
-        if (options.requireMediaReady) throw error;
-        this.logger.warn({
-          event: "messaging.media.inbound_download_failed",
-          tenantId: event.tenantId,
-          connectionId: event.connectionId,
-          externalMessageId: event.externalMessageId,
-          error: error instanceof Error ? error.message : "download failed",
-        });
-        return null;
-      });
+      const downloadedMedia = options.requireMediaReady
+        ? await acquireStrictMedia(
+            event,
+            conversation.id,
+            event.metadata?.providerInstanceName ?? connection.externalReference,
+          ).catch((error) => {
+            if (options.requireMediaReady) throw error;
+            this.logger.warn({
+              event: "messaging.media.inbound_download_failed",
+              tenantId: event.tenantId,
+              connectionId: event.connectionId,
+              externalMessageId: event.externalMessageId,
+              error: error instanceof Error ? error.message : "download failed",
+            });
+            return null;
+          })
+        : null;
       if (options.requireMediaReady && event.media && !downloadedMedia) {
         throw new Error("Mídia retida ainda não disponível para importação.");
       }
@@ -366,7 +386,10 @@ export class MessagingInboundService {
           mediaSha256: event.media?.sha256 ?? downloadedMedia?.checksum ?? null,
           mediaDurationMs: event.media?.durationMs ?? null,
           mediaProviderUrl: event.media?.url ?? null,
-          mediaState: resolveInboundMediaState(event, downloadedMedia),
+          mediaState:
+            !options.requireMediaReady && event.media
+              ? MessageMediaState.PENDING
+              : resolveInboundMediaState(event, downloadedMedia),
           providerStatus: event.fromMe ? "outbound_synced" : "inbound_received",
           createdAt: timelineAt,
         },
@@ -546,6 +569,7 @@ export class MessagingInboundService {
               },
             })) > 0
           : false;
+      strictCallbackCompleted = true;
       return {
         message,
         duplicate: false,
@@ -566,9 +590,42 @@ export class MessagingInboundService {
         automaticReply: reply,
         contactNameUpdated,
       };
-    });
+    };
+    let result = await this.prisma
+      .$transaction(persistMessage, options.requireMediaReady ? { timeout: 120000 } : undefined)
+      .catch(async (error: unknown) => {
+        if (!strictCallbackCompleted)
+          await this.cleanupUnreferencedMedia(event.tenantId, strictObjects);
+        throw error;
+      });
 
-    if ("mediaRepaired" in result && result.mediaRepaired) {
+    let persistedMediaRepaired = false;
+    if (!options.requireMediaReady && event.media) {
+      try {
+        const repaired = await this.acquirePersistedMedia(event, result.message.id);
+        if (repaired) {
+          result = { ...result, message: repaired.message };
+          persistedMediaRepaired = result.duplicate && repaired.repaired;
+        }
+      } catch {
+        // Preserve the committed message and its notifications when acquisition fails.
+        this.logger.warn({
+          event: "messaging.media.persisted_acquisition_failed",
+          tenantId: event.tenantId,
+          connectionId: event.connectionId,
+        });
+        try {
+          const persisted = await this.prisma.message.findFirst({
+            where: { tenantId: event.tenantId, id: result.message.id },
+          });
+          if (persisted) result = { ...result, message: persisted };
+        } catch {
+          /* Preserve initial notifications even when reloading media state fails. */
+        }
+      }
+    }
+
+    if (persistedMediaRepaired || ("mediaRepaired" in result && result.mediaRepaired)) {
       this.realtime?.publishConversationUpdated({
         tenantId: event.tenantId,
         conversationId: result.message.conversationId,
@@ -1131,6 +1188,123 @@ export class MessagingInboundService {
         error: error instanceof Error ? error.message : "group lookup failed",
       });
       return null;
+    }
+  }
+
+  private async cleanupUnreferencedMedia(tenantId: string, keys: string[]) {
+    for (const mediaStorageKey of keys) {
+      try {
+        const referenced = await this.prisma.message.findFirst({
+          where: { tenantId, mediaStorageKey },
+          select: { id: true },
+        });
+        if (!referenced) await this.mediaStorage?.deleteObject(mediaStorageKey);
+      } catch {
+        // A failed commit response can be ambiguous: preserve bytes unless proven unreferenced.
+      }
+    }
+  }
+
+  private async acquirePersistedMedia(event: InboundMessageEvent, messageId: string) {
+    const objects: string[] = [];
+    let acquisitionAttempted = false;
+    let callbackCompleted = false;
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          await lockMessagingServiceState(tx, event.tenantId, event.connectionId);
+          const connection = await tx.messagingConnection.findFirst({
+            where: {
+              id: event.connectionId,
+              tenantId: event.tenantId,
+              archivedAt: null,
+            },
+          });
+          if (!connection) return null;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${this.duplicateLockKey(event, connection)}, 0))`;
+          const original = await tx.message.findFirst({
+            where: { tenantId: event.tenantId, id: messageId },
+          });
+          if (!original) return null;
+          await tx.$queryRaw`SELECT id FROM "conversations" WHERE id = ${original.conversationId} AND "tenantId" = ${event.tenantId} FOR SHARE`;
+          await tx.$queryRaw`SELECT id FROM "messages" WHERE id = ${messageId} AND "tenantId" = ${event.tenantId} FOR UPDATE`;
+          const message = await tx.message.findFirst({
+            where: { tenantId: event.tenantId, id: messageId },
+          });
+          const conversation = await tx.conversation.findFirst({
+            where: {
+              tenantId: event.tenantId,
+              id: original.conversationId,
+              archivedAt: null,
+            },
+          });
+          const data = message?.interactiveData;
+          if (
+            !message ||
+            !conversation ||
+            message.connectionId !== event.connectionId ||
+            conversation.connectionId !== event.connectionId ||
+            message.type !== event.type ||
+            message.direction !==
+              (event.fromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND) ||
+            !(
+              message.externalMessageId === event.externalMessageId ||
+              (event.fromMe && message.providerMessageId === event.externalMessageId)
+            ) ||
+            (message.providerChatId && message.providerChatId !== event.externalChatId) ||
+            (conversation.externalChatId && conversation.externalChatId !== event.externalChatId) ||
+            (data &&
+              typeof data === "object" &&
+              !Array.isArray(data) &&
+              data.deletedForEveryone === true)
+          )
+            return null;
+          if (message.mediaStorageKey && message.mediaState === MessageMediaState.READY)
+            return { message, repaired: false };
+          acquisitionAttempted = true;
+          const stored = await this.downloadInboundMedia(
+            event,
+            message.conversationId,
+            event.metadata?.providerInstanceName ?? connection.externalReference,
+          );
+          if (!stored) return null;
+          objects.push(stored.objectKey);
+          const repaired = await tx.message.update({
+            where: { tenantId_id: { tenantId: event.tenantId, id: messageId } },
+            data: {
+              mediaStorageKey: stored.objectKey,
+              mediaMimeType: stored.mimeType,
+              mediaFileName: stored.fileName,
+              mediaSize: stored.sizeBytes,
+              mediaChecksum: stored.checksum,
+              mediaState: MessageMediaState.READY,
+            },
+          });
+          callbackCompleted = true;
+          return { message: repaired, repaired: true };
+        },
+        { timeout: 120000 },
+      );
+    } catch (error) {
+      if (!callbackCompleted) await this.cleanupUnreferencedMedia(event.tenantId, objects);
+      if (!callbackCompleted && acquisitionAttempted) {
+        try {
+          await this.prisma.message.updateMany({
+            where: {
+              tenantId: event.tenantId,
+              id: messageId,
+              mediaStorageKey: null,
+              mediaState: {
+                in: [MessageMediaState.PENDING, MessageMediaState.FAILED],
+              },
+            },
+            data: { mediaState: MessageMediaState.FAILED },
+          });
+        } catch {
+          /* Keep the recoverable message if the database is unavailable. */
+        }
+      }
+      throw error;
     }
   }
 

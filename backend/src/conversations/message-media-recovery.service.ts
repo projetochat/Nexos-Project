@@ -32,6 +32,7 @@ export class MessageMediaRecoveryService {
 
   async recover(conversationId: string, messageId: string, current: AuthenticatedUser) {
     let newObjectKey: string | undefined;
+    let callbackCompleted = false;
     try {
       return await this.prisma.$transaction(
         async (tx) => {
@@ -164,13 +165,16 @@ export class MessageMediaRecoveryService {
               mediaState: MessageMediaState.READY,
             },
           });
+          callbackCompleted = true;
           return { messageId, state: "ready" as const, recovered: true };
         },
         { timeout: 120000 },
       );
     } catch (error) {
-      if (newObjectKey) {
-        // A failed commit response can be ambiguous. Never delete bytes referenced by a committed row.
+      if (newObjectKey && !callbackCompleted) {
+        // A completed callback followed by a transaction error has an ambiguous commit.
+        // A fresh lookup can still be empty while that commit is in flight; preserve its bytes.
+        // Only callback failures permit conservative cleanup after checking references.
         try {
           const referenced = await this.prisma.message.findFirst({
             where: { tenantId: current.tenantId, mediaStorageKey: newObjectKey },
