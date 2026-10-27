@@ -31,7 +31,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/src/config/environment.spec.ts",
-    "02601269a96aca1bd20d5ae6a3335f3e2fdaa002a4ba312348e18e0d1224dd73",
+    "bb4802cf682df144dff1762787c2affd2e83a5d46bc230571cd80b9ed0b8917d",
   ],
   [
     "backend/src/homologation/reset-safety.spec.ts",
