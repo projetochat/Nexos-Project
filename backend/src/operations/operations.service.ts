@@ -961,7 +961,8 @@ function validateDashboardConfiguration(value: unknown) {
   if (candidate.version !== 2 || !Array.isArray(candidate.components)) {
     throw new BadRequestException("Versão da configuração do dashboard inválida.");
   }
-  const nativeRevision = candidate.nativeRevision === undefined ? 1 : Number(candidate.nativeRevision);
+  const nativeRevision =
+    candidate.nativeRevision === undefined ? 1 : Number(candidate.nativeRevision);
   if (!Number.isInteger(nativeRevision) || nativeRevision < 1 || nativeRevision > 4) {
     throw new BadRequestException("Revisão da configuração do dashboard inválida.");
   }

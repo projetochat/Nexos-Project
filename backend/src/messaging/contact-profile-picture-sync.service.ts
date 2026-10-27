@@ -73,11 +73,7 @@ export class ContactProfilePictureSyncService {
           ? {
               id: contact.id,
               tenantId: input.tenantId,
-              OR: [
-                { avatarUrl: null },
-                { avatarUrl: "" },
-                { avatarUrl: { not: avatarUrl } },
-              ],
+              OR: [{ avatarUrl: null }, { avatarUrl: "" }, { avatarUrl: { not: avatarUrl } }],
             }
           : {
               id: contact.id,
@@ -118,10 +114,7 @@ export class ContactProfilePictureSyncService {
     this.scheduleDrain();
   }
 
-  enqueuePlaceholderNames(input: {
-    tenantId: string;
-    contacts: ContactProfilePictureTarget[];
-  }) {
+  enqueuePlaceholderNames(input: { tenantId: string; contacts: ContactProfilePictureTarget[] }) {
     const now = Date.now();
     const targets = uniqueContacts(input.contacts)
       .filter((contact) => isPlaceholderContactName(contact))
@@ -166,10 +159,7 @@ export class ContactProfilePictureSyncService {
         if (!item) break;
         this.queuedContactIds.delete(item.contact.id);
         this.recentAttempts.set(item.contact.id, Date.now());
-        await this.syncContacts(
-          { tenantId: item.tenantId, contacts: [item.contact] },
-          true,
-        );
+        await this.syncContacts({ tenantId: item.tenantId, contacts: [item.contact] }, true);
       }
     } catch (error) {
       this.logger.warn(
@@ -211,7 +201,9 @@ export class ContactProfilePictureSyncService {
         const providerNames = providerContactNamesByIdentity(providerContacts);
 
         for (const entry of entries) {
-          const name = contactIdentityKeys(entry.contact).map((key) => providerNames.get(key)).find(Boolean);
+          const name = contactIdentityKeys(entry.contact)
+            .map((key) => providerNames.get(key))
+            .find(Boolean);
           if (!name) continue;
           const updated = await this.prisma.contact.updateMany({
             where: {

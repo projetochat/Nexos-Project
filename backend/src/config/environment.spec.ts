@@ -34,10 +34,12 @@ describe("production environment validation", () => {
 
   it("requires a 32-byte AI credential encryption key without echoing its value", () => {
     const leaked = "too-short-ai-secret";
-    expect(() => validateEnvironment({
-      ...validProductionEnvironment,
-      AI_CREDENTIALS_ENCRYPTION_KEY: leaked,
-    })).toThrow(/AI_CREDENTIALS_ENCRYPTION_KEY must encode exactly 32 bytes/);
+    expect(() =>
+      validateEnvironment({
+        ...validProductionEnvironment,
+        AI_CREDENTIALS_ENCRYPTION_KEY: leaked,
+      }),
+    ).toThrow(/AI_CREDENTIALS_ENCRYPTION_KEY must encode exactly 32 bytes/);
     try {
       validateEnvironment({ ...validProductionEnvironment, AI_CREDENTIALS_ENCRYPTION_KEY: leaked });
     } catch (error) {
@@ -55,8 +57,7 @@ describe("production environment validation", () => {
         TRIXUS_PLATFORM_APP_URL: "https://hom.trixus.com.br",
         TRIXUS_TENANT_APP_URL: "https://hom.trixus.com.br",
         TRIXUS_PUBLIC_APP_URL: "https://hom.trixus.com.br",
-        EVOLUTION_WEBHOOK_PUBLIC_URL:
-          "https://api-hom.trixus.com.br/api/webhooks/evolution",
+        EVOLUTION_WEBHOOK_PUBLIC_URL: "https://api-hom.trixus.com.br/api/webhooks/evolution",
       }),
     ).toMatchObject({ TRIXUS_ENVIRONMENT: "homologation" });
   });

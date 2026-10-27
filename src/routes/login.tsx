@@ -343,7 +343,9 @@ function LoginPage() {
                   type="button"
                   onClick={() => setShowPasswordConfirmation((value) => !value)}
                   className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-600 transition hover:bg-blue-50 hover:text-[#071535]"
-                  aria-label={showPasswordConfirmation ? "Ocultar confirmação" : "Mostrar confirmação"}
+                  aria-label={
+                    showPasswordConfirmation ? "Ocultar confirmação" : "Mostrar confirmação"
+                  }
                 >
                   {showPasswordConfirmation ? (
                     <EyeOff className="h-5 w-5" />

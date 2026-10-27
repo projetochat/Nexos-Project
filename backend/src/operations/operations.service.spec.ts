@@ -45,9 +45,11 @@ describe("tenant dashboard configuration", () => {
 
   it("migrates the native requester ranking to a one-column list only for old configurations", async () => {
     const prisma = {
-      $queryRaw: vi.fn().mockResolvedValue([
-        { configuration: null, updatedAt: new Date("2026-10-23T00:00:00.000Z") },
-      ]),
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValue([
+          { configuration: null, updatedAt: new Date("2026-10-23T00:00:00.000Z") },
+        ]),
     };
     const service = new OperationsService(prisma as never, {} as never);
     const ranking = {

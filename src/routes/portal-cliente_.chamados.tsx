@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  ChamadosPage,
-  validateTicketSearch,
-} from "./chamados";
+import { ChamadosPage } from "./chamados";
+import { validateTicketSearch } from "@/lib/ticket-search";
 
 export const Route = createFileRoute("/portal-cliente_/chamados")({
   validateSearch: validateTicketSearch,

@@ -31,8 +31,12 @@ describe("fluxos obrigatórios após autenticação", () => {
   });
 
   it("aplica ao convite do Portal do Cliente a referência visual de ativação", () => {
-    expect(source).toContain('const isCustomerPortalInvitation = Boolean(invitationPreview?.contact) || String(portal) === "1"');
-    expect(source).toContain('className="relative flex min-h-dvh items-center justify-center overflow-x-hidden bg-white');
+    expect(source).toContain(
+      'const isCustomerPortalInvitation = Boolean(invitationPreview?.contact) || String(portal) === "1"',
+    );
+    expect(source).toContain(
+      'className="relative flex min-h-dvh items-center justify-center overflow-x-hidden bg-white',
+    );
     expect(source).toContain('src="/trixus-logo.png"');
     expect(source).toContain("Ativar meu acesso");
     expect(source).toContain('label: "Departamento"');

@@ -22,14 +22,10 @@ describe("Grade de Chamados", () => {
     expect(source).toContain("tickets.data?.totalPages ?? page");
     expect(source).toContain("page,\n    pageSize,");
     expect(source).toContain('viewMode === "cards"');
-    expect(source).toContain(
-      'className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"',
-    );
-    expect(source).toContain(
-      'className="mt-3 overflow-hidden rounded-xl border border-border"',
-    );
+    expect(source).toContain('className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"');
+    expect(source).toContain('className="mt-3 overflow-hidden rounded-xl border border-border"');
     expect(source).not.toContain("Ordenar por");
-    expect(source).not.toContain('text-muted-foreground md:hidden');
+    expect(source).not.toContain("text-muted-foreground md:hidden");
     expect(source).not.toContain("chamados encontrados");
   });
 
@@ -53,9 +49,7 @@ describe("Grade de Chamados", () => {
     expect(source).toContain('<th className="w-32 px-3 py-3">ID</th>');
     expect(source).toContain('<th className="w-[260px] px-3 py-3">Título</th>');
     expect(source).toContain('<th className="w-16 px-3 py-3 text-center">Ações</th>');
-    expect(source).toContain(
-      '<td className="whitespace-nowrap px-3 py-3 font-mono text-xs">',
-    );
+    expect(source).toContain('<td className="whitespace-nowrap px-3 py-3 font-mono text-xs">');
     expect(source).toContain("max-w-[260px] truncate px-3 py-3");
   });
 });

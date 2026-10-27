@@ -286,7 +286,9 @@ export class GroupsSyncService implements OnModuleDestroy {
 
   private async safeProviderParticipantNames(instanceName: string) {
     try {
-      return providerParticipantNamesByIdentity(await this.evolution.findContacts({ instanceName }));
+      return providerParticipantNamesByIdentity(
+        await this.evolution.findContacts({ instanceName }),
+      );
     } catch (error) {
       this.logger.warn(
         `Nao foi possivel consultar nomes de contatos da instancia ${instanceName}: ${errorMessage(error)}`,

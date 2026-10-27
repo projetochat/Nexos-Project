@@ -138,7 +138,9 @@ describe("Platform dashboard presentation contract", () => {
     expect(dashboardSource).toContain('className="max-sm:!w-9 max-sm:!px-0"');
     expect(dashboardSource).toContain('aria-label="Config. Dashboard"');
     expect(dashboardSource).toContain('<Settings className="h-4 w-4" />');
-    expect(dashboardSource).toContain('<span className="hidden sm:inline">Config. Dashboard</span>');
+    expect(dashboardSource).toContain(
+      '<span className="hidden sm:inline">Config. Dashboard</span>',
+    );
   });
 
   it("wraps visible dashboard components with the hover-only maximize control", () => {

@@ -1,3 +1,4 @@
+import { validateTicketSearch, type TicketSearch } from "@/lib/ticket-search";
 import { RichTextEditor } from "@/components/ticket-rich-text-editor";
 import { TicketRichTextContent } from "@/components/ticket-rich-text-content";
 import * as React from "react";
@@ -85,16 +86,6 @@ export const Route = createFileRoute("/chamados")({
   }),
   component: InternalChamadosRoute,
 });
-
-export function validateTicketSearch(search: Record<string, unknown>) {
-  return {
-    conversationId: typeof search.conversationId === "string" ? search.conversationId : undefined,
-    ticketId: typeof search.ticketId === "string" ? search.ticketId : undefined,
-    aiExecutionId: typeof search.aiExecutionId === "string" ? search.aiExecutionId : undefined,
-  };
-}
-
-export type TicketSearch = ReturnType<typeof validateTicketSearch>;
 
 function InternalChamadosRoute() {
   return <ChamadosPage mode="internal" search={Route.useSearch()} />;
@@ -307,49 +298,52 @@ export function ChamadosPage({
             </div>
             {!isCustomerPortal && (
               <div className="order-3 lg:order-none">
-              <Field label="Cliente">
-                <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-                  <option value="">Todos</option>
-                  {options.customers.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.nome}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+                <Field label="Cliente">
+                  <Select
+                    value={customerId}
+                    onChange={(event) => setCustomerId(event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {options.customers.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nome}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
               </div>
             )}
             {!isCustomerPortal && (
               <div className="order-4 lg:order-none">
-              <Field label="Departamento">
+                <Field label="Departamento">
+                  <Select
+                    value={departmentId}
+                    onChange={(event) => setDepartmentId(event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {options.departments.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            )}
+            <div className="order-2 min-w-0 lg:order-none">
+              <Field label="Status">
                 <Select
-                  value={departmentId}
-                  onChange={(event) => setDepartmentId(event.target.value)}
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value as ApiTicketStatus | "")}
                 >
                   <option value="">Todos</option>
-                  {options.departments.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
+                  {statuses.map((item) => (
+                    <option key={item} value={item}>
+                      {statusLabel(item)}
                     </option>
                   ))}
                 </Select>
               </Field>
-              </div>
-            )}
-            <div className="order-2 min-w-0 lg:order-none">
-            <Field label="Status">
-              <Select
-                value={status}
-                onChange={(event) => setStatus(event.target.value as ApiTicketStatus | "")}
-              >
-                <option value="">Todos</option>
-                {statuses.map((item) => (
-                  <option key={item} value={item}>
-                    {statusLabel(item)}
-                  </option>
-                ))}
-              </Select>
-            </Field>
             </div>
             {hasFilters && (
               <div className="flex items-end">

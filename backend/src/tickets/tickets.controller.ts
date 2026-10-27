@@ -65,10 +65,7 @@ export class TicketsController {
 
   @Get("portal/dashboard")
   @RequirePermissions("tickets.read")
-  portalDashboard(
-    @Query() query: ListTicketsQueryDto,
-    @CurrentUser() current: AuthenticatedUser,
-  ) {
+  portalDashboard(@Query() query: ListTicketsQueryDto, @CurrentUser() current: AuthenticatedUser) {
     return this.ticketsService.portalDashboard(query, current);
   }
 
@@ -121,12 +118,7 @@ export class TicketsController {
     @Body() dto: UpdateCustomerPortalLoginDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.ticketsService.updateCustomerPortalUser(
-      customerId,
-      contactId,
-      dto,
-      current,
-    );
+    return this.ticketsService.updateCustomerPortalUser(customerId, contactId, dto, current);
   }
 
   @Delete("portal/customers/:customerId/users/:contactId")

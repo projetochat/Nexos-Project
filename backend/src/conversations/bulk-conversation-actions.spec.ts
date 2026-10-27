@@ -86,9 +86,7 @@ describe("bulk conversation actions", () => {
     const subject = new ConversationsController(
       {
         conversation: {
-          findMany: vi
-            .fn()
-            .mockResolvedValue([{ id: "conversation-a" }, { id: "conversation-b" }]),
+          findMany: vi.fn().mockResolvedValue([{ id: "conversation-a" }, { id: "conversation-b" }]),
         },
       } as never,
       {} as never,

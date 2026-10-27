@@ -64,13 +64,11 @@ describe("tenant permission navigation", () => {
       }),
     ).toBe(true);
     expect(canAccessSessionRoute("/chamados", "customer_portal", ["tickets.read"])).toBe(false);
-    expect(
-      canAccessSessionRoute(CUSTOMER_PORTAL_TICKETS_PATH, "agent", ["tickets.read"]),
-    ).toBe(false);
-    expect(canAccessSessionRoute("/chamados", "agent", ["tickets.read"])).toBe(true);
-    expect(homeForSession("customer_portal", ["tickets.read"])).toBe(
-      CUSTOMER_PORTAL_TICKETS_PATH,
+    expect(canAccessSessionRoute(CUSTOMER_PORTAL_TICKETS_PATH, "agent", ["tickets.read"])).toBe(
+      false,
     );
+    expect(canAccessSessionRoute("/chamados", "agent", ["tickets.read"])).toBe(true);
+    expect(homeForSession("customer_portal", ["tickets.read"])).toBe(CUSTOMER_PORTAL_TICKETS_PATH);
     expect(
       canAccessSessionRoute(
         CUSTOMER_PORTAL_DASHBOARD_PATH,

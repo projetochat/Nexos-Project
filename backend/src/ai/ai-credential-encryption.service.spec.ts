@@ -15,12 +15,7 @@ describe("AiCredentialEncryptionService", () => {
   });
 
   it("rejects decrypting a credential in another tenant", () => {
-    const encrypted = service.encrypt(
-      credential,
-      "tenant-a",
-      "connection-a",
-      "OPENAI",
-    );
+    const encrypted = service.encrypt(credential, "tenant-a", "connection-a", "OPENAI");
     expect(() => service.decrypt(encrypted, "tenant-b", "connection-a", "OPENAI")).toThrow(
       "Não foi possível acessar a credencial de IA.",
     );

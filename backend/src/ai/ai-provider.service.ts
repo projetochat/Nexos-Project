@@ -158,7 +158,7 @@ export class AiProviderService {
           ? "https://api.groq.com/openai/v1/chat/completions"
           : openRouter
             ? "https://openrouter.ai/api/v1/chat/completions"
-          : "https://api.openai.com/v1/chat/completions",
+            : "https://api.openai.com/v1/chat/completions",
       {
         method: "POST",
         signal,
