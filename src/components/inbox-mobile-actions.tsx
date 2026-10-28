@@ -49,31 +49,47 @@ export function InboxMobileActions({
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-56">
         {allowQuickReplies && (
-          <DropdownMenuItem className="min-h-11" disabled={disabled} onSelect={onQuickReplies}>
-            <Zap />
+          <DropdownMenuItem
+            className="group/action min-h-11"
+            disabled={disabled}
+            onSelect={onQuickReplies}
+          >
+            <Zap className="transition-colors group-data-[highlighted]/action:text-amber-600 dark:group-data-[highlighted]/action:text-amber-400" />
             Mensagens rápidas
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem className="min-h-11" disabled={disabled} onSelect={onAttach}>
-          <Paperclip />
+        <DropdownMenuItem className="group/action min-h-11" disabled={disabled} onSelect={onAttach}>
+          <Paperclip className="transition-colors group-data-[highlighted]/action:text-violet-600 dark:group-data-[highlighted]/action:text-violet-400" />
           Anexos
         </DropdownMenuItem>
-        <DropdownMenuItem className="min-h-11" disabled={disabled} onSelect={onCamera}>
-          <Camera />
+        <DropdownMenuItem className="group/action min-h-11" disabled={disabled} onSelect={onCamera}>
+          <Camera className="transition-colors group-data-[highlighted]/action:text-sky-600 dark:group-data-[highlighted]/action:text-sky-400" />
           Câmera
         </DropdownMenuItem>
-        <DropdownMenuItem className="min-h-11" disabled={disabled} onSelect={onContact}>
-          <ContactRound />
+        <DropdownMenuItem
+          className="group/action min-h-11"
+          disabled={disabled}
+          onSelect={onContact}
+        >
+          <ContactRound className="transition-colors group-data-[highlighted]/action:text-teal-600 dark:group-data-[highlighted]/action:text-teal-400" />
           Contato
         </DropdownMenuItem>
         {onTicket && (
-          <DropdownMenuItem className="min-h-11" disabled={ticketDisabled} onSelect={onTicket}>
-            <Ticket />
+          <DropdownMenuItem
+            className="group/action min-h-11"
+            disabled={ticketDisabled}
+            onSelect={onTicket}
+          >
+            <Ticket className="transition-colors group-data-[highlighted]/action:text-orange-600 dark:group-data-[highlighted]/action:text-orange-400" />
             Gerar Chamado
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem className="min-h-11" disabled={disabled} onSelect={() => onSchedule?.()}>
-          <CalendarClock />
+        <DropdownMenuItem
+          className="group/action min-h-11"
+          disabled={disabled}
+          onSelect={() => onSchedule?.()}
+        >
+          <CalendarClock className="transition-colors group-data-[highlighted]/action:text-indigo-600 dark:group-data-[highlighted]/action:text-indigo-400" />
           Agendar mensagem
         </DropdownMenuItem>
       </DropdownMenuContent>

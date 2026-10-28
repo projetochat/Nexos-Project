@@ -1,3 +1,4 @@
+import { displayDateTime } from "@/lib/format";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -3062,11 +3063,11 @@ function Audit({ customer }: { customer: TicketCustomer | null }) {
     <div className="text-[11px] text-muted-foreground">
       <p>
         <strong className="text-foreground">Criado:</strong>{" "}
-        {customer?.createdAt ? new Date(customer.createdAt).toLocaleString("pt-BR") : "---"}
+        {customer?.createdAt ? displayDateTime(customer.createdAt) : "---"}
       </p>
       <p>
         <strong className="text-foreground">Editado:</strong>{" "}
-        {customer?.updatedAt ? new Date(customer.updatedAt).toLocaleString("pt-BR") : "---"}
+        {customer?.updatedAt ? displayDateTime(customer.updatedAt) : "---"}
       </p>
     </div>
   );

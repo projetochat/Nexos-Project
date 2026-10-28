@@ -262,6 +262,13 @@ describe("onboarding step requirements", () => {
     expect(source).toContain(': selected.ownerPhoneMasked || "Aguardando identificação"');
   });
 
+  it.each([undefined, null, "", "not-a-date"])(
+    "keeps the wizard renderable when connection date is unavailable: %s",
+    (value) => {
+      expect(formatOnboardingConnectedAt(value)).toBe("—");
+    },
+  );
+
   it("formats the connection date without a comma after the year", () => {
     expect(formatOnboardingConnectedAt("2026-10-08T15:53:00-03:00")).not.toContain(",");
   });

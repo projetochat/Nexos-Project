@@ -1,3 +1,4 @@
+import { assertConversationStartedForMedia } from "./conversation-media-access";
 import {
   BadRequestException,
   ConflictException,
@@ -32,6 +33,7 @@ export class MessageMediaRecoveryService {
 
   async recover(conversationId: string, messageId: string, current: AuthenticatedUser) {
     let newObjectKey: string | undefined;
+    let callbackCompleted = false;
     try {
       return await this.prisma.$transaction(
         async (tx) => {
@@ -43,6 +45,7 @@ export class MessageMediaRecoveryService {
           };
           const conversation = await tx.conversation.findFirst({ where: visibleWhere });
           if (!conversation) throw new NotFoundException("Conversa não encontrada.");
+          assertConversationStartedForMedia(conversation.protocol);
           const original = await tx.message.findFirst({
             where: { id: messageId, tenantId: current.tenantId, conversationId },
           });
@@ -79,6 +82,7 @@ export class MessageMediaRecoveryService {
           const currentConversation = await tx.conversation.findFirst({ where: visibleWhere });
           if (!message || !currentConversation)
             throw new NotFoundException("Mensagem não encontrada.");
+          assertConversationStartedForMedia(currentConversation.protocol);
           if (
             message.direction !== MessageDirection.INBOUND ||
             message.type !== MessageType.DOCUMENT ||
@@ -118,16 +122,27 @@ export class MessageMediaRecoveryService {
           let record: Record<string, unknown>;
           let downloaded: { body: Buffer; mimeType?: string | null; fileName?: string | null };
           try {
-            const records = await this.evolution.findMessages({
+            let records = await this.evolution.findMessages({
               instanceName: connection.externalReference,
               remoteJid,
               messageId: providerId,
               page: 1,
               pageSize: 10,
             });
-            const matches = records.filter((candidate) =>
-              matchesOriginal(candidate, providerId, remoteJid),
-            );
+            // Evolution may store the primary chat as @lid and retain the exact
+            // original chat in remoteJidAlt. Only an empty exact lookup permits
+            // this bounded lookup by original ID in the same instance.
+            if (records.length === 0) {
+              records = await this.evolution.findMessages({
+                instanceName: connection.externalReference,
+                messageId: providerId,
+                page: 1,
+                pageSize: 10,
+              });
+            }
+            const matches = records
+              .map((candidate) => originalRecord(candidate, providerId, remoteJid))
+              .filter((candidate): candidate is Record<string, unknown> => candidate !== null);
             if (matches.length !== 1)
               throw new ConflictException("Documento original não está disponível no provedor.");
             record = matches[0] as Record<string, unknown>;
@@ -164,13 +179,16 @@ export class MessageMediaRecoveryService {
               mediaState: MessageMediaState.READY,
             },
           });
+          callbackCompleted = true;
           return { messageId, state: "ready" as const, recovered: true };
         },
         { timeout: 120000 },
       );
     } catch (error) {
-      if (newObjectKey) {
-        // A failed commit response can be ambiguous. Never delete bytes referenced by a committed row.
+      if (newObjectKey && !callbackCompleted) {
+        // A completed callback followed by a transaction error has an ambiguous commit.
+        // A fresh lookup can still be empty while that commit is in flight; preserve its bytes.
+        // Only callback failures permit conservative cleanup after checking references.
         try {
           const referenced = await this.prisma.message.findFirst({
             where: { tenantId: current.tenantId, mediaStorageKey: newObjectKey },
@@ -195,10 +213,39 @@ function isDeleted(data: unknown) {
   );
 }
 
-function matchesOriginal(record: unknown, id: string, chat: string) {
-  if (!record || typeof record !== "object" || Array.isArray(record)) return false;
-  const key = (record as Record<string, unknown>).key;
-  if (!key || typeof key !== "object" || Array.isArray(key)) return false;
-  const candidate = key as Record<string, unknown>;
-  return candidate.id === id && candidate.remoteJid === chat && candidate.fromMe === false;
+function originalRecord(record: unknown, id: string, chat: string) {
+  const root = asRecord(record);
+  if (!root) return null;
+  const data = asRecord(root.data);
+  const candidates = [root, data, asRecord(root.message), asRecord(data?.message)].filter(
+    (candidate): candidate is Record<string, unknown> => candidate !== null,
+  );
+  const identities = candidates.filter((candidate) => Object.hasOwn(candidate, "key"));
+  if (!identities.length) return null;
+  // Every identity supplied in a supported envelope must agree. Do not let a
+  // valid nested identity conceal a conflicting or incomplete outer identity.
+  const firstKey = asRecord(identities[0].key);
+  for (const candidate of identities) {
+    const key = asRecord(candidate.key);
+    if (
+      !key ||
+      key.id !== id ||
+      key.fromMe !== false ||
+      typeof key.remoteJid !== "string" ||
+      !/^[^@\s]+@[^@\s]+$/.test(key.remoteJid) ||
+      (key.remoteJid !== chat && key.remoteJidAlt !== chat) ||
+      key.remoteJid !== firstKey?.remoteJid ||
+      key.remoteJidAlt !== firstKey?.remoteJidAlt
+    )
+      return null;
+  }
+  // A redundant outer key can accompany a complete record inside data. Prefer
+  // the matching record that actually contains the provider message payload.
+  return identities.find((candidate) => asRecord(candidate.message) !== null) ?? identities[0];
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }

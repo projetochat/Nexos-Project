@@ -74,6 +74,9 @@ describe("profile permission enforcement", () => {
       },
     };
     const prisma = {
+      tenantSubscription: {
+        findFirst: vi.fn().mockResolvedValue({ featuresSnapshot: { chat: true } }),
+      },
       tenantMembership: { findFirst: vi.fn().mockImplementation(async () => membership) },
     };
     const guard = new PermissionsGuard(
@@ -187,6 +190,9 @@ describe("profile permission enforcement", () => {
 
   it("accepts an endpoint with an assigned alternative permission", async () => {
     const prisma = {
+      tenantSubscription: {
+        findFirst: vi.fn().mockResolvedValue({ featuresSnapshot: { chat: true } }),
+      },
       tenantMembership: {
         findFirst: vi.fn().mockResolvedValue({
           roleId: "role-a",
@@ -283,3 +289,49 @@ describe("profile permission enforcement", () => {
     });
   });
 });
+
+it.each(["tenant_admin", "custom"])(
+  "rejects direct Chat operations for %s when the tenant disabled Chat without deleting grants",
+  async (key) => {
+    const role = {
+      id: "role-a",
+      key,
+      permissions: [{ permissionId: "messages.send" }, { permissionId: "tickets.read" }],
+    };
+    const prisma = {
+      tenantMembership: {
+        findFirst: vi.fn().mockResolvedValue({
+          tenantId: "tenant-a",
+          roleId: role.id,
+          role,
+          tenant: { featureOverrides: { chat: false } },
+        }),
+      },
+      tenantSubscription: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ featuresSnapshot: { chat: true, campaigns: false, tickets: true } }),
+      },
+    };
+    const guard = new PermissionsGuard(
+      {
+        getAllAndOverride: (name: string) =>
+          name === "permissions" ? ["messages.send"] : undefined,
+      } as never,
+      prisma as never,
+    );
+    const request = {
+      user: { surface: "tenant", tenantId: "tenant-a", membershipId: "member-a", userId: "user-a" },
+    };
+    const context = {
+      getHandler() {},
+      getClass() {},
+      switchToHttp: () => ({ getRequest: () => request }),
+    };
+    await expect(guard.canActivate(context as never)).rejects.toThrow("Permissão insuficiente");
+    expect(role.permissions).toContainEqual({ permissionId: "messages.send" });
+    expect(prisma.tenantSubscription.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: "tenant-a" }) }),
+    );
+  },
+);

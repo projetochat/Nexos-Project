@@ -29,6 +29,7 @@ function fixture() {
     interactiveData: null,
   };
   const conversation = {
+    protocol: "000001",
     id: "conv",
     tenantId: "tenant",
     connectionId: "conn",
@@ -101,6 +102,51 @@ function fixture() {
 }
 
 describe("MessageMediaRecoveryService", () => {
+  it.each([null, undefined, "", "   "])(
+    "blocks recovery before first start for protocol %j",
+    async (protocol) => {
+      const f = fixture();
+      Object.assign(f.conversation, { protocol });
+      await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toMatchObject({
+        status: 403,
+        response: {
+          code: "CONVERSATION_NOT_STARTED",
+          message: "Inicie o atendimento para acessar os arquivos.",
+        },
+      });
+      expect(f.prisma.message.findFirst).not.toHaveBeenCalled();
+      expect(f.evolution.findMessages).not.toHaveBeenCalled();
+      expect(f.evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+      expect(f.storage.readObject).not.toHaveBeenCalled();
+      expect(f.storage.storeDownloaded).not.toHaveBeenCalled();
+    },
+  );
+
+  it("revalidates first start after locking before reading storage or provider", async () => {
+    const f = fixture();
+    f.prisma.conversation.findFirst
+      .mockResolvedValueOnce(f.conversation)
+      .mockResolvedValueOnce({ ...f.conversation, protocol: "" });
+    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toMatchObject({
+      status: 403,
+      response: { code: "CONVERSATION_NOT_STARTED" },
+    });
+    expect(f.evolution.findMessages).not.toHaveBeenCalled();
+    expect(f.storage.readObject).not.toHaveBeenCalled();
+    expect(f.storage.storeDownloaded).not.toHaveBeenCalled();
+  });
+
+  it.each(["ABERTA", "EM_ANDAMENTO", "AGUARDANDO", "FECHADA"])(
+    "allows recovery after first start in %s",
+    async (status) => {
+      const f = fixture();
+      Object.assign(f.conversation, { status, protocol: " 000001 " });
+      await expect(f.service.recover("conv", "msg", f.current as never)).resolves.toEqual(
+        expect.objectContaining({ recovered: true }),
+      );
+    },
+  );
+
   it("recovers only the same message media after scoped locks and exact provider lookup", async () => {
     const f = fixture();
     await expect(f.service.recover("conv", "msg", f.current as never)).resolves.toEqual({
@@ -246,6 +292,181 @@ describe("MessageMediaRecoveryService", () => {
     expect(f.evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
   });
 
+  it.each(["data", "message", "data.message"])(
+    "recovers a supported %s record envelope",
+    async (envelope) => {
+      const f = fixture();
+      const wrapped =
+        envelope === "data"
+          ? { data: f.record }
+          : envelope === "message"
+            ? { message: f.record }
+            : { data: { message: f.record } };
+      f.evolution.findMessages.mockResolvedValue([wrapped] as never);
+      await expect(f.service.recover("conv", "msg", f.current as never)).resolves.toEqual(
+        expect.objectContaining({ recovered: true }),
+      );
+      expect(f.evolution.getBase64FromMediaMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ message: f.record }),
+      );
+    },
+  );
+
+  it("keeps the complete nested record when a redundant outer identity agrees", async () => {
+    const f = fixture();
+    f.evolution.findMessages.mockResolvedValue([{ key: f.record.key, data: f.record }] as never);
+    await expect(f.service.recover("conv", "msg", f.current as never)).resolves.toEqual(
+      expect.objectContaining({ recovered: true }),
+    );
+    expect(f.evolution.getBase64FromMediaMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ message: f.record }),
+    );
+  });
+
+  it.each([
+    { id: "wrong" },
+    { remoteJid: "other@s.whatsapp.net" },
+    { fromMe: true },
+    { fromMe: undefined },
+  ])("rejects conflicting outer and nested identities %j", async (patch) => {
+    const f = fixture();
+    f.evolution.findMessages.mockResolvedValue([
+      {
+        ...f.record,
+        key: { ...f.record.key, ...patch },
+        data: f.record,
+      },
+    ] as never);
+    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+      "Documento original não está disponível",
+    );
+    expect(f.evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a conflicting nested identity even when the outer identity matches", async () => {
+    const f = fixture();
+    f.evolution.findMessages.mockResolvedValue([
+      {
+        ...f.record,
+        data: { ...f.record, key: { ...f.record.key, id: "wrong" } },
+      },
+    ] as never);
+    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+      "Documento original não está disponível",
+    );
+    expect(f.evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { id: "wrong" },
+    { remoteJid: "other@s.whatsapp.net" },
+    { fromMe: true },
+    { fromMe: undefined },
+  ])("rejects a wrapped record with invalid identity %j", async (patch) => {
+    const f = fixture();
+    f.evolution.findMessages.mockResolvedValue([
+      {
+        data: { ...f.record, key: { ...f.record.key, ...patch } },
+      },
+    ] as never);
+    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+      "Documento original não está disponível",
+    );
+    expect(f.evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects ambiguity across different supported envelopes", async () => {
+    const f = fixture();
+    f.evolution.findMessages.mockResolvedValue([f.record, { data: f.record }] as never);
+    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+      "Documento original não está disponível",
+    );
+    expect(f.evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+  });
+
+  it("recovers an exact provider ID with an explicitly confirmed alternate chat", async () => {
+    const f = fixture();
+    const record = {
+      ...f.record,
+      key: { ...f.record.key, remoteJid: "opaque@lid", remoteJidAlt: f.message.providerChatId },
+    };
+    f.evolution.findMessages.mockResolvedValueOnce([]).mockResolvedValueOnce([record]);
+    await expect(f.service.recover("conv", "msg", f.current as never)).resolves.toEqual(
+      expect.objectContaining({ recovered: true }),
+    );
+    expect(f.evolution.findMessages).toHaveBeenNthCalledWith(2, {
+      instanceName: "instance",
+      messageId: "provider-id",
+      page: 1,
+      pageSize: 10,
+    });
+    expect(f.evolution.getBase64FromMediaMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ message: record }),
+    );
+  });
+
+  it.each([
+    { remoteJidAlt: "other@s.whatsapp.net" },
+    { remoteJidAlt: undefined },
+    { remoteJid: "" },
+    { remoteJid: "not-a-jid" },
+    { id: "wrong" },
+    { fromMe: true },
+    { fromMe: undefined },
+  ])("rejects invalid fallback identities %j", async (patch) => {
+    const f = fixture();
+    const record = {
+      ...f.record,
+      key: {
+        ...f.record.key,
+        remoteJid: "opaque@lid",
+        remoteJidAlt: f.message.providerChatId,
+        ...patch,
+      },
+    };
+    f.evolution.findMessages.mockResolvedValueOnce([]).mockResolvedValueOnce([record]);
+    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+      "Documento original não está disponível",
+    );
+    expect(f.evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects ambiguous fallback records", async () => {
+    const f = fixture();
+    f.evolution.findMessages.mockResolvedValueOnce([]).mockResolvedValueOnce([f.record, f.record]);
+    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+      "Documento original não está disponível",
+    );
+    expect(f.evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not broaden a nonempty exact lookup even if the returned identity is rejected", async () => {
+    const f = fixture();
+    f.evolution.findMessages.mockResolvedValue([
+      { ...f.record, key: { ...f.record.key, id: "wrong" } },
+    ]);
+    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+      "Documento original não está disponível",
+    );
+    expect(f.evolution.findMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects disagreeing primary identities even when both declare the matching alternate chat", async () => {
+    const f = fixture();
+    const key = { ...f.record.key, remoteJid: "one@lid", remoteJidAlt: f.message.providerChatId };
+    f.evolution.findMessages.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        ...f.record,
+        key,
+        data: { ...f.record, key: { ...key, remoteJid: "two@lid" } },
+      },
+    ] as never);
+    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+      "Documento original não está disponível",
+    );
+    expect(f.evolution.getBase64FromMediaMessage).not.toHaveBeenCalled();
+  });
+
   it("rejects ambiguous provider records", async () => {
     const f = fixture();
     f.evolution.findMessages.mockResolvedValue([f.record, f.record]);
@@ -274,15 +495,23 @@ describe("MessageMediaRecoveryService", () => {
     expect(f.storage.deleteObject).toHaveBeenCalledWith("new-object");
   });
 
-  it("preserves new bytes if an ambiguous commit may have referenced them", async () => {
-    const f = fixture();
-    f.prisma.$transaction.mockImplementation(async (callback) => {
-      await callback(f.prisma);
-      throw new Error("commit result unknown");
-    });
-    await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
-      "commit result unknown",
-    );
-    expect(f.storage.deleteObject).not.toHaveBeenCalled();
-  });
+  it.each(["referenced", "empty", "unavailable"])(
+    "preserves bytes after an ambiguous commit regardless of fresh lookup: %s",
+    async (lookup) => {
+      const f = fixture();
+      f.prisma.message.findFirst.mockResolvedValueOnce(f.message).mockResolvedValueOnce(f.message);
+      if (lookup === "empty") f.prisma.message.findFirst.mockResolvedValue(null);
+      if (lookup === "unavailable")
+        f.prisma.message.findFirst.mockRejectedValue(new Error("lookup unavailable"));
+      f.prisma.$transaction.mockImplementation(async (callback) => {
+        await callback(f.prisma);
+        throw new Error("commit result unknown");
+      });
+      await expect(f.service.recover("conv", "msg", f.current as never)).rejects.toThrow(
+        "commit result unknown",
+      );
+      expect(f.prisma.message.findFirst).toHaveBeenCalledTimes(2);
+      expect(f.storage.deleteObject).not.toHaveBeenCalled();
+    },
+  );
 });

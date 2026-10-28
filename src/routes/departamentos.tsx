@@ -670,6 +670,9 @@ export function DepartamentoForm({
               </label>
             </div>
           </div>
+          <p className="mt-2 text-xs text-text-muted">
+            Aplicável somente a conversas individuais. Grupos não são encerrados por inatividade.
+          </p>
           {form.inactivityClosureEnabled && (
             <div className="mt-3 space-y-3">
               <div className="w-full">

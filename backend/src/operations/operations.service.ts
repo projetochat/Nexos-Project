@@ -43,6 +43,8 @@ type OperationalQuery = {
   conversationType?: "all" | "contacts" | "groups";
   departmentId?: string;
   assignedMembershipId?: string;
+  closedByMembershipId?: string;
+  includeClosedByOptions?: boolean;
   status?: string;
   customerId?: string;
   connectionId?: string;
@@ -84,7 +86,7 @@ const historyConversationInclude = {
         include: { user: { select: { id: true, name: true, email: true } } },
       },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 1,
   },
 } satisfies Prisma.ConversationInclude;
@@ -178,6 +180,65 @@ export class OperationsService {
     const allowedConnectionIds =
       current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []);
     const groupBy = query.groupBy;
+
+    if (groupBy === "conversationContact") {
+      if (query.conversationType === "groups") return { items: [] };
+      const accessFilters: Prisma.ConversationWhereInput[] = [
+        conversationVisibilityWhere(current),
+        ...(allowedConnectionIds ? [{ connectionId: { in: allowedConnectionIds } }] : []),
+        ...(current.roleKey !== "tenant_admin"
+          ? [{ departmentId: { in: current.chatDepartmentIds ?? [] } }]
+          : []),
+      ];
+      const where: Prisma.ConversationWhereInput = {
+        tenantId: current.tenantId,
+        archivedAt: null,
+        createdAt: { gte: range.start, lt: range.end },
+        conversationType: ConversationType.DIRECT,
+        isGroup: false,
+        AND: accessFilters,
+        contact: {
+          is: {
+            tenantId: current.tenantId,
+            archivedAt: null,
+            ...(query.customerId ? { customerId: query.customerId } : {}),
+          },
+        },
+        ...(query.contactId ? { contactId: query.contactId } : {}),
+        ...(query.connectionId ? { connectionId: query.connectionId } : {}),
+        ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+        ...(query.assignedMembershipId ? { assignedMembershipId: query.assignedMembershipId } : {}),
+        ...(query.conversationId ? { id: query.conversationId } : {}),
+      };
+      const q = query.q?.trim();
+      if (q)
+        where.OR = [
+          { protocol: { contains: q, mode: "insensitive" } },
+          { contact: { name: { contains: q, mode: "insensitive" } } },
+        ];
+      const rows = await this.prisma.conversation.groupBy({
+        by: ["contactId"],
+        where,
+        _count: { _all: true },
+        orderBy: [{ _count: { contactId: "desc" } }, { contactId: "asc" }],
+        take: 10,
+      });
+      const contacts = await this.prisma.contact.findMany({
+        where: {
+          tenantId: current.tenantId,
+          archivedAt: null,
+          id: { in: rows.map((row) => row.contactId) },
+        },
+        select: { id: true, name: true },
+      });
+      const names = new Map(contacts.map((contact) => [contact.id, contact.name]));
+      return {
+        items: rows.flatMap((row) => {
+          const name = names.get(row.contactId);
+          return name ? [{ nome: name, total: row._count._all }] : [];
+        }),
+      };
+    }
 
     if (groupBy === "ticketRequesterContact") {
       const conversationFilter: Prisma.ConversationWhereInput = {};
@@ -439,12 +500,72 @@ export class OperationsService {
     const range = periodRange(query, "30d", tenant?.timezone ?? "America/Sao_Paulo");
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
-    const where = {
+    const baseWhere: Prisma.ConversationWhereInput = {
       AND: [
         conversationWhere(current.tenantId, query, range),
         conversationVisibilityWhere(current),
       ],
     };
+    let closedByOptions: Array<{ membershipId: string; name: string }> = [];
+    let matchingClosureIds: string[] | undefined;
+    if (query.includeClosedByOptions || query.closedByMembershipId) {
+      // Resolve closure authors only for conversations already visible to this user.
+      const candidates = await this.prisma.conversation.findMany({
+        where: baseWhere,
+        select: { id: true },
+      });
+      const ids = candidates.map((conversation) => conversation.id);
+      const closures = ids.length
+        ? await this.prisma.$queryRaw<
+            Array<{ conversationId: string; authorMembershipId: string | null }>
+          >(
+            Prisma.sql`
+              SELECT DISTINCT ON (m."conversationId") m."conversationId", m."authorMembershipId"
+              FROM "messages" m
+              WHERE m."tenantId" = ${current.tenantId}
+                AND m."conversationId" = ANY(${ids}::text[])
+                AND m.direction = 'SYSTEM' AND m.type = 'SYSTEM'
+                AND (m.content LIKE 'Conversa encerrada%' OR m.content LIKE 'Atendimento encerrado%')
+              ORDER BY m."conversationId", m."createdAt" DESC, m.id DESC
+            `,
+          )
+        : [];
+      if (query.closedByMembershipId) {
+        matchingClosureIds = closures
+          .filter((closure) => closure.authorMembershipId === query.closedByMembershipId)
+          .map((closure) => closure.conversationId);
+      }
+      if (query.includeClosedByOptions) {
+        const authorIds = [
+          ...new Set(
+            closures.flatMap((closure) =>
+              closure.authorMembershipId ? [closure.authorMembershipId] : [],
+            ),
+          ),
+        ];
+        const memberships = authorIds.length
+          ? await this.prisma.tenantMembership.findMany({
+              where: {
+                tenantId: current.tenantId,
+                id: { in: authorIds },
+              },
+              select: { id: true, presentationName: true, user: { select: { name: true } } },
+            })
+          : [];
+        closedByOptions = memberships
+          .map((membership) => ({
+            membershipId: membership.id,
+            name: membership.presentationName?.trim() || membership.user.name,
+          }))
+          .sort(
+            (a, b) =>
+              a.name.localeCompare(b.name, "pt-BR") || a.membershipId.localeCompare(b.membershipId),
+          );
+      }
+    }
+    const where: Prisma.ConversationWhereInput = matchingClosureIds
+      ? { AND: [baseWhere, { id: { in: matchingClosureIds } }] }
+      : baseWhere;
     const [items, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
         where,
@@ -464,6 +585,7 @@ export class OperationsService {
     });
     return {
       items: items.map((conversation) => serializeHistoryConversation(conversation, current)),
+      closedByOptions,
       total,
       page,
       pageSize,
@@ -963,7 +1085,7 @@ function validateDashboardConfiguration(value: unknown) {
   }
   const nativeRevision =
     candidate.nativeRevision === undefined ? 1 : Number(candidate.nativeRevision);
-  if (!Number.isInteger(nativeRevision) || nativeRevision < 1 || nativeRevision > 4) {
+  if (!Number.isInteger(nativeRevision) || nativeRevision < 1 || nativeRevision > 5) {
     throw new BadRequestException("Revisão da configuração do dashboard inválida.");
   }
   if (candidate.components.length > 100) {
@@ -991,7 +1113,7 @@ function validateDashboardConfiguration(value: unknown) {
     ) {
       throw new BadRequestException("Propriedades do componente do dashboard inválidas.");
     }
-    const normalized = {
+    let normalized = {
       id,
       title,
       visible: component.visible,
@@ -1001,13 +1123,34 @@ function validateDashboardConfiguration(value: unknown) {
       groupBy: component.groupBy,
       valueMode: component.valueMode,
     };
-    if (nativeRevision < 3 && id === "ticketRequesterRanking") {
-      return { ...normalized, visualization: "table", columns: 1 };
+    if (
+      nativeRevision < 3 &&
+      id === "ticketRequesterRanking" &&
+      normalized.dataSource === "records" &&
+      normalized.groupBy === "ticketRequesterContact"
+    ) {
+      normalized = { ...normalized, visualization: "table", columns: 1 };
     }
-    if (nativeRevision < 4 && id === "tag") return { ...normalized, columns: 1 };
+    if (nativeRevision < 4 && id === "tag") normalized = { ...normalized, columns: 1 };
+    if (
+      nativeRevision < 5 &&
+      id === "ticketRequesterRanking" &&
+      normalized.dataSource === "records" &&
+      normalized.groupBy === "ticketRequesterContact"
+    ) {
+      normalized = {
+        ...normalized,
+        dataSource: "conversations",
+        groupBy: "conversationContact",
+        title:
+          title === "Top 10 contatos que abriram chamados"
+            ? "Top 10 contatos que mais abrem conversas"
+            : title,
+      };
+    }
     return normalized;
   });
-  return { version: 2, nativeRevision: 4, components };
+  return { version: 2, nativeRevision: 5, components };
 }
 
 function conversationWhere(
@@ -1104,6 +1247,9 @@ function serializeConversation(
     contact: {
       id: conversation.contact.id,
       nome: conversation.contact.name,
+      avatar_url: conversation.isGroup
+        ? ((conversation.groupImageUrl || conversation.contact.avatarUrl) ?? null)
+        : (conversation.contact.avatarUrl ?? null),
       telefone: canViewPhone ? conversation.contact.phone : null,
       customer: conversation.contact.customer
         ? {
@@ -1133,6 +1279,7 @@ function serializeConversation(
       ? {
           id: conversation.connection.id,
           name: conversation.connection.name,
+          color: conversation.connection.color ?? null,
           status: conversation.connection.status.toLowerCase(),
         }
       : null,

@@ -74,3 +74,59 @@ describe("classifyEvolutionProviderError", () => {
     ).not.toContain("secret");
   });
 });
+
+describe("Evolution native response envelope", () => {
+  it("preserves the specific nested rejection instead of the generic HTTP label", () => {
+    expect(
+      classifyEvolutionProviderError({
+        status: 400,
+        endpointPath: "/instance/delete/synthetic-instance",
+        method: "DELETE",
+        data: {
+          status: 400,
+          error: "Bad Request",
+          response: { message: ["Cannot remove while connecting"] },
+        },
+      }),
+    ).toMatchObject({
+      code: MessagingErrorCode.INVALID_PROVIDER_PAYLOAD,
+      httpStatus: 400,
+      retryable: false,
+      message: "Cannot remove while connecting",
+    });
+  });
+  it("preserves a direct message when both supported envelopes are present", () => {
+    expect(
+      classifyEvolutionProviderError({
+        status: 400,
+        data: {
+          message: "Direct rejection",
+          error: "Bad Request",
+          response: { message: ["Nested rejection"] },
+        },
+      }).message,
+    ).toBe("Direct rejection");
+  });
+  it("redacts secrets in the native nested envelope", () => {
+    const error = classifyEvolutionProviderError({
+      status: 400,
+      data: {
+        error: "Bad Request",
+        response: { message: ["Failure token=fixture"] },
+      },
+    });
+    expect(error.message).toContain("[redacted]");
+    expect(error.message).not.toContain("fixture");
+  });
+  it("falls back safely when response has no supported message", () => {
+    expect(
+      classifyEvolutionProviderError({
+        status: 400,
+        data: {
+          error: "Bad Request",
+          response: { message: { unknown: true } },
+        },
+      }).message,
+    ).toBe("Bad Request");
+  });
+});

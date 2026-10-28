@@ -16,3 +16,12 @@ describe("metadados do Histórico de Conversas", () => {
     expect(metadata).not.toContain('<span aria-hidden="true">·</span>');
   });
 });
+
+it("uses the persisted protocol to retain historical media access after first attendance", () => {
+  expect(source).toContain("mediaAccessAllowed={Boolean(active.protocolo?.trim())}");
+});
+
+it("passes the persisted protocol independently of active assignment in the inbox", () => {
+  const inbox = readFileSync(new URL("./inbox.$conversationId.tsx", import.meta.url), "utf8");
+  expect(inbox).toContain("mediaAccessAllowed={Boolean(conv.protocolo?.trim())}");
+});

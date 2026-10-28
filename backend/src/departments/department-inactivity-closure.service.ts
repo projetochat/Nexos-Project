@@ -1,3 +1,4 @@
+import { isGroupRemoteIdentity } from "../messaging/messaging-identity";
 import {
   Inject,
   Injectable,
@@ -8,6 +9,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import {
   ConversationStatus,
+  ConversationType,
   MessageDirection,
   MessageStatus,
   MessageType,
@@ -69,6 +71,8 @@ export class DepartmentInactivityClosureService implements OnApplicationBootstra
           departmentId: department.id,
           status: { in: OPEN_SERVICE_STATUSES },
           isGroup: false,
+          conversationType: ConversationType.DIRECT,
+          NOT: { externalChatId: { endsWith: "@g.us", mode: "insensitive" } },
           archivedAt: null,
           lastMessageAt: { lte: cutoff },
           connectionId: { not: null },
@@ -139,6 +143,8 @@ export class DepartmentInactivityClosureService implements OnApplicationBootstra
           departmentId,
           status: { in: OPEN_SERVICE_STATUSES },
           isGroup: false,
+          conversationType: ConversationType.DIRECT,
+          NOT: { externalChatId: { endsWith: "@g.us", mode: "insensitive" } },
           archivedAt: null,
           connectionId: { not: null },
           externalChatId: { not: null },
@@ -149,9 +155,18 @@ export class DepartmentInactivityClosureService implements OnApplicationBootstra
           contactId: true,
           connectionId: true,
           externalChatId: true,
+          isGroup: true,
+          conversationType: true,
         },
       });
-      if (!conversation?.connectionId || !conversation.externalChatId) return null;
+      if (
+        !conversation?.connectionId ||
+        !conversation.externalChatId ||
+        conversation.isGroup !== false ||
+        conversation.conversationType !== ConversationType.DIRECT ||
+        isGroupRemoteIdentity(conversation.externalChatId.trim().toLowerCase())
+      )
+        return null;
 
       const latest = await tx.message.findFirst({
         where: { tenantId, conversationId },

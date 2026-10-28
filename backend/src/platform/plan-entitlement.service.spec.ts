@@ -1,6 +1,10 @@
 import { ForbiddenException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
-import { PlanEntitlementService } from "./plan-entitlement.service";
+import {
+  coerceFeatures,
+  mergeFeatureOverrides,
+  PlanEntitlementService,
+} from "./plan-entitlement.service";
 
 const planFeatures = {
   chat: true,
@@ -34,7 +38,7 @@ describe("PlanEntitlementService tenant overrides", () => {
     expect(planFeatures).toEqual({ chat: true, campaigns: true, tickets: true });
   });
 
-  it("keeps chat enabled even if malformed persisted data attempts to disable it", async () => {
+  it("respects an explicit persisted Chat override", async () => {
     const prisma = {
       tenantSubscription: {
         findFirst: vi.fn().mockResolvedValue(subscription({ chat: false }, {})),
@@ -43,8 +47,17 @@ describe("PlanEntitlementService tenant overrides", () => {
     const service = new PlanEntitlementService(prisma as never);
 
     await expect(service.getEntitlements("tenant-a")).resolves.toMatchObject({
-      features: { chat: true },
+      features: { chat: false },
     });
+  });
+
+  it("inherits the plan Chat value while preserving legacy defaults and ignoring non-booleans", () => {
+    expect(coerceFeatures({}).chat).toBe(true);
+    const disabledBase = coerceFeatures({ chat: false });
+    expect(mergeFeatureOverrides(disabledBase, {}).chat).toBe(false);
+    expect(mergeFeatureOverrides(disabledBase, { chat: "true" }).chat).toBe(false);
+    expect(mergeFeatureOverrides(disabledBase, { chat: true }).chat).toBe(true);
+    expect(disabledBase.chat).toBe(false);
   });
 
   it("denies a disabled module even when the plan snapshot enables it", async () => {

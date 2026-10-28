@@ -5,6 +5,7 @@ export type OperationalReportFilters = {
   conversationType?: "all" | "contacts" | "groups";
   q?: string;
   departmentId?: string;
+  closedByMembershipId?: string;
   status?: ApiConversationStatus;
   customerId?: string;
   connectionId?: string;

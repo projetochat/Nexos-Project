@@ -2,6 +2,73 @@ import { describe, expect, it, vi } from "vitest";
 import { RealtimeService } from "./realtime.service";
 
 describe("realtime instance access", () => {
+  it.each(["agent", "tenant_admin"])(
+    "rechecks optional Chat for an established %s socket without removing shared contact access",
+    async (roleKey) => {
+      const featureOverrides = { chat: true };
+      const socket = {
+        data: {
+          context: {
+            membershipId: "member-a",
+            tenantId: "tenant-a",
+            userId: "user-a",
+            permissions: ["conversations.read", "contacts.read"],
+          },
+        },
+        emit: vi.fn(),
+      };
+      const prisma = {
+        tenantSubscription: {
+          findFirst: vi.fn().mockResolvedValue({
+            featuresSnapshot: { chat: true, campaigns: true, tickets: true },
+          }),
+        },
+        tenantMembership: {
+          findFirst: vi.fn().mockImplementation(async () => ({
+            id: "member-a",
+            tenant: { authRevokedAt: null, featureOverrides },
+            role: {
+              key: roleKey,
+              metadata: { connectionIds: ["connection-a"], departmentIds: ["department-a"] },
+              permissions: [
+                { permissionId: "conversations.read" },
+                { permissionId: "contacts.read" },
+              ],
+            },
+          })),
+        },
+        conversation: { findFirst: vi.fn().mockResolvedValue({ id: "conversation-a" }) },
+        contact: { findFirst: vi.fn().mockResolvedValue({ id: "contact-a" }) },
+      };
+      const service = new RealtimeService({} as never, prisma as never);
+      service["server"] = {
+        in: () => ({ fetchSockets: async () => [socket] }),
+      } as unknown as NonNullable<RealtimeService["server"]>;
+      const context = socket.data.context as never;
+      expect(await service.canAccessConversation(context, "conversation-a")).toBe(true);
+      await service["publishScoped"]("tenant:tenant-a", "conversation.updated", {
+        conversationId: "conversation-a",
+      });
+      expect(socket.emit).toHaveBeenCalledTimes(1);
+      featureOverrides.chat = false;
+      expect(await service.canAccessConversation(context, "conversation-a")).toBe(false);
+      await service["publishScoped"]("tenant:tenant-a", "conversation.updated", {
+        conversationId: "conversation-a",
+      });
+      expect(socket.emit).toHaveBeenCalledTimes(1);
+      await service["publishScoped"]("tenant:tenant-a", "contact.updated", {
+        contactId: "contact-a",
+      });
+      expect(socket.emit).toHaveBeenCalledTimes(2);
+      featureOverrides.chat = true;
+      expect(await service.canAccessConversation(context, "conversation-a")).toBe(true);
+      await service["publishScoped"]("tenant:tenant-a", "conversation.updated", {
+        conversationId: "conversation-a",
+      });
+      expect(socket.emit).toHaveBeenCalledTimes(3);
+    },
+  );
+
   it("checks the current profile before subscriptions and stops access immediately after revocation", async () => {
     const role = {
       key: "agent",
@@ -9,6 +76,11 @@ describe("realtime instance access", () => {
       permissions: [{ permissionId: "conversations.read" }],
     };
     const prisma = {
+      tenantSubscription: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ featuresSnapshot: { chat: true, campaigns: true, tickets: true } }),
+      },
       tenantMembership: {
         findFirst: vi.fn().mockImplementation(async () => ({
           role,
@@ -49,6 +121,11 @@ describe("realtime instance access", () => {
       emit: vi.fn(),
     };
     const prisma = {
+      tenantSubscription: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ featuresSnapshot: { chat: true, campaigns: true, tickets: true } }),
+      },
       tenantMembership: {
         findFirst: vi.fn().mockImplementation(async ({ where }) => ({
           role: {
@@ -92,6 +169,11 @@ describe("realtime instance access", () => {
       emit: vi.fn(),
     };
     const prisma = {
+      tenantSubscription: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ featuresSnapshot: { chat: true, campaigns: true, tickets: true } }),
+      },
       tenantMembership: {
         findFirst: vi.fn().mockResolvedValue({
           role: {
@@ -234,6 +316,11 @@ function portalRealtimeFixture(input: {
     ]),
   ) as Record<string, { data: { context: object }; emit: ReturnType<typeof vi.fn> }>;
   const prisma = {
+    tenantSubscription: {
+      findFirst: vi
+        .fn()
+        .mockResolvedValue({ featuresSnapshot: { chat: true, campaigns: true, tickets: true } }),
+    },
     tenantMembership: {
       findFirst: vi.fn().mockResolvedValue({
         role: {

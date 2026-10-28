@@ -34,7 +34,7 @@ import { RealtimeService } from "../realtime/realtime.service";
 import { MessagingModule } from "../messaging/messaging.module";
 import { ScheduleExecutionStatus } from "../generated/prisma";
 import { ScheduleExecutorService } from "./schedule-executor.service";
-import { ListSchedulesQueryDto, SaveScheduleDto } from "./schedules.dto";
+import { ListSchedulesQueryDto, SaveScheduleDto, type ScheduleOrigin } from "./schedules.dto";
 import {
   changedDeletion,
   ConfirmDeletionDto,
@@ -84,7 +84,8 @@ export class SchedulesController {
       where,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
-    return rows.sort(compareScheduleOrder).map(serializeSchedule);
+    const items = rows.sort(compareScheduleOrder).map(serializeSchedule);
+    return query.origin ? items.filter((item) => item.origin === query.origin) : items;
   }
   @Post()
   @RequirePermissions("messages.send")
@@ -180,6 +181,8 @@ export class SchedulesController {
     }
     const payload = {
       ...dto,
+      // A record keeps its creation origin even when another surface edits it.
+      origin: existing ? scheduleOrigin(schedulePayload(existing.payload)) : scheduleOrigin(dto),
       scheduledAt: executable ? dueAt.toISOString() : dto.scheduledAt,
       status: executable ? "pending" : dto.status,
       attachment,
@@ -429,6 +432,14 @@ function schedulePayload(value: Prisma.JsonValue): Record<string, Prisma.JsonVal
     : {};
 }
 
+function scheduleOrigin(payload: { origin?: unknown; conversationId?: unknown }): ScheduleOrigin {
+  if (payload.origin === "CHAT" || payload.origin === "SCHEDULES") return payload.origin;
+  // Legacy inference only: old records did not retain an explicit creation surface.
+  return typeof payload.conversationId === "string" && payload.conversationId.trim()
+    ? "CHAT"
+    : "SCHEDULES";
+}
+
 function compareScheduleOrder(
   left: { id: string; payload: Prisma.JsonValue; createdAt: Date },
   right: { id: string; payload: Prisma.JsonValue; createdAt: Date },
@@ -460,6 +471,7 @@ function serializeSchedule(row: {
   return {
     ...payload,
     id: row.id,
+    origin: scheduleOrigin(payload),
     status: row.executionStatus === ScheduleExecutionStatus.SENT ? "completed" : payload.status,
     dueAt: row.dueAt ?? null,
     executionStatus: row.executionStatus ?? null,

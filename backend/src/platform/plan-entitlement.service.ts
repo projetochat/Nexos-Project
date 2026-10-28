@@ -156,8 +156,7 @@ export function mergeFeatureOverrides(base: Features, value: unknown): Features 
   const overrides = asRecord(value);
   return {
     ...base,
-    // Chat is the core module and cannot be disabled at tenant level.
-    chat: true,
+    chat: typeof overrides.chat === "boolean" ? overrides.chat : base.chat,
     campaigns: typeof overrides.campaigns === "boolean" ? overrides.campaigns : base.campaigns,
     tickets: typeof overrides.tickets === "boolean" ? overrides.tickets : base.tickets,
   };

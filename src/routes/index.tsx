@@ -260,10 +260,7 @@ function Dashboard() {
     }));
   const closedConversations = kpiValue(kpis.conversasEncerradas ?? kpis.contadorFechadasAtuais);
   const totalConversations =
-    kpis.conversasTotalPeriodo === undefined
-      ? kpiValue(kpis.conversasTotalAtual) ||
-        queueCards.reduce((total, queue) => total + queue.value, 0) + closedConversations
-      : kpiValue(kpis.conversasTotalPeriodo);
+    queueCards.reduce((total, queue) => total + queue.value, 0) + closedConversations;
   const messageTraffic = data?.charts.messagesByHour ?? [];
   const messageTrafficTotals = messageTraffic.reduce(
     (totals, item) => ({
@@ -296,6 +293,9 @@ function Dashboard() {
       return messageTraffic.map((item) => ({ nome: item.hora, total: item.total }));
     }
     if (component.dataSource === "conversations") {
+      if (component.groupBy === "conversationContact") {
+        return (remoteDataByGroup.get(component.groupBy) ?? []).slice(0, 10);
+      }
       const chartByGroup: Record<string, DashboardVisualDatum[]> = {
         status: statusSerie,
         connection: data?.charts.byConnection ?? [],
@@ -484,7 +484,15 @@ function Dashboard() {
                       columns={component.columns}
                       valueMode={component.valueMode}
                       data={resolveDashboardData(component)}
-                      preserveOrder={component.dataSource === "activity"}
+                      preserveOrder={
+                        component.dataSource === "activity" ||
+                        (component.dataSource === "conversations" &&
+                          component.groupBy === "conversationContact")
+                      }
+                      preserveAllItems={
+                        component.dataSource === "conversations" &&
+                        component.groupBy === "conversationContact"
+                      }
                     />
                   )}
                 </DashboardMaximizeFrame>
@@ -509,10 +517,21 @@ function Dashboard() {
           }))}
           resolveData={resolveDashboardData}
           renderPreview={(component) =>
-            component.dataSource === "messages" &&
-            component.groupBy === "hour" &&
-            component.visualization === "line" &&
-            component.valueMode === "count" ? (
+            component.dataSource === "conversations" &&
+            component.groupBy === "conversationContact" ? (
+              <DashboardComponentRenderer
+                title={component.title}
+                visualization={component.visualization}
+                columns={component.columns}
+                valueMode={component.valueMode}
+                data={resolveDashboardData(component)}
+                preserveOrder
+                preserveAllItems
+              />
+            ) : component.dataSource === "messages" &&
+              component.groupBy === "hour" &&
+              component.visualization === "line" &&
+              component.valueMode === "count" ? (
               <MessageTrafficWidget
                 title={component.title}
                 data={messageTraffic}
@@ -540,6 +559,8 @@ function kpiValue(kpi: { value: number | null } | undefined) {
 
 function requiresRemoteDashboardData(component: DashboardComponentConfig) {
   return (
-    component.dataSource === "contacts" || component.groupBy === "ticketRequesterContact"
+    component.dataSource === "contacts" ||
+    component.groupBy === "ticketRequesterContact" ||
+    (component.dataSource === "conversations" && component.groupBy === "conversationContact")
   );
 }

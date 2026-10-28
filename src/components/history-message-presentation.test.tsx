@@ -10,7 +10,10 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
 }));
 vi.mock("../routes/contatos", () => ({ ContactFormModal: () => null, contactPayload: vi.fn() }));
+vi.mock("@/components/app-shell", () => ({ AppShell: () => null, AppShellFull: () => null }));
 vi.mock("@/lib/session", () => ({
+  CUSTOMER_PORTAL_DASHBOARD_PATH: "/portal-cliente/dashboard",
+  CUSTOMER_PORTAL_TICKETS_PATH: "/portal-cliente/chamados",
   useSession: (selector: (state: unknown) => unknown) =>
     selector({ user: { id: "viewer", chatBubbleColor: null, chatBubbleTextColor: null } }),
 }));
@@ -41,6 +44,7 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
       root.render(
         <QueryClientProvider client={client}>
           <MessageBubble
+            mediaAccessAllowed
             m={message}
             agents={[]}
             contactName="Contato"
@@ -58,6 +62,7 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
       root.render(
         <QueryClientProvider client={client}>
           <MessageBubble
+            mediaAccessAllowed
             m={
               {
                 ...base,
@@ -589,6 +594,7 @@ it("recovers a failed received document only on an explicit click and displays f
       root.render(
         <QueryClientProvider client={client}>
           <MessageBubble
+            mediaAccessAllowed
             m={m}
             agents={[]}
             galleryImages={[]}
@@ -618,6 +624,256 @@ it("recovers a failed received document only on an explicit click and displays f
     expect(host.querySelector('[role="status"]')?.textContent).toBe(
       "Arquivo indisponível na origem.",
     );
+  } finally {
+    await React.act(async () => root.unmount());
+    client.clear();
+    host.remove();
+  }
+});
+
+it("previews only safe document MIME types and keeps other formats downloadable", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const createUrl = vi.fn(() => "blob:isolated-document");
+  URL.createObjectURL = createUrl;
+  URL.revokeObjectURL = vi.fn();
+  const open = vi.spyOn(window, "open").mockImplementation(() => null);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const render = async (mimeType: string, fileName: string) => {
+    await React.act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <MessageBubble
+            mediaAccessAllowed
+            m={
+              {
+                id: "isolated-xml",
+                conversation_id: "isolated-conversation",
+                sender: "contact",
+                direction: "inbound",
+                type: "document",
+                content: "",
+                created_at: "2026-10-27T12:00:00Z",
+                media_data: { mime_type: mimeType, file_name: fileName, state: "ready" },
+              } as ApiMessage
+            }
+            agents={[]}
+            contactName="Synthetic contact"
+            galleryImages={[]}
+            readOnly
+          />
+        </QueryClientProvider>,
+      );
+    });
+  };
+  try {
+    for (const mime of [
+      "text/xml",
+      "application/xml",
+      "Application/XML; charset=utf-8",
+      "text/html",
+      "Text/HTML; charset=utf-8",
+      "image/svg+xml",
+      "application/javascript",
+    ]) {
+      for (const extension of ["pdf", "txt", "csv"]) {
+        const name = `document.${extension}`;
+        await render(mime, name);
+        expect(host.querySelector(`[aria-label="Visualizar ${name}"]`)).toBeNull();
+        const download = host.querySelector(`[aria-label="Baixar ${name}"]`) as HTMLButtonElement;
+        expect(download).not.toBeNull();
+        expect(download.disabled).toBe(false);
+      }
+    }
+    for (const mime of ["", "application/octet-stream"]) {
+      await render(mime, "document.pdf");
+      expect(host.querySelector('[aria-label="Visualizar document.pdf"]')).not.toBeNull();
+    }
+    await render("application/pdf", "document.pdf");
+    const preview = host.querySelector(
+      '[aria-label="Visualizar document.pdf"]',
+    ) as HTMLButtonElement;
+    expect(preview).not.toBeNull();
+    for (const type of [
+      "text/xml; charset=utf-8",
+      "text/html",
+      "image/svg+xml",
+      "application/octet-stream",
+      "",
+    ]) {
+      vi.mocked(messageApi.downloadMedia).mockResolvedValueOnce(
+        new Blob(["<synthetic/>"], { type }),
+      );
+      await React.act(async () => preview.click());
+      expect(messageApi.downloadMedia).toHaveBeenLastCalledWith(
+        "isolated-conversation",
+        "isolated-xml",
+        true,
+      );
+      expect(open).not.toHaveBeenCalled();
+      expect(createUrl).not.toHaveBeenCalled();
+      expect(host.textContent).toContain("Este documento está disponível somente para download.");
+    }
+    vi.mocked(messageApi.downloadMedia).mockResolvedValueOnce(
+      new Blob(["%PDF-synthetic"], { type: "application/pdf" }),
+    );
+    await React.act(async () => preview.click());
+    expect(open).toHaveBeenCalledWith("blob:isolated-document", "_blank", "noopener,noreferrer");
+  } finally {
+    await React.act(async () => root.unmount());
+    client.clear();
+    host.remove();
+    open.mockRestore();
+  }
+});
+
+it.each([
+  ["image", "image/png", "image.png"],
+  ["video", "video/mp4", "video.mp4"],
+  ["audio", "audio/mpeg", "audio.mp3"],
+  ["voice", "audio/ogg", "voice.ogg"],
+  ["document", "application/pdf", "protected.pdf"],
+  ["document", "text/vcard", "contact.vcf"],
+])(
+  "does not acquire %s bytes or quoted media until attendance has a real protocol",
+  async (type, mime, name) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const download = vi
+      .mocked(messageApi.downloadMedia)
+      .mockReset()
+      .mockResolvedValue(new Blob(["synthetic"]));
+    const recover = vi.mocked(messageApi.recoverMedia).mockReset();
+    URL.createObjectURL = vi.fn(() => "blob:isolated-started-media");
+    URL.revokeObjectURL = vi.fn();
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const message = {
+      id: "guarded-media",
+      conversation_id: "isolated",
+      sender: "contact",
+      direction: "inbound",
+      type,
+      content: "Metadata remains visible",
+      created_at: "2026-10-28T12:00:00Z",
+      media_data: { file_name: name, mime_type: mime, state: "ready" },
+      quoted: {
+        message_id: "quoted-image",
+        type: "image",
+        author_name: "Synthetic contact",
+        media_data: { state: "ready" },
+      },
+    } as ApiMessage;
+    const render = async (allowed?: boolean) => {
+      await React.act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <MessageBubble
+              m={message}
+              mediaAccessAllowed={allowed}
+              agents={[]}
+              contactName="Synthetic contact"
+              galleryImages={[message]}
+              readOnly
+            />
+          </QueryClientProvider>,
+        ),
+      );
+    };
+    try {
+      // Omitted access fails closed, independent of storage ready state.
+      await render();
+      expect(host.textContent).toContain("Inicie o atendimento para acessar este arquivo");
+      // Contact cards keep their existing dedicated presentation instead of rendering raw content.
+      if (mime !== "text/vcard") expect(host.textContent).toContain("Metadata remains visible");
+      expect(host.textContent).not.toContain("Arquivo não armazenado");
+      expect(download).not.toHaveBeenCalled();
+      expect(recover).not.toHaveBeenCalled();
+      expect(host.querySelector('[aria-label="Ampliar imagem"]')).toBeNull();
+      expect(host.querySelector('[aria-label^="Visualizar "]')).toBeNull();
+      expect(host.querySelector('[aria-label^="Recuperar "]')).toBeNull();
+      const blocked = host.querySelector(
+        `[aria-label="Baixar ${name}"]`,
+      ) as HTMLButtonElement | null;
+      if (type === "document" && mime !== "text/vcard") {
+        expect(blocked?.disabled).toBe(true);
+        await React.act(async () => blocked!.click());
+        expect(download).not.toHaveBeenCalled();
+      }
+      await render(true);
+      expect(download).toHaveBeenCalledWith("isolated", "quoted-image", true);
+      if (type !== "document" || mime === "text/vcard") {
+        expect(download).toHaveBeenCalledWith("isolated", "guarded-media", true);
+      } else {
+        expect(
+          (host.querySelector(`[aria-label="Baixar ${name}"]`) as HTMLButtonElement).disabled,
+        ).toBe(false);
+        expect(host.querySelector('[aria-label="Visualizar protected.pdf"]')).not.toBeNull();
+      }
+    } finally {
+      await React.act(async () => root.unmount());
+      client.clear();
+      host.remove();
+    }
+  },
+);
+
+it("offers failed-document recovery only after the persisted protocol permits media access", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const download = vi.mocked(messageApi.downloadMedia).mockClear();
+  const recover = vi
+    .mocked(messageApi.recoverMedia)
+    .mockReset()
+    .mockResolvedValue({ messageId: "failed-guarded", state: "ready", recovered: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const message = {
+    id: "failed-guarded",
+    conversation_id: "isolated",
+    sender: "contact",
+    direction: "inbound",
+    type: "document",
+    content: "",
+    created_at: "2026-10-28T12:00:00Z",
+    media_data: { file_name: "failed.pdf", mime_type: "application/pdf", state: "failed" },
+  } as ApiMessage;
+  const render = async (allowed: boolean) => {
+    await React.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <MessageBubble
+            m={message}
+            mediaAccessAllowed={allowed}
+            agents={[]}
+            contactName="Synthetic contact"
+            galleryImages={[]}
+            readOnly
+          />
+        </QueryClientProvider>,
+      ),
+    );
+  };
+  try {
+    await render(false);
+    expect(host.textContent).toContain("Inicie o atendimento");
+    expect(host.textContent).not.toContain("Arquivo não armazenado");
+    expect(host.querySelector('[aria-label="Recuperar failed.pdf"]')).toBeNull();
+    expect(
+      (host.querySelector('[aria-label="Baixar failed.pdf"]') as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(download).not.toHaveBeenCalled();
+    expect(recover).not.toHaveBeenCalled();
+    await render(true);
+    expect(host.textContent).toContain("Arquivo não armazenado");
+    const button = host.querySelector('[aria-label="Recuperar failed.pdf"]') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    await React.act(async () => button.click());
+    expect(recover).toHaveBeenCalledWith("isolated", "failed-guarded");
   } finally {
     await React.act(async () => root.unmount());
     client.clear();

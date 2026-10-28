@@ -947,7 +947,7 @@ export function CreateGroupModal({
   );
 }
 
-function GroupDetailModal({
+export function GroupDetailModal({
   group,
   onClose,
   onGroupChange,
@@ -1008,6 +1008,7 @@ function GroupDetailModal({
   }, [group]);
 
   const availableContacts = React.useMemo(() => {
+    if (!canManageGroupParticipants) return [];
     return picker.items.filter((contact) => {
       const contactDigits = onlyDigits(contact.normalizedPhone || contact.telefone);
       if (activeParticipantKeys.has(contactDigits)) return false;
@@ -1016,7 +1017,7 @@ function GroupDetailModal({
         availableQuery,
       );
     });
-  }, [activeParticipantKeys, availableQuery, picker.items]);
+  }, [activeParticipantKeys, availableQuery, canManageGroupParticipants, picker.items]);
 
   const selectedParticipants = React.useMemo(() => {
     return (group?.participants ?? []).filter((participant) => {
@@ -1092,7 +1093,7 @@ function GroupDetailModal({
   };
 
   const addParticipant = (contactId: string) => {
-    if (!group) return;
+    if (!group || !canManageGroupParticipants || busy) return;
     void run(`participant:${contactId}`, async () => {
       const updated = await groupsApi.updateParticipants(group.id, {
         action: "add",
@@ -1470,59 +1471,72 @@ function GroupDetailModal({
                 </div>
               )}
               <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-                <section className="order-2 min-w-0 rounded-xl border border-border p-2.5 sm:p-4 lg:order-1">
+                <section
+                  aria-label="Contatos disponíveis"
+                  aria-disabled={!canManageGroupParticipants}
+                  className={`order-2 min-w-0 rounded-xl border border-border p-2.5 sm:p-4 lg:order-1 ${!canManageGroupParticipants ? "opacity-60" : ""}`}
+                >
                   <div className="mb-3 flex items-center gap-2">
                     <h3 className="text-base font-semibold sm:text-lg">Contatos disponíveis</h3>
-                    <Badge tone="default">{num(picker.total)}</Badge>
+                    <Badge tone="default">
+                      {num(canManageGroupParticipants ? picker.total : 0)}
+                    </Badge>
                   </div>
-                  <SearchInput
-                    value={availableQuery}
-                    onChange={setAvailableQuery}
-                    placeholder="Buscar contato ou WhatsApp..."
-                  />
-                  <div className="mt-2 max-h-56 divide-y divide-border overflow-y-auto sm:mt-3 sm:max-h-80">
-                    {availableContacts.map((contact) => (
-                      <div
-                        key={contact.id}
-                        className="flex items-center gap-2 py-2 text-xs sm:gap-3 sm:py-2.5 sm:text-sm"
-                      >
-                        <Avatar
-                          name={contact.nome}
-                          src={contact.avatar_url ?? undefined}
-                          size={40}
-                          className="!h-8 !w-8 !text-xs sm:!h-10 sm:!w-10 sm:!text-[15px]"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium">{contact.nome}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {formatGroupContactPhone(contact.normalizedPhone || contact.telefone)}
+                  {!canManageGroupParticipants && (
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      Você não pode adicionar participantes neste grupo.
+                    </p>
+                  )}
+                  <fieldset disabled={!canManageGroupParticipants || !!busy} className="min-w-0">
+                    <SearchInput
+                      value={availableQuery}
+                      onChange={setAvailableQuery}
+                      placeholder="Buscar contato ou WhatsApp..."
+                    />
+                    <div className="mt-2 max-h-56 divide-y divide-border overflow-y-auto sm:mt-3 sm:max-h-80">
+                      {availableContacts.map((contact) => (
+                        <div
+                          key={contact.id}
+                          className="flex items-center gap-2 py-2 text-xs sm:gap-3 sm:py-2.5 sm:text-sm"
+                        >
+                          <Avatar
+                            name={contact.nome}
+                            src={contact.avatar_url ?? undefined}
+                            size={40}
+                            className="!h-8 !w-8 !text-xs sm:!h-10 sm:!w-10 sm:!text-[15px]"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">{contact.nome}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {formatGroupContactPhone(contact.normalizedPhone || contact.telefone)}
+                            </span>
                           </span>
-                        </span>
-                        {canManageGroupParticipants && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => addParticipant(contact.id)}
-                            disabled={!!busy || !canManageGroupParticipants}
-                            title={`Adicionar ${contact.nome}`}
-                            aria-label={`Adicionar ${contact.nome}`}
-                          >
-                            <UserPlus className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                    {availableContacts.length === 0 && (
-                      <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-                        Nenhum contato disponível.
-                      </p>
-                    )}
-                  </div>
-                  <ContactPickerPager
-                    page={picker.page}
-                    total={picker.total}
-                    onPageChange={picker.setPage}
-                  />
+                          {canManageGroupParticipants && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => addParticipant(contact.id)}
+                              disabled={!!busy || !canManageGroupParticipants}
+                              title={`Adicionar ${contact.nome}`}
+                              aria-label={`Adicionar ${contact.nome}`}
+                            >
+                              <UserPlus className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      {canManageGroupParticipants && availableContacts.length === 0 && (
+                        <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                          Nenhum contato disponível.
+                        </p>
+                      )}
+                    </div>
+                    <ContactPickerPager
+                      page={picker.page}
+                      total={canManageGroupParticipants ? picker.total : 0}
+                      onPageChange={picker.setPage}
+                    />
+                  </fieldset>
                 </section>
                 <section className="order-1 min-w-0 rounded-xl border border-border p-2.5 sm:p-4 lg:order-2">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2 sm:gap-3">

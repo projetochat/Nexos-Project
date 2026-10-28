@@ -44,6 +44,7 @@ const dashboard: PlatformDashboardResponse = {
       {
         clientId: "a",
         clientName: "Cliente A",
+        logins: 0,
         instances: 3,
         contacts: 10,
         attendants: 2,
@@ -57,6 +58,7 @@ const dashboard: PlatformDashboardResponse = {
       },
     ],
     totals: {
+      logins: 0,
       instances: 3,
       contacts: 10,
       attendants: 2,

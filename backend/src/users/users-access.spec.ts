@@ -33,7 +33,12 @@ describe("profile and company session enforcement", () => {
     const user = { userId: "u", tenantId: "t", membershipId: "m", iatMs, surface: "tenant" };
     const guard = new PermissionsGuard(
       { getAllAndOverride: () => undefined } as never,
-      { tenantMembership: { findFirst: query } } as never,
+      {
+        tenantMembership: { findFirst: query },
+        tenantSubscription: {
+          findFirst: vi.fn().mockResolvedValue({ featuresSnapshot: { chat: true } }),
+        },
+      } as never,
     );
     const context = {
       getHandler() {},

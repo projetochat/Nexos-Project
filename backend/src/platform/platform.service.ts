@@ -161,6 +161,7 @@ const DEFAULT_PLATFORM_DASHBOARD_CONFIGURATION = {
 } as const;
 
 type ClientVolumetryCounts = {
+  logins: number;
   instances: number;
   contacts: number;
   attendants: number;
@@ -174,6 +175,7 @@ type ClientVolumetryCounts = {
 };
 
 const emptyClientVolumetryCounts = (): ClientVolumetryCounts => ({
+  logins: 0,
   instances: 0,
   contacts: 0,
   attendants: 0,
@@ -486,6 +488,7 @@ export class PlatformService {
       customFieldsByTenant,
       schedulesByTenant,
       campaignsByTenant,
+      loginsByTenant,
     ] = await this.prisma.$transaction([
       this.prisma.messagingConnection.groupBy({
         by: ["tenantId"],
@@ -556,6 +559,17 @@ export class PlatformService {
         where: { ...volumetryWhere, archivedAt: null },
         _count: { _all: true },
       }),
+      this.prisma.platformAuditLog.groupBy({
+        by: ["tenantId"],
+        orderBy: { tenantId: "asc" },
+        where: {
+          action: "auth.tenant.login",
+          targetType: "auth_session",
+          tenantId: { in: tenantIds },
+          createdAt: { gte: range.start, lt: range.end },
+        },
+        _count: { _all: true },
+      }),
     ]);
     const countsByTenant = new Map<string, ClientVolumetryCounts>();
     const applyCounts = (rows: unknown, metric: keyof ClientVolumetryCounts) => {
@@ -565,6 +579,7 @@ export class PlatformService {
         countsByTenant.set(row.tenantId, counts);
       }
     };
+    applyCounts(loginsByTenant, "logins");
     applyCounts(instancesByTenant, "instances");
     applyCounts(contactsByTenant, "contacts");
     applyCounts(attendantsByTenant, "attendants");
@@ -669,10 +684,12 @@ export class PlatformService {
         activeInstances: "archivedAt nulo, serviceEnabled true e status diferente de REMOVED.",
         messages:
           "INBOUND e OUTBOUND, exceto tipo SYSTEM, status FAILED e conversas arquivadas; America/Sao_Paulo.",
+        logins:
+          "Logins internos concluídos registrados na auditoria a partir desta atualização; período America/Sao_Paulo. Exclui refresh, Portal do Cliente, Platform e impersonação; não reconstrói histórico anterior.",
         clientGrouping:
           "Tenant sem cliente é agrupada como Sem cliente; cliente sem tenant tem volume zero.",
         clientVolumetry:
-          "Cadastros vigentes são contados por tenant e consolidados por cliente; o período não restringe essas métricas.",
+          "Cadastros vigentes são contados por tenant e consolidados por cliente; o período restringe somente Logins nesta tabela.",
       },
       scope: { clientId: query.clientId ?? null, tenantId: query.tenantId ?? null, tenantIds },
       // Compatibilidade com consumidores anteriores durante a migração do Dashboard Platform.
@@ -1488,14 +1505,15 @@ export class PlatformService {
     return {
       tenantId: id,
       modules: {
-        chat: true,
+        chat: effective.features.chat,
         campaigns: effective.features.campaigns,
         tickets: effective.features.tickets,
       },
-      lockedModules: ["chat"],
+      lockedModules: [],
       limits: effective.limits,
       overrides: {
         modules: {
+          ...(typeof featureOverrides.chat === "boolean" ? { chat: featureOverrides.chat } : {}),
           ...(typeof featureOverrides.campaigns === "boolean"
             ? { campaigns: featureOverrides.campaigns }
             : {}),
@@ -1536,6 +1554,7 @@ export class PlatformService {
       if (!existing) throw new NotFoundException("Tenant não encontrado.");
 
       const featureOverrides = jsonRecord(existing.featureOverrides);
+      if (dto.modules?.chat !== undefined) featureOverrides.chat = dto.modules.chat;
       if (dto.modules?.campaigns !== undefined) {
         featureOverrides.campaigns = dto.modules.campaigns;
       }

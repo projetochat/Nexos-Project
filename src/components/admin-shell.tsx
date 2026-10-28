@@ -522,8 +522,8 @@ function Topbar({
         <span className="truncate text-sm font-semibold">Trixus Admin</span>
       </div>
 
-      <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground">
-        <Bell className="h-4 w-4" />
+      <button className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground">
+        <Bell className="h-4 w-4 shrink-0" />
         <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-accent animate-pulse-ring" />
       </button>
       <UserMenu />

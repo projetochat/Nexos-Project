@@ -14,7 +14,7 @@ const allowedEnvironmentExamples = new Set([
 const allowedSqlRoots = ["backend/prisma/migrations/", "supabase/migrations/"];
 // Reviewed fixtures/examples with intentional dummy credentials. Any content change invalidates the exception.
 const credentialFixtureHashes = new Map([
-  [".env.example", "6a84714d48fd3c5a38563bae7cf94935d55ef7f246ecf6bfba02e31d09818c1c"],
+  [".env.example", "4828d15dd22d18ec5e5444c7edb0f8c2171a8dbafbd5ffaf56dfeecf07a45f2d"],
   [".env.vps.example", "70ba3fd51d575e324888f9be96b6f943db3d09d09f5fd3c61451432afeae46c0"],
   ["backend/.env.example", "5b227d84ebf13a3c1a7c2de30bf95e9fdb64a15eac36d22a49e49766fc4e31a0"],
   [
@@ -23,11 +23,11 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/src/auth/auth-session.spec.ts",
-    "6bd059b6b89541dec2b2190442e4ac1810c8f347999d7f4f07607025632e2c9d",
+    "36ba6e19b120df6beca7a65d3a2fad7390d070fdcf596d86ad49b0631bfb82f1",
   ],
   [
     "backend/src/auth/auth.service.spec.ts",
-    "1461006a5e3af2e4f1d1fdd9ab3df298b92bdf50f756e359d0f25b4f2c9b76fa",
+    "3044c0332189a472b2fed1ca8727e8a66f78f1b1ab3a2915fa0fd622ca364ef7",
   ],
   [
     "backend/src/config/environment.spec.ts",
@@ -85,7 +85,7 @@ const credentialFixtureHashes = new Map([
     "backend/src/users/administrator-credentials.spec.ts",
     "f94973e7fafc577a3f74b4150ed30080716821deafbd5793cf61269bf787fb1c",
   ],
-  ["docker-compose.yml", "e1b7487a4272318be6ab9d37615eac4b0d1bfaa534071b8b59f21def6e6906f5"],
+  ["docker-compose.yml", "b3d1b3543f7d9fa1dafb1532931545618e73a65f0da3e022ddbb358de35eac1d"],
   ["docs/DATABASE.md", "75c2e773b07153b32f44faef2539fc25399b747d720f0e1d49d2f886cee7e5bb"],
   ["docs/DEPLOY.md", "e4beba8f0e9f5c4c2cf08601c6498b97490c8114d5195a3ddfe212dec33de171"],
   ["docs/README.md", "80ac543c48e1f64ca0bab45114240f64687ff3fe3d8753582623b260498badb3"],

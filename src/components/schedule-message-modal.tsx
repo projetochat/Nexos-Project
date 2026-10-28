@@ -1,3 +1,5 @@
+import { sanitizeServiceHourDraft, formatServiceHourDraft } from "@/lib/time-input";
+import { displayDateTime } from "@/lib/format";
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, Pencil, Trash2 } from "lucide-react";
@@ -7,7 +9,11 @@ import { Modal } from "./modal";
 import { GreetingMessageEditor } from "./greeting-message-editor";
 import { schedulesApi, type QuickReplyAttachment } from "@/lib/trixus-api";
 import { scheduleWritePayload, type ApiSchedule } from "@/lib/schedule-types";
-import { pendingConversationSchedules, toLocalDateTimeInput } from "@/lib/schedule-message";
+import {
+  pendingConversationSchedules,
+  toLocalDateTimeInput,
+  scheduleDateSuggestions,
+} from "@/lib/schedule-message";
 import {
   CONNECTION_MESSAGE_VARIABLES,
   mergeMessageVariables,
@@ -35,7 +41,30 @@ export function ScheduleMessageModal({
   const queryClient = useQueryClient();
   const [content, setContent] = React.useState(initialContent);
   const [attachment, setAttachment] = React.useState<QuickReplyAttachment | null>(null);
-  const [scheduleAt, setScheduleAt] = React.useState("");
+  const [scheduleDate, setScheduleDate] = React.useState("");
+  const [scheduleTime, setScheduleTime] = React.useState("");
+  const [customDateTime, setCustomDateTime] = React.useState(false);
+  const [suggestionClock, setSuggestionClock] = React.useState(() => new Date());
+  const normalizedScheduleTime = formatServiceHourDraft(scheduleTime);
+  const validScheduleTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(normalizedScheduleTime);
+  const scheduleAt =
+    scheduleDate && validScheduleTime ? `${scheduleDate}T${normalizedScheduleTime}` : "";
+  const setScheduleAt = React.useCallback((value: string) => {
+    const [date = "", time = ""] = value.split("T");
+    setScheduleDate(date);
+    setScheduleTime(time);
+  }, []);
+  const suggestions = React.useMemo(
+    () => scheduleDateSuggestions(suggestionClock),
+    [suggestionClock],
+  );
+
+  React.useEffect(() => {
+    if (!open) return;
+    setSuggestionClock(new Date());
+    const timer = window.setInterval(() => setSuggestionClock(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [open]);
   const [editing, setEditing] = React.useState<ApiSchedule | null>(null);
   const [removing, setRemoving] = React.useState<ApiSchedule | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -78,18 +107,20 @@ export function ScheduleMessageModal({
     setContent(initialContent);
     setAttachment(null);
     setScheduleAt("");
+    setCustomDateTime(false);
     setError("");
     setRequiredErrors({ message: false, scheduleAt: false });
-  }, [initialContent, open]);
+  }, [initialContent, open, setScheduleAt]);
 
   const resetForm = React.useCallback(() => {
     setEditing(null);
     setContent(initialContent);
     setAttachment(null);
     setScheduleAt("");
+    setCustomDateTime(false);
     setError("");
     setRequiredErrors({ message: false, scheduleAt: false });
-  }, [initialContent]);
+  }, [initialContent, setScheduleAt]);
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ["trixus", "schedules"] });
@@ -99,7 +130,7 @@ export function ScheduleMessageModal({
     const trimmedContent = content.trim();
     const nextRequiredErrors = {
       message: !trimmedContent && !attachment,
-      scheduleAt: !scheduleAt,
+      scheduleAt: !scheduleDate || !scheduleTime,
     };
     if (nextRequiredErrors.message || nextRequiredErrors.scheduleAt) {
       setRequiredErrors(nextRequiredErrors);
@@ -109,12 +140,16 @@ export function ScheduleMessageModal({
       ]);
       return;
     }
+    if (!validScheduleTime) {
+      setError("Informe um horário válido entre 00:00 e 23:59.");
+      return;
+    }
     if (trimmedContent.length > 1000) {
       setError("A mensagem deve ter no máximo 1000 caracteres.");
       return;
     }
     const date = new Date(scheduleAt);
-    if (date <= new Date()) {
+    if (!Number.isFinite(date.getTime()) || date <= new Date()) {
       setError("Escolha um horário futuro.");
       return;
     }
@@ -133,6 +168,7 @@ export function ScheduleMessageModal({
             })
           : {
               id: crypto.randomUUID(),
+              origin: "CHAT",
               identifier,
               type: "message",
               title: "Mensagem agendada",
@@ -171,7 +207,12 @@ export function ScheduleMessageModal({
     onClose();
   };
 
-  const scheduleTimeInvalid = Boolean(scheduleAt) && new Date(scheduleAt).getTime() <= Date.now();
+  const scheduleFormatInvalid = Boolean(scheduleTime) && !validScheduleTime;
+  const scheduleTimeInvalid =
+    scheduleFormatInvalid ||
+    (Boolean(scheduleAt) &&
+      (!Number.isFinite(new Date(scheduleAt).getTime()) ||
+        new Date(scheduleAt).getTime() <= Date.now()));
 
   return (
     <>
@@ -206,25 +247,119 @@ export function ScheduleMessageModal({
                 }}
               />
             </Field>
-            <Field label="Data e horário *">
-              <div className="min-w-0 max-w-full overflow-hidden">
-                <Input
-                  type="datetime-local"
-                  value={scheduleAt}
-                  onChange={(event) => {
-                    setScheduleAt(event.target.value);
-                    if (event.target.value)
-                      setRequiredErrors((current) => ({ ...current, scheduleAt: false }));
+            <Field label="Data e horário *" asLabel={false}>
+              <div
+                className="grid grid-cols-2 gap-2"
+                role="group"
+                aria-label="Sugestões de horário"
+              >
+                {suggestions.map((suggestion) => {
+                  const value = toLocalDateTimeInput(suggestion.toISOString());
+                  const selected = !customDateTime && scheduleAt === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={selected}
+                      aria-label={displayDateTime(suggestion.toISOString())}
+                      title={displayDateTime(suggestion.toISOString())}
+                      disabled={busy}
+                      className={`flex min-w-0 w-full items-center justify-between gap-2 whitespace-nowrap rounded-lg border px-3 py-2.5 text-left text-sm transition ${selected ? "border-primary bg-primary/10 text-primary" : "border-border bg-card hover:bg-surface-2"}`}
+                      onClick={() => {
+                        if (suggestion.getTime() <= Date.now()) {
+                          setSuggestionClock(new Date());
+                          setError("Escolha um horário futuro.");
+                          return;
+                        }
+                        setScheduleAt(value);
+                        setCustomDateTime(false);
+                        setRequiredErrors((current) => ({ ...current, scheduleAt: false }));
+                        setError("");
+                      }}
+                    >
+                      <span className="min-w-0 truncate">
+                        <span className="sm:hidden">
+                          {suggestion.toLocaleDateString("pt-BR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                          })}
+                        </span>
+                        <span className="hidden sm:inline">
+                          {suggestion
+                            .toLocaleDateString("pt-BR", {
+                              weekday: "long",
+                              day: "2-digit",
+                              month: "2-digit",
+                            })
+                            .replace(",", "")}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-medium">{value.slice(11)}</span>
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  aria-expanded={customDateTime}
+                  disabled={busy}
+                  className={`flex min-w-0 w-full items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm ${customDateTime ? "border-primary bg-primary/10 text-primary" : "border-border bg-card hover:bg-surface-2"}`}
+                  onClick={() => {
+                    setCustomDateTime(true);
+                    if (!scheduleDate && !scheduleTime && suggestions[0])
+                      setScheduleAt(toLocalDateTimeInput(suggestions[0].toISOString()));
                     setError("");
                   }}
-                  aria-invalid={requiredErrors.scheduleAt || scheduleTimeInvalid}
-                  className={`block w-full min-w-0 max-w-full bg-card ${requiredFieldClassName(requiredErrors.scheduleAt || scheduleTimeInvalid)}`}
-                />
+                >
+                  <CalendarClock className="h-4 w-4 shrink-0" />
+                  Escolher data e hora
+                </button>
+                {customDateTime && (
+                  <div className="col-span-2 grid min-w-0 grid-cols-2 gap-3">
+                    <Field label="Data *">
+                      <Input
+                        type="date"
+                        aria-label="Data do agendamento"
+                        value={scheduleDate}
+                        disabled={busy}
+                        onChange={(event) => {
+                          setScheduleDate(event.target.value);
+                          setRequiredErrors((current) => ({ ...current, scheduleAt: false }));
+                          setError("");
+                        }}
+                        aria-invalid={requiredErrors.scheduleAt || scheduleTimeInvalid}
+                        className={`block w-full min-w-0 max-w-full bg-card ${requiredFieldClassName(requiredErrors.scheduleAt || scheduleTimeInvalid)}`}
+                      />
+                    </Field>
+                    <Field label="Hora *">
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="00:00"
+                        maxLength={5}
+                        aria-label="Hora do agendamento"
+                        value={scheduleTime}
+                        onBlur={(event) =>
+                          setScheduleTime(formatServiceHourDraft(event.target.value))
+                        }
+                        disabled={busy}
+                        onChange={(event) => {
+                          setScheduleTime(sanitizeServiceHourDraft(event.target.value));
+                          setRequiredErrors((current) => ({ ...current, scheduleAt: false }));
+                          setError("");
+                        }}
+                        aria-invalid={requiredErrors.scheduleAt || scheduleTimeInvalid}
+                        className={`block w-full min-w-0 max-w-full bg-card ${requiredFieldClassName(requiredErrors.scheduleAt || scheduleTimeInvalid)}`}
+                      />
+                    </Field>
+                  </div>
+                )}
               </div>
             </Field>
             {scheduleTimeInvalid && (
               <p role="alert" className="text-xs text-destructive">
-                Escolha um horário futuro.
+                {scheduleFormatInvalid
+                  ? "Informe um horário válido entre 00:00 e 23:59."
+                  : "Escolha um horário futuro."}
               </p>
             )}
             <p className="text-xs text-muted-foreground">
@@ -290,7 +425,7 @@ export function ScheduleMessageModal({
                         {item.content}
                       </p>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {new Date(item.scheduledAt).toLocaleString("pt-BR", {
+                        {displayDateTime(item.scheduledAt, {
                           dateStyle: "short",
                           timeStyle: "short",
                         })}
@@ -322,6 +457,7 @@ export function ScheduleMessageModal({
                           setContent(item.content);
                           setAttachment(item.attachment ?? null);
                           setScheduleAt(toLocalDateTimeInput(item.scheduledAt));
+                          setCustomDateTime(true);
                           setError("");
                         }}
                         disabled={

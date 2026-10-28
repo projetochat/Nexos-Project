@@ -10,6 +10,7 @@ export type PlatformDashboardFilters = {
 };
 
 export type PlatformClientVolumetryCounts = {
+  logins: number;
   instances: number;
   contacts: number;
   attendants: number;

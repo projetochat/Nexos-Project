@@ -3,6 +3,7 @@ import {
   TENANT_ADMIN_PERMISSIONS,
   type PermissionKey,
 } from "./permissions.constants";
+import { chatModulePermissionAllowed } from "./module-permissions";
 import { coerceFeatures, mergeFeatureOverrides } from "../platform/plan-entitlement.service";
 
 type RoleWithPermissions = {
@@ -34,7 +35,7 @@ export async function moduleAwarePermissions(
   role: RoleWithPermissions,
 ): Promise<PermissionKey[]> {
   const permissions = effectivePermissions(role);
-  if (role.key !== "tenant_admin") return permissions;
+  if (!permissions.length) return permissions;
   const subscription = await prisma.tenantSubscription.findFirst({
     where: { tenantId, status: { in: ["TRIALING", "ACTIVE", "PAST_DUE", "SUSPENDED"] } },
     orderBy: { createdAt: "desc" },
@@ -46,7 +47,8 @@ export async function moduleAwarePermissions(
   );
   return permissions.filter(
     (permission) =>
-      (features.campaigns || !permission.startsWith("campaigns.")) &&
-      (features.tickets || !permission.startsWith("tickets.")),
+      chatModulePermissionAllowed(permission, features) &&
+      (role.key !== "tenant_admin" || features.campaigns || !permission.startsWith("campaigns.")) &&
+      (role.key !== "tenant_admin" || features.tickets || !permission.startsWith("tickets.")),
   );
 }

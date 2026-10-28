@@ -8,6 +8,47 @@ import {
 } from "./jwt-auth.guard";
 
 describe("pending onboarding route boundary", () => {
+  it("releases the setup restriction for Chat disabled only after active session and membership checks", async () => {
+    const f = setupGuard("agent", "GET", "/api/inbox");
+    const subscription = await f.prisma.tenantSubscription.findFirst();
+    f.prisma.tenantSubscription.findFirst.mockClear();
+    f.prisma.tenantSubscription.findFirst.mockResolvedValue({
+      ...subscription,
+      featuresSnapshot: { chat: false },
+    });
+    await expect(f.guard.canActivate(f.context as never)).resolves.toBe(true);
+    expect(f.prisma.tenantMembership.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: "user-a",
+          tenantId: "tenant-a",
+          status: "ACTIVE",
+          user: { status: "ACTIVE" },
+          tenant: { status: { in: ["ACTIVE", "TRIAL"] } },
+        }),
+      }),
+    );
+    f.prisma.tenantMembership.findFirst.mockResolvedValueOnce(null as never);
+    await expect(f.guard.canActivate(f.context as never)).rejects.toThrow("Membership inativa");
+    expect(f.prisma.tenantSubscription.findFirst).toHaveBeenCalledTimes(1);
+    f.auth.assertAccessSession.mockRejectedValueOnce(new Error("session revoked"));
+    await expect(f.guard.canActivate(f.context as never)).rejects.toThrow("session revoked");
+    expect(f.prisma.tenantSubscription.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not bypass invalid portal access or entitlement lookup failures", async () => {
+    const f = setupGuard("tenant_admin", "GET", "/api/inbox", "portal-access-a");
+    f.prisma.customerPortalAccess.findFirst.mockResolvedValueOnce(null as never);
+    await expect(f.guard.canActivate(f.context as never)).rejects.toThrow("Acesso ao Portal");
+    expect(f.prisma.tenantSubscription.findFirst).not.toHaveBeenCalled();
+    f.prisma.tenantSubscription.findFirst.mockRejectedValueOnce(
+      new Error("entitlements unavailable"),
+    );
+    await expect(f.guard.canActivate(f.context as never)).rejects.toThrow(
+      "entitlements unavailable",
+    );
+  });
+
   it("keeps the status endpoint available to every authenticated tenant user", () => {
     expect(isOnboardingStatusRequest("GET", "/onboarding/status")).toBe(true);
     expect(isTenantBootstrapRequest("GET", "/auth/me")).toBe(true);
@@ -79,6 +120,22 @@ function setupGuard(roleKey: string, method: string, originalUrl: string, portal
     assertAccessSession: vi.fn().mockResolvedValue(undefined),
   };
   const prisma = {
+    tenantSubscription: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: "subscription-a",
+        planId: "plan-a",
+        status: "ACTIVE",
+        plan: { code: "synthetic" },
+        limitsSnapshot: {},
+        featuresSnapshot: { chat: true },
+        tenant: {
+          maxUsers: null,
+          maxConnections: null,
+          featureOverrides: null,
+          limitOverrides: null,
+        },
+      }),
+    },
     $queryRaw: vi.fn().mockResolvedValue([{ status: "PENDING" }]),
     tenantMembership: {
       findFirst: vi.fn().mockResolvedValue({ role: { key: roleKey } }),
@@ -95,5 +152,11 @@ function setupGuard(roleKey: string, method: string, originalUrl: string, portal
   const context = {
     switchToHttp: () => ({ getRequest: () => request }),
   };
-  return { guard: new JwtAuthGuard(auth as never, prisma as never), context, request };
+  return {
+    guard: new JwtAuthGuard(auth as never, prisma as never),
+    context,
+    request,
+    prisma,
+    auth,
+  };
 }

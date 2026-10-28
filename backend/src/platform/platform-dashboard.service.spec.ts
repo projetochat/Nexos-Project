@@ -19,6 +19,7 @@ function createService(prisma: Record<string, unknown>) {
 function dashboardPrisma(messages: Array<Record<string, unknown>> = []) {
   const query = <T>(value: T) => vi.fn().mockResolvedValue(value);
   const prisma = {
+    platformAuditLog: { groupBy: query([]) },
     platformClient: {
       findMany: query([
         { id: "client-a", name: "Cliente A", tenantId: "tenant-a" },
@@ -197,6 +198,7 @@ describe("Platform Dashboard", () => {
       }),
     ]);
     expect(result.clientVolumetry.totals).toEqual({
+      logins: 0,
       instances: 3,
       contacts: 7,
       attendants: 3,
@@ -224,6 +226,7 @@ describe("Platform Dashboard", () => {
     const allClientsResult = await createService(prisma).dashboard({ period: "month" });
     expect(allClientsResult.clientVolumetry.rows).toHaveLength(2);
     expect(allClientsResult.clientVolumetry.totals).toEqual({
+      logins: 0,
       instances: 4,
       contacts: 8,
       attendants: 4,
@@ -432,5 +435,54 @@ describe("Platform Dashboard", () => {
     await expect(
       service.updateDashboardConfiguration({ configuration, version: 1 }, current),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe("Platform login volumetry", () => {
+  it("consolidates successful audited logins and intersects tenant/client/date filters", async () => {
+    const prisma = dashboardPrisma();
+    prisma.platformAuditLog.groupBy.mockResolvedValue([
+      { tenantId: "tenant-a", _count: { _all: 7 } },
+      { tenantId: "tenant-orphan", _count: { _all: 2 } },
+    ]);
+    const service = createService(prisma);
+    const query = { period: "custom" as const, start: "2026-10-01", end: "2026-10-02" };
+    const all = await service.dashboard(query);
+    expect(all.clientVolumetry.rows.find((row) => row.clientId === "client-a")?.logins).toBe(7);
+    expect(all.clientVolumetry.rows.find((row) => row.clientId === null)?.logins).toBe(2);
+    expect(all.clientVolumetry.rows.find((row) => row.clientId === "client-silent")?.logins).toBe(
+      0,
+    );
+    expect(all.clientVolumetry.totals.logins).toBe(9);
+    expect(prisma.platformAuditLog.groupBy).toHaveBeenLastCalledWith({
+      by: ["tenantId"],
+      orderBy: { tenantId: "asc" },
+      _count: { _all: true },
+      where: {
+        action: "auth.tenant.login",
+        targetType: "auth_session",
+        tenantId: { in: ["tenant-a", "tenant-orphan"] },
+        createdAt: {
+          gte: new Date("2026-10-01T03:00:00.000Z"),
+          lt: new Date("2026-10-03T03:00:00.000Z"),
+        },
+      },
+    });
+    const scoped = await service.dashboard({
+      ...query,
+      tenantId: "tenant-a",
+      clientId: "client-a",
+    });
+    expect(scoped.clientVolumetry.totals.logins).toBe(7);
+    expect(prisma.platformAuditLog.groupBy).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: { in: ["tenant-a"] } }),
+      }),
+    );
+    const empty = await service.dashboard({ ...query, clientId: "client-silent" });
+    expect(empty.clientVolumetry.totals.logins).toBe(0);
+    expect(prisma.platformAuditLog.groupBy).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: { in: [] } }) }),
+    );
   });
 });

@@ -130,6 +130,49 @@ describe("RolesController permission delegation", () => {
     ).rejects.toThrow("O módulo Chamados está desabilitado para esta organização.");
   });
 
+  it.each(["conversations.read", "messages.send", "connections.read"])(
+    "rejects new unavailable Chat permission %s",
+    async (permission) => {
+      const controller = new RolesController(
+        {} as never,
+        {} as never,
+        {
+          getEntitlements: vi
+            .fn()
+            .mockResolvedValue({ features: { chat: false, campaigns: false, tickets: true } }),
+        } as never,
+      );
+      await expect(
+        controller["assertEnabledModulePermissions"]([permission], "tenant-a"),
+      ).rejects.toThrow("O módulo Chat está desabilitado");
+    },
+  );
+
+  it("allows shared connections with Campaigns and preserves existing Chat grants without permitting additions", async () => {
+    const getEntitlements = vi
+      .fn()
+      .mockResolvedValue({ features: { chat: false, campaigns: true, tickets: true } });
+    const controller = new RolesController({} as never, {} as never, { getEntitlements } as never);
+    await expect(
+      controller["assertEnabledModulePermissions"](["connections.read"], "tenant-a"),
+    ).resolves.toBeUndefined();
+    await expect(
+      controller["assertEnabledModulePermissions"](
+        ["conversations.read", "contacts.read"],
+        "tenant-a",
+        ["conversations.read"],
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      controller["assertEnabledModulePermissions"](
+        ["conversations.read", "messages.send"],
+        "tenant-a",
+        ["conversations.read"],
+      ),
+    ).rejects.toThrow("O módulo Chat está desabilitado");
+    expect(getEntitlements).toHaveBeenCalledWith("tenant-a");
+  });
+
   it("treats a legacy assignment as authority over its canonical replacement", () => {
     const controller = new RolesController({} as never, {} as never);
     const assertCanGrantPermissions = (
@@ -187,117 +230,120 @@ describe("RolesController permission delegation", () => {
     ]);
   });
 
-  it("stores canonical permissions and refreshes affected users without revoking sessions", async () => {
-    const role = {
-      id: "role-a",
-      tenantId: "tenant-a",
-      key: "custom",
-      name: "Custom",
-      description: null,
-      metadata: {},
-      system: false,
-      createdAt: new Date("2026-10-01T12:00:00.000Z"),
-      updatedAt: new Date("2026-10-01T12:00:00.000Z"),
-      permissions: [
-        { permissionId: "conversations.read" },
-        { permissionId: "contacts.additional_fields.read" },
-        { permissionId: "chat.audio.send" },
-        { permissionId: "chat.contacts.create" },
-        { permissionId: "chat.contacts.edit" },
-        { permissionId: "chat.tickets.create" },
-        { permissionId: "chat.contacts.read" },
-        { permissionId: "chat.customer_link.edit" },
-        { permissionId: "chat.contacts.block" },
-        { permissionId: "conversations.manage" },
-      ],
-    };
-    const createMany = vi.fn();
-    const revokeSessions = vi.fn().mockResolvedValue({ count: 2 });
-    const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
-      permission: { upsert: vi.fn() },
-      rolePermission: { deleteMany: vi.fn(), createMany },
-      role: {
-        update: vi.fn().mockImplementation(() => ({
-          ...role,
-          permissions: createMany.mock.calls[0][0].data.map(
-            ({ permissionId }: { permissionId: string }) => ({ permissionId }),
-          ),
-        })),
-      },
-      tenantMembership: {
-        findMany: vi.fn().mockResolvedValue([{ id: "membership-a" }, { id: "membership-b" }]),
-      },
-      authSession: { updateMany: revokeSessions },
-    };
-    const prisma = {
-      role: { findFirst: vi.fn().mockResolvedValue(role) },
-      $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
-    };
-    const realtime = { publish: vi.fn() };
-    const controller = new RolesController(
-      prisma as never,
-      realtime as never,
-      {
-        getEntitlements: vi.fn().mockResolvedValue({
-          features: { chat: true, campaigns: true, tickets: true },
-        }),
-      } as never,
-    );
-
-    const updated = await controller.update(
-      "role-a",
-      {
-        permissionIds: [
-          "conversations.read",
-          "chat.audio.send",
-          "chat.contacts.create",
-          "chat.contacts.edit",
-          "chat.tickets.create",
-          "chat.contacts.read",
-          "chat.customer_link.edit",
-          "chat.contacts.block",
-          "conversations.manage",
+  it.each([true, false])(
+    "preserves canonical saved permissions when Chat enabled=%s without revoking sessions",
+    async (chat) => {
+      const role = {
+        id: "role-a",
+        tenantId: "tenant-a",
+        key: "custom",
+        name: "Custom",
+        description: null,
+        metadata: {},
+        system: false,
+        createdAt: new Date("2026-10-01T12:00:00.000Z"),
+        updatedAt: new Date("2026-10-01T12:00:00.000Z"),
+        permissions: [
+          { permissionId: "conversations.read" },
+          { permissionId: "contacts.additional_fields.read" },
+          { permissionId: "chat.audio.send" },
+          { permissionId: "chat.contacts.create" },
+          { permissionId: "chat.contacts.edit" },
+          { permissionId: "chat.tickets.create" },
+          { permissionId: "chat.contacts.read" },
+          { permissionId: "chat.customer_link.edit" },
+          { permissionId: "chat.contacts.block" },
+          { permissionId: "conversations.manage" },
         ],
-      },
-      { ...current, roleKey: "tenant_admin" } as never,
-    );
+      };
+      const createMany = vi.fn();
+      const revokeSessions = vi.fn().mockResolvedValue({ count: 2 });
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
+        permission: { upsert: vi.fn() },
+        rolePermission: { deleteMany: vi.fn(), createMany },
+        role: {
+          update: vi.fn().mockImplementation(() => ({
+            ...role,
+            permissions: createMany.mock.calls[0][0].data.map(
+              ({ permissionId }: { permissionId: string }) => ({ permissionId }),
+            ),
+          })),
+        },
+        tenantMembership: {
+          findMany: vi.fn().mockResolvedValue([{ id: "membership-a" }, { id: "membership-b" }]),
+        },
+        authSession: { updateMany: revokeSessions },
+      };
+      const prisma = {
+        role: { findFirst: vi.fn().mockResolvedValue(role) },
+        $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
+      };
+      const realtime = { publish: vi.fn() };
+      const controller = new RolesController(
+        prisma as never,
+        realtime as never,
+        {
+          getEntitlements: vi.fn().mockResolvedValue({
+            features: { chat, campaigns: true, tickets: true },
+          }),
+        } as never,
+      );
 
-    expect(createMany).toHaveBeenCalledWith({
-      data: [
-        { roleId: "role-a", permissionId: "conversations.read" },
-        { roleId: "role-a", permissionId: "messages.send" },
-        { roleId: "role-a", permissionId: "contacts.read" },
-        { roleId: "role-a", permissionId: "contacts.create" },
-        { roleId: "role-a", permissionId: "contacts.update" },
-        { roleId: "role-a", permissionId: "tickets.read" },
-        { roleId: "role-a", permissionId: "tickets.create" },
-        { roleId: "role-a", permissionId: "conversations.assign" },
-      ],
-      skipDuplicates: true,
-    });
-    expect(updated.permissionIds).toEqual([
-      "conversations.read",
-      "messages.send",
-      "contacts.read",
-      "contacts.create",
-      "contacts.update",
-      "tickets.read",
-      "tickets.create",
-      "conversations.assign",
-    ]);
-    expect(revokeSessions).not.toHaveBeenCalled();
-    expect(realtime.publish).toHaveBeenCalledWith(
-      { membershipId: "membership-a" },
-      "authorization.updated",
-      { membershipId: "membership-a", reason: "role.updated" },
-    );
-    expect(realtime.publish).toHaveBeenCalledWith(
-      { membershipId: "membership-b" },
-      "authorization.updated",
-      { membershipId: "membership-b", reason: "role.updated" },
-    );
-  });
+      const updated = await controller.update(
+        "role-a",
+        {
+          permissionIds: [
+            "conversations.read",
+            "chat.audio.send",
+            "chat.contacts.create",
+            "chat.contacts.edit",
+            "chat.tickets.create",
+            "chat.contacts.read",
+            "chat.customer_link.edit",
+            "chat.contacts.block",
+            "conversations.manage",
+          ],
+        },
+        { ...current, roleKey: "tenant_admin" } as never,
+      );
+
+      expect(createMany).toHaveBeenCalledWith({
+        data: [
+          { roleId: "role-a", permissionId: "conversations.read" },
+          { roleId: "role-a", permissionId: "messages.send" },
+          { roleId: "role-a", permissionId: "contacts.read" },
+          { roleId: "role-a", permissionId: "contacts.create" },
+          { roleId: "role-a", permissionId: "contacts.update" },
+          { roleId: "role-a", permissionId: "tickets.read" },
+          { roleId: "role-a", permissionId: "tickets.create" },
+          { roleId: "role-a", permissionId: "conversations.assign" },
+        ],
+        skipDuplicates: true,
+      });
+      expect(updated.permissionIds).toEqual([
+        "conversations.read",
+        "messages.send",
+        "contacts.read",
+        "contacts.create",
+        "contacts.update",
+        "tickets.read",
+        "tickets.create",
+        "conversations.assign",
+      ]);
+      expect(revokeSessions).not.toHaveBeenCalled();
+      expect(realtime.publish).toHaveBeenCalledWith(
+        { membershipId: "membership-a" },
+        "authorization.updated",
+        { membershipId: "membership-a", reason: "role.updated" },
+      );
+      expect(realtime.publish).toHaveBeenCalledWith(
+        { membershipId: "membership-b" },
+        "authorization.updated",
+        { membershipId: "membership-b", reason: "role.updated" },
+      );
+    },
+  );
 
   it("uses the assigned permissions, not the temporarily expanded runtime catalog", async () => {
     const prisma = { messagingConnection: { count: vi.fn() } };

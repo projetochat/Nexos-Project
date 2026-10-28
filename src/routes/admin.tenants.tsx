@@ -539,7 +539,7 @@ function TenantConfigurationModal({
   const [configuration, setConfiguration] = React.useState<PlatformTenantConfiguration | null>(
     null,
   );
-  const [modules, setModules] = React.useState({ campaigns: false, tickets: false });
+  const [modules, setModules] = React.useState({ chat: true, campaigns: false, tickets: false });
   const [limits, setLimits] = React.useState<Record<string, string>>({});
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -559,7 +559,11 @@ function TenantConfigurationModal({
       .then((result) => {
         if (cancelled) return;
         setConfiguration(result);
-        setModules({ campaigns: result.modules.campaigns, tickets: result.modules.tickets });
+        setModules({
+          chat: result.modules.chat !== false,
+          campaigns: result.modules.campaigns,
+          tickets: result.modules.tickets,
+        });
         setLimits(
           Object.fromEntries(
             TENANT_LIMIT_FIELDS.map(([key]) => {
@@ -599,7 +603,7 @@ function TenantConfigurationModal({
     setSaving(true);
     try {
       await platformApi.updateTenantConfiguration(tenant.id, {
-        modules: { chat: true, campaigns: modules.campaigns, tickets: modules.tickets },
+        modules: { chat: modules.chat, campaigns: modules.campaigns, tickets: modules.tickets },
         limits: normalizedLimits,
       });
       toast.success("Configuração da Tenant atualizada.");
@@ -650,10 +654,12 @@ function TenantConfigurationModal({
             <div className="mt-3 space-y-2">
               <ModuleToggle
                 label="Chat"
-                description="Módulo obrigatório e sempre habilitado."
-                checked
-                disabled
-                onCheckedChange={() => undefined}
+                description="Controla menu, permissões e operações do Chat."
+                checked={modules.chat}
+                disabled={saving}
+                onCheckedChange={(checked) =>
+                  setModules((current) => ({ ...current, chat: checked }))
+                }
               />
               <ModuleToggle
                 label="Campanhas"

@@ -36,7 +36,7 @@ export type DashboardPreferencesV2 = {
   components: DashboardComponentConfig[];
 };
 
-export const DASHBOARD_NATIVE_REVISION = 4;
+export const DASHBOARD_NATIVE_REVISION = 5;
 
 export type DashboardGroupingOption = {
   value: string;
@@ -63,6 +63,7 @@ const NATIVE_GROUPINGS: Record<DashboardDataSource, DashboardGroupingOption[]> =
   ],
   conversations: [
     { value: "status", label: "Status da conversa", section: "native" },
+    { value: "conversationContact", label: "Contatos", section: "native" },
     { value: "connection", label: "Instância", section: "native" },
     { value: "customer", label: "Cliente", section: "native" },
     { value: "department", label: "Departamento", section: "native" },
@@ -88,12 +89,12 @@ export const DEFAULT_DASHBOARD_COMPONENTS: DashboardComponentConfig[] = [
   component("messages", "Tráfego de mensagens", true, "line", 2, "messages", "hour", "count"),
   component(
     "ticketRequesterRanking",
-    "Top 10 contatos que abriram chamados",
+    "Top 10 contatos que mais abrem conversas",
     true,
     "table",
     1,
-    "records",
-    "ticketRequesterContact",
+    "conversations",
+    "conversationContact",
     "count",
   ),
   component("tag", "Conversas por etiqueta", true, "columns", 1, "conversations", "tag", "count"),
@@ -264,13 +265,35 @@ function migrateNativeDashboardRevision(
   nativeRevision: number,
 ) {
   return components.map((component) => {
-    if (nativeRevision < 3 && component.id === "ticketRequesterRanking") {
-      return { ...component, visualization: "table" as const, columns: 1 as const };
+    let migrated = component;
+    if (
+      nativeRevision < 3 &&
+      component.id === "ticketRequesterRanking" &&
+      component.dataSource === "records" &&
+      component.groupBy === "ticketRequesterContact"
+    ) {
+      migrated = { ...migrated, visualization: "table" as const, columns: 1 as const };
     }
     if (nativeRevision < 4 && component.id === "tag") {
-      return { ...component, columns: 1 as const };
+      migrated = { ...migrated, columns: 1 as const };
     }
-    return component;
+    if (
+      nativeRevision < 5 &&
+      component.id === "ticketRequesterRanking" &&
+      component.dataSource === "records" &&
+      component.groupBy === "ticketRequesterContact"
+    ) {
+      migrated = {
+        ...migrated,
+        dataSource: "conversations",
+        groupBy: "conversationContact",
+        title:
+          component.title === "Top 10 contatos que abriram chamados"
+            ? "Top 10 contatos que mais abrem conversas"
+            : component.title,
+      };
+    }
+    return migrated;
   });
 }
 
@@ -308,9 +331,12 @@ function migrateLegacyPreferences(value: Record<string, unknown>) {
         ...item,
         visible: visible.has(item.id),
         title:
-          typeof labels[item.id] === "string"
-            ? String(labels[item.id]).trim() || item.title
-            : item.title,
+          item.id === "ticketRequesterRanking" &&
+          labels[item.id] === "Top 10 contatos que abriram chamados"
+            ? item.title
+            : typeof labels[item.id] === "string"
+              ? String(labels[item.id]).trim() || item.title
+              : item.title,
         columns: normalizeColumns(columns[item.id], item.columns),
       },
     ]),

@@ -24,11 +24,45 @@ function setup(error?: Error) {
     storage as never,
     realtime as never,
   );
-  vi.spyOn(service, "findVisibleConversation").mockResolvedValue({} as never);
+  vi.spyOn(service, "findVisibleConversation").mockResolvedValue({ protocol: "000001" } as never);
   return { db, storage, realtime, service, bytes };
 }
 
 describe("message media download", () => {
+  it.each([null, undefined, "", "   "])(
+    "blocks media before first start for protocol %j",
+    async (protocol) => {
+      const f = setup();
+      vi.mocked(f.service.findVisibleConversation).mockResolvedValue({ protocol } as never);
+      await expect(
+        f.service.downloadMedia("conversation", "message", current),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: {
+          code: "CONVERSATION_NOT_STARTED",
+          message: "Inicie o atendimento para acessar os arquivos.",
+        },
+      });
+      expect(f.db.message.findFirst).not.toHaveBeenCalled();
+      expect(f.storage.readObject).not.toHaveBeenCalled();
+      expect(f.db.message.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["ABERTA", "EM_ANDAMENTO", "AGUARDANDO", "FECHADA"])(
+    "keeps started %s conversation media accessible",
+    async (status) => {
+      const f = setup();
+      vi.mocked(f.service.findVisibleConversation).mockResolvedValue({
+        protocol: " 000001 ",
+        status,
+      } as never);
+      await expect(f.service.downloadMedia("conversation", "message", current)).resolves.toEqual(
+        expect.objectContaining({ body: f.bytes }),
+      );
+    },
+  );
+
   it("returns existing bytes without changing media state", async () => {
     const { service, db, bytes } = setup();
     const result = await service.downloadMedia("conversation", "message", current);

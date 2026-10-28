@@ -26,6 +26,67 @@ export type AiImageInput = { mimeType: string; body: Buffer };
 
 @Injectable()
 export class AiProviderService {
+  async validateCredential(input: {
+    provider: AiProvider;
+    apiKey: string;
+    organization?: string | null;
+  }): Promise<void> {
+    const apiKey = input.apiKey.trim();
+    const label = providerLabel(input.provider);
+    if (!apiKey) throw invalidCredential(label);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const { url, headers } = credentialValidationRequest({ ...input, apiKey });
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { ...headers, "cache-control": "no-store" },
+        signal: controller.signal,
+        redirect: "error",
+      });
+      if ([401, 402, 403, 429].includes(response.status)) await response.body?.cancel();
+      if (response.status === 401) throw invalidCredential(label);
+      if (response.status === 403)
+        throw providerException(
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          "AI_PROVIDER_ACCESS_DENIED",
+          `${label} não autorizou a validação desta chave. Confira as permissões da API Key.`,
+        );
+      if (response.status === 429)
+        throw providerException(
+          HttpStatus.TOO_MANY_REQUESTS,
+          "AI_PROVIDER_RATE_LIMITED",
+          `${label} limitou as consultas. Aguarde e tente validar a conexão novamente.`,
+        );
+      if (response.status === 402)
+        throw providerException(
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          "AI_PROVIDER_CREDITS_UNAVAILABLE",
+          `${label} informou uma pendência de créditos ou faturamento. Não foi possível validar a conexão.`,
+        );
+      const payload = await readCredentialValidationBody(response);
+      if (
+        input.provider === AiProvider.GEMINI &&
+        response.status === 400 &&
+        hasInvalidGoogleKeyReason(payload)
+      ) {
+        throw invalidCredential(label);
+      }
+      if (!response.ok || !validCredentialMetadata(input.provider, payload))
+        throw credentialValidationUnavailable(label);
+    } catch (error) {
+      if (controller.signal.aborted)
+        throw providerException(
+          HttpStatus.GATEWAY_TIMEOUT,
+          "AI_PROVIDER_TIMEOUT",
+          `${label} demorou para responder. Não foi possível validar a conexão; tente novamente.`,
+        );
+      if (error instanceof HttpException) throw error;
+      throw credentialValidationUnavailable(label);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   async generate(input: {
     provider: AiProvider;
     model: string;
@@ -449,4 +510,115 @@ function recordArray(value: unknown): unknown[] {
 function boundedNumber(value: string | undefined, fallback: number, min: number, max: number) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+}
+
+function invalidCredential(label: string) {
+  return providerException(
+    HttpStatus.UNPROCESSABLE_ENTITY,
+    "AI_PROVIDER_CREDENTIAL_INVALID",
+    `Chave inválida ou revogada em ${label}. Revise a API Key e tente novamente.`,
+  );
+}
+
+function credentialValidationUnavailable(label: string) {
+  return providerException(
+    HttpStatus.SERVICE_UNAVAILABLE,
+    "AI_CREDENTIAL_VALIDATION_UNAVAILABLE",
+    `Não foi possível validar a conexão com ${label}. Tente novamente em instantes.`,
+  );
+}
+
+function credentialValidationRequest(input: {
+  provider: AiProvider;
+  apiKey: string;
+  organization?: string | null;
+}): { url: string; headers: Record<string, string> } {
+  const bearer = { authorization: `Bearer ${input.apiKey}` };
+  switch (input.provider) {
+    case AiProvider.OPENAI:
+      return {
+        url: "https://api.openai.com/v1/models",
+        headers: {
+          ...bearer,
+          ...(input.organization?.trim()
+            ? { "OpenAI-Organization": input.organization.trim() }
+            : {}),
+        },
+      };
+    case AiProvider.GEMINI:
+      return {
+        url: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1",
+        headers: { "x-goog-api-key": input.apiKey },
+      };
+    case AiProvider.ANTHROPIC:
+      return {
+        url: "https://api.anthropic.com/v1/models?limit=1",
+        headers: { "x-api-key": input.apiKey, "anthropic-version": "2023-06-01" },
+      };
+    case AiProvider.DEEPSEEK:
+      return { url: "https://api.deepseek.com/models", headers: bearer };
+    case AiProvider.GROQ:
+      return { url: "https://api.groq.com/openai/v1/models", headers: bearer };
+    case AiProvider.OPENROUTER:
+      return { url: "https://openrouter.ai/api/v1/key", headers: bearer };
+    default:
+      throw new BadRequestException({
+        code: "AI_PROVIDER_NOT_ALLOWED",
+        message: "Provedor de IA inválido.",
+      });
+  }
+}
+
+async function readCredentialValidationBody(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      size += part.value.byteLength;
+      if (size > 262_144) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(part.value);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    return null;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function validCredentialMetadata(provider: AiProvider, payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || "error" in payload)
+    return false;
+  const data = payload as Record<string, unknown>;
+  if (provider === AiProvider.GEMINI) return Array.isArray(data.models);
+  if (provider === AiProvider.OPENROUTER)
+    return (
+      !!data.data &&
+      typeof data.data === "object" &&
+      !Array.isArray(data.data) &&
+      "label" in data.data &&
+      typeof data.data.label === "string"
+    );
+  return Array.isArray(data.data);
+}
+
+function hasInvalidGoogleKeyReason(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || !("error" in payload)) return false;
+  const error = payload.error;
+  if (!error || typeof error !== "object" || !("details" in error) || !Array.isArray(error.details))
+    return false;
+  return error.details.some(
+    (detail: unknown) =>
+      !!detail &&
+      typeof detail === "object" &&
+      "reason" in detail &&
+      ["API_KEY_INVALID", "API_KEY_EXPIRED"].includes(String(detail.reason)),
+  );
 }

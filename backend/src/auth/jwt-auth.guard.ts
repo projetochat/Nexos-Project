@@ -3,13 +3,13 @@ import {
   ExecutionContext,
   Inject,
   Injectable,
-  Optional,
   ForbiddenException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { Request } from "express";
 import { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { AuthService } from "./auth.service";
 import type { AuthenticatedUser } from "./auth.types";
 
@@ -19,7 +19,7 @@ export type AuthenticatedRequest = Request & { user: AuthenticatedUser };
 export class JwtAuthGuard implements CanActivate {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
-    @Optional() @Inject(PrismaService) private readonly prisma?: PrismaService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -55,7 +55,7 @@ export class JwtAuthGuard implements CanActivate {
     request: Request,
     payload: Awaited<ReturnType<AuthService["verifyToken"]>>,
   ) {
-    if (!this.prisma || payload.surface !== "tenant" || !payload.tenantId) return payload.roleKey;
+    if (payload.surface !== "tenant" || !payload.tenantId) return payload.roleKey;
     const [state] = await this.prisma.$queryRaw<Array<{ status: string }>>(
       Prisma.sql`
         SELECT "status"::text AS "status"
@@ -100,6 +100,11 @@ export class JwtAuthGuard implements CanActivate {
       if (!portalAccess) throw new UnauthorizedException("Acesso ao Portal do Cliente inativo.");
       roleKey = "customer_portal";
     }
+    // Disabling Chat removes only its setup requirement, after active access checks.
+    const entitlements = await new PlanEntitlementService(this.prisma).getEntitlements(
+      payload.tenantId,
+    );
+    if (entitlements.features.chat === false) return roleKey;
     const method = request.method.toUpperCase();
     const path = normalizeRequestPath(request.originalUrl || request.path);
     if (isOnboardingStatusRequest(method, path) || isTenantBootstrapRequest(method, path)) {

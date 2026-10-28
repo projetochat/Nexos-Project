@@ -288,6 +288,11 @@ describe("AuthService session hydration", () => {
         }),
       },
     };
+    const audit = { create: vi.fn().mockResolvedValue({ id: "audit-a" }) };
+    Object.assign(prisma, {
+      platformAuditLog: audit,
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma)),
+    });
     const jwt = { signAsync: vi.fn().mockResolvedValue("selection-token") };
     const config = { get: vi.fn().mockReturnValue("test-secret-with-at-least-32-characters") };
     const service = new AuthService(prisma as never, jwt as never, config as never);
@@ -303,6 +308,12 @@ describe("AuthService session hydration", () => {
 
     expect(internalResult).toMatchObject({ user: { roleKey: "tenant_admin" } });
     expect(portalResult).toMatchObject({ user: { roleKey: "customer_portal" } });
+    expect(audit.create).toHaveBeenCalledOnce();
+    expect(audit.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: "auth.tenant.login", tenantId: "tenant-a" }),
+      }),
+    );
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

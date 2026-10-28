@@ -83,8 +83,11 @@ export function conversationChatScopeAccess(
         : { departmentId: { in: current.chatDepartmentIds ?? [] } }),
     };
   }
+  // An empty OR can be discarded inside a Prisma AND. Use an explicit
+  // impossible scalar predicate so empty scope stays denied in every caller.
+  if (!current.chatScopes?.length) return { id: { in: [] } };
   return {
-    OR: (current.chatScopes ?? []).map((scope) => ({
+    OR: current.chatScopes.map((scope) => ({
       connectionId: { in: [scope.connectionId] },
       OR: [{ departmentId: { in: scope.departmentIds } }, { departmentId: null }],
     })),

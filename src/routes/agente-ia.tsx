@@ -3396,7 +3396,7 @@ function CardActions({
   );
 }
 
-function ConnectionEditor({
+export function ConnectionEditor({
   mode,
   connection,
   onClose,
@@ -3422,6 +3422,8 @@ function ConnectionEditor({
   const [showKey, setShowKey] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [busy, setBusy] = React.useState(false);
+  const [saveError, setSaveError] = React.useState("");
+  const [credentialInvalid, setCredentialInvalid] = React.useState(false);
   const apiKeyId = React.useId();
   const organizationId = React.useId();
 
@@ -3436,6 +3438,7 @@ function ConnectionEditor({
   }, [draft.apiKey, draft.name, draft.provider, mode]);
 
   const submit = async () => {
+    if (busy || readOnly) return;
     const next: Record<string, boolean> = {};
     const missing: string[] = [];
     if (!draft.provider) {
@@ -3455,6 +3458,8 @@ function ConnectionEditor({
       showRequiredFieldsToast(missing);
       return;
     }
+    setSaveError("");
+    setCredentialInvalid(false);
     setBusy(true);
     try {
       const payload = {
@@ -3470,7 +3475,13 @@ function ConnectionEditor({
           : await aiApi.updateConnection(connection!.id, payload);
       await onSaved(saved, mode === "create");
     } catch (error) {
-      toast.error(errorMessage(error, "Não foi possível salvar a conexão."));
+      const invalid = isInvalidAiCredential(error);
+      setCredentialInvalid(invalid);
+      setSaveError(
+        invalid
+          ? "Chave inválida ou revogada. Confira a API Key e tente novamente."
+          : errorMessage(error, "Não foi possível salvar a conexão."),
+      );
     } finally {
       setBusy(false);
     }
@@ -3480,6 +3491,7 @@ function ConnectionEditor({
     <Modal
       open
       onClose={onClose}
+      dismissible={!busy}
       title={
         mode === "create"
           ? "Nova conexão de IA"
@@ -3512,13 +3524,18 @@ function ConnectionEditor({
               onClick={() => void submit()}
               disabled={busy}
             >
-              {busy ? "Salvando..." : "Salvar conexão"}
+              {busy ? "Validando conexão..." : "Salvar conexão"}
             </Button>
           )}
         </>
       }
     >
       <div className="space-y-4">
+        {saveError && (
+          <p role="alert" className="text-sm text-destructive">
+            {saveError}
+          </p>
+        )}
         <div className="flex items-center gap-3">
           <Switch
             checked={draft.active}
@@ -3596,14 +3613,18 @@ function ConnectionEditor({
                 id={apiKeyId}
                 type={showKey ? "text" : "password"}
                 value={draft.apiKey}
-                onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
+                onChange={(event) => {
+                  setDraft({ ...draft, apiKey: event.target.value });
+                  setCredentialInvalid(false);
+                  setSaveError("");
+                }}
                 placeholder={
                   mode === "create"
                     ? "Informe a API Key"
                     : connection?.apiKeyMasked || "••••••••••••••••"
                 }
                 autoComplete="new-password"
-                aria-invalid={Boolean(errors.apiKey)}
+                aria-invalid={Boolean(errors.apiKey) || credentialInvalid}
                 className="pr-11"
                 disabled={readOnly || busy}
               />
@@ -3639,7 +3660,7 @@ function ConnectionEditor({
   );
 }
 
-function AgentEditor({
+export function AgentEditor({
   mode,
   agent,
   initialConnectionId,
@@ -3671,6 +3692,8 @@ function AgentEditor({
   );
   const [errors, setErrors] = React.useState<Record<string, boolean>>({});
   const [busy, setBusy] = React.useState(false);
+  const [saveError, setSaveError] = React.useState("");
+  const [credentialInvalid, setCredentialInvalid] = React.useState(false);
   const [instructionsExpanded, setInstructionsExpanded] = React.useState(false);
   const [promptTemplatesOpen, setPromptTemplatesOpen] = React.useState(false);
   const [promptTemplateSearch, setPromptTemplateSearch] = React.useState("");
@@ -3720,6 +3743,7 @@ function AgentEditor({
   }, [draft]);
 
   const submit = async () => {
+    if (busy || readOnly) return;
     const next: Record<string, boolean> = {};
     const missing: string[] = [];
     const required: Array<[keyof AgentDraft, string]> = [
@@ -3740,6 +3764,8 @@ function AgentEditor({
       showRequiredFieldsToast(missing);
       return;
     }
+    setSaveError("");
+    setCredentialInvalid(false);
     setBusy(true);
     try {
       const payload = {
@@ -3756,7 +3782,13 @@ function AgentEditor({
       else await aiApi.updateAgent(agent!.id, payload);
       await onSaved(mode === "create");
     } catch (error) {
-      toast.error(errorMessage(error, "Não foi possível salvar o agente."));
+      const invalid = isInvalidAiCredential(error);
+      setCredentialInvalid(invalid);
+      setSaveError(
+        invalid
+          ? "Chave inválida ou revogada na conexão de IA. Confira a API Key em Conexões antes de salvar o agente."
+          : errorMessage(error, "Não foi possível salvar o agente."),
+      );
     } finally {
       setBusy(false);
     }
@@ -3767,6 +3799,7 @@ function AgentEditor({
       <Modal
         open
         onClose={onClose}
+        dismissible={!busy}
         title={
           mode === "create"
             ? "Novo agente de IA"
@@ -3791,7 +3824,7 @@ function AgentEditor({
                 onClick={() => void submit()}
                 disabled={busy}
               >
-                {busy ? "Salvando..." : mode === "create" ? "Criar agente" : "Salvar"}
+                {busy ? "Validando conexão..." : mode === "create" ? "Criar agente" : "Salvar"}
               </Button>
             )}
           </>
@@ -3852,14 +3885,23 @@ function AgentEditor({
               </RichSelect>
             </Field>
             <Field label="Conexão de IA *">
+              {saveError && (
+                <p role="alert" className="mb-2 text-sm text-destructive">
+                  {saveError}
+                </p>
+              )}
               <RichSelect
                 value={draft.connectionId || undefined}
-                onValueChange={(connectionId) => setDraft({ ...draft, connectionId, model: "" })}
+                onValueChange={(connectionId) => {
+                  setDraft({ ...draft, connectionId, model: "" });
+                  setCredentialInvalid(false);
+                  setSaveError("");
+                }}
                 disabled={readOnly || busy}
               >
                 <RichSelectTrigger
                   aria-label="Conexão de IA"
-                  aria-invalid={Boolean(errors.connectionId)}
+                  aria-invalid={Boolean(errors.connectionId) || credentialInvalid}
                   className="h-10 rounded-lg border-border bg-surface-1"
                 >
                   <div className="flex min-w-0 items-center gap-2 leading-none">
@@ -4340,4 +4382,13 @@ function normalizeModels(value: unknown): Array<{ value: string; label: string }
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function isInvalidAiCredential(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "AI_PROVIDER_CREDENTIAL_INVALID"
+  );
 }

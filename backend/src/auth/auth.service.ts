@@ -499,59 +499,74 @@ export class AuthService {
       };
     }
 
-    const sid = await this.createSession({
-      userId: user.id,
-      tenantId: membership.tenantId,
-      membershipId: membership.id,
-    });
-    const basePayload = {
-      sub: user.id,
-      tenantId: membership.tenantId,
-      membershipId: membership.id,
-      roleId: membership.roleId,
-      roleKey: membership.role.key,
-      platformRole: user.platformRole,
-      iatMs: Date.now(),
-      sid,
-      surface: "tenant" as const,
-      aud: "trixus-tenant" as const,
-    };
-
-    return {
-      accessToken: await this.signToken({ ...basePayload, typ: "access" }, "JWT_SECRET", "15m"),
-      refreshToken: await this.signToken(
-        { ...basePayload, typ: "refresh" },
-        "JWT_REFRESH_SECRET",
-        "7d",
-      ),
-      user: {
-        id: user.id,
-        email: user.email,
-        name: membershipDisplayName(membership, user.name),
-        avatarUrl: user.avatarUrl,
-        keepSidebarCollapsed: user.keepSidebarCollapsed,
-        chatBubbleColor: user.chatBubbleColor,
-        chatBubbleTextColor: user.chatBubbleTextColor,
-        customerBubbleColor: user.customerBubbleColor,
-        customerBubbleTextColor: user.customerBubbleTextColor,
-        chatBackgroundColor: user.chatBackgroundColor,
-        chatBackgroundMode: user.chatBackgroundMode,
+    return this.prisma.$transaction(async (tx) => {
+      const sid = await this.createSession(
+        {
+          userId: user.id,
+          tenantId: membership.tenantId,
+          membershipId: membership.id,
+        },
+        tx,
+      );
+      const basePayload = {
+        sub: user.id,
+        tenantId: membership.tenantId,
+        membershipId: membership.id,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         platformRole: user.platformRole,
-      },
-      tenant: {
-        id: membership.tenant.id,
-        slug: membership.tenant.slug,
-        name: membership.tenant.name,
-      },
-      membership: {
-        id: membership.id,
-        role: membership.role.key,
-        roleId: membership.roleId,
-      },
-      permissions,
-    };
+        iatMs: Date.now(),
+        sid,
+        surface: "tenant" as const,
+        aud: "trixus-tenant" as const,
+      };
+
+      const result = {
+        accessToken: await this.signToken({ ...basePayload, typ: "access" }, "JWT_SECRET", "15m"),
+        refreshToken: await this.signToken(
+          { ...basePayload, typ: "refresh" },
+          "JWT_REFRESH_SECRET",
+          "7d",
+        ),
+        user: {
+          id: user.id,
+          email: user.email,
+          name: membershipDisplayName(membership, user.name),
+          avatarUrl: user.avatarUrl,
+          keepSidebarCollapsed: user.keepSidebarCollapsed,
+          chatBubbleColor: user.chatBubbleColor,
+          chatBubbleTextColor: user.chatBubbleTextColor,
+          customerBubbleColor: user.customerBubbleColor,
+          customerBubbleTextColor: user.customerBubbleTextColor,
+          chatBackgroundColor: user.chatBackgroundColor,
+          chatBackgroundMode: user.chatBackgroundMode,
+          roleId: membership.roleId,
+          roleKey: membership.role.key,
+          platformRole: user.platformRole,
+        },
+        tenant: {
+          id: membership.tenant.id,
+          slug: membership.tenant.slug,
+          name: membership.tenant.name,
+        },
+        membership: {
+          id: membership.id,
+          role: membership.role.key,
+          roleId: membership.roleId,
+        },
+        permissions,
+      };
+      await tx.platformAuditLog.create({
+        data: {
+          action: "auth.tenant.login",
+          targetType: "auth_session",
+          targetId: sid,
+          tenantId: membership.tenantId,
+          actorUserId: user.id,
+        },
+      });
+      return result;
+    });
   }
 
   private activePortalAccesses(userId: string, login?: string) {
@@ -1566,14 +1581,17 @@ export class AuthService {
     if (!access) throw new UnauthorizedException("Acesso ao Portal do Cliente inativo.");
   }
 
-  private async createSession(input: {
-    userId: string;
-    tenantId?: string;
-    membershipId?: string;
-    portalAccessId?: string;
-    impersonationSessionId?: string;
-  }) {
-    const session = await this.prisma.authSession.create({
+  private async createSession(
+    input: {
+      userId: string;
+      tenantId?: string;
+      membershipId?: string;
+      portalAccessId?: string;
+      impersonationSessionId?: string;
+    },
+    db: Pick<Prisma.TransactionClient, "authSession"> = this.prisma,
+  ) {
+    const session = await db.authSession.create({
       data: {
         userId: input.userId,
         tenantId: input.tenantId,

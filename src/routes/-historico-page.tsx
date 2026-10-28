@@ -1,4 +1,5 @@
 import * as React from "react";
+import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { historyTotalLabel } from "@/lib/history-total-label";
 import { useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,7 +19,7 @@ import {
   type OperationalReportFilters,
 } from "@/lib/operational-filters";
 import { conversationTimestamp, num } from "@/lib/format";
-import { maskBrazilPhone } from "@/lib/input-masks";
+import { formatPhoneVariable, maskBrazilPhone } from "@/lib/input-masks";
 import { useSession } from "@/lib/session";
 import { conversationApi, messageApi, operationsApi } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
@@ -79,6 +80,9 @@ function loadHistoryFilters(storageKey: string): HistoryFiltersMemory {
         ...(typeof filters.departmentId === "string" ? { departmentId: filters.departmentId } : {}),
         ...(typeof filters.customerId === "string" ? { customerId: filters.customerId } : {}),
         ...(typeof filters.connectionId === "string" ? { connectionId: filters.connectionId } : {}),
+        ...(typeof filters.closedByMembershipId === "string"
+          ? { closedByMembershipId: filters.closedByMembershipId }
+          : {}),
         ...(typeof filters.start === "string" ? { start: filters.start } : {}),
         ...(typeof filters.end === "string" ? { end: filters.end } : {}),
       },
@@ -145,6 +149,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
     () => ({
       ...reportFilters,
       status: "fechada" as const,
+      includeClosedByOptions: true,
       q: search.trim() || undefined,
       page,
       pageSize: PAGE_SIZE,
@@ -229,6 +234,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
         </header>
 
         <DashboardFiltersBar
+          singleLine
           className={`${selectedId ? "hidden lg:flex" : ""} shrink-0`}
           value={reportFilters}
           onChange={(patch) => {
@@ -238,6 +244,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
           }}
           showDepartment={false}
           showConversationType
+          closedByOptions={history.data?.closedByOptions ?? []}
           onClear={() => {
             clearConversationDeepLink({ clearSelection: true });
             setSearch("");
@@ -291,7 +298,11 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                           selected ? "bg-surface-2" : "hover:bg-surface-1"
                         }`}
                       >
-                        <Avatar name={displayName} size={36} />
+                        <Avatar
+                          name={displayName}
+                          size={36}
+                          src={conversation.contact?.avatar_url}
+                        />
                         <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
@@ -306,7 +317,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                               {!conversation.is_group &&
                               canViewPhone &&
                               conversation.contact?.telefone
-                                ? maskBrazilPhone(conversation.contact.telefone)
+                                ? formatHistoryPhone(conversation.contact.telefone)
                                 : ""}
                             </span>
                             <span
@@ -324,7 +335,8 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                               aria-label="Cor da instância"
                               className="h-2 w-2 shrink-0 rounded-full"
                               style={{
-                                backgroundColor: conversation.connection?.color ?? "#22c55e",
+                                backgroundColor:
+                                  conversation.connection?.color ?? "var(--muted-foreground)",
                               }}
                             />
                             <span className="min-w-0 truncate">
@@ -400,7 +412,11 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                       aria-label="Abrir informações do contato"
                       className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 py-0.5 text-left transition hover:bg-surface-2/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     >
-                      <Avatar name={conversationDisplayName(active)} size={40} />
+                      <Avatar
+                        name={conversationDisplayName(active)}
+                        size={40}
+                        src={active.contact?.avatar_url}
+                      />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="truncate text-sm font-semibold">
@@ -409,7 +425,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                         </div>
                         <p className="truncate text-[11px] text-muted-foreground">
                           {canViewPhone && active.contact?.telefone
-                            ? maskBrazilPhone(active.contact.telefone)
+                            ? formatHistoryPhone(active.contact.telefone)
                             : ""}
                           {active.protocolo ? ` - #${active.protocolo}` : ""}
                           {active.department?.nome ? ` - ${active.department.nome}` : ""}
@@ -453,6 +469,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                           <MessageBubble
                             key={message.id}
                             m={message}
+                            mediaAccessAllowed={Boolean(active.protocolo?.trim())}
                             agents={[]}
                             contactName={conversationDisplayName(active)}
                             contactAvatarUrl={active.contact?.avatar_url}
@@ -494,6 +511,20 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
       </div>
     </AppShellFull>
   );
+}
+
+function formatHistoryPhone(value: string) {
+  const raw = value.trim();
+  const digits = raw.replace(/\D/g, "");
+  const hasBrazilCountryCode = digits.startsWith("55") && digits.length > 11;
+  const phone = parsePhoneNumberFromString(
+    !raw.startsWith("+") && hasBrazilCountryCode ? `+${digits}` : raw,
+    "BR",
+  );
+  // Restore the existing Brazilian legacy-mobile presentation rule only after
+  // identifying a valid Brazilian number. Other countries retain their value.
+  if (phone?.country !== "BR" || !phone.isValid()) return raw;
+  return maskBrazilPhone(formatPhoneVariable(phone.number));
 }
 
 function conversationDisplayName(conversation: {

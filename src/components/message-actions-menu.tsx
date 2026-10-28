@@ -1,3 +1,4 @@
+import { displayDateTime } from "@/lib/format";
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
@@ -27,6 +28,7 @@ export function MessageActionsMenu({
   onReply,
   onReact,
   onDownload,
+  mediaAccessAllowed = true,
   resendRequest = 0,
   openRequest = 0,
   openPosition,
@@ -38,7 +40,8 @@ export function MessageActionsMenu({
   message: ApiMessage;
   onReply?: () => void;
   onReact: (emoji: string | null) => Promise<void>;
-  onDownload: () => Promise<void>;
+  onDownload?: () => Promise<void>;
+  mediaAccessAllowed?: boolean;
   resendRequest?: number;
   openRequest?: number;
   openPosition?: { x: number; y: number } | null;
@@ -62,6 +65,7 @@ export function MessageActionsMenu({
   const resendId = useRef<string | null>(null);
   const handledResendRequest = useRef(0);
   const handledOpenRequest = useRef(0);
+  const hasBlockedMedia = !!message.media_data && !mediaAccessAllowed;
   useEffect(() => {
     if (!openRequest || openRequest === handledOpenRequest.current) return;
     handledOpenRequest.current = openRequest;
@@ -72,9 +76,10 @@ export function MessageActionsMenu({
   useEffect(() => {
     if (!resendRequest || resendRequest === handledResendRequest.current) return;
     handledResendRequest.current = resendRequest;
+    if (hasBlockedMedia) return;
     setError("");
     setResend(true);
-  }, [resendRequest]);
+  }, [hasBlockedMedia, resendRequest]);
   const run = async (action: () => Promise<unknown>) => {
     if (running.current) return;
     running.current = true;
@@ -95,8 +100,18 @@ export function MessageActionsMenu({
     "flex min-h-10 w-full items-center gap-3 rounded px-3 py-2 text-left text-sm hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 disabled:cursor-not-allowed";
   const mediaReady =
     !!message.media_data && (!message.media_data.state || message.media_data.state === "ready");
+  const clipboardMessage =
+    message.type === "image" && !mediaAccessAllowed
+      ? {
+          ...message,
+          type: "text" as const,
+          content: message.content || message.media_data?.caption || "",
+          media_data: null,
+        }
+      : message;
   const canCopyToClipboard =
-    !!message.content || (message.type === "image" && mediaReady && !message.deleted_for_everyone);
+    !!clipboardMessage.content ||
+    (message.type === "image" && mediaAccessAllowed && mediaReady && !message.deleted_for_everyone);
   return (
     <>
       <div className="absolute right-1 top-1 z-10" onClick={(event) => event.stopPropagation()}>
@@ -152,8 +167,12 @@ export function MessageActionsMenu({
               disabled={busy || !canCopyToClipboard}
               onClick={() =>
                 void run(async () => {
-                  const result = await onCopyMessage(message);
-                  if (result.mode === "text-only" && message.type === "image") {
+                  const result = await onCopyMessage(clipboardMessage);
+                  if (
+                    result.mode === "text-only" &&
+                    message.type === "image" &&
+                    mediaAccessAllowed
+                  ) {
                     toast.warning(
                       "O navegador não permitiu copiar a imagem. Somente o texto foi copiado.",
                     );
@@ -166,7 +185,12 @@ export function MessageActionsMenu({
             </button>
             <button
               className={itemClass}
-              disabled={busy || !canSend || !canCopyMessage(message)}
+              disabled={
+                busy ||
+                !canSend ||
+                (!!message.media_data && !mediaAccessAllowed) ||
+                !canCopyMessage(message)
+              }
               onClick={() => {
                 setOpen(false);
                 setForward(true);
@@ -180,6 +204,7 @@ export function MessageActionsMenu({
               disabled={
                 busy ||
                 !canSend ||
+                (!!message.media_data && !mediaAccessAllowed) ||
                 message.sender !== "agent" ||
                 message.status !== "failed" ||
                 !canCopyMessage(message)
@@ -238,8 +263,10 @@ export function MessageActionsMenu({
             </button>
             <button
               className={itemClass}
-              disabled={busy || !mediaReady}
-              onClick={() => void run(onDownload)}
+              disabled={busy || !mediaAccessAllowed || !mediaReady || !onDownload}
+              onClick={() => {
+                if (mediaAccessAllowed && onDownload) void run(onDownload);
+              }}
             >
               <Download className="h-4 w-4" />
               Salvar como…
@@ -273,7 +300,7 @@ export function MessageActionsMenu({
           </PopoverContent>
         </Popover>
       </div>
-      {forward && (
+      {forward && !hasBlockedMedia && (
         <MessageForwardDialog
           message={message}
           onClose={() => setForward(false)}
@@ -296,13 +323,13 @@ export function MessageActionsMenu({
           ].map(([label, value]) => (
             <div key={label}>
               <dt className="text-muted-foreground">{label}</dt>
-              <dd>{value ? new Date(value).toLocaleString("pt-BR") : "Sem confirmação"}</dd>
+              <dd>{value ? displayDateTime(value) : "Sem confirmação"}</dd>
             </div>
           ))}
         </dl>
       </Modal>
       <ConfirmDialog
-        open={resend}
+        open={resend && !hasBlockedMedia}
         layerClassName="z-[270]"
         onClose={() => {
           if (!running.current) {
@@ -323,6 +350,7 @@ export function MessageActionsMenu({
         }
         onConfirm={() =>
           run(async () => {
+            if (hasBlockedMedia) throw new Error("Inicie o atendimento para acessar este arquivo.");
             const current = await messageApi.get(message.conversation_id, message.id);
             if (current.status !== "failed")
               throw new Error("O status da mensagem mudou. Atualize a conversa antes de reenviar.");

@@ -20,6 +20,35 @@ describe("EvolutionClient", () => {
     expect(body.offset).toBe(10);
   });
 
+  it("bounds ID-only media lookup in the original instance", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ messages: { records: [] } }));
+    globalThis.fetch = fetchMock;
+    await new EvolutionClient().findMessages({
+      instanceName: "instance-a",
+      messageId: "original-id",
+      page: 1,
+      pageSize: 10,
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("http://evolution.local/chat/findMessages/instance-a");
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.where).toEqual({ key: { id: "original-id" } });
+    expect(body.page).toBe(1);
+    expect(body.offset).toBe(10);
+    expect(body.additionalFields).toEqual({ limit: 10 });
+  });
+
+  it.each([{}, { remoteJid: "", messageId: "" }, { remoteJid: " ", messageId: " " }])(
+    "rejects an unscoped message lookup before requesting the provider: %j",
+    async (identity) => {
+      const fetchMock = vi.fn();
+      globalThis.fetch = fetchMock;
+      await expect(
+        new EvolutionClient().findMessages({ instanceName: "instance-a", ...identity }),
+      ).rejects.toThrow("requires an exact chat or message identifier");
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
   beforeEach(() => {
     process.env.EVOLUTION_BASE_URL = "http://evolution.local";
     process.env.EVOLUTION_API_KEY = "test-key";

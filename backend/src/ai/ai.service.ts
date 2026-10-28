@@ -8,6 +8,8 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import {
+  type AiConnection,
+  type AiAgent,
   AiExecutionStatus,
   AiProvider,
   MessageMediaState,
@@ -62,6 +64,11 @@ export class AiService {
   }
 
   async createConnection(dto: CreateAiConnectionDto, current: AuthenticatedUser) {
+    await this.providers.validateCredential({
+      provider: dto.provider,
+      apiKey: dto.apiKey.trim(),
+      organization: nullableClean(dto.organization),
+    });
     const id = randomUUID();
     const encrypted = this.credentials.encrypt(dto.apiKey, current.tenantId, id, dto.provider);
     const row = await this.prisma.aiConnection.create({
@@ -91,25 +98,39 @@ export class AiService {
         );
       }
     }
-    const encrypted = dto.apiKey
-      ? this.credentials.encrypt(dto.apiKey, current.tenantId, id, provider)
-      : dto.provider && dto.provider !== existing.provider
-        ? (() => {
-            const raw = this.credentials.decrypt(existing, current.tenantId, id, existing.provider);
-            return this.credentials.encrypt(raw, current.tenantId, id, provider);
-          })()
+    const suppliedKey = dto.apiKey?.trim();
+    const rawCredential =
+      suppliedKey || this.credentials.decrypt(existing, current.tenantId, id, existing.provider);
+    const organization =
+      dto.organization !== undefined ? nullableClean(dto.organization) : existing.organization;
+    await this.providers.validateCredential({ provider, apiKey: rawCredential, organization });
+    const encrypted =
+      suppliedKey || provider !== existing.provider
+        ? this.credentials.encrypt(rawCredential, current.tenantId, id, provider)
         : {};
-    const row = await this.prisma.aiConnection.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id } },
-      data: {
-        ...(dto.name !== undefined ? { name: clean(dto.name) } : {}),
-        ...(dto.active !== undefined ? { active: dto.active } : {}),
-        ...(dto.organization !== undefined
-          ? { organization: nullableClean(dto.organization) }
-          : {}),
-        ...(dto.provider !== undefined ? { provider } : {}),
-        ...encrypted,
-      },
+    const row = await this.prisma.$transaction(async (tx) => {
+      await this.assertConnectionSnapshot(tx, existing, current.tenantId, true);
+      // Agent saves share-lock the same connection. Recheck after the exclusive
+      // lock so a newly linked agent cannot race a provider change.
+      if (
+        provider !== existing.provider &&
+        (await tx.aiAgent.count({
+          where: { tenantId: current.tenantId, connectionId: id, archivedAt: null },
+        }))
+      )
+        throw new ConflictException(
+          "O provedor não pode ser alterado enquanto houver agentes vinculados à conexão.",
+        );
+      return tx.aiConnection.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id } },
+        data: {
+          ...(dto.name !== undefined ? { name: clean(dto.name) } : {}),
+          ...(dto.active !== undefined ? { active: dto.active } : {}),
+          ...(dto.organization !== undefined ? { organization } : {}),
+          ...(dto.provider !== undefined ? { provider } : {}),
+          ...encrypted,
+        },
+      });
     });
     return serializeConnection(row);
   }
@@ -154,8 +175,10 @@ export class AiService {
   async createAgent(dto: CreateAiAgentDto, current: AuthenticatedUser) {
     const connection = await this.findConnection(dto.connectionId, current.tenantId);
     this.assertModel(connection.provider, dto.model);
+    await this.validateStoredConnection(connection, current.tenantId);
     const module = clean(dto.module).toUpperCase();
     const agent = await this.prisma.$transaction(async (tx) => {
+      await this.assertConnectionSnapshot(tx, connection, current.tenantId);
       const created = await tx.aiAgent.create({
         data: {
           tenantId: current.tenantId,
@@ -182,8 +205,11 @@ export class AiService {
       ? await this.findConnection(dto.connectionId, current.tenantId)
       : existing.connection;
     this.assertModel(connection.provider, dto.model ?? existing.model);
+    await this.validateStoredConnection(connection, current.tenantId);
     const module = dto.module ? clean(dto.module).toUpperCase() : existing.module;
     const agent = await this.prisma.$transaction(async (tx) => {
+      await this.assertConnectionSnapshot(tx, connection, current.tenantId);
+      await this.assertAgentSnapshot(tx, existing, current.tenantId);
       const updated = await tx.aiAgent.update({
         where: { tenantId_id: { tenantId: current.tenantId, id } },
         data: {
@@ -583,6 +609,79 @@ export class AiService {
       create: { tenantId, agentId, ...TICKET_USAGE, isDefault: !existingDefault },
       update: {},
     });
+  }
+
+  private async assertAgentSnapshot(
+    tx: Prisma.TransactionClient,
+    agent: AiAgent,
+    tenantId: string,
+  ) {
+    await tx.$queryRaw(
+      Prisma.sql`SELECT id FROM "ai_agents" WHERE id = ${agent.id} AND "tenantId" = ${tenantId} FOR UPDATE`,
+    );
+    const unchanged = await tx.aiAgent.findFirst({
+      where: {
+        id: agent.id,
+        tenantId,
+        archivedAt: null,
+        updatedAt: agent.updatedAt,
+        connectionId: agent.connectionId,
+        model: agent.model,
+      },
+      select: { id: true },
+    });
+    if (!unchanged)
+      throw new ConflictException({
+        code: "AI_AGENT_CHANGED",
+        message:
+          "O agente de IA foi alterado durante a validação. Atualize a página e tente novamente.",
+      });
+  }
+
+  private async validateStoredConnection(connection: AiConnection, tenantId: string) {
+    const apiKey = this.credentials.decrypt(
+      connection,
+      tenantId,
+      connection.id,
+      connection.provider,
+    );
+    await this.providers.validateCredential({
+      provider: connection.provider,
+      apiKey,
+      organization: connection.organization,
+    });
+  }
+
+  private async assertConnectionSnapshot(
+    tx: Prisma.TransactionClient,
+    connection: AiConnection,
+    tenantId: string,
+    exclusive = false,
+  ) {
+    const lock = exclusive ? Prisma.sql`FOR UPDATE` : Prisma.sql`FOR SHARE`;
+    await tx.$queryRaw(
+      Prisma.sql`SELECT id FROM "ai_connections" WHERE id = ${connection.id} AND "tenantId" = ${tenantId} ${lock}`,
+    );
+    const unchanged = await tx.aiConnection.findFirst({
+      where: {
+        id: connection.id,
+        tenantId,
+        archivedAt: null,
+        updatedAt: connection.updatedAt,
+        provider: connection.provider,
+        organization: connection.organization,
+        credentialCiphertext: connection.credentialCiphertext,
+        credentialIv: connection.credentialIv,
+        credentialAuthTag: connection.credentialAuthTag,
+      },
+      select: { id: true },
+    });
+    if (!unchanged)
+      throw new ConflictException({
+        code: "AI_CONNECTION_CHANGED",
+        message:
+          "A conexão de IA foi alterada durante a validação. Atualize a página e tente novamente.",
+      });
   }
 
   private findConnection(id: string, tenantId: string) {

@@ -8,6 +8,7 @@ import {
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CompleteOnboardingDto } from "./dto/complete-onboarding.dto";
 import { UpdateOnboardingProgressDto } from "./dto/update-onboarding-progress.dto";
 
@@ -49,12 +50,26 @@ export class OnboardingService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async status(current: AuthenticatedUser) {
+    const entitlements = await new PlanEntitlementService(this.prisma).getEntitlements(
+      current.tenantId,
+    );
+    if (entitlements.features.chat === false) {
+      return this.serialize(current, null, {
+        instanceConnected: false,
+        activeDepartment: false,
+        administratorProfile: false,
+        activeAdministrator: false,
+        quickRepliesReviewed: false,
+        tagsReviewed: false,
+      });
+    }
     const row = await this.findState(this.prisma, current.tenantId);
     return this.serialize(current, row, await this.checklist(this.prisma, current.tenantId, row));
   }
 
   async updateProgress(dto: UpdateOnboardingProgressDto, current: AuthenticatedUser) {
     this.assertAdministrator(current);
+    await this.assertChatOnboardingRequired(current.tenantId);
     if (dto.currentStep > dto.maxCompletedStep + 1) {
       throw new BadRequestException({
         code: "ONBOARDING_INVALID_PROGRESS",
@@ -119,6 +134,7 @@ export class OnboardingService {
 
   async complete(dto: CompleteOnboardingDto, current: AuthenticatedUser) {
     this.assertAdministrator(current);
+    await this.assertChatOnboardingRequired(current.tenantId);
     return this.prisma.$transaction(async (tx) => {
       const existing = await this.lockState(tx, current.tenantId);
       if (!existing) throw onboardingNotRequired();
@@ -180,6 +196,7 @@ export class OnboardingService {
 
   async ensureDefaultDepartmentConnection(connectionId: string, current: AuthenticatedUser) {
     this.assertAdministrator(current);
+    await this.assertChatOnboardingRequired(current.tenantId);
     return this.prisma.$transaction((tx) =>
       this.ensureDefaultDepartmentConnectionTx(tx, current.tenantId, connectionId),
     );
@@ -192,6 +209,11 @@ export class OnboardingService {
         message: "Somente o administrador da organização pode concluir a configuração inicial.",
       });
     }
+  }
+
+  private async assertChatOnboardingRequired(tenantId: string) {
+    const entitlements = await new PlanEntitlementService(this.prisma).getEntitlements(tenantId);
+    if (entitlements.features.chat === false) throw onboardingNotRequired();
   }
 
   private assertStepRequirement(step: number, checklist: Checklist) {

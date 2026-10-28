@@ -363,18 +363,23 @@ export class EvolutionClient {
 
   async findMessages(input: {
     instanceName: string;
-    remoteJid: string;
+    remoteJid?: string;
     messageId?: string;
     page?: number;
     pageSize?: number;
   }) {
+    if (!input.remoteJid?.trim() && !input.messageId?.trim())
+      throw new Error("Message lookup requires an exact chat or message identifier.");
     const response = await this.request<unknown>(`/chat/findMessages/${input.instanceName}`, {
       method: "POST",
       // Exact media recovery must remain bounded even if the provider ignores its filters.
       maxResponseBytes: input.messageId ? 1024 * 1024 : undefined,
       body: {
         where: {
-          key: { remoteJid: input.remoteJid, ...(input.messageId ? { id: input.messageId } : {}) },
+          key: {
+            ...(input.remoteJid ? { remoteJid: input.remoteJid } : {}),
+            ...(input.messageId ? { id: input.messageId } : {}),
+          },
         },
         page: input.page ?? 1,
         offset: input.pageSize ?? 100,

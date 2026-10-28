@@ -4,6 +4,7 @@ import {
   ContactRound,
   Database,
   Megaphone,
+  LogIn,
   Network,
   ShieldCheck,
   Tags,
@@ -27,6 +28,12 @@ const columns: Array<{
   iconClassName: string;
   icon: React.ComponentType<{ className?: string }>;
 }> = [
+  {
+    key: "logins",
+    label: "Logins",
+    iconClassName: "text-lime-600 dark:text-lime-400",
+    icon: LogIn,
+  },
   {
     key: "instances",
     label: "Instâncias",
@@ -111,7 +118,7 @@ export function PlatformClientVolumetryTable({
         const comparison =
           sort.key === "clientName"
             ? left.clientName.localeCompare(right.clientName, "pt-BR")
-            : left[sort.key] - right[sort.key];
+            : (left[sort.key] ?? 0) - (right[sort.key] ?? 0);
         return sort.direction === "asc" ? comparison : -comparison;
       }),
     [rows, sort],
@@ -127,6 +134,9 @@ export function PlatformClientVolumetryTable({
       <div className="px-4 pt-4">
         <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">{title}</p>
       </div>
+      <p className="px-4 pb-3 text-xs text-muted-foreground">
+        Logins concluídos no período selecionado, contabilizados a partir desta atualização.
+      </p>
       <div className="overflow-x-auto" aria-label={`${title}: dados por cliente`}>
         <table className="w-full min-w-[1020px] border-collapse text-xs">
           <thead className="bg-surface-2 text-muted-foreground">
@@ -156,7 +166,7 @@ export function PlatformClientVolumetryTable({
                 <td className="whitespace-nowrap px-3 py-2 font-medium">{row.clientName}</td>
                 {columns.map(({ key }) => (
                   <td key={key} className="px-3 py-2 text-center font-mono tabular-nums">
-                    {row[key].toLocaleString("pt-BR")}
+                    {(row[key] ?? 0).toLocaleString("pt-BR")}
                   </td>
                 ))}
               </tr>
@@ -177,7 +187,7 @@ export function PlatformClientVolumetryTable({
               <td className="px-3 py-2">Total</td>
               {columns.map(({ key }) => (
                 <td key={key} className="px-3 py-2 text-center font-mono tabular-nums">
-                  {totals[key].toLocaleString("pt-BR")}
+                  {(totals[key] ?? 0).toLocaleString("pt-BR")}
                 </td>
               ))}
             </tr>

@@ -30,12 +30,23 @@ export function fmtDate(ts: number) {
 }
 
 export function fmtDateTime(ts: number) {
-  return new Date(ts).toLocaleString("pt-BR", {
+  return displayDateTime(ts, {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+export function displayDateTime(
+  value: string | number | Date | null | undefined,
+  options?: Intl.DateTimeFormatOptions,
+  fallback = "—",
+) {
+  const date =
+    value instanceof Date ? value : value == null || value === "" ? null : new Date(value);
+  if (!date || !Number.isFinite(date.getTime())) return fallback;
+  return date.toLocaleString("pt-BR", options).replace(/,\s*(?=\d{1,2}:\d{2})/u, " ");
 }
 
 export function formatPlatformDateTime(value: string | number | Date) {

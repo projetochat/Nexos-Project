@@ -2,8 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { JwtPayload } from "../auth/auth.types";
-import { effectivePermissions } from "../auth/effective-permissions";
+import { moduleAwarePermissions } from "../auth/effective-permissions";
 import { Prisma } from "../generated/prisma";
 
 export type RealtimeAuthCode =
@@ -136,7 +137,12 @@ export class RealtimeAuthService {
       departmentIds: payload.portalAccessId
         ? []
         : membership.departments.map((item) => item.departmentId),
-      permissions: effectivePermissions(effectiveRole),
+      permissions: await moduleAwarePermissions(
+        this.prisma,
+        membership.tenantId,
+        membership.tenant.featureOverrides,
+        effectiveRole,
+      ),
       sid: payload.sid,
       portalAccessId: payload.portalAccessId,
       exp,
@@ -258,6 +264,8 @@ export class RealtimeAuthService {
       `,
     );
     if (state?.status === "PENDING") {
+      const entitlements = await new PlanEntitlementService(this.prisma).getEntitlements(tenantId);
+      if (entitlements.features.chat === false) return;
       throw new RealtimeAuthError("REALTIME_ONBOARDING_PENDING");
     }
   }

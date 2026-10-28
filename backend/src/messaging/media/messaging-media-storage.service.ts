@@ -44,17 +44,22 @@ export class MessagingMediaStorageService {
     );
     const fileName = sanitizeFileName(decodeHeader(input.req.headers["x-file-name"]) ?? "arquivo");
     const messageType = resolveMessageType(rawMimeType, header(input.req, "x-media-type"));
-    const declaredMimeType = normalizeDocumentMimeType(messageType, rawMimeType, fileName);
+    let declaredMimeType = normalizeDocumentMimeType(messageType, rawMimeType, fileName);
     validatePolicy(messageType, declaredMimeType, Number.isFinite(declaredSize) ? declaredSize : 0);
     const body = await readLimitedRequest(input.req, maxSizeBytes(messageType));
     validatePolicy(messageType, declaredMimeType, body.byteLength);
     const detected = detectMimeType(body, declaredMimeType);
     if (detected && detected !== declaredMimeType) {
-      throw new UnsupportedMediaTypeException({
-        statusCode: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-        code: "MESSAGE_MEDIA_MIME_MISMATCH",
-        message: "Tipo real do arquivo não confere com o declarado.",
-      });
+      if (acceptsAllDocumentTypes(messageType)) {
+        declaredMimeType =
+          declaredMimeType === "application/octet-stream" ? detected : "application/octet-stream";
+      } else {
+        throw new UnsupportedMediaTypeException({
+          statusCode: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+          code: "MESSAGE_MEDIA_MIME_MISMATCH",
+          message: "Tipo real do arquivo não confere com o declarado.",
+        });
+      }
     }
     const checksum = createHash("sha256").update(body).digest("hex");
     const objectKey = `tenants/${input.tenantId}/messages/${input.conversationId}/${randomUUID()}/${fileName}`;
@@ -80,15 +85,29 @@ export class MessagingMediaStorageService {
     fileName?: string | null;
     messageType: MessageType;
   }) {
-    const mimeType = normalizeDocumentMimeType(
+    let mimeType = normalizeDocumentMimeType(
       input.messageType,
       input.mimeType,
       input.fileName ?? "",
     );
+    // Some received PDFs have neither a useful MIME nor a filename extension.
+    // Recognize only the PDF signature; the existing allowlist and size policy still apply.
+    if (
+      input.messageType === MessageType.DOCUMENT &&
+      mimeType === "application/octet-stream" &&
+      !/\.[a-z0-9]+$/i.test(input.fileName ?? "") &&
+      detectMimeType(input.body, mimeType) === "application/pdf"
+    ) {
+      mimeType = "application/pdf";
+    }
     validatePolicy(input.messageType, mimeType, input.body.byteLength);
     const detected = detectMimeType(input.body, mimeType);
     if (detected && detected !== mimeType) {
-      throw new UnsupportedMediaTypeException("Tipo real do arquivo recebido não confere.");
+      if (acceptsAllDocumentTypes(input.messageType)) {
+        mimeType = mimeType === "application/octet-stream" ? detected : "application/octet-stream";
+      } else {
+        throw new UnsupportedMediaTypeException("Tipo real do arquivo recebido não confere.");
+      }
     }
     const checksum = createHash("sha256").update(input.body).digest("hex");
     const fileName = sanitizeFileName(input.fileName ?? `media-${randomUUID()}`);
@@ -149,20 +168,21 @@ function storageProvider() {
 
 export function validatePolicy(type: MessageType, mimeType: string, sizeBytes: number) {
   const allowed = allowedMimeTypes(type);
-  if (!allowed.has(normalizeMimeType(mimeType)))
+  if (!allowed.has(normalizeMimeType(mimeType)) && !acceptsAllDocumentTypes(type))
     throw new UnsupportedMediaTypeException("Tipo de mídia não permitido.");
   if (sizeBytes > maxSizeBytes(type))
     throw new PayloadTooLargeException("Arquivo excede o limite permitido.");
+}
+
+function acceptsAllDocumentTypes(type: MessageType) {
+  return type === MessageType.DOCUMENT && allowedMimeTypes(type).has("*");
 }
 
 function allowedMimeTypes(type: MessageType) {
   if (type === MessageType.IMAGE)
     return envSet("TRIXUS_MESSAGE_ALLOWED_IMAGE_MIME_TYPES", "image/jpeg,image/png,image/webp");
   if (type === MessageType.DOCUMENT) {
-    return envSet(
-      "TRIXUS_MESSAGE_ALLOWED_DOCUMENT_MIME_TYPES",
-      "application/pdf,text/plain,text/csv,text/vcard,application/rtf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.text,application/vnd.oasis.opendocument.spreadsheet,application/vnd.oasis.opendocument.presentation,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed,application/x-7z-compressed,application/gzip,application/x-tar",
-    );
+    return envSet("TRIXUS_MESSAGE_ALLOWED_DOCUMENT_MIME_TYPES", "*");
   }
   if (type === MessageType.VIDEO) {
     return envSet("TRIXUS_MESSAGE_ALLOWED_VIDEO_MIME_TYPES", "video/mp4,video/3gpp,video/webm");
@@ -208,7 +228,10 @@ function envSet(key: string, fallback: string) {
 }
 
 function normalizeMimeType(value: string) {
-  return value.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+  const normalized = value.split(";")[0]?.trim().toLowerCase() ?? "";
+  return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(normalized)
+    ? normalized
+    : "application/octet-stream";
 }
 
 export function normalizeDocumentMimeType(type: MessageType, mimeType: string, fileName: string) {
@@ -221,6 +244,7 @@ export function normalizeDocumentMimeType(type: MessageType, mimeType: string, f
     (
       {
         pdf: "application/pdf",
+        xml: "application/xml",
         txt: "text/plain",
         csv: "text/csv",
         vcf: "text/vcard",

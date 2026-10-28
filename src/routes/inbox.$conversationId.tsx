@@ -64,6 +64,7 @@ import {
   crmApi,
   messageApi,
   organizationApi,
+  onboardingApi,
   quickReplyApi,
   type ApiMessage,
   type ApiAiTicketDraft,
@@ -269,14 +270,17 @@ function isContactCardMessage(message: Message) {
   return message.type === "document" && (mimeType === "text/vcard" || /\.vcf$/i.test(fileName));
 }
 
+function isSafeDocumentPreviewMimeType(value: string | undefined) {
+  const mimeType = value?.split(";", 1)[0].trim().toLowerCase();
+  return ["application/pdf", "text/plain", "text/csv"].includes(mimeType ?? "");
+}
+
 function isPreviewableDocument(message: Message) {
-  const mimeType = message.media_data?.mime_type?.toLowerCase() ?? "";
+  const mimeType = message.media_data?.mime_type?.split(";", 1)[0].trim().toLowerCase() ?? "";
   const fileName = message.media_data?.file_name?.toLowerCase() ?? "";
+  if (isSafeDocumentPreviewMimeType(mimeType)) return true;
   return (
-    mimeType === "application/pdf" ||
-    mimeType === "text/plain" ||
-    mimeType === "text/csv" ||
-    /\.(pdf|txt|csv)$/.test(fileName)
+    (!mimeType || mimeType === "application/octet-stream") && /\.(pdf|txt|csv)$/.test(fileName)
   );
 }
 
@@ -369,6 +373,12 @@ function ConversationPage() {
   const modules = tenantModules(entitlements.data?.features);
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const protocolNavigation = React.useRef<{
+    contactId: string;
+    targetId: string;
+    scope: string;
+    user: typeof user;
+  } | null>(null);
 
   const {
     data: conv,
@@ -418,10 +428,11 @@ function ConversationPage() {
     () => orderedMessages.filter((message) => message.type === "image" && !!message.media_data),
     [orderedMessages],
   );
-  const { data: apiDepartments = [], isLoading: departmentsLoading } = useQuery({
+  const departmentsQuery = useQuery({
     queryKey: ["trixus", "chat-departments", "conversation-transfer"],
     queryFn: organizationApi.listChatDepartments,
   });
+  const { data: apiDepartments = [], isLoading: departmentsLoading } = departmentsQuery;
   const { data: transferOptions } = useQuery({
     queryKey: ["trixus", "conversations", conversationId, "transfer-options"],
     queryFn: () => conversationApi.transferOptions(conversationId),
@@ -508,6 +519,17 @@ function ConversationPage() {
   const transferModal = useDisclosure();
   const startDepartmentModal = useDisclosure();
   const [startDepartmentId, setStartDepartmentId] = React.useState("");
+  const [startPending, setStartPending] = React.useState(false);
+  const [startError, setStartError] = React.useState<string | null>(null);
+  const startRequestActive = React.useRef(false);
+  const currentConversationId = React.useRef(conversationId);
+  currentConversationId.current = conversationId;
+  const setStartDepartmentOpen = startDepartmentModal.set;
+  React.useEffect(() => {
+    setStartError(null);
+    setStartDepartmentId("");
+    setStartDepartmentOpen(false);
+  }, [conversationId, setStartDepartmentOpen]);
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [replyTo, setReplyTo] = React.useState<Message | null>(null);
   const queuePrefs = useQueuePrefs();
@@ -524,10 +546,19 @@ function ConversationPage() {
   const ticketReadinessModal = useDisclosure();
   const [editContactRequestKey, setEditContactRequestKey] = React.useState(0);
   const canReadTicketContact = perms.visualiza_contatos;
+  const pendingPanel = protocolNavigation.current;
+  const retainedContactId =
+    !conversationError &&
+    pendingPanel?.targetId === conversationId &&
+    pendingPanel.scope === conversationScope &&
+    pendingPanel.user === user
+      ? pendingPanel.contactId
+      : null;
+  const activeContactId = conv?.contact_id ?? retainedContactId;
   const ticketContact = useQuery({
-    queryKey: ["trixus", "contacts", conv?.contact_id, conversationScope],
-    queryFn: () => crmApi.getContact(conv!.contact_id!),
-    enabled: canReadTicketContact && Boolean(conv?.contact_id),
+    queryKey: ["trixus", "contacts", activeContactId, conversationScope],
+    queryFn: () => crmApi.getContact(activeContactId!),
+    enabled: canReadTicketContact && Boolean(activeContactId),
   });
   const ticketCustomerId = ticketContact.data?.customer_id ?? "";
   const ticketCustomerBranches = useQuery({
@@ -572,10 +603,63 @@ function ConversationPage() {
     }
   }, [conv, conversationError, conversationLoading, navigate]);
 
+  // Retain only an already authorized sidebar identity for its own protocol link.
+  // Never retain the previous conversation object, messages, media or action handlers.
+  const panelContactId = conv?.contact?.id ?? retainedContactId;
+  const contactPanel = panelContactId && panelOpen && (
+    <>
+      <button
+        type="button"
+        className="absolute inset-0 z-10 cursor-default bg-transparent 2xl:hidden"
+        aria-label="Fechar informações do contato"
+        onClick={() => setPanelOpen(false)}
+        onWheel={(event) => {
+          event.preventDefault();
+          scrollRef.current?.scrollBy({ top: event.deltaY, behavior: "auto" });
+        }}
+      />
+      <div className="absolute inset-y-0 right-0 z-20 flex max-w-full 2xl:relative 2xl:inset-auto 2xl:shrink-0">
+        <ContactPanel
+          key={`${conversationScope}:${panelContactId}`}
+          contactId={panelContactId}
+          conversationId={conversationId}
+          editRequestKey={editContactRequestKey}
+          onContactUpdated={() => {
+            setPanelOpen(false);
+          }}
+          canBlock={
+            !!conv &&
+            !conv.is_group &&
+            conv.connection?.providerType === "evolution" &&
+            conv.connection.status === "connected"
+          }
+          onProtocolNavigate={(targetId) => {
+            protocolNavigation.current = {
+              contactId: panelContactId,
+              targetId,
+              scope: conversationScope,
+              user,
+            };
+          }}
+          onClose={() => setPanelOpen(false)}
+        />
+      </div>
+    </>
+  );
+
   if (!conv) {
     return (
       <InboxLayout>
-        <div className="h-full" />
+        <div className="relative flex h-full min-h-0 w-full min-w-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            {panelContactId && (
+              <p role="status" className="p-5 text-sm text-muted-foreground">
+                Carregando conversa…
+              </p>
+            )}
+          </div>
+          {contactPanel}
+        </div>
       </InboxLayout>
     );
   }
@@ -600,30 +684,69 @@ function ConversationPage() {
   const wasStarted = !!conv.protocolo;
   const startLabel = isStandby || (!conv.agent_id && wasStarted) ? "Retomar" : "Iniciar";
 
+  const initialDepartmentsPending = !conv.protocolo && departmentsLoading;
+  const startActionPending = startPending || initialDepartmentsPending;
+
   const handleAssume = async (departmentId?: string) => {
-    if (!user) return;
-    if (departmentsLoading) return;
-    const favorite =
-      user.role === "admin"
-        ? null
-        : favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
-    if (!conv.protocolo && !departmentId && !favorite) {
-      if (departmentsForConnection(apiDepartments, conv.connection_id).length === 0) return;
-      setStartDepartmentId("");
-      startDepartmentModal.show();
+    if (startRequestActive.current) return;
+    if (!user || !canSendMessages) {
+      setStartError("Você não possui permissão para iniciar conversas.");
       return;
     }
+    if (!conv.protocolo && departmentsLoading) {
+      setStartError("Aguarde o carregamento dos departamentos para iniciar o atendimento.");
+      return;
+    }
+    if (!conv.protocolo && departmentsQuery.error) {
+      setStartError("Não foi possível carregar os departamentos. Tente novamente.");
+      return;
+    }
+    startRequestActive.current = true;
+    setStartPending(true);
+    setStartError(null);
     try {
+      const favorite =
+        user.role === "admin"
+          ? null
+          : favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
+      if (!conv.protocolo && !departmentId && !favorite) {
+        let permitted = departmentsForConnection(apiDepartments, conv.connection_id);
+        if (permitted.length === 0) {
+          if (user.role !== "admin")
+            throw new Error("Nenhum departamento permitido para esta instância.");
+          if (!conv.connection_id)
+            throw new Error(
+              "A conversa não possui uma instância disponível para iniciar atendimento.",
+            );
+          await onboardingApi.ensureDepartmentConnection(conv.connection_id);
+          const refreshed = await departmentsQuery.refetch({ throwOnError: true });
+          if (currentConversationId.current !== conv.id) return;
+          permitted = departmentsForConnection(refreshed.data ?? [], conv.connection_id);
+          if (permitted.length === 0)
+            throw new Error("Nenhum departamento permitido para esta instância.");
+        }
+        setStartDepartmentId("");
+        startDepartmentModal.show();
+        return;
+      }
       const hadProtocolo = !!conv.protocolo;
       await conversationApi.assign(conv.id, { self: true, departmentId });
+      if (currentConversationId.current !== conv.id) return;
       startDepartmentModal.hide();
       setInboxTab("ativas");
       void invalidateConversationQueries(qc, conv.id);
       toast.success(
         hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado",
       );
-    } catch (e) {
-      toast.error((e as Error).message);
+    } catch (error) {
+      if (currentConversationId.current === conv.id) {
+        setStartError(
+          error instanceof Error ? error.message : "Não foi possível iniciar o atendimento.",
+        );
+      }
+    } finally {
+      startRequestActive.current = false;
+      setStartPending(false);
     }
   };
 
@@ -721,6 +844,8 @@ function ConversationPage() {
                       size="sm"
                       className="group hover:!border-emerald-500 hover:!bg-emerald-50 hover:!text-emerald-700 focus-visible:!border-emerald-500 focus-visible:!bg-emerald-50 focus-visible:!text-emerald-700 dark:hover:!bg-emerald-950 dark:hover:!text-emerald-300 dark:focus-visible:!bg-emerald-950 dark:focus-visible:!text-emerald-300"
                       onClick={() => void handleAssume()}
+                      disabled={startActionPending}
+                      aria-busy={startActionPending}
                       aria-label={`${startLabel} Atendimento`}
                       title={`${startLabel} Atendimento`}
                     >
@@ -759,6 +884,36 @@ function ConversationPage() {
               )}
             </div>
           </header>
+          {startActionPending && (
+            <p
+              role="status"
+              className="border-b border-border px-4 py-2 text-xs text-muted-foreground"
+            >
+              {startPending ? "Preparando atendimento…" : "Carregando departamentos…"}
+            </p>
+          )}
+          {startError && !startDepartmentModal.open && (
+            <div
+              role="alert"
+              className="flex items-center gap-3 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+            >
+              <span>{startError}</span>
+              {departmentsQuery.error && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={departmentsQuery.isFetching}
+                  onClick={async () => {
+                    const refreshed = await departmentsQuery.refetch();
+                    if (!refreshed.error && currentConversationId.current === conv.id)
+                      setStartError(null);
+                  }}
+                >
+                  Recarregar departamentos
+                </Button>
+              )}
+            </div>
+          )}
 
           {messageSearchOpen && (
             <div className="flex items-center gap-2 border-b border-border bg-surface-1 px-3 py-2">
@@ -884,6 +1039,7 @@ function ConversationPage() {
                   <MessageBubble
                     key={m.id}
                     m={m}
+                    mediaAccessAllowed={Boolean(conv.protocolo?.trim())}
                     agents={messageAgents}
                     showAgentName={showAgentName}
                     onReply={(message) => setReplyTo(message)}
@@ -1008,36 +1164,7 @@ function ConversationPage() {
           </div>
         </div>
 
-        {conv.contact && panelOpen && (
-          <>
-            <button
-              type="button"
-              className="absolute inset-0 z-10 cursor-default bg-transparent 2xl:hidden"
-              aria-label="Fechar informações do contato"
-              onClick={() => setPanelOpen(false)}
-              onWheel={(event) => {
-                event.preventDefault();
-                scrollRef.current?.scrollBy({ top: event.deltaY, behavior: "auto" });
-              }}
-            />
-            <div className="absolute inset-y-0 right-0 z-20 flex max-w-full 2xl:relative 2xl:inset-auto 2xl:shrink-0">
-              <ContactPanel
-                contactId={conv.contact.id}
-                conversationId={conv.id}
-                editRequestKey={editContactRequestKey}
-                onContactUpdated={() => {
-                  setPanelOpen(false);
-                }}
-                canBlock={
-                  !conv.is_group &&
-                  conv.connection?.providerType === "evolution" &&
-                  conv.connection.status === "connected"
-                }
-                onClose={() => setPanelOpen(false)}
-              />
-            </div>
-          </>
-        )}
+        {contactPanel}
       </div>
 
       <TransferModal
@@ -1075,19 +1202,27 @@ function ConversationPage() {
       />
       <Modal
         open={startDepartmentModal.open}
-        onClose={startDepartmentModal.hide}
+        onClose={() => {
+          if (!startPending) startDepartmentModal.hide();
+        }}
         title="Escolher Departamento"
         description={`Departamentos: ${conv.connection?.name ?? "selecionada"}.`}
         size="sm"
         footer={
           <div className="flex w-full justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={startDepartmentModal.hide}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={startPending}
+              onClick={startDepartmentModal.hide}
+            >
               Cancelar
             </Button>
             <Button
               variant="primary"
               size="sm"
-              disabled={!startDepartmentId}
+              disabled={!startDepartmentId || startActionPending}
+              aria-busy={startPending}
               onClick={() => void handleAssume(startDepartmentId)}
             >
               Iniciar Atendimento
@@ -1096,6 +1231,11 @@ function ConversationPage() {
         }
       >
         <div className="space-y-2">
+          {startError && (
+            <p role="alert" className="text-sm text-destructive">
+              {startError}
+            </p>
+          )}
           {apiDepartments
             .filter(
               (department) =>
@@ -1106,6 +1246,7 @@ function ConversationPage() {
                 key={department.id}
                 type="button"
                 onClick={() => setStartDepartmentId(department.id)}
+                disabled={startPending}
                 className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-4 text-left ${startDepartmentId === department.id ? "border-primary bg-primary/5" : "border-border"}`}
               >
                 <span
@@ -1465,6 +1606,7 @@ export function MessageBubble({
   agents,
   showAgentName = true,
   readOnly = false,
+  mediaAccessAllowed = false,
   onReply,
   onQuotedClick,
   highlighted,
@@ -1485,6 +1627,7 @@ export function MessageBubble({
   agents: { id: string; nome: string }[];
   showAgentName?: boolean;
   readOnly?: boolean;
+  mediaAccessAllowed?: boolean;
   onReply?: (message: Message) => void;
   onQuotedClick?: (messageId: string | null | undefined) => void;
   highlighted?: boolean;
@@ -1518,7 +1661,9 @@ export function MessageBubble({
     y: number;
   } | null>(null);
   const mediaState = m.media_data?.state ?? null;
-  const mediaReady = !!m.media_data && (!mediaState || mediaState === "ready");
+  const mediaStoredReady = !!m.media_data && (!mediaState || mediaState === "ready");
+  const mediaReady = mediaAccessAllowed && mediaStoredReady;
+  const mediaStartRequiredMessage = "Inicie o atendimento para acessar este arquivo.";
   React.useEffect(() => {
     if (!m.media_data || !mediaReady || m.type === "document") return;
     let alive = true;
@@ -1545,6 +1690,10 @@ export function MessageBubble({
   };
 
   const download = async (message: Message = m) => {
+    if (!mediaAccessAllowed) {
+      setMediaRecoveryError(mediaStartRequiredMessage);
+      return;
+    }
     setMediaRecoveryError(null);
     try {
       const blob = await messageApi.downloadMedia(message.conversation_id, message.id);
@@ -1561,6 +1710,10 @@ export function MessageBubble({
   };
 
   const recoverMedia = async () => {
+    if (!mediaAccessAllowed) {
+      setMediaRecoveryError(mediaStartRequiredMessage);
+      return;
+    }
     if (recoveringMedia) return;
     setRecoveringMedia(true);
     setMediaRecoveryError(null);
@@ -1575,9 +1728,17 @@ export function MessageBubble({
   };
 
   const previewDocument = async (message: Message = m) => {
+    if (!mediaAccessAllowed) {
+      setMediaRecoveryError(mediaStartRequiredMessage);
+      return;
+    }
     setMediaRecoveryError(null);
     try {
       const blob = await messageApi.downloadMedia(message.conversation_id, message.id, true);
+      if (!isSafeDocumentPreviewMimeType(blob.type)) {
+        setMediaRecoveryError("Este documento está disponível somente para download.");
+        return;
+      }
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
@@ -1756,7 +1917,8 @@ export function MessageBubble({
             message={m}
             onReply={onReply ? () => onReply(m) : undefined}
             onReact={react}
-            onDownload={() => download()}
+            onDownload={mediaAccessAllowed ? () => download() : undefined}
+            mediaAccessAllowed={mediaAccessAllowed}
             resendRequest={resendRequest}
             openRequest={actionsOpenRequest}
             openPosition={actionsOpenPosition}
@@ -1780,37 +1942,42 @@ export function MessageBubble({
         {m.quoted && !m.deleted_for_everyone && (
           <QuotedPreview
             conversationId={m.conversation_id}
+            mediaAccessAllowed={mediaAccessAllowed}
             quoted={m.quoted}
             mine={mine}
             onClick={() => onQuotedClick?.(m.quoted?.message_id)}
           />
         )}
-        {m.type === "image" && !m.deleted_for_everyone && mediaUrl && imagePreviewOpen && (
-          <InboxImageViewer
-            src={mediaUrl}
-            readOnly={readOnly}
-            message={m}
-            images={galleryImages}
-            onClose={() => setImagePreviewOpen(false)}
-            onReply={
-              onReply
-                ? (image) => {
-                    setImagePreviewOpen(false);
-                    onReply(image as Message);
-                  }
-                : undefined
-            }
-            onDownload={(image) => download(image as Message)}
-            onOpenActions={
-              readOnly
-                ? undefined
-                : (position) => {
-                    setActionsOpenPosition(position);
-                    setActionsOpenRequest((request) => request + 1);
-                  }
-            }
-          />
-        )}
+        {mediaAccessAllowed &&
+          m.type === "image" &&
+          !m.deleted_for_everyone &&
+          mediaUrl &&
+          imagePreviewOpen && (
+            <InboxImageViewer
+              src={mediaUrl}
+              readOnly={readOnly}
+              message={m}
+              images={galleryImages}
+              onClose={() => setImagePreviewOpen(false)}
+              onReply={
+                onReply
+                  ? (image) => {
+                      setImagePreviewOpen(false);
+                      onReply(image as Message);
+                    }
+                  : undefined
+              }
+              onDownload={(image) => download(image as Message)}
+              onOpenActions={
+                readOnly
+                  ? undefined
+                  : (position) => {
+                      setActionsOpenPosition(position);
+                      setActionsOpenRequest((request) => request + 1);
+                    }
+              }
+            />
+          )}
         <div className={m.deleted_for_everyone ? "opacity-50" : undefined}>
           {
             <>
@@ -1823,7 +1990,9 @@ export function MessageBubble({
                       : "mb-2 overflow-hidden rounded-lg border border-border/60"
                   }
                 >
-                  {mediaUrl ? (
+                  {!mediaAccessAllowed ? (
+                    <div className="px-3 py-2 text-xs opacity-80">{mediaStartRequiredMessage}</div>
+                  ) : mediaUrl ? (
                     <button
                       type="button"
                       onClick={() => setImagePreviewOpen(true)}
@@ -1847,7 +2016,9 @@ export function MessageBubble({
               )}
               {m.type === "video" && m.media_data && (
                 <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
-                  {mediaUrl ? (
+                  {!mediaAccessAllowed ? (
+                    <div className="px-3 py-2 text-xs opacity-80">{mediaStartRequiredMessage}</div>
+                  ) : mediaUrl ? (
                     <video src={mediaUrl} controls className="max-h-72 max-w-full" />
                   ) : mediaError || mediaState === "failed" ? (
                     <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
@@ -1860,7 +2031,9 @@ export function MessageBubble({
               )}
               {(m.type === "audio" || m.type === "voice") &&
                 m.media_data &&
-                (mediaUrl ? (
+                (!mediaAccessAllowed ? (
+                  <div className="px-3 py-2 text-xs opacity-80">{mediaStartRequiredMessage}</div>
+                ) : mediaUrl ? (
                   <AudioPlayer
                     src={mediaUrl}
                     durationMs={m.duration_ms}
@@ -1881,28 +2054,48 @@ export function MessageBubble({
                         : "Audio em processamento..."}
                   </div>
                 ))}
-              {isContactCardMessage(m) && m.media_data && (
-                <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
-              )}
+              {isContactCardMessage(m) &&
+                m.media_data &&
+                (mediaAccessAllowed ? (
+                  <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
+                ) : (
+                  <div className="px-3 py-2 text-xs opacity-80">{mediaStartRequiredMessage}</div>
+                ))}
               {m.type === "document" && !isContactCardMessage(m) && m.media_data && (
                 <div
-                  className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
+                  className={`relative mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
                     mine ? "border-black/10 bg-black/5" : "border-border/60 bg-surface-2"
                   } ${mediaReady ? "" : "opacity-70"}`}
                 >
+                  <button
+                    type="button"
+                    className="absolute inset-0 cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed"
+                    aria-label={`Baixar ${m.media_data.file_name ?? "documento"}`}
+                    title={
+                      !mediaAccessAllowed
+                        ? mediaStartRequiredMessage
+                        : mediaReady
+                          ? "Baixar"
+                          : "Arquivo indisponível para download"
+                    }
+                    disabled={!mediaReady}
+                    onClick={mediaReady ? () => void download() : undefined}
+                  />
                   <FileText className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">
                       {m.media_data.file_name ?? "Documento"}
                     </span>
                     <span className="block truncate opacity-70">
-                      {mediaState === "failed"
-                        ? "Arquivo não armazenado"
-                        : mediaReady
-                          ? m.media_data.size
-                            ? formatMessageAttachmentSize(m.media_data.size)
-                            : "Disponível"
-                          : "Documento em processamento..."}
+                      {!mediaAccessAllowed
+                        ? mediaStartRequiredMessage
+                        : mediaState === "failed"
+                          ? "Arquivo não armazenado"
+                          : mediaReady
+                            ? m.media_data.size
+                              ? formatMessageAttachmentSize(m.media_data.size)
+                              : "Disponível"
+                            : "Documento em processamento..."}
                     </span>
                     {mediaRecoveryError && (
                       <span role="status" className="block text-destructive">
@@ -1910,22 +2103,25 @@ export function MessageBubble({
                       </span>
                     )}
                   </span>
-                  {!mediaReady && m.direction === "inbound" && !m.deleted_for_everyone && (
-                    <button
-                      type="button"
-                      className="rounded-md p-1.5 hover:bg-black/10 disabled:cursor-wait"
-                      aria-label={`Recuperar ${m.media_data.file_name ?? "documento"}`}
-                      title="Tentar recuperar arquivo"
-                      disabled={recoveringMedia}
-                      onClick={() => void recoverMedia()}
-                    >
-                      <RefreshCw className={`h-4 w-4 ${recoveringMedia ? "animate-spin" : ""}`} />
-                    </button>
-                  )}
+                  {mediaAccessAllowed &&
+                    !mediaStoredReady &&
+                    m.direction === "inbound" &&
+                    !m.deleted_for_everyone && (
+                      <button
+                        type="button"
+                        className="relative z-10 rounded-md p-1.5 hover:bg-black/10 disabled:cursor-wait"
+                        aria-label={`Recuperar ${m.media_data.file_name ?? "documento"}`}
+                        title="Tentar recuperar arquivo"
+                        disabled={recoveringMedia}
+                        onClick={() => void recoverMedia()}
+                      >
+                        <RefreshCw className={`h-4 w-4 ${recoveringMedia ? "animate-spin" : ""}`} />
+                      </button>
+                    )}
                   {mediaReady && isPreviewableDocument(m) && (
                     <button
                       type="button"
-                      className="rounded-md p-1.5 hover:bg-black/10"
+                      className="relative z-10 rounded-md p-1.5 hover:bg-black/10"
                       aria-label={`Visualizar ${m.media_data.file_name ?? "documento"}`}
                       title="Visualizar"
                       onClick={() => void previewDocument()}
@@ -1933,16 +2129,9 @@ export function MessageBubble({
                       <Eye className="h-4 w-4" />
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 hover:bg-black/10 disabled:cursor-not-allowed"
-                    aria-label={`Baixar ${m.media_data.file_name ?? "documento"}`}
-                    title={mediaReady ? "Baixar" : "Arquivo indisponível para download"}
-                    disabled={!mediaReady}
-                    onClick={mediaReady ? () => void download() : undefined}
-                  >
+                  <span aria-hidden="true" className="pointer-events-none rounded-md p-1.5">
                     <Download className="h-4 w-4" />
-                  </button>
+                  </span>
                 </div>
               )}
               {m.link_preview && <LinkPreviewCard preview={m.link_preview} mine={mine} />}
@@ -2014,7 +2203,7 @@ export function MessageBubble({
               <MessageStatusIcon
                 status={m.status}
                 onRetry={
-                  !readOnly && m.status === "failed"
+                  !readOnly && m.status === "failed" && (!m.media_data || mediaAccessAllowed)
                     ? () => setResendRequest((value) => value + 1)
                     : undefined
                 }
@@ -2217,14 +2406,17 @@ function QuotedPreview({
   quoted,
   mine,
   onClick,
+  mediaAccessAllowed = false,
 }: {
   conversationId: string;
+  mediaAccessAllowed?: boolean;
   quoted: NonNullable<Message["quoted"]>;
   mine: boolean;
   onClick?: () => void;
 }) {
   const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
   const canPreview =
+    mediaAccessAllowed &&
     !!quoted.message_id &&
     quoted.media_data?.state !== "failed" &&
     (quoted.type === "image" || quoted.type === "video");
@@ -3600,6 +3792,7 @@ export function ContactPanel({
   editRequestKey,
   onContactUpdated,
   onClose,
+  onProtocolNavigate,
 }: {
   contactId: string;
   conversationId?: string;
@@ -3607,6 +3800,7 @@ export function ContactPanel({
   editRequestKey?: number;
   onContactUpdated?: () => void;
   onClose: () => void;
+  onProtocolNavigate?: (conversationId: string) => void;
 }) {
   const perms = useChatPerms();
   const user = useSession((state) => state.user);
@@ -3832,6 +4026,17 @@ export function ContactPanel({
                     <Link
                       to="/inbox/$conversationId"
                       params={{ conversationId: p.id }}
+                      onClick={(event) => {
+                        if (
+                          !event.defaultPrevented &&
+                          event.button === 0 &&
+                          !event.metaKey &&
+                          !event.ctrlKey &&
+                          !event.shiftKey &&
+                          !event.altKey
+                        )
+                          onProtocolNavigate?.(p.id);
+                      }}
                       aria-current={p.id === conversationId ? "page" : undefined}
                       className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition ${
                         p.id === conversationId

@@ -169,13 +169,18 @@ function sanitizeProviderMessage(data: unknown, statusText?: string | null, code
 
 function messageFromData(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
-  const value =
-    (data as { message?: unknown; error?: unknown }).message ?? (data as { error?: unknown }).error;
-  if (Array.isArray(value)) return value.map((item) => String(item)).join(", ");
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object") {
-    const nested = (value as { message?: unknown }).message;
-    if (typeof nested === "string") return nested;
+  const body = data as { message?: unknown; error?: unknown; response?: unknown };
+  const response =
+    body.response && typeof body.response === "object"
+      ? (body.response as { message?: unknown })
+      : null;
+  for (const value of [body.message, response?.message, body.error]) {
+    if (Array.isArray(value) && value.length) return value.map((item) => String(item)).join(", ");
+    if (typeof value === "string" && value) return value;
+    if (value && typeof value === "object") {
+      const nested = (value as { message?: unknown }).message;
+      if (typeof nested === "string" && nested) return nested;
+    }
   }
   return null;
 }

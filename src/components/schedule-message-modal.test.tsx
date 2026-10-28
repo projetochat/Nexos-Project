@@ -91,9 +91,23 @@ it("reuses the rich editor, custom variables and a saved attachment while editin
     await React.act(async () => Promise.resolve());
 
     expect(document.querySelector('[aria-label="Inserir emoji"]')).not.toBeNull();
-    const scheduleInput = document.querySelector<HTMLInputElement>('input[type="datetime-local"]');
+    const displayedDate = new Date(scheduled.scheduledAt).toLocaleDateString("pt-BR");
+    const displayedTime = new Date(scheduled.scheduledAt).toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(`${displayedDate} ${displayedTime}`),
+    );
+    expect(document.body.textContent).not.toContain(`${displayedDate}, ${displayedTime}`);
+    const chooseDate = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Escolher data e hora",
+    )!;
+    await React.act(async () => chooseDate.click());
+    const scheduleInput = document.querySelector<HTMLInputElement>('input[type="date"]');
     expect(scheduleInput?.className).toContain("min-w-0");
     expect(scheduleInput?.className).toContain("max-w-full");
+    expect(document.querySelector('[aria-label="Hora do agendamento"]')).not.toBeNull();
     const variables = document.querySelector<HTMLButtonElement>('[aria-label="Inserir variável"]')!;
     await React.act(async () => variables.click());
     expect(document.body.textContent).toContain("{{codigo_cliente}}");
@@ -117,6 +131,7 @@ it("reuses the rich editor, custom variables and a saved attachment while editin
     await vi.waitFor(() => expect(api.save).toHaveBeenCalledOnce());
     expect(api.save.mock.calls[0]?.[0]).toMatchObject({
       id: scheduled.id,
+      scheduledAt: scheduled.scheduledAt,
       attachment: scheduled.attachment,
       attachmentName: scheduled.attachmentName,
     });
@@ -301,5 +316,138 @@ it("revalidates the deletion impact and submits its snapshot token", async () =>
     await React.act(async () => root.unmount());
     queryClient.clear();
     host.remove();
+  }
+});
+
+it("offers three future slots and saves the selected suggestion only after confirmation", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 9, 28, 7, 0));
+  api.list.mockResolvedValue([]);
+  api.save.mockResolvedValue({});
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  try {
+    await React.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ScheduleMessageModal
+            open
+            onClose={() => {}}
+            conversationId="conversation-1"
+            initialContent="Mensagem futura"
+            identifier="composer-new"
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const options = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        '[aria-label="Sugestões de horário"] button[aria-pressed]',
+      ),
+    ];
+    expect(options).toHaveLength(3);
+    expect(options.map((option) => option.textContent?.slice(-5))).toEqual([
+      "08:00",
+      "13:00",
+      "08:00",
+    ]);
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+    expect(document.querySelector('input[type="time"]')).toBeNull();
+    await React.act(async () => options[0].click());
+    expect(api.save).not.toHaveBeenCalled();
+    expect(options[0].getAttribute("aria-pressed")).toBe("true");
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Agendar",
+    )!;
+    await React.act(async () => confirm.click());
+    expect(api.save).toHaveBeenCalledOnce();
+    expect(api.save.mock.calls[0][0]).toMatchObject({
+      conversationId: "conversation-1",
+      origin: "CHAT",
+      content: "Mensagem futura",
+      scheduledAt: new Date(2026, 9, 28, 8, 0).toISOString(),
+    });
+  } finally {
+    await React.act(async () => root.unmount());
+    client.clear();
+    host.remove();
+    vi.useRealTimers();
+  }
+});
+
+it("reveals independent custom date/time fields and rejects past or incomplete values", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 9, 28, 14, 0));
+  api.list.mockResolvedValue([]);
+  api.save.mockResolvedValue({});
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const change = async (input: HTMLInputElement, value: string) =>
+    React.act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  try {
+    await React.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ScheduleMessageModal
+            open
+            onClose={() => {}}
+            conversationId="conversation-1"
+            initialContent="Mensagem customizada"
+            identifier="composer-custom"
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const choose = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Escolher data e hora",
+    )!;
+    await React.act(async () => choose.click());
+    const date = document.querySelector<HTMLInputElement>('[aria-label="Data do agendamento"]')!;
+    const time = document.querySelector<HTMLInputElement>('[aria-label="Hora do agendamento"]')!;
+    expect(date.type).toBe("date");
+    expect(time.type).toBe("text");
+    expect(time.inputMode).toBe("numeric");
+    expect(time.placeholder).toBe("00:00");
+    expect(date.value).toBe("2026-10-29");
+    expect(time.value).toBe("08:00");
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Agendar",
+    )!;
+    await change(date, "2026-10-28");
+    expect(confirm.disabled).toBe(true);
+    expect(document.body.textContent).toContain("Escolha um horário futuro.");
+    await change(date, "2026-10-30");
+    await change(time, "");
+    expect(confirm.disabled).toBe(true);
+    await React.act(async () => choose.click());
+    expect(date.value).toBe("2026-10-30");
+    expect(time.value).toBe("");
+    await change(time, "25:61");
+    expect(confirm.disabled).toBe(true);
+    expect(document.body.textContent).toContain("Informe um horário válido entre 00:00 e 23:59.");
+    await change(time, "1645");
+    await React.act(async () => time.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(time.value).toBe("16:45");
+    expect(confirm.disabled).toBe(false);
+    await React.act(async () => confirm.click());
+    expect(api.save).toHaveBeenCalledOnce();
+    expect(api.save.mock.calls[0][0]).toMatchObject({
+      scheduledAt: new Date(2026, 9, 30, 16, 45).toISOString(),
+    });
+  } finally {
+    await React.act(async () => root.unmount());
+    client.clear();
+    host.remove();
+    vi.useRealTimers();
   }
 });

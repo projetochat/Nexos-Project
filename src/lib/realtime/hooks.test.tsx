@@ -291,7 +291,9 @@ describe("useRealtimeInbox render stability", () => {
   it("clears sensitive caches immediately when authorization changes during the session", async () => {
     vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "true");
     localStorage.setItem("trixus.api.accessToken", "access");
-    const { useSession } = await import("@/lib/session");
+    const session = await import("@/lib/session");
+    const { useSession } = session;
+    const rehydrate = vi.spyOn(session, "hydrateSession").mockResolvedValue();
     const { useInstanceAccessUpdates } = await import("./hooks");
     useSession.setState({ user: user(), hydrated: true });
     const client = new QueryClient();
@@ -314,8 +316,10 @@ describe("useRealtimeInbox render stability", () => {
           </QueryClientProvider>,
         ),
       );
+      const previousSocket = lastSocket;
+      expect(previousSocket).not.toBeNull();
       await act(async () =>
-        lastSocket?.on.mock.calls.find(([name]) => name === "authorization.updated")?.[1]({
+        previousSocket?.on.mock.calls.find(([name]) => name === "authorization.updated")?.[1]({
           eventId: "authorization-event",
           event: "authorization.updated",
           version: 1,
@@ -327,8 +331,10 @@ describe("useRealtimeInbox render stability", () => {
         await Promise.resolve();
       });
 
+      expect(rehydrate).toHaveBeenCalledWith({ preserveUserOnTransientError: true });
       expect(client.getQueryCache().getAll()).toHaveLength(0);
-      expect(lastSocket?.disconnect).toHaveBeenCalled();
+      expect(previousSocket?.disconnect).toHaveBeenCalled();
+      expect(lastSocket).not.toBe(previousSocket);
       expect(useSession.getState().user?.id).toBe("user-a");
     } finally {
       await act(async () => root.unmount());

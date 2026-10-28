@@ -87,7 +87,7 @@ export function Modal({
     <div className={`fixed inset-0 flex items-center justify-center p-2 sm:p-4 ${layerClassName}`}>
       <div
         data-modal-backdrop
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/[0.315] backdrop-blur-sm"
         onClick={dismissible && closeOnBackdrop ? handleBackdropClick : undefined}
       />
       <div

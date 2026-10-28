@@ -92,3 +92,46 @@ describe("tenant permission navigation", () => {
     );
   });
 });
+
+// D-014: Chat is optional; shared tenant administration and Tickets remain independent.
+it.each([
+  ["/inbox/conversation-a", "conversations.read"],
+  ["/filas", "conversations.read"],
+  ["/historico", "history.read"],
+  ["/grupos", "groups.read"],
+  ["/etiquetas", "chat.tags.read"],
+  ["/mensagens-rapidas", "chat.quick_replies.read"],
+  ["/agendamentos", "schedules.read"],
+  ["/chatbot", "bot_flows.read"],
+  ["/automacoes", "automations.read"],
+])("blocks Chat-only route %s even when its read permission is present", (route, permission) => {
+  expect(canAccessTenantRoute(route, [permission], { chat: false })).toBe(false);
+  expect(canAccessTenantRoute(route, [permission], { chat: true })).toBe(true);
+  expect(canAccessTenantRoute(route, [permission], {})).toBe(true);
+});
+it.each([
+  ["/contatos", "contacts.read"],
+  ["/departamentos", "departments.read"],
+  ["/atendentes", "users.read"],
+  ["/perfis", "roles.read"],
+  ["/agente-ia", "ai_agents.read"],
+  ["/chamados", "tickets.read"],
+  ["/", "dashboard.read"],
+])("preserves shared route %s when Chat is disabled", (route, permission) => {
+  expect(canAccessTenantRoute(route, [permission], { chat: false, tickets: true })).toBe(true);
+});
+it("preserves shared Connections for Campaigns and chooses a reachable home", () => {
+  expect(
+    canAccessTenantRoute("/instancias", ["connections.read"], { chat: false, campaigns: false }),
+  ).toBe(false);
+  expect(
+    canAccessTenantRoute("/instancias", ["connections.read"], { chat: false, campaigns: true }),
+  ).toBe(true);
+  expect(
+    tenantHomeForPermissions(["conversations.read", "tickets.read"], {
+      chat: false,
+      tickets: true,
+    }),
+  ).toBe("/chamados");
+  expect(tenantHomeForPermissions(["conversations.read"], { chat: false })).toBe("/perfil");
+});

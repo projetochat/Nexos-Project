@@ -6,6 +6,7 @@ import { expect, it } from "vitest";
 import { PlatformClientVolumetryTable } from "./platform-client-volumetry-table";
 
 const zeroes = {
+  logins: 0,
   instances: 0,
   contacts: 0,
   attendants: 0,
@@ -29,10 +30,10 @@ it("renders every metric, keeps totals fixed and sorts client rows", async () =>
         <PlatformClientVolumetryTable
           title="Volumetria por cliente"
           rows={[
-            { ...zeroes, clientId: "b", clientName: "Beta", instances: 2 },
-            { ...zeroes, clientId: "a", clientName: "Alfa", instances: 1 },
+            { ...zeroes, clientId: "b", clientName: "Beta", instances: 2, logins: 7 },
+            { ...zeroes, clientId: "a", clientName: "Alfa", instances: 1, logins: 2 },
           ]}
-          totals={{ ...zeroes, instances: 3 }}
+          totals={{ ...zeroes, instances: 3, logins: 9 }}
         />,
       ),
     );
@@ -49,7 +50,7 @@ it("renders every metric, keeps totals fixed and sorts client rows", async () =>
     expect(quickRepliesHeader?.firstElementChild?.hasAttribute("data-header-icon-row")).toBe(true);
     expect(quickRepliesHeader?.querySelectorAll("svg")).toHaveLength(1);
     const headerIcons = host.querySelectorAll("[data-header-icon-row] svg");
-    expect(headerIcons).toHaveLength(10);
+    expect(headerIcons).toHaveLength(11);
     expect(
       [...headerIcons].every(
         (icon) => icon.classList.contains("h-[17px]") && icon.classList.contains("w-[17px]"),
@@ -63,7 +64,7 @@ it("renders every metric, keeps totals fixed and sorts client rows", async () =>
     const lightColorClasses = [...headerIcons].map(
       (icon) => [...icon.classList].find((className) => /^text-[a-z]+-(500|600)$/.test(className))!,
     );
-    expect(new Set(lightColorClasses).size).toBe(10);
+    expect(new Set(lightColorClasses).size).toBe(11);
     expect(
       host
         .querySelector('[aria-label="Ordenar por Instâncias"] svg')
@@ -101,6 +102,7 @@ it("renders every metric, keeps totals fixed and sorts client rows", async () =>
     );
     expect([...host.querySelectorAll("th")].map((cell) => cell.textContent)).toEqual([
       "Cliente",
+      "Logins",
       "Instâncias",
       "Contatos",
       "Atendentes",
@@ -124,7 +126,16 @@ it("renders every metric, keeps totals fixed and sorts client rows", async () =>
     expect(
       [...host.querySelectorAll("tbody tr")].map((row) => row.querySelector("td")?.textContent),
     ).toEqual(["Beta", "Alfa"]);
-    expect(host.querySelector("tfoot")?.textContent).toContain("Total3");
+    await act(async () =>
+      (host.querySelector('[aria-label="Ordenar por Logins"]') as HTMLButtonElement).click(),
+    );
+    await act(async () =>
+      (host.querySelector('[aria-label="Ordenar por Logins"]') as HTMLButtonElement).click(),
+    );
+    expect(
+      [...host.querySelectorAll("tbody tr")].map((row) => row.querySelector("td")?.textContent),
+    ).toEqual(["Beta", "Alfa"]);
+    expect(host.querySelector("tfoot")?.textContent).toContain("Total93");
     expect(
       host.querySelector('[aria-label="Volumetria por cliente: dados por cliente"]'),
     ).not.toBeNull();

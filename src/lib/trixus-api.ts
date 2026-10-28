@@ -493,6 +493,7 @@ export type ApiAgendaImportIgnoredContact = {
 };
 
 export type ApiAgendaImportPreview = {
+  capacity?: { limit: number | null; active: number; available: number | null };
   total: number;
   skipped: number;
   items: ApiAgendaImportContact[];
@@ -1187,6 +1188,8 @@ export type OperationalFilters = {
   q?: string;
   departmentId?: string;
   assignedMembershipId?: string;
+  closedByMembershipId?: string;
+  includeClosedByOptions?: boolean;
   status?: ApiConversationStatus;
   customerId?: string;
   connectionId?: string;
@@ -2042,13 +2045,17 @@ export const crmApi = {
   importContactsFromAgenda: (
     data: { connectionId?: string | null; selectedPhones?: string[] } = {},
   ) =>
-    apiRequest<{ total: number; imported: number; skipped: number }>(
-      "/crm/contacts/import/agenda",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
-    ),
+    apiRequest<{
+      total: number;
+      imported: number;
+      skipped: number;
+      limitReached?: number;
+      failed?: number;
+      unchanged?: number;
+    }>("/crm/contacts/import/agenda", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   bulkUpdateContacts: (data: {
     contactIds?: string[];
     allFiltered?: boolean;
@@ -2575,9 +2582,11 @@ export const operationsApi = {
       body: JSON.stringify({ configuration }),
     }),
   history: (params: Partial<OperationalFilters> & { page?: number; pageSize?: number } = {}) =>
-    apiRequest<PaginatedResponse<ApiConversation>>(
-      `/operations/history/conversations${queryString(params)}`,
-    ),
+    apiRequest<
+      PaginatedResponse<ApiConversation> & {
+        closedByOptions: Array<{ membershipId: string; name: string }>;
+      }
+    >(`/operations/history/conversations${queryString(params)}`),
   timeline: (conversationId: string) =>
     apiRequest<ApiConversationTimeline>(
       `/operations/history/conversations/${conversationId}/timeline`,
@@ -3210,11 +3219,11 @@ export type TenantEntitlements = {
 
 export type PlatformTenantConfiguration = {
   tenantId: string;
-  modules: { chat: true; campaigns: boolean; tickets: boolean };
-  lockedModules: Array<"chat">;
+  modules: { chat: boolean; campaigns: boolean; tickets: boolean };
+  lockedModules: Array<"chat" | "campaigns" | "tickets">;
   limits: Record<string, number>;
   overrides: {
-    modules: Partial<{ campaigns: boolean; tickets: boolean }>;
+    modules: Partial<{ chat: boolean; campaigns: boolean; tickets: boolean }>;
     limits: Record<string, number | null>;
   };
 };
@@ -3552,7 +3561,7 @@ export const platformApi = {
   updateTenantConfiguration: (
     id: string,
     data: {
-      modules?: { chat?: true; campaigns?: boolean; tickets?: boolean };
+      modules?: { chat?: boolean; campaigns?: boolean; tickets?: boolean };
       limits?: Record<string, number | null>;
     },
   ) =>
@@ -4188,7 +4197,7 @@ function queryString(params: Record<string, string | number | boolean | undefine
 }
 
 export const schedulesApi = {
-  list: (params: { conversationId?: string } = {}) =>
+  list: (params: { conversationId?: string; origin?: "CHAT" | "SCHEDULES" } = {}) =>
     apiRequest<ApiSchedule[]>(`/schedules${queryString(params)}`),
   save: (data: ApiSchedule) =>
     apiRequest<ApiSchedule>("/schedules", {

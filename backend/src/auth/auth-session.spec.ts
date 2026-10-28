@@ -93,7 +93,9 @@ describe("server-side auth sessions", () => {
 
   it("requires the active sid before hydrating an access request", async () => {
     const f = serviceFixture();
-    const guard = new JwtAuthGuard(f.service);
+    const guard = new JwtAuthGuard(f.service, {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+    } as never);
     const request = { headers: { authorization: "Bearer access-token" } } as never;
     const context = {
       switchToHttp: () => ({ getRequest: () => request }),

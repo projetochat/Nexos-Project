@@ -440,7 +440,7 @@ describe("GroupsController", () => {
         where: expect.objectContaining({
           AND: [
             { OR: [{ connectionId: null }, { connection: { is: { archivedAt: null } } }] },
-            { OR: [] },
+            { id: { in: [] } },
           ],
         }),
       }),

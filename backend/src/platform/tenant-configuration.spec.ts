@@ -16,12 +16,76 @@ const actor = {
 };
 
 describe("tenant configuration", () => {
-  it("rejects disabling the mandatory chat module", async () => {
+  it.each([true, false])("accepts an explicit boolean Chat module override: %s", async (chat) => {
     const dto = plainToInstance(UpdateTenantConfigurationDto, {
-      modules: { chat: false },
+      modules: { chat },
     });
     const errors = await validate(dto);
-    expect(errors).not.toHaveLength(0);
+    expect(errors).toHaveLength(0);
+  });
+
+  it.each(["false", 0, {}])("rejects a non-boolean Chat override: %s", async (chat) => {
+    const dto = plainToInstance(UpdateTenantConfigurationDto, { modules: { chat } });
+    expect(await validate(dto)).not.toHaveLength(0);
+  });
+
+  it("persists and exposes Chat disabled without changing other modules or limits", async () => {
+    const tenant = {
+      id: "tenant-a",
+      maxUsers: 7,
+      maxConnections: null,
+      featureOverrides: { campaigns: false, tickets: true },
+      limitOverrides: { maxContacts: 80 },
+    };
+    const prisma = {
+      tenant: {
+        findUnique: vi.fn().mockImplementation(async () => tenant),
+        update: vi.fn().mockImplementation(async ({ data }) => Object.assign(tenant, data)),
+      },
+      rolePermission: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }), createMany: vi.fn() },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: tenant.id }]),
+      $transaction: vi.fn(),
+    };
+    prisma.$transaction.mockImplementation((callback: (client: typeof prisma) => unknown) =>
+      callback(prisma),
+    );
+    const service = new PlatformService(
+      prisma as never,
+      { record: vi.fn() } as never,
+      {
+        getEntitlements: vi.fn().mockResolvedValue({
+          features: { chat: false, campaigns: false, tickets: true },
+          limits: { maxUsers: 7, maxContacts: 80 },
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      service.updateTenantConfiguration(tenant.id, { modules: { chat: false } }, actor),
+    ).resolves.toMatchObject({
+      modules: { chat: false, campaigns: false, tickets: true },
+      lockedModules: [],
+      overrides: {
+        modules: { chat: false, campaigns: false, tickets: true },
+        limits: { maxContacts: 80, maxUsers: 7 },
+      },
+    });
+    expect(prisma.tenant.update).toHaveBeenCalledWith({
+      where: { id: tenant.id },
+      data: {
+        featureOverrides: { chat: false, campaigns: false, tickets: true },
+        limitOverrides: { maxContacts: 80 },
+        maxUsers: 7,
+        maxConnections: null,
+      },
+    });
+    expect(prisma.rolePermission.createMany).not.toHaveBeenCalled();
+    expect(prisma.rolePermission.deleteMany).not.toHaveBeenCalled();
   });
 
   it("updates only the selected tenant and preserves plan records", async () => {
@@ -76,7 +140,7 @@ describe("tenant configuration", () => {
     ).resolves.toMatchObject({
       tenantId: "tenant-a",
       modules: { chat: true, campaigns: false, tickets: true },
-      lockedModules: ["chat"],
+      lockedModules: [],
       limits: { maxContacts: 250 },
     });
     expect(prisma.tenant.update).toHaveBeenCalledWith({

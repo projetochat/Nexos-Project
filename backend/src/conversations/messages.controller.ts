@@ -155,7 +155,36 @@ export class MessagesController {
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("Content-Type", media.mimeType);
     res.setHeader("Content-Length", String(media.body.byteLength));
-    res.setHeader("Content-Disposition", `${disposition}; filename="${safeName}"`);
+    // Only known passive media formats may render on the API origin. Other files remain downloadable.
+    const mimeType = media.mimeType.split(";", 1)[0].trim().toLowerCase();
+    const inlineAllowed = new Set([
+      "application/pdf",
+      "text/plain",
+      "text/csv",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "image/bmp",
+      "image/avif",
+      "audio/ogg",
+      "audio/mpeg",
+      "audio/mp4",
+      "audio/webm",
+      "audio/wav",
+      "audio/x-wav",
+      "audio/aac",
+      "audio/flac",
+      "audio/opus",
+      "video/mp4",
+      "video/3gpp",
+      "video/webm",
+      "video/quicktime",
+      "video/mpeg",
+      "video/ogg",
+    ]);
+    const safeDisposition = inlineAllowed.has(mimeType) ? disposition : "attachment";
+    res.setHeader("Content-Disposition", `${safeDisposition}; filename="${safeName}"`);
     res.end(media.body);
   }
 }

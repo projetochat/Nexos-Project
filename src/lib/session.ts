@@ -124,14 +124,34 @@ function matchingTenantRoute(pathname: string) {
     .sort((left, right) => right.length - left.length)[0];
 }
 
+const CHAT_ONLY_ROUTES = new Set([
+  "/inbox",
+  "/filas",
+  "/historico",
+  "/grupos",
+  "/etiquetas",
+  "/mensagens-rapidas",
+  "/agendamentos",
+  "/chatbot",
+  "/automacoes",
+]);
+
+export function isChatOnlyTenantRoute(pathname: string): boolean {
+  const route = matchingTenantRoute(pathname);
+  return Boolean(route && CHAT_ONLY_ROUTES.has(route));
+}
+
 export function canAccessTenantRoute(
   pathname: string,
   permissions?: readonly string[],
-  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
+  modules?: Partial<Record<"chat" | "campaigns" | "tickets", boolean>>,
 ): boolean {
   if (TENANT_PUBLIC_ROUTES.has(pathname)) return true;
   const route = matchingTenantRoute(pathname);
   if (!route) return false;
+  if (isChatOnlyTenantRoute(pathname) && modules?.chat === false) return false;
+  if (route === "/instancias" && modules?.chat === false && modules?.campaigns === false)
+    return false;
   if (route === "/campanhas" && modules?.campaigns === false) return false;
   if (
     (route === "/clientes" ||
@@ -147,7 +167,7 @@ export function canAccessTenantRoute(
 
 export function tenantHomeForPermissions(
   permissions?: readonly string[],
-  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
+  modules?: Partial<Record<"chat" | "campaigns" | "tickets", boolean>>,
 ): string {
   return (
     TENANT_HOME_CANDIDATES.find((route) => canAccessTenantRoute(route, permissions, modules)) ??
@@ -158,7 +178,7 @@ export function tenantHomeForPermissions(
 export function homeForSession(
   roleKey?: string,
   permissions?: readonly string[],
-  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
+  modules?: Partial<Record<"chat" | "campaigns" | "tickets", boolean>>,
   portalAccessProfile?: SessionUser["portalAccessProfile"],
 ): string {
   return roleKey === "customer_portal"
@@ -172,7 +192,7 @@ export function canAccessSessionRoute(
   pathname: string,
   roleKey?: string,
   permissions?: readonly string[],
-  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
+  modules?: Partial<Record<"chat" | "campaigns" | "tickets", boolean>>,
   portalAccessProfile?: SessionUser["portalAccessProfile"],
 ): boolean {
   const isPortalTicketsRoute =

@@ -49,7 +49,11 @@ import { useSession } from "@/lib/session";
 import { showRequiredFieldsToast } from "@/lib/required-fields";
 import { reconcileRoleChatScopes } from "@/lib/role-chat-scopes";
 import { Switch } from "@/components/ui/switch";
-import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
+import {
+  tenantModules,
+  useTenantEntitlements,
+  modulePermissionGroups,
+} from "@/hooks/use-tenant-entitlements";
 import {
   delegatedPermissionIds,
   permissionDependencyIssue,
@@ -494,15 +498,17 @@ function Page() {
   const search = Route.useSearch();
   const currentUser = useSession((state) => state.user);
   const entitlements = useTenantEntitlements();
-  const enabledModules = tenantModules(entitlements.data?.features);
-  const permissionGroups = React.useMemo(
+  const enabledModules = React.useMemo(
     () =>
-      PERMISSION_GROUPS.filter(
-        (group) =>
-          (group.title !== "Campanhas" || enabledModules.campaigns) &&
-          (group.title !== "Chamados" || enabledModules.tickets),
+      tenantModules(
+        entitlements.data?.features,
+        Boolean(entitlements.data) && !entitlements.isError,
       ),
-    [enabledModules.campaigns, enabledModules.tickets],
+    [entitlements.data, entitlements.isError],
+  );
+  const permissionGroups = React.useMemo(
+    () => modulePermissionGroups(PERMISSION_GROUPS, enabledModules),
+    [enabledModules],
   );
   const grantedPermissions = React.useMemo(
     () => currentUser?.permissions ?? [],
@@ -529,9 +535,15 @@ function Page() {
     enabled: grantedPermissions.includes("users.read"),
   });
   const grantablePermissionIds = React.useMemo(() => {
-    if (currentUser?.role === "admin") return grantedPermissions;
-    return items.find((role) => role.id === currentUser?.roleId)?.permissionIds ?? [];
-  }, [currentUser?.role, currentUser?.roleId, grantedPermissions, items]);
+    const visibleIds = new Set(
+      permissionGroups.flatMap((group) => group.items.map((item) => item.id)),
+    );
+    const delegated =
+      currentUser?.role === "admin"
+        ? grantedPermissions
+        : (items.find((role) => role.id === currentUser?.roleId)?.permissionIds ?? []);
+    return delegated.filter((id) => visibleIds.has(id));
+  }, [currentUser?.role, currentUser?.roleId, grantedPermissions, items, permissionGroups]);
 
   const [editing, setEditing] = React.useState<ApiRole | null>(null);
   const [viewing, setViewing] = React.useState<ApiRole | null>(null);

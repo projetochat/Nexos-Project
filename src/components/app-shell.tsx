@@ -1,3 +1,4 @@
+import { displayDateTime } from "@/lib/format";
 import * as React from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,6 +42,7 @@ import {
   CUSTOMER_PORTAL_DASHBOARD_PATH,
   CUSTOMER_PORTAL_TICKETS_PATH,
   homeForSession,
+  isChatOnlyTenantRoute,
   useSession,
   ROLE_META,
   signOut,
@@ -134,7 +136,7 @@ function canSeeNavItem(item: NavItem, permissions?: string[]) {
 function filterAdminGroupsByPermissions(
   groups: { title: string; items: NavItem[] }[],
   permissions?: string[],
-  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
+  modules?: Partial<Record<"chat" | "campaigns" | "tickets", boolean>>,
 ) {
   return groups
     .map((group) => ({
@@ -196,7 +198,9 @@ function useBreadcrumbs() {
     retry: (failureCount, error) =>
       !(error instanceof TrixusApiError && error.status === 404) && failureCount < 3,
   });
-  const crumbs = [{ href: homeForSession(roleKey, undefined, undefined, portalAccessProfile), label: "Trixus" }];
+  const crumbs = [
+    { href: homeForSession(roleKey, undefined, undefined, portalAccessProfile), label: "Trixus" },
+  ];
   let acc = "";
   for (const [index, part] of parts.entries()) {
     acc += "/" + part;
@@ -457,7 +461,10 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
   const roleKey = useSession((s) => s.user?.roleKey);
   const portalAccessProfile = useSession((s) => s.user?.portalAccessProfile);
   const entitlements = useTenantEntitlements();
-  const modules = tenantModules(entitlements.data?.features);
+  const modules = tenantModules(
+    entitlements.data?.features,
+    Boolean(entitlements.data) && !entitlements.isError,
+  );
   const isCustomerPortal = roleKey === "customer_portal";
   const sysNav = isCustomerPortal
     ? []
@@ -812,7 +819,7 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
                     <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.body}</p>
                   )}
                   <p className="mt-1 text-[10px] text-muted-foreground">
-                    {new Date(item.createdAt).toLocaleString("pt-BR")}
+                    {displayDateTime(item.createdAt)}
                   </p>
                 </button>
               ))
@@ -832,7 +839,10 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const roleKey = useSession((s) => s.user?.roleKey);
   const portalAccessProfile = useSession((s) => s.user?.portalAccessProfile);
   const entitlements = useTenantEntitlements();
-  const modules = tenantModules(entitlements.data?.features);
+  const modules = tenantModules(
+    entitlements.data?.features,
+    Boolean(entitlements.data) && !entitlements.isError,
+  );
   const logout = useSession((s) => s.logout);
   const loginPath = useSession((s) => s.loginPath);
   const navigate = useNavigate();
@@ -961,12 +971,19 @@ function useTenantAuthGate() {
   const hydrated = useSession((s) => s.hydrated);
   const entitlements = useTenantEntitlements(hydrated && !!user && user.role !== "super_admin");
   const modules = React.useMemo(
-    () => tenantModules(entitlements.data?.features),
-    [entitlements.data?.features],
+    () =>
+      tenantModules(
+        entitlements.data?.features,
+        Boolean(entitlements.data) && !entitlements.isError,
+      ),
+    [entitlements.data, entitlements.isError],
   );
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const waitingForModule =
-    (pathname === "/campanhas" ||
+    (isChatOnlyTenantRoute(pathname) ||
+      pathname === "/instancias" ||
+      pathname.startsWith("/instancias/") ||
+      pathname === "/campanhas" ||
       pathname.startsWith("/campanhas/") ||
       pathname === "/chamados" ||
       pathname.startsWith("/chamados/") ||
@@ -1058,7 +1075,7 @@ function ImpersonationBanner() {
       <span className="flex-1">
         Você está acessando o tenant <strong>{imp.empresaNome}</strong> como suporte. Ator real:{" "}
         <strong>{imp.actorEmail}</strong>. Expiração:{" "}
-        <strong>{new Date(imp.expiresAt).toLocaleString("pt-BR")}</strong>.
+        <strong>{displayDateTime(imp.expiresAt)}</strong>.
       </span>
       <button
         disabled={expired}

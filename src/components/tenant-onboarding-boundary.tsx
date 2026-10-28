@@ -77,6 +77,7 @@ import {
   formatOnboardingConnectedAt,
   hasActiveDepartmentConnection,
   isOnboardingConnectionConnected,
+  isOnboardingInstanceNotFound,
   onboardingAdministratorRole,
   onboardingFavoriteDepartmentId,
   onboardingRoleColorClass,
@@ -99,6 +100,8 @@ const OfficialQuickReplyEditor = React.lazy(() =>
 const OfficialTagForm = React.lazy(() =>
   import("@/routes/etiquetas").then((module) => ({ default: module.EtiquetaForm })),
 );
+
+import { resumeRealtimeAfterOnboarding } from "@/lib/realtime/client";
 
 const ONBOARDING_QUERY_KEY = ["trixus", "onboarding"] as const;
 const CONNECTIONS_QUERY_KEY = ["trixus", "messaging-connections"] as const;
@@ -141,13 +144,29 @@ function hasOnboardingDefaults(metadata: unknown) {
 
 export function TenantOnboardingBoundary({ children }: { children: React.ReactNode }) {
   const user = useSession((state) => state.user);
+  const statusKey = React.useMemo(
+    () =>
+      [...ONBOARDING_QUERY_KEY, user?.empresaId ?? "no-tenant", user?.id ?? "anonymous"] as const,
+    [user?.empresaId, user?.id],
+  );
   const statusQuery = useQuery({
-    queryKey: ONBOARDING_QUERY_KEY,
+    queryKey: statusKey,
     queryFn: onboardingApi.status,
     enabled: !!user && user.role !== "super_admin",
     staleTime: 0,
     retry: false,
   });
+
+  const realtimeAllowedAfterOnboarding =
+    !!user &&
+    user.role !== "super_admin" &&
+    statusQuery.isSuccess &&
+    (!statusQuery.data.required ||
+      statusQuery.data.status === "not_required" ||
+      statusQuery.data.status === "completed");
+  React.useEffect(() => {
+    if (realtimeAllowedAfterOnboarding) void resumeRealtimeAfterOnboarding();
+  }, [realtimeAllowedAfterOnboarding, user?.id]);
 
   if (!user || user.role === "super_admin") return children;
   if (statusQuery.isPending) {
@@ -184,7 +203,11 @@ export function TenantOnboardingBoundary({ children }: { children: React.ReactNo
       <div aria-hidden="true" inert className="pointer-events-none select-none blur-[2px]">
         {children}
       </div>
-      <TenantOnboardingWizard initial={state} />
+      <TenantOnboardingWizard
+        key={`${user.empresaId}:${user.id}`}
+        initial={state}
+        queryKey={statusKey}
+      />
     </>
   );
 }
@@ -247,7 +270,13 @@ function PendingForCommonUser({ message }: { message: string | null }) {
   );
 }
 
-function TenantOnboardingWizard({ initial }: { initial: ApiTenantOnboardingStatus }) {
+function TenantOnboardingWizard({
+  initial,
+  queryKey,
+}: {
+  initial: ApiTenantOnboardingStatus;
+  queryKey: readonly unknown[];
+}) {
   const queryClient = useQueryClient();
   const instanceStepRef = React.useRef<InstanceStepHandle>(null);
   const [state, setState] = React.useState(initial);
@@ -274,7 +303,7 @@ function TenantOnboardingWizard({ initial }: { initial: ApiTenantOnboardingStatu
   const refreshStatus = React.useCallback(
     async (followServerStep = false) => {
       const refreshed = await queryClient.fetchQuery({
-        queryKey: ONBOARDING_QUERY_KEY,
+        queryKey,
         queryFn: onboardingApi.status,
         staleTime: 0,
       });
@@ -284,7 +313,7 @@ function TenantOnboardingWizard({ initial }: { initial: ApiTenantOnboardingStatu
       );
       return refreshed;
     },
-    [queryClient],
+    [queryClient, queryKey],
   );
 
   const persistStep = async (nextStep: number, completedStep: number) => {
@@ -301,7 +330,7 @@ function TenantOnboardingWizard({ initial }: { initial: ApiTenantOnboardingStatu
         shouldBootstrapOnboardingDefaults(nextStep, updated.progress.maxCompletedStep),
       );
       setStep(nextStep);
-      queryClient.setQueryData(ONBOARDING_QUERY_KEY, updated);
+      queryClient.setQueryData(queryKey, updated);
     } catch (error) {
       if (error instanceof TrixusApiError && error.code === "ONBOARDING_VERSION_CONFLICT") {
         await refreshStatus(true);
@@ -326,8 +355,8 @@ function TenantOnboardingWizard({ initial }: { initial: ApiTenantOnboardingStatu
     try {
       const updated = await onboardingApi.complete(state.version);
       setState(updated);
-      queryClient.setQueryData(ONBOARDING_QUERY_KEY, updated);
-      await queryClient.invalidateQueries({ queryKey: ONBOARDING_QUERY_KEY });
+      queryClient.setQueryData(queryKey, updated);
+      await queryClient.invalidateQueries({ queryKey });
     } catch (error) {
       if (error instanceof TrixusApiError && error.code === "ONBOARDING_VERSION_CONFLICT") {
         await refreshStatus(true);
@@ -550,6 +579,7 @@ const InstanceStep = React.forwardRef<
   const [connectionError, setConnectionError] = React.useState<string | null>(null);
   const createRequestActive = React.useRef(false);
   const qrRequestActive = React.useRef(false);
+  const qrSeen = React.useRef(false);
   const selected = visible.find((item) => item.id === selectedId) ?? visible[0];
   const selectedPollingId = selected?.id;
   const selectedNeedsPolling = shouldPollOnboardingConnection(selected);
@@ -581,7 +611,6 @@ const InstanceStep = React.forwardRef<
             (current = []) => current.map((item) => (item.id === updated.id ? updated : item)),
           );
         }
-        if (qrResult?.qrCodeBase64) setQr(qrResult.qrCodeBase64);
         if (updated?.provider?.reason === "INSTANCE_NOT_FOUND") {
           setConnectionError(
             "A sessão externa não existe mais. Gere um novo QR Code para recuperá-la sem perder o histórico.",
@@ -596,7 +625,40 @@ const InstanceStep = React.forwardRef<
           await onServerChange();
           return;
         }
-      } catch {
+        if (qrResult) {
+          const ownerMismatch = qrResult.errorCode === "OWNER_PHONE_MISMATCH";
+          const unavailable =
+            Boolean(qrResult.errorCode) ||
+            qrResult.status.toLowerCase() === "error" ||
+            (!qrResult.qrCodeBase64 && qrSeen.current);
+          if (unavailable) {
+            shouldContinue = false;
+            qrSeen.current = false;
+            setQr(null);
+            setQrSessionOpen(false);
+            setConnectionError(
+              ownerMismatch
+                ? "Número diferente recusado. Conecte o número original da instância."
+                : "O QR Code não está mais disponível. Gere um novo QR Code para conectar.",
+            );
+            return;
+          }
+          if (qrResult.qrCodeBase64) {
+            qrSeen.current = true;
+            setQr(qrResult.qrCodeBase64);
+          }
+        }
+      } catch (error) {
+        if (isOnboardingInstanceNotFound(error)) {
+          shouldContinue = false;
+          qrSeen.current = false;
+          setQr(null);
+          setQrSessionOpen(false);
+          setConnectionError(
+            "A sessão externa não existe mais. Gere um novo QR Code para recuperá-la sem perder o histórico.",
+          );
+          return;
+        }
         setConnectionError(
           "Não foi possível verificar a conexão. Confira sua internet e tente novamente.",
         );
@@ -623,6 +685,7 @@ const InstanceStep = React.forwardRef<
     onSuccess: async (connection) => {
       setConnectionError(null);
       setSelectedId(connection.id);
+      qrSeen.current = Boolean(connection.qrCodeBase64);
       setQr(connection.qrCodeBase64 ?? null);
       setQrSessionOpen(connection.status !== "connected");
       await connections.refetch();
@@ -641,11 +704,13 @@ const InstanceStep = React.forwardRef<
   const requestQr = useMutation({
     mutationFn: (connection: ApiMessagingConnection) => connectionsApi.qr(connection.id),
     onMutate: () => {
+      qrSeen.current = false;
       setQr(null);
       setQrSessionOpen(true);
     },
     onSuccess: async (result) => {
       setConnectionError(null);
+      qrSeen.current = Boolean(result.qrCodeBase64);
       setQr(result.qrCodeBase64);
       setQrSessionOpen(result.status !== "connected");
       await connections.refetch();

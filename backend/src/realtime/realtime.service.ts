@@ -5,7 +5,7 @@ import {
 } from "../auth/connection-access";
 import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 import { pendingLeadVisibilityWhere } from "../leads/lead-visibility";
-import { effectivePermissions } from "../auth/effective-permissions";
+import { moduleAwarePermissions } from "../auth/effective-permissions";
 import type { PermissionKey } from "../auth/permissions.constants";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -209,7 +209,12 @@ export class RealtimeService {
       connectionIds: roleConnectionIds(effectiveRole),
       chatDepartmentIds: roleChatDepartmentIds(effectiveRole),
       chatScopes: roleChatPreferences(effectiveRole),
-      permissions: effectivePermissions(effectiveRole),
+      permissions: await moduleAwarePermissions(
+        this.prisma,
+        context.tenantId,
+        membership.tenant.featureOverrides,
+        effectiveRole,
+      ),
       portalScope,
     };
   }

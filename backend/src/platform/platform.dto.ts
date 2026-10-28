@@ -381,8 +381,8 @@ export class UpdateTenantDto {
 
 export class TenantModulesConfigurationDto {
   @IsOptional()
-  @IsIn([true])
-  chat?: true;
+  @IsBoolean()
+  chat?: boolean;
 
   @IsOptional()
   @IsBoolean()

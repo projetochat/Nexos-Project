@@ -1,3 +1,4 @@
+import { chatModulePermissionAllowed } from "../auth/module-permissions";
 import { RealtimeService } from "../realtime/realtime.service";
 import {
   BadRequestException,
@@ -236,7 +237,11 @@ export class RolesController {
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
       if (permissionIds) {
-        await this.assertEnabledModulePermissions(permissionIds, current.tenantId);
+        await this.assertEnabledModulePermissions(
+          permissionIds,
+          current.tenantId,
+          normalizePermissionIds(existing.permissions.map((permission) => permission.permissionId)),
+        );
       }
       if (name !== undefined) {
         await this.ensureNameAvailable(tx, current.tenantId, name, existing.id);
@@ -763,11 +768,25 @@ export class RolesController {
     }
   }
 
-  private async assertEnabledModulePermissions(permissionIds: string[], tenantId: string) {
+  private async assertEnabledModulePermissions(
+    permissionIds: string[],
+    tenantId: string,
+    existingPermissionIds: string[] = [],
+  ) {
     if (!this.entitlements) {
       throw new Error("PlanEntitlementService não foi configurado para RolesController.");
     }
     const { features } = await this.entitlements.getEntitlements(tenantId);
+    const existingPermissions = new Set(existingPermissionIds);
+    if (
+      permissionIds.some(
+        (permission) =>
+          !existingPermissions.has(permission) &&
+          !chatModulePermissionAllowed(permission, features),
+      )
+    ) {
+      throw new BadRequestException("O módulo Chat está desabilitado para esta organização.");
+    }
     const disabledModule = (
       [
         ["campaigns", features.campaigns, "Campanhas"],

@@ -189,13 +189,13 @@ describe("Platform dashboard linked filters", () => {
       );
 
       const selects = Array.from(container.querySelectorAll("select"));
-      expect(selects[0]?.options[0]?.textContent).toBe("Todos");
-      expect(selects[1]?.options[0]?.textContent).toBe("Todas");
+      expect(selects[0]?.options[0]?.textContent).toBe("Todas");
+      expect(selects[1]?.options[0]?.textContent).toBe("Todos");
 
       const labels = Array.from(container.querySelectorAll("label"));
       expect(labels.slice(0, 5).map((label) => label.textContent)).toEqual([
-        "Cliente",
         "Tenant",
+        "Cliente",
         "Período",
         "Dt. Inicial",
         "Dt. Final",

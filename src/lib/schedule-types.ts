@@ -1,3 +1,4 @@
+export type ScheduleOrigin = "CHAT" | "SCHEDULES";
 type ScheduleType = "message" | "task";
 type ScheduleStatus = "pending" | "completed";
 export type ScheduleAttachment = {
@@ -7,6 +8,7 @@ export type ScheduleAttachment = {
   dataUrl: string;
 };
 export type ApiSchedule = {
+  origin?: ScheduleOrigin;
   id: string;
   identifier: string;
   type: ScheduleType;
@@ -40,6 +42,7 @@ export type ApiSchedule = {
 export function scheduleWritePayload(data: ApiSchedule): ApiSchedule {
   return {
     id: data.id,
+    origin: data.origin,
     identifier: data.identifier,
     type: data.type,
     title: data.title,
@@ -61,4 +64,13 @@ export function scheduleWritePayload(data: ApiSchedule): ApiSchedule {
     attachmentName: data.attachmentName,
     attachment: data.attachment,
   };
+}
+
+export function scheduleOrigin(
+  schedule: Pick<ApiSchedule, "origin" | "conversationId">,
+): ScheduleOrigin {
+  if (schedule.origin === "CHAT" || schedule.origin === "SCHEDULES") return schedule.origin;
+  return typeof schedule.conversationId === "string" && schedule.conversationId.trim()
+    ? "CHAT"
+    : "SCHEDULES";
 }

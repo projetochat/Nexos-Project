@@ -23,12 +23,14 @@ export function canAdvanceOnboardingStep(step: number, state: ApiTenantOnboardin
   return true;
 }
 
-export function formatOnboardingConnectedAt(value: string) {
+export function formatOnboardingConnectedAt(value: string | null | undefined) {
+  const date = value ? new Date(value) : null;
+  if (!date || !Number.isFinite(date.getTime())) return "—";
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
   })
-    .format(new Date(value))
+    .format(date)
     .replace(/,\s*/, " ");
 }
 

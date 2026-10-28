@@ -2,6 +2,56 @@ import { describe, expect, it, vi } from "vitest";
 import { RealtimeAuthError, RealtimeAuthService } from "./realtime-auth.service";
 
 describe("RealtimeAuthService", () => {
+  it("does not require Chat onboarding when disabled but rechecks it after reenable", async () => {
+    const service = serviceWith({ onboardingStatus: "PENDING", chatEnabled: false });
+    const context = await service.authenticate("access-token");
+    expect(context.permissions).not.toContain("conversations.read");
+    await expect(service.assertSession(context)).resolves.toBeUndefined();
+    const prisma = (
+      service as unknown as {
+        prisma: { tenantSubscription: { findFirst: ReturnType<typeof vi.fn> } };
+      }
+    ).prisma;
+    const subscription = await prisma.tenantSubscription.findFirst();
+    prisma.tenantSubscription.findFirst.mockResolvedValue({
+      ...subscription,
+      featuresSnapshot: { chat: true },
+    });
+    await expect(service.assertSession(context)).rejects.toMatchObject({
+      code: "REALTIME_ONBOARDING_PENDING",
+    });
+  });
+
+  it("keeps rejecting inactive users and revoked sessions even when Chat is disabled", async () => {
+    await expect(
+      serviceWith({
+        onboardingStatus: "PENDING",
+        chatEnabled: false,
+        userStatus: "DISABLED",
+      }).authenticate("access-token"),
+    ).rejects.toMatchObject({ code: "REALTIME_USER_INACTIVE" });
+    await expect(
+      serviceWith({
+        onboardingStatus: "PENDING",
+        chatEnabled: false,
+        sessionActive: false,
+      }).authenticate("access-token"),
+    ).rejects.toMatchObject({ code: "REALTIME_TOKEN_INVALID" });
+  });
+
+  it("fails closed when effective entitlements cannot be loaded", async () => {
+    const service = serviceWith({ onboardingStatus: "PENDING", chatEnabled: false });
+    const prisma = (
+      service as unknown as {
+        prisma: { tenantSubscription: { findFirst: ReturnType<typeof vi.fn> } };
+      }
+    ).prisma;
+    prisma.tenantSubscription.findFirst.mockRejectedValueOnce(
+      new Error("entitlements unavailable"),
+    );
+    await expect(service.authenticate("access-token")).rejects.toThrow("entitlements unavailable");
+  });
+
   it("rejects missing tokens with a canonical code", async () => {
     const service = serviceWith();
     await expect(service.authenticate(null)).rejects.toMatchObject({
@@ -141,6 +191,7 @@ function serviceWith(
     surface?: "platform" | "tenant";
     aud?: "trixus-platform" | "trixus-tenant";
     onboardingStatus?: "PENDING" | "COMPLETED";
+    chatEnabled?: boolean;
     portalAccessId?: string;
   } = {},
 ) {
@@ -165,6 +216,22 @@ function serviceWith(
   };
   const config = { get: vi.fn().mockReturnValue("test-access-secret-minimum-32-chars") };
   const prisma = {
+    tenantSubscription: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: "subscription-a",
+        planId: "plan-a",
+        status: "ACTIVE",
+        plan: { code: "synthetic" },
+        limitsSnapshot: {},
+        featuresSnapshot: { chat: options.chatEnabled ?? true },
+        tenant: {
+          maxUsers: null,
+          maxConnections: null,
+          featureOverrides: null,
+          limitOverrides: null,
+        },
+      }),
+    },
     $queryRaw: vi
       .fn()
       .mockResolvedValue(options.onboardingStatus ? [{ status: options.onboardingStatus }] : []),

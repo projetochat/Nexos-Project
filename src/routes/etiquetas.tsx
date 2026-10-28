@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Eye, Pencil, Plus, Tag, Trash2 } from "lucide-react";
+import { Copy, Eye, Pencil, Plus, Tag, Trash2, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
@@ -37,6 +37,16 @@ function tagWithLogFallback(tag: ApiTag, previous?: ApiTag | null) {
     createdAt: tag.createdAt ?? previous?.createdAt ?? now,
     updatedAt: tag.updatedAt ?? now,
   };
+}
+
+export function TagSoundStatus({ enabled }: { enabled: boolean }) {
+  if (!enabled) return null;
+  return (
+    <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Volume2 className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+      <span>Aviso sonoro ativado</span>
+    </p>
+  );
 }
 
 function Page() {
@@ -118,6 +128,7 @@ function Page() {
                   <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                     {etiqueta.descricao?.trim() || "Sem descrição"}
                   </p>
+                  <TagSoundStatus enabled={etiqueta.notifyOnNewConversation === true} />
                 </div>
                 <div className="ml-auto shrink-0 self-start">
                   <Badge tone={etiqueta.active !== false ? "success" : "destructive"}>

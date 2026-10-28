@@ -42,6 +42,9 @@ describe("instance access", () => {
 
     expect(roleConnectionIds(role)).toEqual([]);
     expect(roleChatDepartmentIds(role)).toEqual([]);
+    expect(conversationChatScopeAccess({ roleKey: "agent", chatScopes: [] })).toEqual({
+      id: { in: [] },
+    });
   });
   it("keeps the tenant administrator unrestricted within their tenant", () => {
     const role = {

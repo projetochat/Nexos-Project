@@ -111,7 +111,9 @@ describe("Platform Tenants", () => {
     expect(tenantsSource).toContain("updateTenantAdministratorCredentials");
     expect(tenantsSource).toContain("Configuração da Tenant");
     expect(tenantsSource).toContain("updateTenantConfiguration");
-    expect(tenantsSource).toContain("Módulo obrigatório e sempre habilitado");
+    // D-014: o usuário autorizou Chat opcional por tenant no Platform.
+    expect(tenantsSource).toContain("Controla menu, permissões e operações do Chat.");
+    expect(tenantsSource).toContain("checked={modules.chat}");
     expect(tenantsSource).toContain("Deixe vazio para herdar o limite atual do plano contratado");
     expect(tenantsSource).toContain("hover:text-blue-600");
     expect(tenantsSource).toContain("hover:text-red-600");

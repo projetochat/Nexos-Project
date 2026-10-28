@@ -48,12 +48,12 @@ import {
   type ApiMessagingConnection,
   type ApiUserMembership,
 } from "@/lib/trixus-api";
-import { num } from "@/lib/format";
+import { displayDateTime, num } from "@/lib/format";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/agendamentos")({ component: SchedulingPage });
 
-import type { ApiSchedule as Schedule } from "@/lib/schedule-types";
+import { scheduleOrigin, type ApiSchedule as Schedule } from "@/lib/schedule-types";
 type ScheduleType = Schedule["type"];
 import { useSession } from "@/lib/session";
 import { connectRealtime, onRealtimeEvent } from "@/lib/realtime/client";
@@ -70,14 +70,14 @@ function SchedulingPage() {
   const canDelete = user?.permissions?.includes("schedules.delete") ?? false;
   const canRead = user?.permissions?.includes("schedules.read") ?? false;
   const qc = useQueryClient();
-  const schedulesKey = ["trixus", "schedules", user?.empresaId];
+  const schedulesKey = ["trixus", "schedules", user?.empresaId, "SCHEDULES"];
   const {
     data: items = [],
     isLoading,
     error: loadError,
   } = useQuery({
     queryKey: schedulesKey,
-    queryFn: () => schedulesApi.list(),
+    queryFn: () => schedulesApi.list({ origin: "SCHEDULES" }),
     enabled: !!user,
     refetchInterval: 15000,
     refetchOnWindowFocus: "always",
@@ -130,7 +130,8 @@ function SchedulingPage() {
     queryFn: organizationApi.listDepartments,
   });
 
-  const filtered = items.filter(
+  const screenItems = items.filter((item) => scheduleOrigin(item) === "SCHEDULES");
+  const filtered = screenItems.filter(
     (item) =>
       (!query ||
         `${item.identifier} ${item.title} ${item.destination}`
@@ -153,7 +154,7 @@ function SchedulingPage() {
     if (saving) return;
     setSaving(true);
     try {
-      await schedulesApi.save(item);
+      await schedulesApi.save({ ...item, origin: "SCHEDULES" });
       await qc.invalidateQueries({ queryKey: schedulesKey });
       setEditing(null);
       toast.success("Agendamento salvo.");
@@ -168,7 +169,7 @@ function SchedulingPage() {
     let remaining = [...legacyItems];
     try {
       for (const item of legacyItems) {
-        await schedulesApi.save(item);
+        await schedulesApi.save({ ...item, origin: "SCHEDULES" });
         remaining = remaining.filter((entry) => entry.id !== item.id);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining));
         setLegacyItems(remaining);
@@ -186,7 +187,7 @@ function SchedulingPage() {
       <PageContainer>
         <SectionHeader
           title="Agendamentos"
-          subtitle={`${num(items.length)} agendamento(s) cadastrado(s).`}
+          subtitle={`${num(screenItems.length)} agendamento(s) cadastrado(s).`}
           actions={
             canCreate ? (
               <Button variant="primary" size="sm" onClick={() => setEditing(blankSchedule())}>
@@ -414,7 +415,9 @@ function SchedulingPage() {
             onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
           />
         </Card>
-        {(editing && items.some((item) => item.id === editing.id) ? canUpdate : canCreate) && (
+        {(editing && screenItems.some((item) => item.id === editing.id)
+          ? canUpdate
+          : canCreate) && (
           <ScheduleForm
             item={editing}
             connections={connections}
@@ -611,7 +614,7 @@ function ScheduleMobileCard({
           <div className="mt-3 space-y-2 text-sm">
             <p className="flex items-start gap-2">
               <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <span className="min-w-0">{new Date(item.scheduledAt).toLocaleString("pt-BR")}</span>
+              <span className="min-w-0">{displayDateTime(item.scheduledAt)}</span>
             </p>
             <p className="flex items-start gap-2 text-muted-foreground">
               <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -728,7 +731,7 @@ function ScheduleRow({
       <td className="px-4 py-3">
         <p className="inline-flex items-center gap-1 font-medium">
           <CalendarClock className="h-4 w-4 text-primary" />
-          {new Date(item.scheduledAt).toLocaleString("pt-BR")}
+          {displayDateTime(item.scheduledAt)}
         </p>
         <p className="text-xs text-muted-foreground">{connection}</p>
       </td>

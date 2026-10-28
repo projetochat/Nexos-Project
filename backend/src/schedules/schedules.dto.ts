@@ -16,7 +16,10 @@ class ScheduleRecipientDto {
   @IsUUID() id!: string;
   @IsString() @MaxLength(200) name!: string;
 }
+export type ScheduleOrigin = "CHAT" | "SCHEDULES";
+
 export class SaveScheduleDto {
+  @IsOptional() @IsIn(["CHAT", "SCHEDULES"]) origin?: ScheduleOrigin;
   @IsUUID() id!: string;
   @IsString() @MinLength(1) @MaxLength(200) identifier!: string;
   @IsIn(["message", "task"]) type!: "message" | "task";
@@ -48,6 +51,7 @@ export class SaveScheduleDto {
 }
 
 export class ListSchedulesQueryDto {
+  @IsOptional() @IsIn(["CHAT", "SCHEDULES"]) origin?: ScheduleOrigin;
   @IsOptional()
   @IsUUID()
   conversationId?: string;

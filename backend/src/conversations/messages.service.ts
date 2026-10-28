@@ -1,3 +1,4 @@
+import { assertConversationStartedForMedia } from "./conversation-media-access";
 import { conversationVisibilityWhere } from "./conversation-visibility";
 import { withMessagingServiceEnabled } from "../messaging/service-availability";
 import {
@@ -263,7 +264,8 @@ export class MessagesService {
   }
 
   async downloadMedia(conversationId: string, messageId: string, current: AuthenticatedUser) {
-    await this.findVisibleConversation(this.prisma, conversationId, current);
+    const conversation = await this.findVisibleConversation(this.prisma, conversationId, current);
+    assertConversationStartedForMedia(conversation.protocol);
     const message = await this.prisma.message.findFirst({
       where: { tenantId: current.tenantId, conversationId, id: messageId },
       select: {

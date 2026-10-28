@@ -31,6 +31,8 @@ export function DashboardFiltersBar({
   onChange,
   showDepartment = true,
   showConversationType = false,
+  closedByOptions,
+  singleLine = false,
   search,
   onClear,
   className = "mb-6",
@@ -39,6 +41,8 @@ export function DashboardFiltersBar({
   onChange: (patch: Partial<OperationalReportFilters>) => void;
   showDepartment?: boolean;
   showConversationType?: boolean;
+  closedByOptions?: Array<{ membershipId: string; name: string }>;
+  singleLine?: boolean;
   search?: { value: string; onChange: (value: string) => void; placeholder: string };
   onClear?: () => void;
   className?: string;
@@ -79,11 +83,13 @@ export function DashboardFiltersBar({
       value.connectionId ||
       value.customerId ||
       value.departmentId ||
+      value.closedByMembershipId ||
       (showConversationType && value.conversationType && value.conversationType !== "all") ||
       value.period !== "today"),
   );
-  const gridClass =
-    search && !showDepartment && showConversationType
+  const gridClass = closedByOptions
+    ? "xl:grid-cols-[repeat(4,minmax(0,1fr))]"
+    : search && !showDepartment && showConversationType
       ? showClear
         ? "xl:grid-cols-[minmax(220px,2.5fr)_0.9fr_0.9fr_0.9fr_1fr_0.9fr_0.9fr_auto]"
         : "xl:grid-cols-[minmax(220px,2.5fr)_0.9fr_0.9fr_0.9fr_1fr_0.9fr_0.9fr]"
@@ -96,10 +102,21 @@ export function DashboardFiltersBar({
           : "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]";
 
   return (
-    <Card className={`p-4 ${className}`}>
-      <div className={`grid grid-cols-2 gap-3 ${gridClass}`}>
+    <Card
+      className={`p-4 ${singleLine ? "min-w-0 max-h-[50dvh] overflow-y-auto lg:max-h-none lg:overflow-y-visible" : ""} ${className}`}
+    >
+      <div
+        className={
+          singleLine
+            ? `grid min-w-0 w-full grid-cols-2 gap-3 lg:grid-flow-col lg:grid-rows-1 lg:auto-cols-[minmax(128px,1fr)] lg:overflow-x-auto lg:pb-1 ${search ? "lg:grid-cols-[minmax(220px,1.6fr)]" : "lg:grid-cols-none"}`
+            : `grid grid-cols-2 gap-3 ${gridClass}`
+        }
+      >
         {search && (
-          <FilterField label="Busca" className="col-span-2 min-w-0 xl:col-span-1">
+          <FilterField
+            label="Busca"
+            className={singleLine ? "min-w-0" : "col-span-2 min-w-0 xl:col-span-1"}
+          >
             <SearchInput {...search} />
           </FilterField>
         )}
@@ -143,6 +160,28 @@ export function DashboardFiltersBar({
             ))}
           </Select>
         </FilterField>
+        {closedByOptions && (
+          <FilterField label="Encerrado por">
+            <Select
+              aria-label="Encerrado por"
+              value={value.closedByMembershipId ?? ""}
+              onChange={(event) =>
+                onChange({ closedByMembershipId: event.target.value || undefined })
+              }
+            >
+              <option value="">Todos</option>
+              {value.closedByMembershipId &&
+                !closedByOptions.some(
+                  (option) => option.membershipId === value.closedByMembershipId,
+                ) && <option value={value.closedByMembershipId}>Atendente selecionado</option>}
+              {sortByOptionLabel(closedByOptions, (option) => option.name).map((option) => (
+                <option key={option.membershipId} value={option.membershipId}>
+                  {option.name}
+                </option>
+              ))}
+            </Select>
+          </FilterField>
+        )}
         {showDepartment && (
           <FilterField label="Departamento">
             <Select
@@ -342,23 +381,6 @@ export function PlatformDashboardFiltersBar({
             : "lg:grid-cols-[1.2fr_1.2fr_1.05fr_0.9fr_0.9fr]"
         }`}
       >
-        <FilterField label="Cliente">
-          <Select
-            value={value.clientId ?? ""}
-            onChange={(event) =>
-              onChange(
-                platformClientSelectionPatch(event.target.value, value.tenantId, sortedTenants),
-              )
-            }
-          >
-            <option value="">Todos</option>
-            {sortedClients.map((client) => (
-              <option key={client.id} value={client.id}>
-                {client.name}
-              </option>
-            ))}
-          </Select>
-        </FilterField>
         <FilterField label="Tenant">
           <Select
             value={value.tenantId ?? ""}
@@ -373,6 +395,23 @@ export function PlatformDashboardFiltersBar({
               <option key={tenant.id} value={tenant.id}>
                 {tenant.name}
                 {tenant.clientName ? ` — ${tenant.clientName}` : " — Sem cliente"}
+              </option>
+            ))}
+          </Select>
+        </FilterField>
+        <FilterField label="Cliente">
+          <Select
+            value={value.clientId ?? ""}
+            onChange={(event) =>
+              onChange(
+                platformClientSelectionPatch(event.target.value, value.tenantId, sortedTenants),
+              )
+            }
+          >
+            <option value="">Todos</option>
+            {sortedClients.map((client) => (
+              <option key={client.id} value={client.id}>
+                {client.name}
               </option>
             ))}
           </Select>

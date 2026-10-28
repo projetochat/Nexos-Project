@@ -1,6 +1,16 @@
 import { Body, Controller, Get, Inject, Param, Put, Query, Res, UseGuards } from "@nestjs/common";
-import { IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from "class-validator";
-import { Type } from "class-transformer";
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from "class-validator";
+import { Transform, Type } from "class-transformer";
 import type { Response } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -60,6 +70,15 @@ class OperationalQueryDto {
   @IsOptional()
   @IsString()
   assignedMembershipId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  closedByMembershipId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === "true" ? true : value === "false" ? false : value))
+  @IsBoolean()
+  includeClosedByOptions?: boolean;
 
   @IsOptional()
   @IsString()

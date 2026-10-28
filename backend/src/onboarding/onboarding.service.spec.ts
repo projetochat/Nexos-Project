@@ -28,6 +28,22 @@ function row(overrides: Record<string, unknown> = {}) {
 
 function database(queryResults: unknown[][]) {
   const tx = {
+    tenantSubscription: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: "subscription-a",
+        planId: "plan-a",
+        status: "ACTIVE",
+        plan: { code: "synthetic" },
+        limitsSnapshot: {},
+        featuresSnapshot: { chat: true },
+        tenant: {
+          maxUsers: null,
+          maxConnections: null,
+          featureOverrides: null,
+          limitOverrides: null,
+        },
+      }),
+    },
     $queryRaw: vi.fn(),
     messagingConnection: {
       count: vi.fn().mockResolvedValue(1),
@@ -56,6 +72,54 @@ function database(queryResults: unknown[][]) {
 }
 
 describe("OnboardingService", () => {
+  it("does not read checklist or write progress while Chat is disabled, and resumes saved pending state", async () => {
+    const { prisma } = database([[row()]]);
+    const subscription = await prisma.tenantSubscription.findFirst();
+    prisma.tenantSubscription.findFirst.mockClear();
+    prisma.tenantSubscription.findFirst.mockResolvedValue({
+      ...subscription,
+      featuresSnapshot: { chat: false },
+    });
+    const service = new OnboardingService(prisma as never);
+    await expect(service.status(admin as never)).resolves.toMatchObject({
+      required: false,
+      status: "not_required",
+      version: null,
+    });
+    await expect(
+      service.updateProgress({ currentStep: 2, maxCompletedStep: 1, version: 3 }, admin as never),
+    ).rejects.toMatchObject({ response: { code: "ONBOARDING_NOT_REQUIRED" } });
+    await expect(service.complete({ version: 3 }, admin as never)).rejects.toMatchObject({
+      response: { code: "ONBOARDING_NOT_REQUIRED" },
+    });
+    await expect(
+      service.ensureDefaultDepartmentConnection("connection-a", admin as never),
+    ).rejects.toMatchObject({ response: { code: "ONBOARDING_NOT_REQUIRED" } });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.messagingConnection.count).not.toHaveBeenCalled();
+    expect(prisma.department.count).not.toHaveBeenCalled();
+    prisma.tenantSubscription.findFirst.mockResolvedValue(subscription);
+    await expect(service.status(admin as never)).resolves.toMatchObject({
+      required: true,
+      status: "pending",
+      version: 3,
+      progress: { currentStep: 2, maxCompletedStep: 1 },
+    });
+  });
+
+  it("does not release onboarding when entitlement lookup fails", async () => {
+    const { prisma } = database([[row()]]);
+    prisma.tenantSubscription.findFirst.mockRejectedValue(
+      new Error("isolated entitlement failure"),
+    );
+    await expect(new OnboardingService(prisma as never).status(admin as never)).rejects.toThrow(
+      "isolated entitlement failure",
+    );
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("treats a tenant without state as legacy and already released", async () => {
     const { prisma } = database([[]]);
     const result = await new OnboardingService(prisma as never).status(admin as never);

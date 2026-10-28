@@ -1,9 +1,11 @@
 import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
-import { expect, it, vi } from "vitest";
-import { SaveScheduleDto } from "./schedules.dto";
+import { afterEach, expect, it, vi } from "vitest";
+import { ListSchedulesQueryDto, SaveScheduleDto } from "./schedules.dto";
 import { SchedulesController } from "./schedules.module";
 import { deletionSnapshot } from "../common/deletion-impact";
+afterEach(() => vi.unstubAllEnvs());
+
 const item = {
   id: "52a2dc2a-d80b-41bb-b97a-0d5365539bc3",
   identifier: "Teste",
@@ -392,7 +394,10 @@ it("persists and returns an attachment while synchronizing the legacy name", asy
   ]);
 });
 
-it("rejects attachments with inconsistent data or a disallowed media type", async () => {
+it("rejects inconsistent attachments and media excluded by an explicit document policy", async () => {
+  // The approved default now permits all document types; this case exercises
+  // an explicit restriction rather than assuming that executables are forbidden.
+  vi.stubEnv("TRIXUS_MESSAGE_ALLOWED_DOCUMENT_MIME_TYPES", "application/pdf,text/plain");
   const prisma = {
     schedule: {
       findUnique: vi.fn().mockResolvedValue(null),
@@ -599,4 +604,196 @@ it("returns a refreshed deletion impact when the schedule changes after preview"
     controller.remove(item.id, { snapshotToken: impact.snapshotToken }, current),
   ).resolves.toMatchObject({ status: "changed" });
   expect(prisma.schedule.deleteMany).not.toHaveBeenCalled();
+});
+
+it("validates creation and list origins without accepting arbitrary values", async () => {
+  const pipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true });
+  for (const origin of ["CHAT", "SCHEDULES"]) {
+    await expect(
+      pipe.transform({ ...item, origin }, { type: "body", metatype: SaveScheduleDto }),
+    ).resolves.toMatchObject({ origin });
+    await expect(
+      pipe.transform({ origin }, { type: "query", metatype: ListSchedulesQueryDto }),
+    ).resolves.toMatchObject({ origin });
+  }
+  await expect(
+    pipe.transform({ ...item, origin: "unknown" }, { type: "body", metatype: SaveScheduleDto }),
+  ).rejects.toThrow();
+  await expect(
+    pipe.transform({ origin: "chat" }, { type: "query", metatype: ListSchedulesQueryDto }),
+  ).rejects.toThrow();
+});
+
+it("filters resolved origin after tenant and connection scope without deleting execution records", async () => {
+  const make = (id: string, payload: Record<string, unknown>, executionStatus = "PENDING") => ({
+    id,
+    payload: { ...item, ...payload },
+    executionStatus,
+    messageId: "message-a",
+    version: 3,
+    createdAt: new Date("2026-10-28T12:00:00Z"),
+  });
+  const prisma = {
+    schedule: {
+      findMany: vi
+        .fn()
+        .mockImplementation(async () => [
+          make("explicit-chat", { origin: "CHAT" }),
+          make("explicit-module", { origin: "SCHEDULES", conversationId: "conversation-a" }),
+          make("legacy-chat", { conversationId: "conversation-a" }),
+          make("legacy-module", {}),
+          make("legacy-blank-conversation", { conversationId: "   " }),
+          make("legacy-invalid-origin", { origin: "OLD", conversationId: "conversation-a" }),
+          make("completed-chat", { origin: "CHAT" }, "SENT"),
+        ]),
+      deleteMany: vi.fn(),
+      updateMany: vi.fn(),
+      create: vi.fn(),
+    },
+  };
+  const controller = new SchedulesController(prisma as never, {} as never);
+  const current = {
+    tenantId: "tenant-a",
+    roleKey: "agent",
+    connectionIds: ["connection-a"],
+  } as never;
+  const moduleItems = await controller.list(current, { origin: "SCHEDULES" });
+  expect(moduleItems.map((row) => row.id).sort()).toEqual([
+    "explicit-module",
+    "legacy-blank-conversation",
+    "legacy-module",
+  ]);
+  expect(moduleItems.every((row) => row.origin === "SCHEDULES")).toBe(true);
+  const chatItems = await controller.list(current, { origin: "CHAT" });
+  expect(chatItems.map((row) => row.id).sort()).toEqual([
+    "completed-chat",
+    "explicit-chat",
+    "legacy-chat",
+    "legacy-invalid-origin",
+  ]);
+  expect(chatItems.find((row) => row.id === "completed-chat")).toMatchObject({
+    origin: "CHAT",
+    status: "completed",
+    messageId: "message-a",
+  });
+  expect(await controller.list(current)).toHaveLength(7);
+  expect(prisma.schedule.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: {
+        tenantId: "tenant-a",
+        OR: [{ connectionId: null }, { connectionId: { in: ["connection-a"] } }],
+      },
+    }),
+  );
+  expect(prisma.schedule.deleteMany).not.toHaveBeenCalled();
+  expect(prisma.schedule.updateMany).not.toHaveBeenCalled();
+  expect(prisma.schedule.create).not.toHaveBeenCalled();
+});
+
+function originFixture(existingPayload?: Record<string, unknown>) {
+  let row = existingPayload
+    ? {
+        id: item.id,
+        tenantId: "tenant-a",
+        payload: { ...item, ...existingPayload },
+        connectionId: null,
+        executionStatus: "PENDING",
+        version: 2,
+        createdByMembershipId: "creator-a",
+      }
+    : null;
+  const prisma = {
+    conversation: {
+      findFirst: vi.fn().mockResolvedValue({ id: "conversation-a", connectionId: "connection-a" }),
+    },
+    schedule: {
+      findUnique: vi.fn().mockImplementation(async () => row),
+      create: vi.fn().mockImplementation(async ({ data }) => ({ ...data, version: 0 })),
+      updateMany: vi.fn().mockImplementation(async ({ data }) => {
+        row = { ...row, ...data };
+        return { count: 1 };
+      }),
+      deleteMany: vi.fn(),
+    },
+  };
+  const realtime = { publish: vi.fn() };
+  return { prisma, controller: new SchedulesController(prisma as never, realtime as never) };
+}
+
+it.each([
+  { origin: "CHAT", conversationId: "conversation-a", expected: "CHAT" },
+  { origin: "SCHEDULES", conversationId: "conversation-a", expected: "SCHEDULES" },
+  { origin: undefined, conversationId: "conversation-a", expected: "CHAT" },
+  { origin: "SCHEDULES", conversationId: undefined, expected: "SCHEDULES" },
+  { origin: undefined, conversationId: undefined, expected: "SCHEDULES" },
+])(
+  "records new origin and keeps module-created conversation clones on the module: %j",
+  async ({ origin, conversationId, expected }) => {
+    const f = originFixture();
+    const result = await f.controller.save(
+      { ...item, type: conversationId ? "message" : "task", origin, conversationId } as never,
+      { tenantId: "tenant-a", membershipId: "member-a", roleKey: "tenant_admin" } as never,
+    );
+    expect(result.origin).toBe(expected);
+    expect(f.prisma.schedule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tenantId: "tenant-a",
+          createdByMembershipId: "member-a",
+          payload: expect.objectContaining({ origin: expected }),
+        }),
+      }),
+    );
+  },
+);
+
+it.each([
+  {
+    existing: { origin: "CHAT", conversationId: "conversation-a" },
+    relabel: "SCHEDULES",
+    expected: "CHAT",
+  },
+  {
+    existing: { origin: "SCHEDULES", conversationId: "conversation-a" },
+    relabel: "CHAT",
+    expected: "SCHEDULES",
+  },
+  { existing: { conversationId: "conversation-a" }, relabel: "SCHEDULES", expected: "CHAT" },
+  { existing: {}, relabel: "CHAT", expected: "SCHEDULES" },
+])(
+  "preserves creation origin and ignores attempted relabel on edit: %j",
+  async ({ existing, relabel, expected }) => {
+    const f = originFixture(existing);
+    const result = await f.controller.save(
+      { ...item, ...existing, origin: relabel } as never,
+      { tenantId: "tenant-a", membershipId: "member-a", roleKey: "tenant_admin" } as never,
+    );
+    expect(result.origin).toBe(expected);
+    expect(f.prisma.schedule.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId: "tenant-a", id: item.id, version: 2, executionStatus: "PENDING" },
+        data: expect.objectContaining({
+          payload: expect.objectContaining({ origin: expected }),
+          createdByMembershipId: "creator-a",
+        }),
+      }),
+    );
+    expect(f.prisma.schedule.create).not.toHaveBeenCalled();
+    expect(f.prisma.schedule.deleteMany).not.toHaveBeenCalled();
+  },
+);
+
+it("combines conversation-origin filtering with conversation access validation", async () => {
+  const f = originFixture();
+  Object.assign(f.prisma.schedule, { findMany: vi.fn().mockResolvedValue([]) });
+  f.prisma.conversation.findFirst.mockResolvedValue(null);
+  await expect(
+    f.controller.list({ tenantId: "tenant-a", roleKey: "agent", connectionIds: [] } as never, {
+      origin: "CHAT",
+      conversationId: "conversation-a",
+    }),
+  ).rejects.toThrow("Conversa não encontrada");
+  expect(
+    (f.prisma.schedule as unknown as { findMany: ReturnType<typeof vi.fn> }).findMany,
+  ).not.toHaveBeenCalled();
 });

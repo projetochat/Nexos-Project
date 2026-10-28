@@ -263,3 +263,52 @@ it("opens on a context-menu request and allows editing an outgoing image caption
     qc.clear();
   }
 });
+
+it("keeps media actions blocked before first attendance while allowing caption text copy", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const qc = new QueryClient();
+  const copy = vi.fn().mockResolvedValue({ mode: "text-only" });
+  const message = {
+    id: "not-started",
+    conversation_id: "isolated",
+    sender: "agent",
+    type: "image",
+    content: "Visible caption",
+    status: "failed",
+    created_at: "2026-10-28T12:00:00Z",
+    media_data: { state: "ready" },
+  } as ApiMessage;
+  try {
+    await React.act(async () =>
+      root.render(
+        <QueryClientProvider client={qc}>
+          <MessageActionsMenu
+            message={message}
+            mediaAccessAllowed={false}
+            onReact={vi.fn()}
+            onCopyMessage={copy}
+            canSend
+            openRequest={1}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const button = (label: string) =>
+      [...document.querySelectorAll("button")].find((item) => item.textContent === label)!;
+    expect(button("Salvar como…").disabled).toBe(true);
+    expect(button("Encaminhar").disabled).toBe(true);
+    expect(button("Reenviar").disabled).toBe(true);
+    expect(button("Copiar").disabled).toBe(false);
+    await React.act(async () => button("Copiar").click());
+    expect(copy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "text", content: "Visible caption", media_data: null }),
+    );
+  } finally {
+    await React.act(async () => root.unmount());
+    host.remove();
+    qc.clear();
+  }
+});
