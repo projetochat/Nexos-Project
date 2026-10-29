@@ -31,7 +31,7 @@ export function normalizePlatformDashboardSearch(
   return {
     clientId: nonEmptyString(search.clientId),
     tenantId: nonEmptyString(search.tenantId),
-    period: period === "month" ? undefined : period,
+    period: period === "today" ? undefined : period,
     start: period === "custom" ? isoDate(search.start) : undefined,
     end: period === "custom" ? isoDate(search.end) : undefined,
   };
@@ -40,7 +40,7 @@ export function normalizePlatformDashboardSearch(
 export function platformDashboardFiltersFromSearch(
   search: PlatformDashboardSearch,
 ): PlatformDashboardFilters {
-  const period = search.period ?? "month";
+  const period = search.period ?? "today";
   const automaticDates = datesForOperationalPeriod(period);
   return {
     clientId: search.clientId,
@@ -57,7 +57,7 @@ export function platformDashboardSearchFromFilters(
   return {
     clientId: nonEmptyString(filters.clientId),
     tenantId: nonEmptyString(filters.tenantId),
-    period: filters.period === "month" ? undefined : filters.period,
+    period: filters.period === "today" ? undefined : filters.period,
     start: filters.period === "custom" ? isoDate(filters.start) : undefined,
     end: filters.period === "custom" ? isoDate(filters.end) : undefined,
   };

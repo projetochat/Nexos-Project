@@ -291,12 +291,14 @@ export function SearchInput({
   placeholder,
   className = "",
   invalid = false,
+  ariaLabel,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   className?: string;
   invalid?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <div
@@ -308,6 +310,7 @@ export function SearchInput({
     >
       <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
       <input
+        aria-label={ariaLabel}
         value={value}
         aria-invalid={invalid}
         onChange={(event) => onChange(event.target.value)}

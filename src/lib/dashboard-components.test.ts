@@ -22,7 +22,7 @@ describe("dashboard component preferences", () => {
       })),
     ).toEqual([
       { id: "messages", visible: true, visualization: "line", columns: 2 },
-      { id: "ticketRequesterRanking", visible: true, visualization: "table", columns: 1 },
+      { id: "ticketRequesterRanking", visible: true, visualization: "table", columns: 2 },
       { id: "tag", visible: true, visualization: "columns", columns: 1 },
       { id: "distribution", visible: true, visualization: "donut", columns: 1 },
       { id: "agent", visible: true, visualization: "columns", columns: 1 },
@@ -85,7 +85,7 @@ describe("dashboard component preferences", () => {
     };
 
     expect(parseDashboardPreferences({ version: 2, components: [savedRanking] })).toEqual([
-      { ...migratedRanking, visualization: "table", columns: 1 },
+      { ...migratedRanking, visualization: "table", columns: 2 },
     ]);
     expect(
       parseDashboardPreferences({
@@ -211,11 +211,11 @@ const legacyNativeContactRanking = {
 
 describe("conversation contact ranking revision 5", () => {
   it("uses the stable native id for conversation contacts and exposes the new grouping", () => {
-    expect(DASHBOARD_NATIVE_REVISION).toBe(5);
+    expect(DASHBOARD_NATIVE_REVISION).toBe(6);
     expect(
       DEFAULT_DASHBOARD_COMPONENTS.find((item) => item.id === "ticketRequesterRanking"),
     ).toMatchObject({
-      title: "Top 10 contatos que mais abrem conversas",
+      title: "Ranking de Contatos",
       dataSource: "conversations",
       groupBy: "conversationContact",
     });
@@ -255,7 +255,7 @@ describe("conversation contact ranking revision 5", () => {
       customTicketWidget,
       {
         ...customizedNative,
-        title: "Top 10 contatos que mais abrem conversas",
+        title: "Ranking de Contatos",
         dataSource: "conversations",
         groupBy: "conversationContact",
       },
@@ -333,11 +333,11 @@ describe("conversation contact ranking revision 5", () => {
       [
         {
           ...old,
-          title: "Top 10 contatos que mais abrem conversas",
+          title: "Ranking de Contatos",
           dataSource: "conversations",
           groupBy: "conversationContact",
           visualization: "table",
-          columns: 1,
+          columns: 2,
         },
       ],
     );
@@ -345,7 +345,7 @@ describe("conversation contact ranking revision 5", () => {
 });
 
 it.each([
-  ["Top 10 contatos que abriram chamados", "Top 10 contatos que mais abrem conversas"],
+  ["Top 10 contatos que abriram chamados", "Ranking de Contatos"],
   ["Meu ranking personalizado", "Meu ranking personalizado"],
 ])(
   "migrates the flat legacy ranking label %s without replacing custom presentation",

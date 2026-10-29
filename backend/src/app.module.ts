@@ -1,3 +1,5 @@
+import { TasksModule } from "./tasks/tasks.module";
+import { LoginMetricsModule } from "./login-metrics/login-metrics.module";
 import { SchedulesModule } from "./schedules/schedules.module";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
@@ -33,6 +35,7 @@ import { AiModule } from "./ai/ai.module";
       validate: validateEnvironment,
     }),
     PrismaModule,
+    LoginMetricsModule,
     AuthModule,
     UsersModule,
     DepartmentsModule,
@@ -54,6 +57,7 @@ import { AiModule } from "./ai/ai.module";
     CampaignsModule,
     HealthModule,
     SchedulesModule,
+    TasksModule,
     AiModule,
   ],
 })

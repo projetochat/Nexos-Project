@@ -2,7 +2,18 @@ import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Eye, Megaphone, Pause, Play, Plus, RefreshCw, Square, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Eye,
+  Megaphone,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
@@ -22,6 +33,10 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { CampaignSchedulePicker } from "@/components/campaign-schedule-picker";
+import { MessageAttachmentMenu } from "@/components/message-attachment-menu";
+import { MessageEmojiPicker } from "@/components/message-emoji-picker";
+import { MessageVariablesMenu } from "@/components/message-variables-menu";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
@@ -36,6 +51,7 @@ import {
   type ApiCustomer,
   type ApiMessagingConnection,
   type ApiTag,
+  type QuickReplyAttachment,
 } from "@/lib/trixus-api";
 import { fmtDate, num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
@@ -90,6 +106,36 @@ const STATUS_TONE: Record<
   COMPLETED: "success",
   FAILED: "destructive",
 };
+
+const recipientStatusLabel: Record<string, string> = {
+  PENDING: "Pendente",
+  QUEUED: "Na fila",
+  PROCESSING: "Enviando",
+  SENT: "Enviada",
+  DELIVERED: "Entregue",
+  READ: "Lida",
+  FAILED: "Falhou",
+  SKIPPED: "Não enviada",
+  CANCELLED: "Cancelada",
+};
+const recipientReasonLabel: Record<string, string> = {
+  INVALID_PHONE: "Telefone inválido",
+  OPT_OUT: "Não autoriza mensagens",
+  BLOCKED: "Contato bloqueado",
+  DUPLICATE: "Contato duplicado",
+  ARCHIVED_CONTACT: "Contato arquivado",
+  TEMPLATE_RENDER_FAILED: "Não foi possível preparar a mensagem",
+  CAMPAIGN_CANCELLED: "Campanha cancelada",
+};
+const campaignSteps = [
+  {
+    title: "Dados e mensagem",
+    description: "Identifique a campanha e escreva a mensagem que os contatos receberão.",
+  },
+  { title: "Público", description: "Escolha os contatos que receberão a campanha." },
+  { title: "Envio", description: "Selecione a instância e, se desejar, agende o envio." },
+  { title: "Revisão", description: "Confira o público, a mensagem e o envio antes de salvar." },
+];
 
 function Page() {
   const queryClient = useQueryClient();
@@ -214,7 +260,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Campanhas"
-          subtitle="Disparos WhatsApp com audiência real, snapshot e fila confiavel."
+          subtitle="Crie, agende e acompanhe mensagens para seus contatos."
           subtitleClassName="hidden sm:block"
           actions={
             <>
@@ -223,7 +269,7 @@ function Page() {
               </Button>
               {canCreate && (
                 <Button variant="primary" size="sm" onClick={createModal.show}>
-                  <Plus className="h-3.5 w-3.5" /> Nova Campanha
+                  <Plus className="h-3.5 w-3.5" /> Nova campanha
                 </Button>
               )}
             </>
@@ -241,7 +287,7 @@ function Page() {
                 />
               </Field>
             </div>
-            <Field label="Status">
+            <Field label="Situação">
               <Select
                 value={filters.status}
                 onChange={(event) =>
@@ -465,10 +511,10 @@ function CampaignRow({
         <div className="h-full bg-primary" style={{ width: `${progress}%` }} />
       </div>
       <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
-        <Metric label="Elegiveis" value={counters.eligible} />
+        <Metric label="Elegíveis" value={counters.eligible} />
         <Metric label="Enviadas" value={counters.sent} />
         <Metric label="Falhas" value={counters.failed} />
-        <Metric label="Excluidas" value={counters.skipped + counters.cancelled} />
+        <Metric label="Excluídas" value={counters.skipped + counters.cancelled} />
       </div>
     </div>
   );
@@ -536,30 +582,35 @@ function CampaignDetail({
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-4">
-        <MetricCard label="Elegiveis" value={campaign.counters.eligible} />
+        <MetricCard label="Elegíveis" value={campaign.counters.eligible} />
         <MetricCard label="Enviadas" value={campaign.counters.sent} />
         <MetricCard label="Falhas" value={campaign.counters.failed} />
         <MetricCard
-          label="Excluidas"
+          label="Excluídas"
           value={campaign.counters.skipped + campaign.counters.cancelled}
         />
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <Info label="Connection" value={campaign.connection?.name ?? "Indisponivel"} />
+        <Info label="Instância" value={campaign.connection?.name ?? "Indisponível"} />
         <Info
           label="Agendamento"
           value={
             campaign.scheduledAt ? fmtDate(Date.parse(campaign.scheduledAt)) : "Envio imediato"
           }
         />
-        <Info label="Timezone" value={campaign.timezone} />
-        <Info label="Audience" value={audienceLabel(campaign.audience)} />
+        <Info label="Fuso horário" value={campaign.timezone} />
+        <Info label="Público" value={audienceLabel(campaign.audience)} />
       </div>
 
       <div className="mt-5 rounded-lg border border-border bg-surface-1 p-3">
         <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Mensagem</p>
         <p className="whitespace-pre-wrap text-sm">{campaign.messageText}</p>
+        {campaign.attachment && (
+          <p className="mt-2 break-all text-xs text-muted-foreground">
+            Anexo: {campaign.attachment.fileName}
+          </p>
+        )}
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -607,8 +658,8 @@ function CampaignDetail({
 
       {canReadRecipients && (
         <div className="mt-6">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm font-semibold">Recipients</p>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Destinatários</p>
             {loading && <span className="text-xs text-muted-foreground">Atualizando...</span>}
           </div>
           <div className="overflow-hidden rounded-lg border border-border">
@@ -617,7 +668,7 @@ function CampaignDetail({
                 <tr>
                   <th className="px-3 py-2 text-left">Contato</th>
                   <th className="px-3 py-2 text-left">Telefone</th>
-                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-left">Situação</th>
                   <th className="px-3 py-2 text-left">Erro</th>
                 </tr>
               </thead>
@@ -625,7 +676,7 @@ function CampaignDetail({
                 {recipients.length === 0 ? (
                   <tr>
                     <td className="px-3 py-5 text-center text-muted-foreground" colSpan={4}>
-                      Sem snapshot de recipients.
+                      Os destinatários serão registrados ao iniciar ou agendar a campanha.
                     </td>
                   </tr>
                 ) : (
@@ -634,13 +685,19 @@ function CampaignDetail({
                       <td className="px-3 py-2">
                         <p>{recipient.contactName}</p>
                         <p className="text-xs text-muted-foreground">
-                          {recipient.customerName ?? "Sem customer"}
+                          {recipient.customerName ?? "Sem cliente"}
                         </p>
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">{recipient.phoneMasked}</td>
-                      <td className="px-3 py-2">{recipient.status}</td>
+                      <td className="px-3 py-2">
+                        {recipientStatusLabel[recipient.status] ?? "Não informado"}
+                      </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">
-                        {recipient.skipReason ?? recipient.lastErrorCode ?? "-"}
+                        {recipient.skipReason
+                          ? (recipientReasonLabel[recipient.skipReason] ?? "Não enviado")
+                          : recipient.lastErrorCode
+                            ? "Falha no envio"
+                            : "—"}
                       </td>
                     </tr>
                   ))
@@ -668,7 +725,7 @@ function CampaignEditor({
   const [form, setForm] = React.useState({
     name: "",
     description: "",
-    messageText: "Ola, {{contact.name}}.",
+    messageText: "Olá, {{contact.name}}.",
     connectionId: "",
     audienceType: "ALL" as ApiCampaignAudience["type"],
     tagMatchMode: "ANY" as "ANY" | "ALL",
@@ -676,9 +733,32 @@ function CampaignEditor({
     customerIds: [] as string[],
     contactIds: [] as string[],
     scheduledAt: "",
+    attachment: null as QuickReplyAttachment | null,
   });
   const [preview, setPreview] = React.useState<ApiCampaignPreview | null>(null);
+  const [scheduleValid, setScheduleValid] = React.useState(true);
+  const [attachmentBusy, setAttachmentBusy] = React.useState(false);
+  const capabilitiesQuery = useQuery({
+    queryKey: ["campaigns.capabilities"],
+    queryFn: campaignApi.capabilities,
+    enabled: open,
+  });
+  const attachmentsEnabled = capabilitiesQuery.data?.attachmentsEnabled === true;
+  const messageInput = React.useRef<HTMLTextAreaElement>(null);
+  const insertMessageText = (text: string) => {
+    const input = messageInput.current;
+    const start = input?.selectionStart ?? form.messageText.length;
+    const end = input?.selectionEnd ?? start;
+    const value = form.messageText.slice(0, start) + text + form.messageText.slice(end);
+    if (value.length > 4000) return;
+    setForm((current) => ({ ...current, messageText: value }));
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + text.length, start + text.length);
+    });
+  };
   const [step, setStep] = React.useState(1);
+  const [completedSteps, setCompletedSteps] = React.useState<number[]>([]);
   const [tagSearch, setTagSearch] = React.useState("");
   const [customerSearch, setCustomerSearch] = React.useState("");
   const [contactSearch, setContactSearch] = React.useState("");
@@ -718,6 +798,7 @@ function CampaignEditor({
   React.useEffect(() => {
     if (!open) return;
     setStep(1);
+    setCompletedSteps([]);
     setPreview(null);
     setRequiredErrors({});
     setForm((current) => ({
@@ -742,22 +823,32 @@ function CampaignEditor({
   );
 
   const previewMutation = useMutation({
-    mutationFn: () => campaignApi.preview({ messageText: form.messageText, audience }),
+    mutationFn: () =>
+      campaignApi.preview({
+        messageText: form.messageText,
+        audience,
+        ...(form.attachment ? { attachment: form.attachment } : {}),
+      }),
     onSuccess: (data) => {
       setPreview(data);
-      setStep(5);
+      setCompletedSteps([1, 2, 3]);
+      setStep(4);
     },
     onError: (error) =>
-      toast.error(
-        error instanceof Error ? error.message : "Não foi possível calcular a audiência.",
-      ),
+      toast.error(error instanceof Error ? error.message : "Não foi possível calcular o público."),
   });
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (
+        form.scheduledAt &&
+        (!scheduleValid || new Date(form.scheduledAt).getTime() <= Date.now())
+      )
+        throw new Error("Escolha uma data e um horário futuros válidos.");
       const campaign = await campaignApi.create({
         name: form.name,
         description: form.description || null,
         messageText: form.messageText,
+        ...(form.attachment ? { attachment: form.attachment } : {}),
         connectionId: form.connectionId,
         audience,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -793,12 +884,12 @@ function CampaignEditor({
     setRequiredErrors((current) => {
       const next = { ...current };
       if (form.name.trim().length >= 3) delete next.name;
-      if (form.messageText.trim()) delete next.messageText;
+      if (form.messageText.trim() || form.attachment) delete next.messageText;
       if (audienceComplete(audience)) delete next.audience;
       if (form.connectionId) delete next.connectionId;
       return Object.keys(next).length === Object.keys(current).length ? current : next;
     });
-  }, [audience, form.connectionId, form.messageText, form.name]);
+  }, [audience, form.connectionId, form.messageText, form.name, form.attachment]);
 
   const validateStep = (targetStep: number) => {
     const nextErrors: Record<string, boolean> = {};
@@ -807,17 +898,17 @@ function CampaignEditor({
       nextErrors.name = true;
       pendingFields.push("Nome");
     }
-    if (targetStep === 2 && !form.messageText.trim()) {
+    if (targetStep === 1 && !form.messageText.trim() && !form.attachment) {
       nextErrors.messageText = true;
       pendingFields.push("Texto WhatsApp");
     }
-    if (targetStep === 3 && !audienceComplete(audience)) {
+    if (targetStep === 2 && !audienceComplete(audience)) {
       nextErrors.audience = true;
       pendingFields.push("Público");
     }
-    if (targetStep === 4 && !form.connectionId) {
+    if (targetStep === 3 && !form.connectionId) {
       nextErrors.connectionId = true;
-      pendingFields.push("Conexão");
+      pendingFields.push("Instância");
     }
     if (pendingFields.length) {
       setRequiredErrors((current) => ({ ...current, ...nextErrors }));
@@ -828,19 +919,33 @@ function CampaignEditor({
   };
 
   const advance = () => {
-    if (validateStep(step)) setStep(step + 1);
+    if (validateStep(step)) {
+      setCompletedSteps((current) => [...new Set([...current, step])]);
+      setStep(step + 1);
+    }
   };
 
   const previewCampaign = () => {
+    if (
+      !scheduleValid ||
+      (form.scheduledAt &&
+        (!Number.isFinite(new Date(form.scheduledAt).getTime()) ||
+          new Date(form.scheduledAt).getTime() <= Date.now()))
+    ) {
+      toast.error(
+        "Escolha uma data e um horário futuros válidos, ou limpe o agendamento para criar um rascunho.",
+      );
+      return;
+    }
     const pendingFields: string[] = [];
     if (form.name.trim().length < 3) pendingFields.push("Nome");
-    if (!form.messageText.trim()) pendingFields.push("Texto WhatsApp");
+    if (!form.messageText.trim() && !form.attachment) pendingFields.push("Texto WhatsApp");
     if (!audienceComplete(audience)) pendingFields.push("Público");
-    if (!form.connectionId) pendingFields.push("Conexão");
+    if (!form.connectionId) pendingFields.push("Instância");
     if (pendingFields.length) {
       setRequiredErrors({
         name: form.name.trim().length < 3,
-        messageText: !form.messageText.trim(),
+        messageText: !form.messageText.trim() && !form.attachment,
         audience: !audienceComplete(audience),
         connectionId: !form.connectionId,
       });
@@ -854,50 +959,108 @@ function CampaignEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title="Nova Campanha"
+      title="Nova campanha"
       size="xl"
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            disabled={previewMutation.isPending || createMutation.isPending || attachmentBusy}
+          >
             Cancelar
           </Button>
           {step > 1 && (
-            <Button variant="outline" size="sm" onClick={() => setStep(step - 1)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setStep(step - 1)}
+              disabled={previewMutation.isPending || createMutation.isPending || attachmentBusy}
+            >
               Voltar
             </Button>
           )}
-          {step < 4 && (
-            <Button size="sm" onClick={advance}>
-              Proximo
+          {step < 3 && (
+            <Button size="sm" onClick={advance} disabled={attachmentBusy}>
+              Continuar
+            </Button>
+          )}
+          {step === 3 && (
+            <Button
+              size="sm"
+              onClick={previewCampaign}
+              disabled={previewMutation.isPending || attachmentBusy || !scheduleValid}
+            >
+              <Eye className="h-3.5 w-3.5" /> Revisar campanha
             </Button>
           )}
           {step === 4 && (
-            <Button size="sm" onClick={previewCampaign} disabled={previewMutation.isPending}>
-              <Eye className="h-3.5 w-3.5" /> Preview
-            </Button>
-          )}
-          {step === 5 && (
             <Button
               size="sm"
               onClick={() => createMutation.mutate()}
-              disabled={!preview || preview.eligibleCount < 1 || createMutation.isPending}
+              disabled={
+                !preview || preview.eligibleCount < 1 || createMutation.isPending || attachmentBusy
+              }
             >
-              Confirmar
+              {createMutation.isPending
+                ? "Salvando…"
+                : form.scheduledAt
+                  ? "Agendar campanha"
+                  : "Criar rascunho"}
             </Button>
           )}
         </>
       }
     >
-      <div className="mb-4 grid grid-cols-5 gap-2 text-center text-xs">
-        {["Identificação", "Mensagem", "Público", "Conexão", "Revisão"].map((label, index) => (
-          <span
-            key={label}
-            className={`rounded border px-2 py-1 ${step === index + 1 ? "border-primary text-primary" : "border-border text-muted-foreground"}`}
-          >
-            {label}
-          </span>
-        ))}
-      </div>
+      <nav aria-label="Etapas da campanha" className="mb-5">
+        <p className="mb-2 text-sm font-semibold" aria-live="polite">
+          Etapa {step} de {campaignSteps.length} · {campaignSteps[step - 1].title}
+        </p>
+        <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+          {campaignSteps.map((item, index) => {
+            const number = index + 1;
+            const active = step === number;
+            const valid =
+              number === 1
+                ? form.name.trim().length >= 3 &&
+                  Boolean(form.messageText.trim() || form.attachment)
+                : number === 2
+                  ? audienceComplete(audience)
+                  : number === 3
+                    ? Boolean(form.connectionId)
+                    : Boolean(preview);
+            const completed = completedSteps.includes(number) && valid;
+            return (
+              <li key={item.title} className="min-w-0">
+                <button
+                  type="button"
+                  aria-current={active ? "step" : undefined}
+                  aria-label={`${item.title}${completed ? " — configurado" : active ? " — etapa atual" : " — pendente"}`}
+                  disabled={
+                    (!completed && !active) || previewMutation.isPending || createMutation.isPending
+                  }
+                  onClick={() => setStep(number)}
+                  className={`flex h-full w-full items-center gap-2 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default ${active ? "border-primary bg-primary/5 text-primary shadow-sm" : completed ? "border-primary/25 bg-card text-foreground hover:bg-surface-1" : "border-border text-muted-foreground"}`}
+                >
+                  <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${active || completed ? "bg-gradient-to-r from-indigo-600 to-cyan-500 text-white" : "bg-surface-2"}`}
+                  >
+                    {completed ? <Check className="h-4 w-4" aria-hidden="true" /> : number}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold">{item.title}</span>
+                    <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                      {active ? "Em edição" : completed ? "Configurado" : "Pendente"}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        <p className="mt-3 text-sm text-muted-foreground">{campaignSteps[step - 1].description}</p>
+      </nav>
 
       {step === 1 && (
         <div className="grid gap-4">
@@ -915,50 +1078,98 @@ function CampaignEditor({
               onChange={(event) => setForm({ ...form, description: event.target.value })}
             />
           </Field>
+          <Field
+            label="Texto WhatsApp"
+            hint="Variáveis disponíveis: {{contact.name}} e {{customer.name}}."
+          >
+            <div
+              className={`overflow-hidden rounded-xl border bg-card focus-within:border-primary/50 ${requiredErrors.messageText ? "border-destructive" : "border-border"}`}
+            >
+              <textarea
+                ref={messageInput}
+                rows={5}
+                maxLength={4000}
+                value={form.messageText}
+                disabled={createMutation.isPending || previewMutation.isPending}
+                onChange={(event) => setForm({ ...form, messageText: event.target.value })}
+                aria-label="Texto WhatsApp"
+                aria-required={!form.attachment}
+                aria-invalid={Boolean(requiredErrors.messageText)}
+                className="block min-h-24 w-full resize-y border-0 bg-transparent px-3 py-3 text-sm outline-none"
+                placeholder="Escreva a mensagem da campanha"
+              />
+              <div className="flex flex-wrap items-center gap-1.5 overflow-visible rounded-b-lg border-t border-border bg-surface-1 px-2 py-1.5">
+                <MessageEmojiPicker
+                  disabled={createMutation.isPending || previewMutation.isPending}
+                  onSelect={insertMessageText}
+                />
+                <MessageVariablesMenu
+                  disabled={createMutation.isPending || previewMutation.isPending}
+                  variables={[
+                    { token: "{{contact.name}}", description: "Nome do contato" },
+                    { token: "{{customer.name}}", description: "Nome do cliente" },
+                  ]}
+                  onSelect={insertMessageText}
+                />
+                <MessageAttachmentMenu
+                  variant="segmented"
+                  attachment={form.attachment}
+                  disabled={
+                    !attachmentsEnabled || createMutation.isPending || previewMutation.isPending
+                  }
+                  fileInputLabel="Anexar arquivo à campanha"
+                  onLoadingChange={setAttachmentBusy}
+                  onAttachment={(attachment) => setForm((current) => ({ ...current, attachment }))}
+                  onRemove={() => setForm((current) => ({ ...current, attachment: null }))}
+                />
+              </div>
+            </div>
+          </Field>
+          {!attachmentsEnabled && (
+            <p className="text-xs text-muted-foreground">
+              {capabilitiesQuery.isError
+                ? "Não foi possível verificar a disponibilidade dos anexos."
+                : "O envio de anexos ainda não está habilitado neste ambiente."}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {num(form.messageText.length)} / 4000 caracteres. Escreva uma mensagem ou inclua um
+            anexo.
+          </p>
         </div>
       )}
       {step === 2 && (
         <div className="grid gap-4">
-          <Field
-            label="Texto WhatsApp *"
-            hint="Variaveis permitidas: {{contact.name}} e {{customer.name}}."
-          >
-            <Textarea
-              rows={7}
-              value={form.messageText}
-              onChange={(event) => setForm({ ...form, messageText: event.target.value })}
-              aria-invalid={Boolean(requiredErrors.messageText)}
-            />
-          </Field>
-          <p className="text-xs text-muted-foreground">
-            {num(form.messageText.length)} / 4000 caracteres
-          </p>
-        </div>
-      )}
-      {step === 3 && (
-        <div className="grid gap-4">
-          <Field label="Tipo de público">
-            <Select
-              value={form.audienceType}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  audienceType: event.target.value as ApiCampaignAudience["type"],
-                })
-              }
-            >
-              <option value="ALL">Todos os Contacts elegiveis</option>
-              <option value="TAGS">Tags</option>
-              <option value="CUSTOMERS">Customers</option>
-              <option value="CONTACTS">Contacts manuais</option>
-            </Select>
-          </Field>
+          <fieldset>
+            <legend className="mb-2 text-sm font-medium">Tipo de público</legend>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              {(
+                [
+                  ["ALL", "Todos os contatos", "Contatos aptos para receber mensagens."],
+                  ["TAGS", "Por etiquetas", "Contatos com as etiquetas escolhidas."],
+                  ["CUSTOMERS", "Por clientes", "Contatos dos clientes escolhidos."],
+                  ["CONTACTS", "Selecionar contatos", "Escolha os contatos individualmente."],
+                ] as const
+              ).map(([value, label, description]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={form.audienceType === value}
+                  onClick={() => setForm((current) => ({ ...current, audienceType: value }))}
+                  className={`rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${form.audienceType === value ? "border-primary bg-primary/5 text-primary" : "border-border hover:bg-surface-1"}`}
+                >
+                  <span className="block text-sm font-semibold">{label}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{description}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
           {form.audienceType === "TAGS" && (
             <div
               className={`rounded-lg border p-1 ${requiredErrors.audience ? "border-destructive" : "border-transparent"}`}
             >
               <Selector
-                title="Tags"
+                title="Etiquetas"
                 mode={form.tagMatchMode}
                 onMode={(tagMatchMode) => setForm({ ...form, tagMatchMode })}
                 items={sortedTags}
@@ -997,41 +1208,83 @@ function CampaignEditor({
           )}
         </div>
       )}
-      {step === 4 && (
+      {step === 3 && (
         <div className="grid gap-4">
-          <Field label="Conexão *">
+          <Field label="Instância de envio *">
             <Select
               value={form.connectionId}
               onChange={(event) => setForm({ ...form, connectionId: event.target.value })}
               aria-invalid={Boolean(requiredErrors.connectionId)}
             >
-              <option value="">Selecione uma connection</option>
+              <option value="">Selecione uma instância</option>
               {selectableConnections(connections).map((connection) => (
                 <option key={connection.id} value={connection.id}>
-                  {connection.name} · {connection.providerType} · {connection.status}
+                  {connection.name} ·{" "}
+                  {
+                    {
+                      connected: "Conectada",
+                      disconnected: "Desconectada",
+                      connecting: "Conectando",
+                      error: "Com erro",
+                      removed: "Removida",
+                    }[connection.status]
+                  }
                 </option>
               ))}
             </Select>
           </Field>
-          <Field label="Agendar para">
-            <Input
-              type="datetime-local"
-              value={form.scheduledAt}
-              onChange={(event) => setForm({ ...form, scheduledAt: event.target.value })}
-            />
-          </Field>
+          <CampaignSchedulePicker
+            value={form.scheduledAt}
+            onChange={(scheduledAt) => setForm((current) => ({ ...current, scheduledAt }))}
+            onValidityChange={setScheduleValid}
+            disabled={previewMutation.isPending || createMutation.isPending}
+          />
           <Alert tone="warning" title="Confirmação obrigatória">
-            O start imediato fica disponível no detalhe após o rascunho ser criado. Agendamento
-            exige preview e confirmação.
+            Sem uma data, a campanha será salva como rascunho. Para enviar, clique em Iniciar nos
+            detalhes. Com uma data, o envio será agendado após a revisão.
           </Alert>
         </div>
       )}
-      {step === 5 && preview && (
+      {step === 4 && preview && (
         <div className="grid gap-4">
-          <div className="grid gap-3 md:grid-cols-5">
-            <MetricCard label="Elegiveis" value={preview.eligibleCount} />
-            <MetricCard label="Invalidos" value={preview.invalidPhoneCount} />
-            <MetricCard label="Opt-out" value={preview.optedOutCount} />
+          <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-2">
+            <Info label="Campanha" value={form.name} />
+            <Info label="Público" value={audienceLabel(audience)} />
+            <Info
+              label="Instância"
+              value={
+                connections.find((item) => item.id === form.connectionId)?.name ?? "Indisponível"
+              }
+            />
+            <Info
+              label="Envio"
+              value={
+                form.scheduledAt
+                  ? fmtDate(Date.parse(form.scheduledAt))
+                  : "Rascunho — envio manual após salvar"
+              }
+            />
+          </div>
+          <div className="rounded-lg border border-border bg-surface-1 p-3">
+            <p className="mb-2 text-sm font-semibold">Mensagem que será enviada</p>
+            <p className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm">
+              {form.messageText}
+            </p>
+            {form.attachment && (
+              <p className="mt-2 break-all text-sm">
+                Anexo: {form.attachment.fileName} · {num(form.attachment.size)} bytes
+              </p>
+            )}
+          </div>
+          {preview.eligibleCount < 1 && (
+            <Alert tone="warning" title="Nenhum contato apto para envio">
+              Volte à etapa Público e ajuste a seleção antes de salvar.
+            </Alert>
+          )}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <MetricCard label="Elegíveis" value={preview.eligibleCount} />
+            <MetricCard label="Telefones inválidos" value={preview.invalidPhoneCount} />
+            <MetricCard label="Não autorizam mensagens" value={preview.optedOutCount} />
             <MetricCard label="Duplicados" value={preview.duplicateCount} />
             <MetricCard label="Bloqueados" value={preview.blockedCount} />
           </div>
@@ -1082,15 +1335,15 @@ function Selector({
 }) {
   return (
     <div className="rounded-lg border border-border p-3">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold">{title}</p>
         <Select
-          className="w-28"
+          className="w-full sm:w-52"
           value={mode}
           onChange={(event) => onMode(event.target.value as "ANY" | "ALL")}
         >
-          <option value="ANY">ANY</option>
-          <option value="ALL">ALL</option>
+          <option value="ANY">Qualquer etiqueta</option>
+          <option value="ALL">Todas as etiquetas</option>
         </Select>
       </div>
       <FilterableCheckGrid
@@ -1175,7 +1428,10 @@ function FilterableCheckGrid({
   );
   return (
     <div className="space-y-3">
-      <SearchInput value={search} onChange={onSearch} placeholder="Filtrar itens..." />
+      <SearchInput value={search} onChange={onSearch} placeholder="Buscar na lista..." />
+      <p className="text-xs text-muted-foreground">
+        {num(selected.length)} selecionado(s). A busca apenas filtra a lista; mantém suas seleções.
+      </p>
       <div className="grid max-h-64 gap-2 overflow-auto md:grid-cols-2">
         {filtered.map((item) => (
           <label
@@ -1228,11 +1484,11 @@ function Info({ label, value }: { label: string; value: string }) {
 }
 
 function audienceLabel(audience: ApiCampaignAudience) {
-  if (audience.type === "ALL") return "Todos elegiveis";
+  if (audience.type === "ALL") return "Todos os contatos elegíveis";
   if (audience.type === "TAGS")
-    return `Tags ${audience.tagMatchMode ?? "ANY"} (${audience.tagIds.length})`;
-  if (audience.type === "CUSTOMERS") return `Customers (${audience.customerIds.length})`;
-  return `Contacts (${audience.contactIds.length})`;
+    return `${audience.tagMatchMode === "ALL" ? "Todas as etiquetas" : "Qualquer etiqueta"} (${audience.tagIds.length})`;
+  if (audience.type === "CUSTOMERS") return `Clientes (${audience.customerIds.length})`;
+  return `Contatos selecionados (${audience.contactIds.length})`;
 }
 
 function audienceComplete(audience: ApiCampaignAudience) {
@@ -1244,6 +1500,6 @@ function audienceComplete(audience: ApiCampaignAudience) {
 
 function confirmationText(action: "start" | "cancel", campaign: ApiCampaign) {
   if (action === "cancel")
-    return `Novos recipients de "${campaign.name}" nao serao iniciados. Mensagens ja enviadas permanecem no historico.`;
-  return `${campaign.name} usara ${campaign.connection?.name ?? "a connection selecionada"} para ${num(campaign.counters.eligible)} recipients elegiveis.`;
+    return `Novos envios de "${campaign.name}" não serão iniciados. Mensagens já enviadas permanecem no histórico.`;
+  return `${campaign.name} usará ${campaign.connection?.name ?? "a instância selecionada"} para ${num(campaign.counters.eligible)} destinatários elegíveis.`;
 }

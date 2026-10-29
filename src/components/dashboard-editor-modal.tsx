@@ -178,7 +178,7 @@ export function DashboardEditorModal({
       <Modal
         open={open && !configuring}
         onClose={onClose}
-        title="Editar Dashboards"
+        title="Configuração de Dashboards"
         description="Arraste e solte para definir a posição dos componentes."
         size="xl"
         className="sm:max-w-5xl"

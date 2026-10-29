@@ -1,5 +1,5 @@
 import * as React from "react";
-import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquarePlus,
@@ -78,7 +78,10 @@ import {
   type InboxTabId,
 } from "@/lib/inbox-tab-state";
 
+import { dashboardInboxLocate } from "@/lib/dashboard-recent-location";
+
 type TabId = InboxTabId;
+
 type SourceId = "todos" | "privado" | "grupos" | "humano" | "bots";
 
 const TAB_ICONS: Record<TabId, React.ComponentType<{ className?: string }>> = {
@@ -127,6 +130,7 @@ const inboxListMemory: {
 export function InboxLayout({ children }: { children: React.ReactNode }) {
   const params = useParams({ strict: false }) as { conversationId?: string };
   const activeId = params.conversationId;
+  const { locate } = useSearch({ from: "/inbox" });
   const navigate = useNavigate();
   const qc = useQueryClient();
   const newConv = useDisclosure();
@@ -169,6 +173,22 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
     inboxListMemory.selectedInstancias = [...selectedInstancias];
     inboxListMemory.selectedClientes = [...selectedClientes];
   }, [onlyUnread, query, selectedClientes, selectedInstancias]);
+  React.useEffect(() => {
+    const locatedTab = dashboardInboxLocate(locate);
+    if (!locatedTab || !activeId) return;
+    setTab(locatedTab);
+    setSource("todos");
+    setOnlyUnread(false);
+    setQuery("");
+    setSelectedInstancias(new Set());
+    setSelectedClientes(new Set());
+    void navigate({
+      to: "/inbox/$conversationId",
+      params: { conversationId: activeId },
+      search: (current) => ({ ...current, locate: undefined }),
+      replace: true,
+    });
+  }, [activeId, locate, navigate, setSource, setTab]);
   const bulkSelection = React.useMemo(
     () => ({
       q: query || undefined,
@@ -663,7 +683,8 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const canCreateContact = permissions.includes("contacts.create");
   const canEditContact = permissions.includes("contacts.update");
   const canViewGroups = canStartConversation;
-  const canCreateGroup = permissions.includes("groups.read") && permissions.includes("groups.create");
+  const canCreateGroup =
+    permissions.includes("groups.read") && permissions.includes("groups.create");
   const canOpenGroup = canStartConversation;
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -980,7 +1001,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                       title="Nova conversa"
                       aria-label={`Nova conversa com o grupo ${group.name}`}
                       disabled={!canOpenGroup}
-                       onClick={() => void openGroup(group)}
+                      onClick={() => void openGroup(group)}
                     >
                       <MessageSquarePlus className="h-4 w-4" />
                     </Button>

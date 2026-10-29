@@ -1,6 +1,8 @@
+import { TaskManagementPage } from "@/components/task-management/task-management-page";
+import { taskManagementApi } from "@/lib/task-management";
 import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   CalendarClock,
   CheckSquare,
@@ -51,7 +53,12 @@ import {
 import { displayDateTime, num } from "@/lib/format";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-export const Route = createFileRoute("/agendamentos")({ component: SchedulingPage });
+export const Route = createFileRoute("/agendamentos")({
+  component: SchedulingPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    taskId: typeof search.taskId === "string" ? search.taskId : undefined,
+  }),
+});
 
 import { scheduleOrigin, type ApiSchedule as Schedule } from "@/lib/schedule-types";
 type ScheduleType = Schedule["type"];
@@ -64,6 +71,44 @@ const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 function SchedulingPage() {
+  const user = useSession((state) => state.user);
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  const [legacy, setLegacy] = React.useState(false);
+  const capabilities = useQuery({
+    queryKey: ["trixus", "task-management", "capabilities", user?.empresaId],
+    queryFn: taskManagementApi.capabilities,
+    enabled: Boolean(user?.permissions?.includes("schedules.read")),
+    retry: false,
+  });
+  if (legacy || !capabilities.data?.enabled)
+    return (
+      <LegacySchedulingPage
+        key={`${user?.empresaId}:${user?.id}`}
+        onReturn={capabilities.data?.enabled ? () => setLegacy(false) : undefined}
+      />
+    );
+  return (
+    <AppShell>
+      <PageContainer>
+        <div className="mb-4 flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => setLegacy(true)}>
+            Agendamentos anteriores
+          </Button>
+        </div>
+        <TaskManagementPage
+          key={`${user?.empresaId}:${user?.id}`}
+          initialTaskId={search.taskId}
+          onTaskLocated={() =>
+            navigate({ to: "/agendamentos", search: { taskId: undefined }, replace: true })
+          }
+        />
+      </PageContainer>
+    </AppShell>
+  );
+}
+
+function LegacySchedulingPage({ onReturn }: { onReturn?: () => void }) {
   const user = useSession((state) => state.user);
   const canCreate = user?.permissions?.includes("schedules.create") ?? false;
   const canUpdate = user?.permissions?.includes("schedules.update") ?? false;
@@ -185,6 +230,13 @@ function SchedulingPage() {
   return (
     <AppShell>
       <PageContainer>
+        {onReturn && (
+          <div className="mb-4 flex justify-end">
+            <Button size="sm" variant="outline" onClick={onReturn}>
+              Gestão de Tarefas
+            </Button>
+          </div>
+        )}
         <SectionHeader
           title="Agendamentos"
           subtitle={`${num(screenItems.length)} agendamento(s) cadastrado(s).`}

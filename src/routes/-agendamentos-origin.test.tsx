@@ -15,7 +15,11 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof import("@tanstack/react-router")>()),
-  createFileRoute: () => (config: unknown) => config,
+  createFileRoute: () => (config: Record<string, unknown>) => ({
+    ...config,
+    useSearch: () => ({}),
+  }),
+  useNavigate: () => vi.fn(),
 }));
 vi.mock("@/components/app-shell", () => ({
   AppShell: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -37,6 +41,9 @@ vi.mock("@/lib/trixus-api", () => ({
     listUsers: vi.fn().mockResolvedValue([]),
   },
   crmApi: {},
+}));
+vi.mock("@/lib/task-management", () => ({
+  taskManagementApi: { capabilities: async () => ({ enabled: false }) },
 }));
 import { Route } from "./agendamentos";
 const Page = (Route as unknown as { component: React.ComponentType }).component;

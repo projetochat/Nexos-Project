@@ -122,6 +122,15 @@ it("shows validation progress, retains the edited connection and marks only inva
   expect(document.querySelector('input[type="password"]')?.getAttribute("aria-invalid")).toBe(
     "true",
   );
+  const alert = document.querySelector<HTMLElement>('[role="alert"]')!;
+  const keyInput = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  expect(alert.closest(".border-t")?.contains(saveButton())).toBe(true);
+  expect(alert.parentElement).toBe(saveButton().parentElement?.parentElement);
+  expect(
+    alert.compareDocumentPosition(saveButton()) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(keyInput.getAttribute("aria-describedby")).toBe(alert.id);
+
   expect(
     document.querySelector<HTMLInputElement>('input[placeholder="Ex.: OpenAI principal"]')?.value,
   ).toBe("Conexão sintética");

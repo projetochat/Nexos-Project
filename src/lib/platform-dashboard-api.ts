@@ -9,8 +9,19 @@ export type PlatformDashboardFilters = {
   end?: string;
 };
 
+export type PlatformLoginEnvironments = {
+  local: number;
+  homologation: number;
+  production: number;
+};
+
+export type PlatformLoginAggregation = {
+  status: "disabled" | "available" | "unavailable" | "ambiguous";
+  updatedAt?: string | null;
+};
+
 export type PlatformClientVolumetryCounts = {
-  logins: number;
+  logins: number | null;
   instances: number;
   contacts: number;
   attendants: number;
@@ -26,6 +37,7 @@ export type PlatformClientVolumetryCounts = {
 export type PlatformClientVolumetryRow = PlatformClientVolumetryCounts & {
   clientId: string | null;
   clientName: string;
+  loginEnvironments?: PlatformLoginEnvironments | null;
 };
 
 export type PlatformDashboardResponse = {
@@ -77,7 +89,10 @@ export type PlatformDashboardResponse = {
   operation: { openTickets: number; openInvoices: number; overdueInvoices: number };
   clientVolumetry: {
     rows: PlatformClientVolumetryRow[];
-    totals: PlatformClientVolumetryCounts;
+    totals: PlatformClientVolumetryCounts & {
+      loginEnvironments?: PlatformLoginEnvironments | null;
+    };
+    loginAggregation?: PlatformLoginAggregation;
   };
   semantics: Record<string, unknown>;
 };

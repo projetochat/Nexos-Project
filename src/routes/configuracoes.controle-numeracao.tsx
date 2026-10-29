@@ -15,6 +15,10 @@ const FORMAT_OPTIONS: Array<{
   label: string;
 }> = [
   {
+    value: "SEQUENCE",
+    label: "Sequencial Único",
+  },
+  {
     value: "YEAR_SEQUENCE",
     label: "Ano + Sequencial",
   },
@@ -23,16 +27,12 @@ const FORMAT_OPTIONS: Array<{
     label: "Ano + Mês + Sequencial",
   },
   {
-    value: "CUSTOM",
-    label: "Personalizado",
-  },
-  {
     value: "DATE_SEQUENCE",
     label: "Data + Sequencial",
   },
   {
-    value: "SEQUENCE",
-    label: "Sequencial Único",
+    value: "CUSTOM",
+    label: "Personalizado",
   },
 ];
 
@@ -237,7 +237,7 @@ function ProtocolModuleCard({
                         onChange(item.module, {
                           format: option.value,
                           ...(option.value === "CUSTOM"
-                            ? {}
+                            ? { reset: item.reset === "DAILY" ? "NEVER" : item.reset }
                             : { reset: defaultResetForFormat(option.value) }),
                         })
                       }
@@ -261,6 +261,37 @@ function ProtocolModuleCard({
             item.format === "CUSTOM" ? "md:grid-cols-4" : "md:grid-cols-3"
           }`}
         >
+          <Field
+            label="Quantidade de dígitos do sequencial"
+            hint="Mínimo de dígitos, com zeros à esquerda. A sequência continua ao ultrapassar essa quantidade."
+          >
+            <Select
+              value={String(item.digits)}
+              onChange={(event) => onChange(item.module, { digits: Number(event.target.value) })}
+            >
+              {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Resetar número sequencial">
+            <Select
+              value={item.format === "DATE_SEQUENCE" ? "DAILY" : item.reset}
+              disabled={item.format !== "CUSTOM"}
+              onChange={(event) =>
+                onChange(item.module, {
+                  reset: event.target.value as ApiProtocolSettings["reset"],
+                })
+              }
+            >
+              {item.format === "DATE_SEQUENCE" && <option value="DAILY">Diariamente</option>}
+              <option value="YEARLY">Anualmente</option>
+              <option value="MONTHLY">Mensalmente</option>
+              <option value="NEVER">Nunca</option>
+            </Select>
+          </Field>
           {item.format === "CUSTOM" && (
             <Field label="Padrão personalizado">
               <div>
@@ -275,33 +306,6 @@ function ProtocolModuleCard({
               </div>
             </Field>
           )}
-          <Field label="Quantidade de dígitos do sequencial">
-            <Select
-              value={String(item.digits)}
-              onChange={(event) => onChange(item.module, { digits: Number(event.target.value) })}
-            >
-              {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Resetar número sequencial">
-            <Select
-              value={item.reset}
-              disabled={item.format !== "CUSTOM"}
-              onChange={(event) =>
-                onChange(item.module, {
-                  reset: event.target.value as ApiProtocolSettings["reset"],
-                })
-              }
-            >
-              <option value="YEARLY">Anualmente</option>
-              <option value="MONTHLY">Mensalmente</option>
-              <option value="NEVER">Nunca</option>
-            </Select>
-          </Field>
           <Field label="Visualização do próximo protocolo">
             <Input value={protocolPreview(item)} readOnly className="font-mono" />
           </Field>
@@ -326,6 +330,7 @@ function defaultResetForFormat(
 ): ApiProtocolSettings["reset"] {
   if (format === "YEAR_SEQUENCE") return "YEARLY";
   if (format === "YEAR_MONTH_SEQUENCE") return "MONTHLY";
+  if (format === "DATE_SEQUENCE") return "DAILY";
   return "NEVER";
 }
 
@@ -338,7 +343,8 @@ function protocolPreview(item: ApiProtocolSettings) {
   const seq = String(lastDigits ? Number(lastDigits) : 1).padStart(item.digits, "0");
   if (item.format === "YEAR_SEQUENCE") return `${year}.${seq}`;
   if (item.format === "YEAR_MONTH_SEQUENCE") return `${year}.${month}.${seq}`;
-  if (item.format === "DATE_SEQUENCE") return `${year}${month}${day}.${seq}`;
+  if (item.format === "DATE_SEQUENCE")
+    return `${now.toISOString().slice(0, 10).replaceAll("-", "")}.${seq}`;
   if (item.format === "CUSTOM") {
     return (
       item.customPattern || (item.module === "CHAT" ? "CHAT.{YEAR}.{SEQ}" : "CH.{YEAR}.{SEQ}")

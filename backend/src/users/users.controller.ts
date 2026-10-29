@@ -21,6 +21,7 @@ import {
   IsEnum,
   IsInt,
   IsIn,
+  ValidateBy,
   IsEmail,
   IsOptional,
   IsString,
@@ -54,6 +55,8 @@ import {
 import {
   defaultProtocolConfig,
   effectiveProtocolReset,
+  storedProtocolReset,
+  type EffectiveProtocolReset,
   previewNextProtocol,
   type ProtocolNumberingConfig,
 } from "../common/protocol-numbering";
@@ -174,7 +177,7 @@ class UpdateCompanySettingsDto {
   timezone!: string;
 }
 
-class UpdateProtocolSettingsDto {
+export class UpdateProtocolSettingsDto {
   @IsEnum(ProtocolModule)
   module!: ProtocolModule;
 
@@ -186,8 +189,17 @@ class UpdateProtocolSettingsDto {
   @Max(10)
   digits!: number;
 
-  @IsEnum(ProtocolReset)
-  reset!: ProtocolReset;
+  @ValidateBy({
+    name: "isSupportedProtocolReset",
+    validator: {
+      validate: (value, args) =>
+        value === "DAILY"
+          ? (args?.object as UpdateProtocolSettingsDto).format === ProtocolFormat.DATE_SEQUENCE
+          : Object.values(ProtocolReset).includes(value),
+      defaultMessage: () => "Reinício de protocolo inválido para o formato selecionado.",
+    },
+  })
+  reset!: EffectiveProtocolReset;
 
   @IsOptional()
   @IsString()
@@ -590,6 +602,11 @@ export class UsersController {
     @Body() dto: UpdateProtocolSettingsDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    if (dto.reset === "DAILY" && dto.format !== ProtocolFormat.DATE_SEQUENCE) {
+      throw new BadRequestException(
+        "O reinício diário está disponível somente no formato de data completa.",
+      );
+    }
     const customPattern = dto.customPattern?.trim() || null;
     if (dto.format === ProtocolFormat.CUSTOM && !customPattern?.includes("{SEQ}")) {
       throw new BadRequestException("O formato personalizado deve conter {SEQ}.");
@@ -601,14 +618,14 @@ export class UsersController {
     const next = {
       format: dto.format,
       digits: dto.digits,
-      reset,
+      reset: storedProtocolReset(dto.format, dto.reset),
       customPattern: dto.format === ProtocolFormat.CUSTOM ? customPattern : null,
     };
     const currentConfig = existing ?? defaultProtocolConfig(dto.module);
     const changed =
       currentConfig.format !== next.format ||
       currentConfig.digits !== next.digits ||
-      currentConfig.reset !== next.reset ||
+      effectiveProtocolReset(currentConfig.format, currentConfig.reset) !== reset ||
       currentConfig.customPattern !== next.customPattern;
     const protocolAlreadyUsed = changed
       ? dto.module === ProtocolModule.CHAT
@@ -631,7 +648,7 @@ export class UsersController {
       create: { tenantId: current.tenantId, module: dto.module, ...next },
       update: next,
     });
-    const config: ProtocolNumberingConfig = { module: saved.module, ...next };
+    const config: ProtocolNumberingConfig = { module: saved.module, ...next, reset };
     return {
       ...config,
       confirmationRequired: false,

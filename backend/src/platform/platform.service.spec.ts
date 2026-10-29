@@ -192,6 +192,9 @@ describe("PlatformService health", () => {
     };
     const updated = { ...existing, tenantId: null, status: "CANCELLED" };
     const tx = {
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValue([{ history: true, deliveries: true, occurrences: true }]),
       $executeRaw: vi.fn().mockResolvedValue(1),
       tenantSubscription: {
         findUnique: vi.fn().mockResolvedValue(existing),
@@ -1240,3 +1243,59 @@ function actor() {
     context: "platform" as const,
   };
 }
+
+describe("Platform tenant deletion task dependencies", () => {
+  function fixture(present = true) {
+    const tx = {
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValue([{ history: present, deliveries: present, occurrences: present }]),
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      tenant: { delete: vi.fn().mockResolvedValue({ id: "tenant-a" }) },
+    };
+    const service = platformService({}, {});
+    const remove = () =>
+      (
+        service as unknown as {
+          deleteTenantDatabase(client: unknown, tenantId: string): Promise<void>;
+        }
+      ).deleteTenantDatabase(tx, "tenant-a");
+    return { tx, remove };
+  }
+
+  it("cleans only the selected tenant in foreign-key order before deleting it", async () => {
+    const { tx, remove } = fixture();
+    await remove();
+    expect(tx.$executeRaw.mock.calls.map(([sql, tenantId]) => [sql.join("?"), tenantId])).toEqual([
+      ['DELETE FROM "task_history" WHERE "tenantId" = ?', "tenant-a"],
+      ['DELETE FROM "task_deliveries" WHERE "tenantId" = ?', "tenant-a"],
+      ['DELETE FROM "task_occurrences" WHERE "tenantId" = ?', "tenant-a"],
+    ]);
+    expect(tx.tenant.delete).toHaveBeenCalledWith({ where: { id: "tenant-a" } });
+    expect(tx.$executeRaw.mock.invocationCallOrder[2]).toBeLessThan(
+      tx.tenant.delete.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("preserves pre-migration deletion without querying absent task tables", async () => {
+    const { tx, remove } = fixture(false);
+    await remove();
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(tx.tenant.delete).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the task schema is only partially migrated", async () => {
+    const { tx, remove } = fixture();
+    tx.$queryRaw.mockResolvedValueOnce([{ history: true, deliveries: false, occurrences: true }]);
+    await expect(remove()).rejects.toMatchObject({ response: { code: "TASK_SCHEMA_INCOMPLETE" } });
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(tx.tenant.delete).not.toHaveBeenCalled();
+  });
+
+  it("propagates cleanup failure without attempting the tenant delete", async () => {
+    const { tx, remove } = fixture();
+    tx.$executeRaw.mockRejectedValueOnce(new Error("cleanup failed"));
+    await expect(remove()).rejects.toThrow("cleanup failed");
+    expect(tx.tenant.delete).not.toHaveBeenCalled();
+  });
+});

@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Inject,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -21,6 +22,7 @@ import {
   CampaignTagMatchMode,
   ConversationStatus,
   MessageDirection,
+  MessageMediaState,
   MessageStatus,
   MessageType,
   MessagingConnectionStatus,
@@ -54,9 +56,23 @@ import {
   UpdateMarketingPreferenceDto,
 } from "./dto/campaign.dto";
 
+import { MessagingMediaStorageService } from "../messaging/media/messaging-media-storage.service";
+import {
+  CAMPAIGN_ATTACHMENT_MAX_BYTES,
+  normalizeCampaignAttachment,
+  readCampaignAttachment,
+  writeCampaignAttachment,
+  freezeCampaignAttachment,
+  readFrozenCampaignAttachment,
+  campaignAttachmentMessageType,
+  readCampaignAttachmentMetadata,
+} from "./campaign-attachment";
+
 const OUTBOX_CAMPAIGN_DISPATCH_REQUESTED = "campaign.dispatch.requested";
 const OUTBOX_CAMPAIGN_CANCEL_REQUESTED = "campaign.cancel.requested";
 const OUTBOX_CAMPAIGN_RESUME_REQUESTED = "campaign.resume.requested";
+export const CAMPAIGN_MEDIA_STORAGE_FAILED_BEFORE_MESSAGE =
+  "CAMPAIGN_MEDIA_STORAGE_FAILED_BEFORE_MESSAGE";
 export const CAMPAIGN_RECIPIENT_CLAIMED = "CAMPAIGN_RECIPIENT_CLAIMED";
 export const CAMPAIGN_COMMIT_OUTCOME_UNKNOWN = "CAMPAIGN_COMMIT_OUTCOME_UNKNOWN";
 const MUTABLE_STATUSES = [CampaignStatus.DRAFT, CampaignStatus.SCHEDULED] as const;
@@ -98,7 +114,40 @@ export class CampaignsService {
     @Inject(OutboxDispatcherService) private readonly outboxDispatcher: OutboxDispatcherService,
     @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
+    @Optional()
+    @Inject(MessagingMediaStorageService)
+    private readonly mediaStorage?: MessagingMediaStorageService,
   ) {}
+
+  private attachmentsEnabled() {
+    return this.config.get<string>("TRIXUS_CAMPAIGN_ATTACHMENTS_ENABLED") === "true";
+  }
+
+  capabilities() {
+    return {
+      attachmentsEnabled: this.attachmentsEnabled(),
+      maxAttachmentBytes: CAMPAIGN_ATTACHMENT_MAX_BYTES,
+      types: ["IMAGE", "AUDIO", "DOCUMENT", "VIDEO"],
+    };
+  }
+
+  private assertAttachmentCapability(campaign: Campaign) {
+    if (campaign.messageType && campaign.messageType !== "TEXT" && !this.attachmentsEnabled()) {
+      throw new ServiceUnavailableException({
+        code: "CAMPAIGN_ATTACHMENTS_DISABLED",
+        message: "Anexos de campanhas aguardam ativação.",
+      });
+    }
+  }
+
+  private attachmentInput(value: CreateCampaignDto["attachment"]) {
+    if (value && !this.attachmentsEnabled())
+      throw new ServiceUnavailableException({
+        code: "CAMPAIGN_ATTACHMENTS_DISABLED",
+        message: "Anexos de campanhas aguardam ativação.",
+      });
+    return normalizeCampaignAttachment(value);
+  }
 
   async list(query: ListCampaignsQueryDto, current: AuthenticatedUser) {
     const page = Math.max(Number(query.page ?? 1), 1);
@@ -127,7 +176,7 @@ export class CampaignsService {
       this.prisma.campaign.count({ where }),
     ]);
     return {
-      items: items.map((campaign) => this.serialize(campaign)),
+      items: await Promise.all(items.map((campaign) => this.serialize(campaign, false))),
       total,
       page,
       pageSize,
@@ -151,29 +200,41 @@ export class CampaignsService {
     const audience = this.normalizeAudience(dto.audience);
     await this.assertConnection(dto.connectionId, current.tenantId);
     await this.assertAudienceReferences(audience, current.tenantId);
-    const campaign = await this.prisma.campaign.create({
-      data: {
-        tenantId: current.tenantId,
-        name: cleanText(dto.name, 120),
-        description: dto.description ? cleanText(dto.description, 500) : null,
-        messageText: cleanMessage(dto.messageText),
-        connectionId: dto.connectionId,
-        audienceType: audience.type,
-        audienceTagMatchMode: audience.tagMatchMode,
-        audienceTagIds: audience.tagIds,
-        audienceCustomerIds: audience.customerIds,
-        audienceContactIds: audience.contactIds,
-        timezone: dto.timezone ?? "America/Sao_Paulo",
-        createdByMembershipId: current.membershipId,
-      },
-      include: { connection: true },
-    });
+    const attachment = this.attachmentInput(dto.attachment);
+    const persist = async (db: DbClient) => {
+      const campaign = await db.campaign.create({
+        data: {
+          tenantId: current.tenantId,
+          name: cleanText(dto.name, 120),
+          description: dto.description ? cleanText(dto.description, 500) : null,
+          messageText: cleanMessage(dto.messageText, !!attachment),
+          messageType: (attachment
+            ? campaignAttachmentMessageType(attachment.mimeType)
+            : MessageType.TEXT) as Campaign["messageType"],
+          connectionId: dto.connectionId,
+          audienceType: audience.type,
+          audienceTagMatchMode: audience.tagMatchMode,
+          audienceTagIds: audience.tagIds,
+          audienceCustomerIds: audience.customerIds,
+          audienceContactIds: audience.contactIds,
+          timezone: dto.timezone ?? "America/Sao_Paulo",
+          createdByMembershipId: current.membershipId,
+        },
+        include: { connection: true },
+      });
+      if (attachment) await writeCampaignAttachment(db, current.tenantId, campaign.id, attachment);
+      return campaign;
+    };
+    const campaign = this.attachmentsEnabled()
+      ? await this.prisma.$transaction(persist)
+      : await persist(this.prisma);
     this.publishCampaign(campaign, "campaign.created");
     return this.serialize(campaign);
   }
 
   async update(id: string, dto: UpdateCampaignDto, current: AuthenticatedUser) {
     const existing = await this.findCampaign(id, current.tenantId);
+    this.assertAttachmentCapability(existing);
     if (!MUTABLE_STATUSES.includes(existing.status as (typeof MUTABLE_STATUSES)[number])) {
       throw canonicalConflict(
         "CAMPAIGN_IMMUTABLE_AFTER_START",
@@ -189,28 +250,83 @@ export class CampaignsService {
     const audience = dto.audience ? this.normalizeAudience(dto.audience) : null;
     if (dto.connectionId) await this.assertConnection(dto.connectionId, current.tenantId);
     if (audience) await this.assertAudienceReferences(audience, current.tenantId);
-    const updated = await this.prisma.campaign.update({
-      where: { id: existing.id },
-      data: {
-        name: dto.name ? cleanText(dto.name, 120) : undefined,
-        description:
-          dto.description === undefined
-            ? undefined
-            : dto.description
-              ? cleanText(dto.description, 500)
-              : null,
-        messageText: dto.messageText ? cleanMessage(dto.messageText) : undefined,
-        connectionId: dto.connectionId,
-        audienceType: audience?.type,
-        audienceTagMatchMode: audience?.tagMatchMode,
-        audienceTagIds: audience?.tagIds,
-        audienceCustomerIds: audience?.customerIds,
-        audienceContactIds: audience?.contactIds,
-        timezone: dto.timezone,
-        version: { increment: 1 },
-      },
-      include: { connection: true },
-    });
+    const enabled = this.attachmentsEnabled();
+    const attachment =
+      dto.attachment === undefined
+        ? enabled
+          ? await readCampaignAttachment(this.prisma, current.tenantId, id)
+          : null
+        : this.attachmentInput(dto.attachment);
+    const messageText = cleanMessage(dto.messageText ?? existing.messageText, !!attachment);
+    const replacement =
+      enabled && existing.status === CampaignStatus.SCHEDULED
+        ? await this.resolveAudience(
+            audience ?? this.audienceFromCampaign(existing),
+            messageText,
+            current.tenantId,
+            !!attachment,
+          )
+        : null;
+    if (replacement) {
+      await this.assertConnection(dto.connectionId ?? existing.connectionId, current.tenantId);
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxCampaignRecipients",
+        0,
+        replacement.eligibleCount,
+      );
+    }
+    const persist = async (db: DbClient) => {
+      const updated = await db.campaign.update({
+        where: {
+          id: existing.id,
+          ...(enabled ? { version: existing.version, status: existing.status } : {}),
+        },
+        data: {
+          name: dto.name ? cleanText(dto.name, 120) : undefined,
+          description:
+            dto.description === undefined
+              ? undefined
+              : dto.description
+                ? cleanText(dto.description, 500)
+                : null,
+          messageText,
+          messageType: (attachment
+            ? campaignAttachmentMessageType(attachment.mimeType)
+            : MessageType.TEXT) as Campaign["messageType"],
+          connectionId: dto.connectionId,
+          audienceType: audience?.type,
+          audienceTagMatchMode: audience?.tagMatchMode,
+          audienceTagIds: audience?.tagIds,
+          audienceCustomerIds: audience?.customerIds,
+          audienceContactIds: audience?.contactIds,
+          timezone: dto.timezone,
+          version: { increment: 1 },
+        },
+        include: { connection: true },
+      });
+      if (enabled && dto.attachment !== undefined)
+        await writeCampaignAttachment(db, current.tenantId, id, attachment);
+      if (replacement)
+        return this.createSnapshotAndQueue(
+          updated,
+          replacement,
+          current,
+          CampaignStatus.SCHEDULED,
+          db as Prisma.TransactionClient,
+        );
+      return updated;
+    };
+    const updated = enabled
+      ? await this.prisma.$transaction(persist).catch((error) => {
+          if (error && typeof error === "object" && "code" in error && error.code === "P2025")
+            throw canonicalConflict(
+              "CAMPAIGN_CHANGED_BEFORE_EDIT",
+              "A campanha foi alterada durante a edição. Atualize e tente novamente.",
+            );
+          throw error;
+        })
+      : await persist(this.prisma);
     this.publishCampaign(updated, "campaign.updated");
     return this.serialize(updated);
   }
@@ -282,10 +398,12 @@ export class CampaignsService {
     await this.entitlements.assertFeature(current.tenantId, "campaigns");
     const audience = this.normalizeAudience(dto.audience);
     await this.assertAudienceReferences(audience, current.tenantId);
+    const attachment = this.attachmentInput(dto.attachment);
     const result = await this.resolveAudience(
       audience,
-      cleanMessage(dto.messageText),
+      cleanMessage(dto.messageText, !!attachment),
       current.tenantId,
+      !!attachment,
     );
     return this.previewPayload(result);
   }
@@ -299,6 +417,9 @@ export class CampaignsService {
     await this.assertQueueAvailable();
     await this.entitlements.assertFeature(current.tenantId, "campaigns");
     const campaign = await this.findCampaign(id, current.tenantId);
+    this.assertAttachmentCapability(campaign);
+    if (this.attachmentsEnabled() && campaign.status === CampaignStatus.PAUSED)
+      return this.resume(id, current);
     if (campaign.status !== CampaignStatus.DRAFT && campaign.status !== CampaignStatus.PAUSED) {
       throw invalidTransition(campaign.status, CampaignStatus.QUEUED);
     }
@@ -307,6 +428,7 @@ export class CampaignsService {
       this.audienceFromCampaign(campaign),
       campaign.messageText,
       current.tenantId,
+      campaign.messageType !== "TEXT",
     );
     await this.entitlements.assertWithinLimit(
       current.tenantId,
@@ -345,6 +467,7 @@ export class CampaignsService {
       );
     }
     const campaign = await this.findCampaign(id, current.tenantId);
+    this.assertAttachmentCapability(campaign);
     if (campaign.status !== CampaignStatus.DRAFT)
       throw invalidTransition(campaign.status, CampaignStatus.SCHEDULED);
     await this.assertConnection(campaign.connectionId, current.tenantId);
@@ -352,6 +475,7 @@ export class CampaignsService {
       this.audienceFromCampaign(campaign),
       campaign.messageText,
       current.tenantId,
+      campaign.messageType !== "TEXT",
     );
     await this.entitlements.assertWithinLimit(
       current.tenantId,
@@ -478,23 +602,36 @@ export class CampaignsService {
 
   async duplicate(id: string, current: AuthenticatedUser) {
     const source = await this.findCampaign(id, current.tenantId);
-    const duplicated = await this.prisma.campaign.create({
-      data: {
-        tenantId: source.tenantId,
-        name: `${source.name} - copia`.slice(0, 120),
-        description: source.description,
-        messageText: source.messageText,
-        connectionId: source.connectionId,
-        audienceType: source.audienceType,
-        audienceTagMatchMode: source.audienceTagMatchMode,
-        audienceTagIds: source.audienceTagIds,
-        audienceCustomerIds: source.audienceCustomerIds,
-        audienceContactIds: source.audienceContactIds,
-        timezone: source.timezone,
-        createdByMembershipId: current.membershipId,
-      },
-      include: { connection: true },
-    });
+    this.assertAttachmentCapability(source);
+    const attachment = this.attachmentsEnabled()
+      ? await readCampaignAttachment(this.prisma, current.tenantId, id)
+      : null;
+    const persist = async (db: DbClient) => {
+      const duplicated = await db.campaign.create({
+        data: {
+          tenantId: source.tenantId,
+          name: `${source.name} - copia`.slice(0, 120),
+          description: source.description,
+          messageText: source.messageText,
+          messageType: source.messageType,
+          connectionId: source.connectionId,
+          audienceType: source.audienceType,
+          audienceTagMatchMode: source.audienceTagMatchMode,
+          audienceTagIds: source.audienceTagIds,
+          audienceCustomerIds: source.audienceCustomerIds,
+          audienceContactIds: source.audienceContactIds,
+          timezone: source.timezone,
+          createdByMembershipId: current.membershipId,
+        },
+        include: { connection: true },
+      });
+      if (attachment)
+        await writeCampaignAttachment(db, current.tenantId, duplicated.id, attachment);
+      return duplicated;
+    };
+    const duplicated = this.attachmentsEnabled()
+      ? await this.prisma.$transaction(persist)
+      : await persist(this.prisma);
     return this.serialize(duplicated);
   }
 
@@ -1042,56 +1179,118 @@ export class CampaignsService {
         "CAMPAIGN_MESSAGE_TOO_LONG",
         "Mensagem renderizada excede o limite permitido.",
       );
+    const frozen = this.attachmentsEnabled()
+      ? await readFrozenCampaignAttachment(
+          this.prisma,
+          campaign.tenantId,
+          campaign.id,
+          campaign.version,
+        )
+      : { present: false, attachment: null };
+    const attachment = frozen.attachment;
+    if (campaign.messageType !== "TEXT" && !attachment)
+      throw new ServiceUnavailableException("Mídia da campanha indisponível; envio bloqueado.");
+    const type = attachment ? campaignAttachmentMessageType(attachment.mimeType) : MessageType.TEXT;
+    if (attachment && !this.mediaStorage)
+      throw new ServiceUnavailableException("Storage de mídia indisponível.");
+    const stored = attachment
+      ? await this.mediaStorage!.storeDownloaded({
+          tenantId: campaign.tenantId,
+          conversationId: `campaign-${campaign.id}`,
+          body: Buffer.from(attachment.dataUrl.split(",")[1], "base64"),
+          mimeType: attachment.mimeType,
+          fileName: attachment.fileName,
+          messageType: type,
+        }).catch((error) => {
+          if (error instanceof HttpException && error.getStatus() < 500) throw error;
+          throw Object.assign(new Error("Falha transitória ao preparar arquivo da campanha."), {
+            code: CAMPAIGN_MEDIA_STORAGE_FAILED_BEFORE_MESSAGE,
+          });
+        })
+      : null;
     const now = new Date();
-    const message = await this.prisma.$transaction(async (tx) => {
-      // The ambiguity marker commits atomically with Message + outbox. A crash before commit
-      // rolls all three back and leaves the outer CLAIMED marker safe to retry.
-      const commitBoundary = await tx.campaignRecipient.updateMany({
-        where: {
-          id: recipient.id,
-          status: CampaignRecipientStatus.PROCESSING,
-          lastErrorCode: CAMPAIGN_RECIPIENT_CLAIMED,
-        },
-        data: { lastErrorCode: CAMPAIGN_COMMIT_OUTCOME_UNKNOWN },
-      });
-      if (commitBoundary.count !== 1) {
-        throw new Error("Campaign recipient claim was lost before message creation.");
-      }
-      const conversation = await this.resolveConversation(tx, {
-        tenantId: campaign.tenantId,
-        contactId: recipient.contactId,
-        connectionId: campaign.connectionId,
-      });
-      const saved = await tx.message.create({
-        data: {
+    let callbackCompleted = false;
+    let message;
+    try {
+      message = await this.prisma.$transaction(async (tx) => {
+        // The ambiguity marker commits atomically with Message + outbox. A crash before commit
+        // rolls all three back and leaves the outer CLAIMED marker safe to retry.
+        const commitBoundary = await tx.campaignRecipient.updateMany({
+          where: {
+            id: recipient.id,
+            status: CampaignRecipientStatus.PROCESSING,
+            lastErrorCode: CAMPAIGN_RECIPIENT_CLAIMED,
+          },
+          data: { lastErrorCode: CAMPAIGN_COMMIT_OUTCOME_UNKNOWN },
+        });
+        if (commitBoundary.count !== 1) {
+          throw new Error("Campaign recipient claim was lost before message creation.");
+        }
+        const conversation = await this.resolveConversation(tx, {
           tenantId: campaign.tenantId,
-          conversationId: conversation.id,
+          contactId: recipient.contactId,
           connectionId: campaign.connectionId,
-          direction: MessageDirection.OUTBOUND,
-          type: MessageType.TEXT,
-          status: MessageStatus.QUEUED,
-          authorMembershipId: campaign.createdByMembershipId,
-          content,
-          clientMessageId: `campaign:${recipient.id}`,
-          campaignId: campaign.id,
-          campaignRecipientId: recipient.id,
-          createdAt: now,
-        },
+        });
+        const saved = await tx.message.create({
+          data: {
+            tenantId: campaign.tenantId,
+            conversationId: conversation.id,
+            connectionId: campaign.connectionId,
+            direction: MessageDirection.OUTBOUND,
+            type,
+            ...(stored
+              ? {
+                  mediaStorageKey: stored.objectKey,
+                  mediaMimeType: stored.mimeType,
+                  mediaFileName: stored.fileName,
+                  mediaSize: stored.sizeBytes,
+                  mediaChecksum: stored.checksum,
+                  mediaState: MessageMediaState.READY,
+                  mediaCaption: content || null,
+                }
+              : {}),
+            status: MessageStatus.QUEUED,
+            authorMembershipId: campaign.createdByMembershipId,
+            content,
+            clientMessageId: `campaign:${recipient.id}`,
+            campaignId: campaign.id,
+            campaignRecipientId: recipient.id,
+            createdAt: now,
+          },
+        });
+        await tx.conversation.update({
+          where: { tenantId_id: { tenantId: campaign.tenantId, id: conversation.id } },
+          data: {
+            lastMessagePreview: truncatePreview(content || stored?.fileName || ""),
+            lastMessageAt: now,
+          },
+        });
+        await tx.outboxEvent.create({
+          data: {
+            tenantId: campaign.tenantId,
+            type: OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
+            aggregateId: saved.id,
+            payload: { tenantId: campaign.tenantId, messageId: saved.id },
+          },
+        });
+        callbackCompleted = true;
+        return saved;
       });
-      await tx.conversation.update({
-        where: { tenantId_id: { tenantId: campaign.tenantId, id: conversation.id } },
-        data: { lastMessagePreview: truncatePreview(content), lastMessageAt: now },
-      });
-      await tx.outboxEvent.create({
-        data: {
-          tenantId: campaign.tenantId,
-          type: OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
-          aggregateId: saved.id,
-          payload: { tenantId: campaign.tenantId, messageId: saved.id },
-        },
-      });
-      return saved;
-    });
+    } catch (error) {
+      // A completed callback followed by a transaction error may still commit. Keep its bytes.
+      if (stored && !callbackCompleted) {
+        try {
+          const reference = await this.prisma.message.findFirst({
+            where: { tenantId: campaign.tenantId, mediaStorageKey: stored.objectKey },
+            select: { id: true },
+          });
+          if (!reference) await this.mediaStorage!.deleteObject(stored.objectKey);
+        } catch {
+          /* Retain bytes if the reference check/cleanup is uncertain. */
+        }
+      }
+      throw error;
+    }
     this.logger.log({
       event: "campaign.recipient.sent",
       tenantId: campaign.tenantId,
@@ -1135,8 +1334,28 @@ export class CampaignsService {
     snapshot: Awaited<ReturnType<CampaignsService["resolveAudience"]>>,
     current: AuthenticatedUser,
     status: CampaignStatus,
+    transaction?: Prisma.TransactionClient,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const persist = async (tx: Prisma.TransactionClient) => {
+      if (this.attachmentsEnabled()) {
+        const unsafe = await tx.campaignRecipient.count({
+          where: {
+            tenantId: campaign.tenantId,
+            campaignId: campaign.id,
+            OR: [
+              {
+                status: { in: [CampaignRecipientStatus.PROCESSING, CampaignRecipientStatus.SENT] },
+              },
+              { messageId: { not: null } },
+            ],
+          },
+        });
+        if (unsafe)
+          throw canonicalConflict(
+            "CAMPAIGN_SNAPSHOT_ALREADY_DISPATCHED",
+            "A campanha já possui destinatários em processamento ou enviados.",
+          );
+      }
       await tx.campaignRecipient.deleteMany({
         where: { tenantId: campaign.tenantId, campaignId: campaign.id },
       });
@@ -1171,7 +1390,12 @@ export class CampaignsService {
         });
       }
       const updated = await tx.campaign.update({
-        where: { id: campaign.id },
+        where: {
+          id: campaign.id,
+          ...(this.attachmentsEnabled()
+            ? { version: campaign.version, status: campaign.status }
+            : {}),
+        },
         data: {
           status,
           scheduledAt: status === CampaignStatus.SCHEDULED ? campaign.scheduledAt : null,
@@ -1192,6 +1416,14 @@ export class CampaignsService {
         },
         include: { connection: true },
       });
+      if (this.attachmentsEnabled())
+        await freezeCampaignAttachment(
+          tx,
+          campaign.tenantId,
+          campaign.id,
+          campaign.version,
+          campaign.messageType !== "TEXT",
+        );
       await tx.outboxEvent.upsert({
         where: {
           tenantId_type_aggregateId: {
@@ -1213,13 +1445,30 @@ export class CampaignsService {
         },
       });
       return updated;
-    });
+    };
+    return (transaction ? persist(transaction) : this.prisma.$transaction(persist)).catch(
+      (error) => {
+        if (
+          this.attachmentsEnabled() &&
+          error &&
+          typeof error === "object" &&
+          "code" in error &&
+          error.code === "P2025"
+        )
+          throw canonicalConflict(
+            "CAMPAIGN_SNAPSHOT_CHANGED",
+            "A campanha foi alterada antes do envio. Atualize e tente novamente.",
+          );
+        throw error;
+      },
+    );
   }
 
   private async resolveAudience(
     audience: NormalizedAudience,
     messageText: string,
     tenantId: string,
+    allowEmpty = false,
   ) {
     const where = await this.audienceWhere(audience, tenantId);
     const contacts = await this.prisma.contact.findMany({
@@ -1269,7 +1518,7 @@ export class CampaignsService {
       }
       const renderedMessage = this.renderMessage(messageText, contact);
       if (
-        !renderedMessage ||
+        (!renderedMessage && !allowEmpty) ||
         renderedMessage.length > 4000 ||
         /\{\{[^}]+}}/.test(renderedMessage)
       ) {
@@ -1677,7 +1926,7 @@ export class CampaignsService {
     };
   }
 
-  private serialize(
+  private async serialize(
     campaign: Campaign & {
       connection?: {
         id: string;
@@ -1686,13 +1935,26 @@ export class CampaignsService {
         status: MessagingConnectionStatus;
       };
     },
+    includeAttachmentData = true,
   ) {
+    const attachment =
+      this.attachmentsEnabled() && includeAttachmentData
+        ? await readCampaignAttachment(this.prisma, campaign.tenantId, campaign.id)
+        : null;
+    const attachmentMetadata = attachment
+      ? { fileName: attachment.fileName, mimeType: attachment.mimeType, size: attachment.size }
+      : this.attachmentsEnabled() && !includeAttachmentData
+        ? await readCampaignAttachmentMetadata(this.prisma, campaign.tenantId, campaign.id)
+        : null;
     return {
       id: campaign.id,
       tenantId: campaign.tenantId,
       name: campaign.name,
       description: campaign.description,
       status: campaign.status,
+      attachment,
+      attachmentMetadata,
+      hasAttachment: !!attachmentMetadata,
       messageType: campaign.messageType,
       messageText: campaign.messageText,
       connectionId: campaign.connectionId,
@@ -1733,9 +1995,9 @@ function cleanText(value: string, max: number) {
   return text.slice(0, max);
 }
 
-function cleanMessage(value: string) {
+function cleanMessage(value: string, allowEmpty = false) {
   const text = value.trim();
-  if (!text) throw new BadRequestException("Mensagem obrigatoria.");
+  if (!text && !allowEmpty) throw new BadRequestException("Mensagem obrigatoria.");
   if (text.length > 4000)
     throw canonicalBadRequest("CAMPAIGN_MESSAGE_TOO_LONG", "Mensagem excede o limite permitido.");
   return text;
@@ -1787,6 +2049,13 @@ function invalidTransition(from: CampaignStatus, to: CampaignStatus) {
 }
 
 function canonicalErrorCode(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === CAMPAIGN_MEDIA_STORAGE_FAILED_BEFORE_MESSAGE
+  )
+    return CAMPAIGN_MEDIA_STORAGE_FAILED_BEFORE_MESSAGE;
   if (error instanceof BadRequestException || error instanceof ConflictException) {
     const response = error.getResponse();
     if (response && typeof response === "object" && "code" in response)
@@ -1798,7 +2067,11 @@ function canonicalErrorCode(error: unknown) {
 function isSafeCampaignTransactionRetry(error: unknown) {
   if (!error || typeof error !== "object" || !("code" in error)) return false;
   // P2034: transaction rolled back; P2024: timed out acquiring a connection.
-  return error.code === "P2034" || error.code === "P2024";
+  return (
+    error.code === "P2034" ||
+    error.code === "P2024" ||
+    error.code === CAMPAIGN_MEDIA_STORAGE_FAILED_BEFORE_MESSAGE
+  );
 }
 
 function isAmbiguousCampaignError(error: unknown) {

@@ -223,7 +223,7 @@ function OnboardingFrame({ children }: { children: React.ReactNode }) {
     };
   }, []);
   return (
-    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-900/28 p-0 text-foreground backdrop-blur-sm sm:p-3">
+    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-900/[0.3703] p-0 text-foreground sm:p-3">
       <div
         ref={dialogRef}
         role="dialog"

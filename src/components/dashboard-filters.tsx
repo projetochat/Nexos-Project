@@ -361,7 +361,7 @@ export function PlatformDashboardFiltersBar({
   const isCustom = value.period === "custom";
   const start = value.start ?? automaticDates.start;
   const end = value.end ?? automaticDates.end;
-  const showClear = Boolean(value.clientId || value.tenantId || value.period !== "month");
+  const showClear = Boolean(value.clientId || value.tenantId || value.period !== "today");
   const sortedClients = React.useMemo(
     () => sortByOptionLabel(clients, (client) => client.name),
     [clients],

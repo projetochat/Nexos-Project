@@ -6,8 +6,19 @@ import type {
 
 export type DashboardVisualDatum = {
   nome: string;
+  id?: string;
+  cliente?: string | null;
+  departamento?: string | null;
   total: number;
   cor?: string | null;
+};
+
+// Shared default for 25%, 50%, 75% and 100% dashboard cards.
+export const DASHBOARD_CATEGORY_CAPACITY: Record<DashboardColumnCount, number> = {
+  1: 5,
+  2: 15,
+  3: 25,
+  4: Infinity,
 };
 
 const COLORS = ["#2563eb", "#7c3aed", "#f59e0b", "#16a34a", "#ec4899", "#06b6d4", "#64748b"];
@@ -20,7 +31,12 @@ export function normalizeDashboardData(
   preserveOrder = false,
   preserveAllItems = false,
 ) {
-  const maxItems = visualization === "table" ? 7 : { 1: 7, 2: 12, 3: 16, 4: 20 }[columns];
+  const maxItems =
+    visualization === "table"
+      ? 7
+      : visualization === "columns" || visualization === "bars"
+        ? DASHBOARD_CATEGORY_CAPACITY[columns]
+        : { 1: 7, 2: 12, 3: 16, 4: 20 }[columns];
   const valid = data.filter((item) => Number.isFinite(item.total));
   const ordered =
     visualization === "line" || preserveOrder

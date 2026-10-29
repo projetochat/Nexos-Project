@@ -48,6 +48,7 @@ import { Avatar, Button, CloseButton, Field, Input, Select } from "@/components/
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MessageStatusIcon } from "@/components/message-status-icon";
 import { TicketRichTextContent } from "@/components/ticket-rich-text-content";
+import { CollapsibleMessageText } from "@/components/collapsible-message-text";
 import { DepartmentIcon } from "@/components/department-icon";
 import { MessageActionsMenu } from "@/components/message-actions-menu";
 import { MessageEmojiPicker } from "@/components/message-emoji-picker";
@@ -2143,11 +2144,15 @@ export function MessageBubble({
                     {showsEditedHistory && originalContent && (
                       <div data-original-edited-content className="text-xs text-muted-foreground">
                         <span className="mr-1 italic">(editada)</span>
-                        <MessageText content={originalContent} />
+                        <CollapsibleMessageText content={originalContent} highlighted={highlighted}>
+                          <MessageText content={originalContent} />
+                        </CollapsibleMessageText>
                       </div>
                     )}
                     <div data-current-edited-content={showsEditedHistory || undefined}>
-                      <MessageText content={m.content} />
+                      <CollapsibleMessageText content={m.content} highlighted={highlighted}>
+                        <MessageText content={m.content} />
+                      </CollapsibleMessageText>
                       {m.edited_at && !showsEditedHistory && (
                         <span className="ml-1 text-[10px] opacity-70">(editada)</span>
                       )}

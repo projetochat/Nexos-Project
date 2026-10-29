@@ -8,6 +8,13 @@ describe("DashboardComponentRenderer height contract", () => {
     expect(source.match(/height=\{compact \? height : "100%"\}/g)).toHaveLength(2);
   });
 
+  it("fits columns to the existing viewport without forcing scroll or extra height", () => {
+    expect(source).not.toContain("columnAxisLayout.height + 160");
+    expect(source).not.toContain("columnAxisLayout.minWidth");
+    expect(source).not.toContain("overflow-x-auto");
+    expect(source).not.toContain("maxBarSize=");
+    expect(source).not.toContain("barCategoryGap=");
+  });
   it("renders values inside pie slices and leaves values out of the legend", () => {
     expect(source).toContain("<DashboardPieSliceLabel");
     expect(source).toContain("if (percent < 0.055) return null");

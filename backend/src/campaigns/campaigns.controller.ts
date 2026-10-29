@@ -54,6 +54,12 @@ export class CampaignsController {
     return this.campaigns.preview(dto, current);
   }
 
+  @Get("campaigns/capabilities")
+  @RequirePermissions("campaigns.read")
+  capabilities() {
+    return this.campaigns.capabilities();
+  }
+
   @Get("campaigns/:id")
   @RequirePermissions("campaigns.read")
   detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {

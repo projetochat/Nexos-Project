@@ -37,7 +37,7 @@ describe("Configurações · Controle de Numeração", () => {
 
   it("remove os avisos azuis e aplica os novos contratos de formato", () => {
     expect(numbering).not.toContain("border-blue-200 bg-blue-50");
-    expect(numbering.indexOf('value: "CUSTOM"')).toBeLessThan(
+    expect(numbering.indexOf('value: "CUSTOM"')).toBeGreaterThan(
       numbering.indexOf('value: "SEQUENCE"'),
     );
     expect(numbering).toContain("[2, 3, 4, 5, 6, 7, 8, 9, 10]");
@@ -50,4 +50,27 @@ describe("Configurações · Controle de Numeração", () => {
       'backgroundColor: "color-mix(in srgb, var(--surface-1) 98%, var(--foreground) 2%)"',
     );
   });
+});
+
+it("positions custom settings immediately before preview and exposes daily reset only for date format", () => {
+  expect(numbering.indexOf('label="Padrão personalizado"')).toBeGreaterThan(
+    numbering.indexOf('label="Resetar número sequencial"'),
+  );
+  expect(numbering.indexOf('label="Padrão personalizado"')).toBeLessThan(
+    numbering.indexOf('label="Visualização do próximo protocolo"'),
+  );
+  expect(numbering).toContain('if (format === "DATE_SEQUENCE") return "DAILY"');
+  expect(numbering).toContain('<option value="DAILY">Diariamente</option>');
+});
+
+it("orders formats with the default sequence first and custom last", () => {
+  const positions = [
+    "SEQUENCE",
+    "YEAR_SEQUENCE",
+    "YEAR_MONTH_SEQUENCE",
+    "DATE_SEQUENCE",
+    "CUSTOM",
+  ].map((value) => numbering.indexOf(`value: "${value}"`));
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  expect(numbering).toContain('label: "Sequencial Único"');
 });

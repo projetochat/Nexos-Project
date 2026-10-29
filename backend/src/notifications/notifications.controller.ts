@@ -3,6 +3,7 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Optional,
   Param,
   Patch,
   Post,
@@ -16,6 +17,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { ConversationStatus, NotificationStatus, Prisma } from "../generated/prisma";
+import { TasksService } from "../tasks/tasks.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 
@@ -41,7 +43,10 @@ class ListNotificationsQueryDto {
 @Controller("notifications")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class NotificationsController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(TasksService) private readonly tasks?: TasksService,
+  ) {}
 
   @Get()
   async list(@Query() query: ListNotificationsQueryDto, @CurrentUser() current: AuthenticatedUser) {
@@ -66,8 +71,22 @@ export class NotificationsController {
         where: { ...where, status: "UNREAD" },
       }),
     ]);
+    const taskDetails =
+      this.tasks?.enabled() && current.permissions?.includes("schedules.read")
+        ? await this.tasks.notificationDetails(
+            items
+              .filter((item) => item.entityType === "task" && item.entityId)
+              .map((item) => item.entityId!),
+            current,
+          )
+        : {};
     return {
-      items: items.map(serializeNotification),
+      items: items.map((item) => ({
+        ...serializeNotification(item),
+        ...(item.entityType === "task" && item.entityId && taskDetails[item.entityId]
+          ? { priority: taskDetails[item.entityId].priority }
+          : {}),
+      })),
       unread,
       total,
       page,
@@ -100,6 +119,13 @@ export class NotificationsController {
     });
     if (!notification?.entityId)
       throw new NotFoundException("Destino da notificação indisponível.");
+
+    if (notification.entityType === "task") {
+      if (!this.tasks?.enabled() || !current.permissions?.includes("schedules.read"))
+        throw new NotFoundException("Destino da notificação indisponível.");
+      const task = await this.tasks.getTask(notification.entityId, current);
+      return { destination: "tasks" as const, taskId: task.id };
+    }
 
     const conversationId =
       notification.entityType === "conversation"
@@ -149,7 +175,35 @@ export class NotificationsController {
   private async notificationAccess(
     current: AuthenticatedUser,
   ): Promise<Prisma.NotificationWhereInput> {
-    if (current.roleKey === "tenant_admin") return {};
+    const taskIds: string[] = [];
+    if (this.tasks?.enabled() && current.permissions?.includes("schedules.read")) {
+      const candidates = await this.prisma.notification.findMany({
+        where: {
+          tenantId: current.tenantId,
+          membershipId: current.membershipId,
+          entityType: "task",
+        },
+        select: { entityId: true },
+        distinct: ["entityId"],
+      });
+      const candidatesIds = candidates.flatMap((item) => (item.entityId ? [item.entityId] : []));
+      for (let offset = 0; offset < candidatesIds.length; offset += 100) {
+        taskIds.push(
+          ...Object.keys(
+            await this.tasks.notificationDetails(
+              candidatesIds.slice(offset, offset + 100),
+              current,
+            ),
+          ),
+        );
+      }
+    }
+    const taskAccess: Prisma.NotificationWhereInput = {
+      entityType: "task",
+      entityId: { in: taskIds },
+    };
+    if (current.roleKey === "tenant_admin")
+      return { OR: [{ entityType: null }, { entityType: { not: "task" } }, taskAccess] };
     const conversations = await this.prisma.conversation.findMany({
       where: {
         AND: [
@@ -168,7 +222,8 @@ export class NotificationsController {
       OR: [
         { entityType: "conversation", entityId: { in: conversationIds } },
         { entityType: "lead", entityId: { in: leads.map((lead) => lead.id) } },
-        { OR: [{ entityType: null }, { entityType: { notIn: ["conversation", "lead"] } }] },
+        { OR: [{ entityType: null }, { entityType: { notIn: ["conversation", "lead", "task"] } }] },
+        taskAccess,
       ],
     };
   }

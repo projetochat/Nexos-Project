@@ -7,8 +7,11 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { readUnifiedLoginCounts } from "../login-metrics";
+import { consolidateUnifiedLogins } from "./unified-login-volumetry";
 import { compare, hash } from "bcryptjs";
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { CampaignDispatchQueue } from "../campaigns/campaign-dispatch.queue";
@@ -634,6 +637,25 @@ export class PlatformService {
       return totals;
     }, emptyClientVolumetryCounts());
 
+    const unifiedLogins = await readUnifiedLoginCounts(
+      this.prisma,
+      this.config,
+      tenants.map(({ id, name }) => ({ id, name })),
+      range.start,
+      range.end,
+    );
+    const unifiedVolumetry = consolidateUnifiedLogins(
+      clientVolumetry,
+      clientVolumetryTotals,
+      tenants
+        .filter((tenant) => tenantIds.includes(tenant.id))
+        .map((tenant) => ({
+          tenantId: tenant.id,
+          clientId: tenantClient.get(tenant.id)?.id ?? null,
+        })),
+      unifiedLogins,
+    );
+
     return {
       range: {
         start: range.start.toISOString(),
@@ -677,7 +699,7 @@ export class PlatformService {
         subscriptions: plan._count.subscriptions,
       })),
       operation: { openTickets, openInvoices, overdueInvoices },
-      clientVolumetry: { rows: clientVolumetry, totals: clientVolumetryTotals },
+      clientVolumetry: unifiedVolumetry,
       semantics: {
         filters:
           "Cliente e tenant restringem todas as métricas; período restringe apenas métricas temporais.",
@@ -685,7 +707,9 @@ export class PlatformService {
         messages:
           "INBOUND e OUTBOUND, exceto tipo SYSTEM, status FAILED e conversas arquivadas; America/Sao_Paulo.",
         logins:
-          "Logins internos concluídos registrados na auditoria a partir desta atualização; período America/Sao_Paulo. Exclui refresh, Portal do Cliente, Platform e impersonação; não reconstrói histórico anterior.",
+          unifiedLogins.status === "disabled"
+            ? "Logins internos concluídos registrados na auditoria deste ambiente; período America/Sao_Paulo. Exclui refresh, Portal do Cliente, Platform e impersonação; não reconstrói histórico anterior."
+            : "Logins internos consolidados entre Localhost, HML e produção a partir da instrumentação de cada origem; período America/Sao_Paulo e atualização eventual. Exclui refresh, Portal do Cliente, Platform e impersonação; ausência de cobertura ou ambiguidade não representa zero.",
         clientGrouping:
           "Tenant sem cliente é agrupada como Sem cliente; cliente sem tenant tem volume zero.",
         clientVolumetry:
@@ -3234,6 +3258,25 @@ export class PlatformService {
   }
 
   private async deleteTenantDatabase(tx: Prisma.TransactionClient, tenantId: string) {
+    // Tasks may not be migrated yet. Cleanup is mandatory even with the feature disabled.
+    const [tables] = await tx.$queryRaw<
+      Array<{ history: boolean; deliveries: boolean; occurrences: boolean }>
+    >`SELECT to_regclass('task_history') IS NOT NULL AS history,
+             to_regclass('task_deliveries') IS NOT NULL AS deliveries,
+             to_regclass('task_occurrences') IS NOT NULL AS occurrences`;
+    const present = [tables.history, tables.deliveries, tables.occurrences];
+    if (present.some(Boolean) && !present.every(Boolean)) {
+      throw new ServiceUnavailableException({ code: "TASK_SCHEMA_INCOMPLETE" });
+    }
+    if (tables.history) {
+      await tx.$executeRaw`DELETE FROM "task_history" WHERE "tenantId" = ${tenantId}`;
+    }
+    if (tables.deliveries) {
+      await tx.$executeRaw`DELETE FROM "task_deliveries" WHERE "tenantId" = ${tenantId}`;
+    }
+    if (tables.occurrences) {
+      await tx.$executeRaw`DELETE FROM "task_occurrences" WHERE "tenantId" = ${tenantId}`;
+    }
     await tx.tenant.delete({ where: { id: tenantId } });
   }
 

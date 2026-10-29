@@ -42,3 +42,28 @@ describe("normalizeDashboardData", () => {
     expect(result.some((item) => item.nome === "Outros")).toBe(false);
   });
 });
+
+describe("shared column and bar capacity", () => {
+  it.each(["columns", "bars"] as const)(
+    "uses 5/15/25/all categories by card size for %s, preserving totals",
+    (visualization) => {
+      const data = Array.from({ length: 31 }, (_, index) => ({
+        nome: `Item ${index}`,
+        total: index + 1,
+      }));
+      for (const [columns, count] of [
+        [1, 5],
+        [2, 15],
+        [3, 25],
+        [4, 31],
+      ] as const) {
+        const visible = normalizeDashboardData(data, "count", columns, visualization);
+        expect(visible).toHaveLength(count);
+        expect(visible.reduce((sum, item) => sum + item.total, 0)).toBe(
+          data.reduce((sum, item) => sum + item.total, 0),
+        );
+        expect(visible.some((item) => item.nome === "Outros")).toBe(columns !== 4);
+      }
+    },
+  );
+});

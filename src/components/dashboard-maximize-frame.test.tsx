@@ -75,3 +75,37 @@ it("shows the maximize action on interaction and opens a full-screen dialog", as
     host.remove();
   }
 });
+
+it("reveals the mobile action only after tapping the BI and hides it after an outside tap", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <DashboardMaximizeFrame title="Contatos">
+          <div data-content>BI</div>
+        </DashboardMaximizeFrame>,
+      ),
+    );
+    const button = host.querySelector("button")!;
+    expect(button.classList.contains("max-md:invisible")).toBe(true);
+    expect(button.className).not.toContain("[@media(hover:none)]");
+    await act(async () => (host.querySelector("[data-content]") as HTMLElement).click());
+    expect(button.classList.contains("max-md:opacity-100")).toBe(true);
+    expect(document.querySelector("[data-dashboard-maximized]")).toBeNull();
+    await act(async () => document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+    expect(button.classList.contains("max-md:invisible")).toBe(true);
+    await act(async () => (host.querySelector("[data-content]") as HTMLElement).click());
+    await act(async () => button.click());
+    expect(document.querySelector("[data-dashboard-maximized]")).not.toBeNull();
+    await act(async () =>
+      (document.querySelector('[aria-label="Restaurar Contatos"]') as HTMLElement).click(),
+    );
+    expect(button.classList.contains("max-md:invisible")).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

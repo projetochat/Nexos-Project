@@ -14,7 +14,13 @@ describe("cards de Departamentos e Etiquetas", () => {
   ])("segue o padrão do Perfil de Acesso em %s", (_name, source) => {
     expect(source).toContain("flex min-h-[148px]");
     expect(source).toContain('className="mt-0.5 line-clamp-2 text-xs text-muted-foreground"');
-    expect(source).toContain('|| "Sem descrição"');
+    if (_name === "Departamentos") {
+      expect(source).toContain("d.description?.trim() && (");
+      expect(source).toContain("{d.description.trim()}");
+      expect(source).not.toContain('|| "Sem descrição"');
+    } else {
+      expect(source).toContain('|| "Sem descrição"');
+    }
     expect(source).toContain(
       'className="mt-auto flex min-h-11 items-end justify-end border-t border-border pt-3"',
     );

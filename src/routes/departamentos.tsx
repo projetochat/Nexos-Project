@@ -291,9 +291,11 @@ function Page() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold">{d.name}</p>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                      {d.description?.trim() || "Sem descrição"}
-                    </p>
+                    {d.description?.trim() && (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                        {d.description.trim()}
+                      </p>
+                    )}
                     {d.inactivityClosureEnabled && d.inactivityTimeoutMinutes && (
                       <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Clock3 className="h-3.5 w-3.5 shrink-0 text-primary" />
@@ -677,31 +679,31 @@ export function DepartamentoForm({
             <div className="mt-3 space-y-3">
               <div className="w-full">
                 <Field label="Tempo sem resposta do cliente *">
-                <div
-                  className={`flex overflow-hidden rounded-lg border border-border bg-surface-1 ${requiredFieldClassName(inactivityErrors.timeout)}`}
-                >
-                  <Input
-                    type="number"
-                    min={1}
-                    max={10080}
-                    value={form.inactivityTimeoutMinutes ?? ""}
-                    onChange={(event) => {
-                      if (event.target.value)
-                        setInactivityErrors((current) => ({ ...current, timeout: false }));
-                      setForm((current) => ({
-                        ...current,
-                        inactivityTimeoutMinutes: event.target.value
-                          ? Number(event.target.value)
-                          : null,
-                      }));
-                    }}
-                    className="rounded-none border-0"
-                    aria-invalid={inactivityErrors.timeout}
-                  />
-                  <span className="flex items-center border-l border-border px-3 text-sm text-text-muted">
-                    minutos
-                  </span>
-                </div>
+                  <div
+                    className={`flex overflow-hidden rounded-lg border border-border bg-surface-1 ${requiredFieldClassName(inactivityErrors.timeout)}`}
+                  >
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10080}
+                      value={form.inactivityTimeoutMinutes ?? ""}
+                      onChange={(event) => {
+                        if (event.target.value)
+                          setInactivityErrors((current) => ({ ...current, timeout: false }));
+                        setForm((current) => ({
+                          ...current,
+                          inactivityTimeoutMinutes: event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        }));
+                      }}
+                      className="rounded-none border-0"
+                      aria-invalid={inactivityErrors.timeout}
+                    />
+                    <span className="flex items-center border-l border-border px-3 text-sm text-text-muted">
+                      minutos
+                    </span>
+                  </div>
                 </Field>
               </div>
               <Field label="Mensagem *">

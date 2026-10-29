@@ -754,6 +754,7 @@ export type ApiLead = {
 
 export type ApiNotification = {
   id: string;
+  priority?: "low" | "medium" | "high";
   kind: string;
   status: "unread" | "read" | "archived";
   title: string;
@@ -1120,7 +1121,8 @@ export type ApiCampaign = {
   name: string;
   description: string | null;
   status: ApiCampaignStatus;
-  messageType: "TEXT";
+  messageType: "TEXT" | "IMAGE" | "AUDIO" | "VIDEO" | "DOCUMENT";
+  attachment?: QuickReplyAttachment | null;
   messageText: string;
   connectionId: string;
   connection: Pick<ApiMessagingConnection, "id" | "name" | "providerType" | "status"> | null;
@@ -1204,6 +1206,9 @@ export type ApiOperationalKpi = {
 };
 
 export type ApiOperationsChartItem = {
+  id?: string;
+  cliente?: string | null;
+  departamento?: string | null;
   nome: string;
   cor?: string;
   total: number;
@@ -1249,7 +1254,7 @@ export type ApiProtocolSettings = {
   module: "CHAT" | "TICKET";
   format: "YEAR_SEQUENCE" | "YEAR_MONTH_SEQUENCE" | "SEQUENCE" | "DATE_SEQUENCE" | "CUSTOM";
   digits: number;
-  reset: "YEARLY" | "MONTHLY" | "NEVER";
+  reset: "YEARLY" | "MONTHLY" | "NEVER" | "DAILY";
   customPattern: string | null;
   preview: string;
   confirmationRequired?: boolean;
@@ -2424,9 +2429,10 @@ export const notificationApi = {
   markRead: (id: string) =>
     apiRequest<{ ok: true }>(`/notifications/${id}/read`, { method: "PATCH" }),
   target: (id: string) =>
-    apiRequest<{ conversationId: string; destination: "inbox" | "history" }>(
-      `/notifications/${id}/target`,
-    ),
+    apiRequest<
+      | { conversationId: string; destination: "inbox" | "history" }
+      | { taskId: string; destination: "tasks" }
+    >(`/notifications/${id}/target`),
   markAllRead: () =>
     apiRequest<{ ok: true; updated: number }>("/notifications/read-all", { method: "POST" }),
 };
@@ -3095,6 +3101,10 @@ export const ticketApi = {
 };
 
 export const campaignApi = {
+  capabilities: () =>
+    apiRequest<{ attachmentsEnabled: boolean; maxAttachmentBytes: number; types: string[] }>(
+      "/campaigns/capabilities",
+    ),
   list: (
     params: {
       search?: string;
@@ -3109,6 +3119,7 @@ export const campaignApi = {
     name: string;
     description?: string | null;
     messageText: string;
+    attachment?: QuickReplyAttachment | null;
     connectionId: string;
     audience: ApiCampaignAudience;
     timezone?: string;
@@ -3119,6 +3130,7 @@ export const campaignApi = {
       name: string;
       description: string | null;
       messageText: string;
+      attachment: QuickReplyAttachment | null;
       connectionId: string;
       audience: ApiCampaignAudience;
       timezone: string;
@@ -3132,7 +3144,11 @@ export const campaignApi = {
       body: JSON.stringify({ snapshotToken }),
       signal,
     }),
-  preview: (data: { messageText: string; audience: ApiCampaignAudience }) =>
+  preview: (data: {
+    messageText: string;
+    audience: ApiCampaignAudience;
+    attachment?: QuickReplyAttachment | null;
+  }) =>
     apiRequest<ApiCampaignPreview>("/campaigns/audience-preview", {
       method: "POST",
       body: JSON.stringify(data),

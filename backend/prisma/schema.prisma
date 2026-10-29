@@ -305,6 +305,10 @@ enum CampaignStatus {
 
 enum CampaignMessageType {
   TEXT
+  IMAGE
+  AUDIO
+  DOCUMENT
+  VIDEO
 }
 
 enum CampaignAudienceType {
@@ -2167,6 +2171,7 @@ model Campaign {
   cancelledByMembership   TenantMembership?     @relation("CampaignCanceller", fields: [cancelledByMembershipId], references: [id], onDelete: SetNull)
   recipients              CampaignRecipient[]
   messages                Message[]
+  attachmentRecord        CampaignAttachment?
 
   @@unique([tenantId, id])
   @@index([tenantId, status])
@@ -2174,6 +2179,18 @@ model Campaign {
   @@index([tenantId, createdAt])
   @@index([tenantId, connectionId])
   @@map("campaigns")
+}
+
+model CampaignAttachment {
+  campaignId String @id
+  tenantId String
+  payload Json
+  snapshot Json?
+  campaign Campaign @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, campaignId])
+  @@index([tenantId])
+  @@map("campaign_attachments")
 }
 
 model CampaignRecipient {
@@ -2239,4 +2256,155 @@ model Schedule {
   @@index([executionStatus, nextAttemptAt])
   @@index([tenantId, messageId])
   @@map("schedules")
+}
+
+// Machine-to-machine login volumetry; source provenance is separate from display names.
+model LoginMetricBinding {
+  sourceId          String   @map("source_id")
+  localTenantId     String   @map("local_tenant_id")
+  tenantKey         String   @map("tenant_key")
+  canonicalTenantId String   @map("canonical_tenant_id")
+  environment       String
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([sourceId, localTenantId])
+  @@index([canonicalTenantId])
+  @@map("login_metric_bindings")
+}
+
+model LoginMetricEvent {
+  sourceId          String   @map("source_id")
+  eventId           String   @map("event_id")
+  localTenantId     String   @map("local_tenant_id")
+  canonicalTenantId String   @map("canonical_tenant_id")
+  environment       String
+  occurredAt        DateTime @map("occurred_at") @db.Timestamptz(3)
+  receivedAt        DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+
+  @@id([sourceId, eventId])
+  @@index([canonicalTenantId, occurredAt])
+  @@map("login_metric_events")
+}
+
+model LoginMetricNonce {
+  sourceId  String   @map("source_id")
+  nonce     String
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@id([sourceId, nonce])
+  @@index([expiresAt])
+  @@map("login_metric_nonces")
+}
+
+model LoginMetricSourceState {
+  sourceId      String   @id @map("source_id")
+  environment   String
+  lastContactAt DateTime @map("last_contact_at") @db.Timestamptz(3)
+  observedAt    DateTime @map("observed_at") @db.Timestamptz(3)
+  pending       Int
+
+  @@map("login_metric_source_states")
+}
+
+model TaskDefinition {
+  id String @id
+  tenantId String
+  title String
+  description String
+  type String
+  assignedMembershipId String?
+  createdByMembershipId String?
+  priority String
+  status String
+  payload Json
+  nextDueAt DateTime?
+  version Int @default(1)
+  legacyOrigin String?
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  occurrences TaskOccurrence[]
+  history TaskHistory[]
+  @@unique([tenantId,id])
+  @@index([tenantId,status,nextDueAt])
+  @@map("task_definitions")
+}
+model TaskOccurrence {
+  id String @id
+  tenantId String
+  taskId String
+  dueAt DateTime
+  status String @default("pending")
+  lastError String?
+  snapshot Json
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  task TaskDefinition @relation(fields:[tenantId,taskId],references:[tenantId,id],onDelete:Restrict)
+  deliveries TaskDelivery[]
+  @@unique([tenantId,taskId,id])
+  @@unique([taskId,dueAt])
+  @@unique([tenantId,id])
+  @@index([tenantId,dueAt,status])
+  @@map("task_occurrences")
+}
+model TaskDelivery {
+  id String @id
+  tenantId String
+  occurrenceId String
+  channel String
+  destination String
+  status String @default("pending")
+  payload Json
+  availableAt DateTime
+  attempts Int @default(0)
+  claimedAt DateTime?
+  messageId String?
+  notificationId String?
+  lastError String?
+  sentAt DateTime?
+  dismissedAt DateTime?
+  createdAt DateTime @default(now())
+  occurrence TaskOccurrence @relation(fields:[tenantId,occurrenceId],references:[tenantId,id],onDelete:Restrict)
+  @@unique([occurrenceId,channel,destination])
+  @@index([tenantId,status,availableAt])
+  @@map("task_deliveries")
+}
+model TaskSmtpAccount {
+  id String @id
+  tenantId String
+  name String
+  host String
+  port Int
+  secure Boolean
+  username String
+  fromAddress String
+  fromName String
+  credential Json
+  active Boolean @default(true)
+  lastVerifiedAt DateTime?
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId,id])
+  @@index([tenantId,archivedAt])
+  @@map("task_smtp_accounts")
+}
+model TaskSettings {
+  tenantId String @id
+  payload Json
+  updatedAt DateTime @updatedAt
+  @@map("task_settings")
+}
+model TaskHistory {
+  id String @id
+  tenantId String
+  taskId String
+  occurrenceId String?
+  action String
+  membershipId String?
+  payload Json
+  createdAt DateTime @default(now())
+  task TaskDefinition @relation(fields:[tenantId,taskId],references:[tenantId,id],onDelete:Restrict)
+  @@index([tenantId,taskId,createdAt])
+  @@map("task_history")
 }

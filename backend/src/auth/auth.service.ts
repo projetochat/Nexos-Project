@@ -1,3 +1,4 @@
+import { enqueueLoginMetric, loginMetricProvenance } from "../login-metrics";
 import { moduleAwarePermissions } from "./effective-permissions";
 import {
   ForbiddenException,
@@ -499,6 +500,7 @@ export class AuthService {
       };
     }
 
+    const loginProvenance = loginMetricProvenance(this.config);
     return this.prisma.$transaction(async (tx) => {
       const sid = await this.createSession(
         {
@@ -556,8 +558,9 @@ export class AuthService {
         },
         permissions,
       };
-      await tx.platformAuditLog.create({
+      const loginAudit = await tx.platformAuditLog.create({
         data: {
+          ...(loginProvenance ? { metadataJson: loginProvenance } : {}),
           action: "auth.tenant.login",
           targetType: "auth_session",
           targetId: sid,
@@ -565,6 +568,7 @@ export class AuthService {
           actorUserId: user.id,
         },
       });
+      await enqueueLoginMetric(tx, loginAudit, membership.tenant, this.config);
       return result;
     });
   }

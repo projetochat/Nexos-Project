@@ -18,6 +18,8 @@ import {
 import { Type } from "class-transformer";
 import { CampaignAudienceType, CampaignTagMatchMode, CampaignStatus } from "../../generated/prisma";
 
+import { QuickReplyAttachmentDto } from "../../quick-replies/dto/quick-reply-message.dto";
+
 export class CampaignAudienceDto {
   @IsEnum(CampaignAudienceType)
   type!: CampaignAudienceType;
@@ -57,9 +59,14 @@ export class CreateCampaignDto {
   description?: string | null;
 
   @IsString()
-  @MinLength(1)
+  @MinLength(0)
   @MaxLength(4000)
   messageText!: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuickReplyAttachmentDto)
+  attachment?: QuickReplyAttachmentDto | null;
 
   @IsUUID("4")
   connectionId!: string;
@@ -87,9 +94,14 @@ export class UpdateCampaignDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(1)
+  @MinLength(0)
   @MaxLength(4000)
   messageText?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuickReplyAttachmentDto)
+  attachment?: QuickReplyAttachmentDto | null;
 
   @IsOptional()
   @IsUUID("4")
@@ -161,9 +173,14 @@ export class AudiencePreviewDto {
   audience!: CampaignAudienceDto;
 
   @IsString()
-  @MinLength(1)
+  @MinLength(0)
   @MaxLength(4000)
   messageText!: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuickReplyAttachmentDto)
+  attachment?: QuickReplyAttachmentDto | null;
 }
 
 export class ScheduleCampaignDto {

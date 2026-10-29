@@ -16,7 +16,7 @@ export function QrGenerationLoadingOverlay({ open }: { open: boolean }) {
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[280] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[280] flex items-center justify-center bg-black/[0.595125] p-4">
       <div
         ref={dialogRef}
         role="dialog"

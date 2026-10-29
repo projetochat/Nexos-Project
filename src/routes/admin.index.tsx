@@ -333,6 +333,7 @@ function PlatformDashboardComponent({
         title={config.title}
         rows={data.clientVolumetry.rows}
         totals={data.clientVolumetry.totals}
+        loginAggregation={data.clientVolumetry.loginAggregation}
       />
     );
   }
@@ -391,7 +392,11 @@ function PlatformDashboardComponent({
       : config.groupBy === "clientVolume"
         ? data.charts.messageVolumeByClient.length
         : 0;
-  if (clientCount <= 4) return chart;
+  if (
+    clientCount <= 4 ||
+    (config.visualization !== "columns" && config.visualization !== "bars")
+  )
+    return chart;
   return (
     <div className="overflow-x-auto pb-1" aria-label={`${config.title}: todos os clientes`}>
       <div style={{ minWidth: Math.max(640, clientCount * 112) }}>{chart}</div>

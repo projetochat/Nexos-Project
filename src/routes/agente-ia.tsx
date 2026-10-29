@@ -3425,6 +3425,7 @@ export function ConnectionEditor({
   const [saveError, setSaveError] = React.useState("");
   const [credentialInvalid, setCredentialInvalid] = React.useState(false);
   const apiKeyId = React.useId();
+  const saveErrorId = React.useId();
   const organizationId = React.useId();
 
   React.useEffect(() => {
@@ -3511,31 +3512,33 @@ export function ConnectionEditor({
       size="xl"
       className="max-w-[620px]"
       footer={
-        <>
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-            {readOnly ? "Fechar" : "Cancelar"}
-          </Button>
-          {!readOnly && (
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              className="save-action-button"
-              onClick={() => void submit()}
-              disabled={busy}
-            >
-              {busy ? "Validando conexão..." : "Salvar conexão"}
-            </Button>
+        <div className="w-full space-y-3">
+          {saveError && (
+            <p id={saveErrorId} role="alert" className="text-sm text-destructive">
+              {saveError}
+            </p>
           )}
-        </>
+          <div className="flex items-center justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+              {readOnly ? "Fechar" : "Cancelar"}
+            </Button>
+            {!readOnly && (
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                className="save-action-button"
+                onClick={() => void submit()}
+                disabled={busy}
+              >
+                {busy ? "Validando conexão..." : "Salvar conexão"}
+              </Button>
+            )}
+          </div>
+        </div>
       }
     >
       <div className="space-y-4">
-        {saveError && (
-          <p role="alert" className="text-sm text-destructive">
-            {saveError}
-          </p>
-        )}
         <div className="flex items-center gap-3">
           <Switch
             checked={draft.active}
@@ -3625,6 +3628,7 @@ export function ConnectionEditor({
                 }
                 autoComplete="new-password"
                 aria-invalid={Boolean(errors.apiKey) || credentialInvalid}
+                aria-describedby={credentialInvalid ? saveErrorId : undefined}
                 className="pr-11"
                 disabled={readOnly || busy}
               />

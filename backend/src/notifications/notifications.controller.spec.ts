@@ -115,3 +115,39 @@ describe("NotificationsController.target", () => {
     );
   });
 });
+
+describe("Task notification destinations", () => {
+  it("uses the task service visibility and preserves the tenant session", async () => {
+    const { prisma } = setup();
+    prisma.notification.findFirst.mockResolvedValue({ entityType: "task", entityId: "task-a" });
+    const tasks = { enabled: () => true, getTask: vi.fn().mockResolvedValue({ id: "task-a" }) };
+    const actor = { ...current, permissions: ["schedules.read"] } as AuthenticatedUser;
+    const controller = new NotificationsController(prisma as never, tasks as never);
+    await expect(controller.target("notice-a", actor)).resolves.toEqual({
+      destination: "tasks",
+      taskId: "task-a",
+    });
+    expect(tasks.getTask).toHaveBeenCalledWith("task-a", actor);
+    expect(prisma.conversation.findFirst).not.toHaveBeenCalled();
+  });
+  it("does not consult tasks when disabled or not permitted", async () => {
+    const { prisma } = setup();
+    prisma.notification.findFirst.mockResolvedValue({ entityType: "task", entityId: "task-a" });
+    const tasks = { enabled: () => true, getTask: vi.fn() };
+    await expect(
+      new NotificationsController(prisma as never, tasks as never).target("notice-a", current),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tasks.getTask).not.toHaveBeenCalled();
+  });
+  it("excludes task notifications for an admin without the module permission", async () => {
+    const { controller, prisma } = setup();
+    await controller.list({}, { ...current, roleKey: "tenant_admin" });
+    expect(prisma.notification.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([{ entityType: "task", entityId: { in: [] } }]),
+        }),
+      }),
+    );
+  });
+});

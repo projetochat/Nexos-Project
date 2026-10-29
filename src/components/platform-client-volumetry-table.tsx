@@ -16,7 +16,10 @@ import { Card } from "@/components/ui-kit";
 import type {
   PlatformClientVolumetryCounts,
   PlatformClientVolumetryRow,
+  PlatformLoginAggregation,
+  PlatformLoginEnvironments,
 } from "@/lib/platform-dashboard-api";
+import { displayDateTime } from "@/lib/format";
 
 type Metric = keyof PlatformClientVolumetryCounts;
 type SortKey = "clientName" | Metric;
@@ -103,11 +106,16 @@ export function PlatformClientVolumetryTable({
   title,
   rows,
   totals,
+  loginAggregation,
 }: {
   title: string;
   rows: PlatformClientVolumetryRow[];
-  totals: PlatformClientVolumetryCounts;
+  totals: PlatformClientVolumetryCounts & { loginEnvironments?: PlatformLoginEnvironments | null };
+  loginAggregation?: PlatformLoginAggregation;
 }) {
+  const aggregationStatus = loginAggregation?.status ?? "disabled";
+  const loginsUnavailable =
+    aggregationStatus === "unavailable" || aggregationStatus === "ambiguous";
   const [sort, setSort] = React.useState<{ key: SortKey; direction: "asc" | "desc" }>({
     key: "clientName",
     direction: "asc",
@@ -115,13 +123,25 @@ export function PlatformClientVolumetryTable({
   const sortedRows = React.useMemo(
     () =>
       [...rows].sort((left, right) => {
+        const byName =
+          left.clientName.localeCompare(right.clientName, "pt-BR") ||
+          (left.clientId ?? "").localeCompare(right.clientId ?? "");
+        if (sort.key === "logins") {
+          const leftValue = loginsUnavailable ? null : left.logins;
+          const rightValue = loginsUnavailable ? null : right.logins;
+          if (leftValue == null || rightValue == null) {
+            if (leftValue == null && rightValue != null) return 1;
+            if (rightValue == null && leftValue != null) return -1;
+            return byName;
+          }
+        }
         const comparison =
           sort.key === "clientName"
             ? left.clientName.localeCompare(right.clientName, "pt-BR")
             : (left[sort.key] ?? 0) - (right[sort.key] ?? 0);
-        return sort.direction === "asc" ? comparison : -comparison;
+        return comparison ? (sort.direction === "asc" ? comparison : -comparison) : byName;
       }),
-    [rows, sort],
+    [rows, sort, loginsUnavailable],
   );
   const toggleSort = (key: SortKey) =>
     setSort((current) => ({
@@ -135,7 +155,16 @@ export function PlatformClientVolumetryTable({
         <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">{title}</p>
       </div>
       <p className="px-4 pb-3 text-xs text-muted-foreground">
-        Logins concluídos no período selecionado, contabilizados a partir desta atualização.
+        {aggregationStatus === "available"
+          ? "Logins unificados de Localhost, HML e Produção no período selecionado. Inclui somente novos logins internos registrados após a ativação da coleta em cada ambiente."
+          : aggregationStatus === "unavailable"
+            ? "Contagem de logins indisponível: não foi possível consultar todos os ambientes. Os demais indicadores permanecem disponíveis."
+            : aggregationStatus === "ambiguous"
+              ? "Contagem de logins indisponível: há divergência na identificação dos clientes entre os ambientes. Os demais indicadores permanecem disponíveis."
+              : "Logins concluídos no período selecionado, somente neste ambiente. A contagem inclui novos logins registrados a partir desta atualização."}
+        {aggregationStatus === "available" && loginAggregation?.updatedAt
+          ? ` Atualizado em ${displayDateTime(loginAggregation.updatedAt)}.`
+          : null}
       </p>
       <div className="overflow-x-auto" aria-label={`${title}: dados por cliente`}>
         <table className="w-full min-w-[1020px] border-collapse text-xs">
@@ -166,7 +195,15 @@ export function PlatformClientVolumetryTable({
                 <td className="whitespace-nowrap px-3 py-2 font-medium">{row.clientName}</td>
                 {columns.map(({ key }) => (
                   <td key={key} className="px-3 py-2 text-center font-mono tabular-nums">
-                    {(row[key] ?? 0).toLocaleString("pt-BR")}
+                    {key === "logins" ? (
+                      <LoginCount
+                        value={row.logins}
+                        environments={row.loginEnvironments}
+                        status={aggregationStatus}
+                      />
+                    ) : (
+                      (row[key] ?? 0).toLocaleString("pt-BR")
+                    )}
                   </td>
                 ))}
               </tr>
@@ -187,7 +224,15 @@ export function PlatformClientVolumetryTable({
               <td className="px-3 py-2">Total</td>
               {columns.map(({ key }) => (
                 <td key={key} className="px-3 py-2 text-center font-mono tabular-nums">
-                  {(totals[key] ?? 0).toLocaleString("pt-BR")}
+                  {key === "logins" ? (
+                    <LoginCount
+                      value={totals.logins}
+                      environments={totals.loginEnvironments}
+                      status={aggregationStatus}
+                    />
+                  ) : (
+                    (totals[key] ?? 0).toLocaleString("pt-BR")
+                  )}
                 </td>
               ))}
             </tr>
@@ -195,6 +240,31 @@ export function PlatformClientVolumetryTable({
         </table>
       </div>
     </Card>
+  );
+}
+
+function LoginCount({
+  value,
+  environments,
+  status,
+}: {
+  value: number | null;
+  environments?: PlatformLoginEnvironments | null;
+  status: PlatformLoginAggregation["status"];
+}) {
+  if (value == null || status === "unavailable" || status === "ambiguous")
+    return <span className="font-sans text-muted-foreground">Indisponível</span>;
+  const number = value.toLocaleString("pt-BR");
+  const detail =
+    status === "available" && environments
+      ? `Localhost: ${environments.local.toLocaleString("pt-BR")} · HML: ${environments.homologation.toLocaleString("pt-BR")} · Produção: ${environments.production.toLocaleString("pt-BR")}`
+      : status === "available"
+        ? "Detalhamento por ambiente indisponível."
+        : "Logins registrados somente neste ambiente.";
+  return (
+    <span title={detail} aria-label={`Logins: ${number}. ${detail}`} tabIndex={0}>
+      {number}
+    </span>
   );
 }
 

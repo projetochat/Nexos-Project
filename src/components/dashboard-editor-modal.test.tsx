@@ -46,7 +46,7 @@ describe("DashboardEditorModal", () => {
       );
     });
 
-    expect(document.body.textContent).toContain("Editar Dashboards");
+    expect(document.body.textContent).toContain("Configuração de Dashboards");
     expect(document.body.textContent).toContain(
       "Arraste e solte para definir a posição dos componentes.",
     );

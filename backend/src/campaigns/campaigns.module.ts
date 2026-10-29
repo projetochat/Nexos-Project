@@ -8,12 +8,18 @@ import { RealtimeModule } from "../realtime/realtime.module";
 import { CampaignDispatchQueue } from "./campaign-dispatch.queue";
 import { CampaignDispatchWorker } from "./campaign-dispatch.worker";
 import { CampaignsController } from "./campaigns.controller";
+import { MessagingMediaStorageService } from "../messaging/media/messaging-media-storage.service";
 import { CampaignsService } from "./campaigns.service";
 
 @Module({
   imports: [AuthModule, ConfigModule, PrismaModule, QueueModule, RealtimeModule, PlatformModule],
   controllers: [CampaignsController],
-  providers: [CampaignDispatchQueue, CampaignDispatchWorker, CampaignsService],
+  providers: [
+    CampaignDispatchQueue,
+    CampaignDispatchWorker,
+    CampaignsService,
+    MessagingMediaStorageService,
+  ],
   exports: [CampaignDispatchQueue, CampaignsService],
 })
 export class CampaignsModule {}

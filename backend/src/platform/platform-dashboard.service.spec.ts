@@ -1,13 +1,14 @@
 import { ConflictException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { PlatformService } from "./platform.service";
+import * as loginMetrics from "../login-metrics";
 
 function createService(prisma: Record<string, unknown>) {
   return new PlatformService(
     prisma as never,
     {} as never,
     {} as never,
-    {} as never,
+    { get: vi.fn().mockReturnValue(undefined) } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -484,5 +485,53 @@ describe("Platform login volumetry", () => {
     expect(prisma.platformAuditLog.groupBy).toHaveBeenLastCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ tenantId: { in: [] } }) }),
     );
+  });
+});
+
+describe("Platform unified login integration", () => {
+  it("uses central totals and breakdown with the selected client/tenant and Sao Paulo period", async () => {
+    const queryCounts = vi.spyOn(loginMetrics, "readUnifiedLoginCounts").mockResolvedValue({
+      status: "available",
+      countsByTenant: [
+        { tenantId: "tenant-a", local: 2, homologation: 3, production: 5, total: 10 },
+        { tenantId: "tenant-orphan", local: 0, homologation: 0, production: 1, total: 1 },
+      ],
+      updatedAt: "2026-10-28T12:00:00.000Z",
+    });
+    try {
+      const result = await createService(dashboardPrisma()).dashboard({
+        period: "custom",
+        start: "2026-10-01",
+        end: "2026-10-02",
+        clientId: "client-a",
+        tenantId: "tenant-a",
+      });
+      expect(result.clientVolumetry.totals.logins).toBe(10);
+      expect(result.clientVolumetry.rows[0]).toMatchObject({
+        clientId: "client-a",
+        logins: 10,
+        loginEnvironments: { local: 2, homologation: 3, production: 5 },
+      });
+      expect(result.clientVolumetry.loginAggregation.status).toBe("available");
+      expect(queryCounts.mock.calls[0].slice(-2)).toEqual([
+        new Date("2026-10-01T03:00:00.000Z"),
+        new Date("2026-10-03T03:00:00.000Z"),
+      ]);
+    } finally {
+      queryCounts.mockRestore();
+    }
+  });
+  it("never falls back to misleading local zero when the central service fails", async () => {
+    const queryCounts = vi
+      .spyOn(loginMetrics, "readUnifiedLoginCounts")
+      .mockResolvedValue({ status: "unavailable", countsByTenant: [] });
+    try {
+      const result = await createService(dashboardPrisma()).dashboard({ period: "today" });
+      expect(result.clientVolumetry.totals.logins).toBeNull();
+      expect(result.clientVolumetry.rows.every((row) => row.logins === null)).toBe(true);
+      expect(result.clientVolumetry.loginAggregation.status).toBe("unavailable");
+    } finally {
+      queryCounts.mockRestore();
+    }
   });
 });

@@ -25,8 +25,10 @@ import {
   DASHBOARD_CHART_MARGIN,
   DASHBOARD_CHART_TEXT_COLOR,
   dashboardCategoryAxisLayout,
+  dashboardBarAxisLabelLines,
   dashboardColumnAxisLayout,
-  formatDashboardAxisLabelToWidth,
+  dashboardColumnAxisLabelLines,
+  dashboardLabelWidth,
 } from "@/lib/dashboard-chart-layout";
 import {
   dashboardPieLegendItems,
@@ -46,6 +48,7 @@ export function DashboardComponentRenderer({
   compact = false,
   preserveOrder = false,
   preserveAllItems = false,
+  contactRanking = false,
 }: {
   title?: string;
   visualization: DashboardVisualization;
@@ -55,19 +58,29 @@ export function DashboardComponentRenderer({
   compact?: boolean;
   preserveOrder?: boolean;
   preserveAllItems?: boolean;
+  contactRanking?: boolean;
 }) {
   const maximized = useDashboardMaximized();
   const normalized = React.useMemo(
     () =>
       normalizeDashboardData(
-        data,
+        contactRanking ? data.slice(0, maximized ? 20 : 10) : data,
         valueMode,
-        columns,
+        maximized && (visualization === "columns" || visualization === "bars") ? 4 : columns,
         visualization,
         preserveOrder,
         preserveAllItems,
       ),
-    [columns, data, preserveAllItems, preserveOrder, valueMode, visualization],
+    [
+      columns,
+      data,
+      preserveAllItems,
+      preserveOrder,
+      valueMode,
+      visualization,
+      contactRanking,
+      maximized,
+    ],
   );
   const height = compact ? 200 : 270;
   const valueSuffix = valueMode === "percentage" ? "%" : "";
@@ -79,6 +92,8 @@ export function DashboardComponentRenderer({
     return Math.min(72, Math.max(32, longestValue * 7 + 12));
   }, [normalized, valueSuffix]);
   const chartContainerRef = React.useRef<HTMLDivElement>(null);
+  const tableHeaderRef = React.useRef<HTMLTableSectionElement>(null);
+  const [tableHeaderHeight, setTableHeaderHeight] = React.useState(32);
   const [chartWidth, setChartWidth] = React.useState(0);
   const categoryAxisLayout = React.useMemo(
     () =>
@@ -109,6 +124,21 @@ export function DashboardComponentRenderer({
     return () => observer.disconnect();
   }, []);
 
+  React.useEffect(() => {
+    if (!contactRanking || visualization !== "table") return;
+    const header = tableHeaderRef.current;
+    if (!header) return;
+    const measure = () => {
+      const height = header.getBoundingClientRect().height;
+      if (height > 0) setTableHeaderHeight(height);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [contactRanking, visualization, normalized.length]);
+
   return (
     <Card className="flex h-full min-w-0 flex-col" padding={!compact}>
       {title && (
@@ -121,7 +151,7 @@ export function DashboardComponentRenderer({
       ) : (
         <div
           ref={chartContainerRef}
-          className={`min-w-0 flex-1 ${compact ? "min-h-[200px]" : "min-h-[270px]"} ${maximized ? "flex items-center justify-center" : ""}`}
+          className={`min-w-0 flex-1 ${compact ? "min-h-[200px]" : "min-h-[270px]"} ${visualization === "table" && contactRanking ? "relative" : visualization === "columns" ? "" : maximized ? "flex items-center justify-center" : ""}`}
           data-testid={`dashboard-preview-${visualization}`}
           aria-label={`Visualização ${visualization}`}
         >
@@ -131,23 +161,21 @@ export function DashboardComponentRenderer({
                 data={normalized}
                 margin={{
                   ...DASHBOARD_CHART_MARGIN,
-                  top: 24,
+                  top: 16,
                   bottom: columnAxisLayout.marginBottom,
+                  left: columnAxisLayout.marginLeft,
+                  right: columnAxisLayout.marginRight,
                 }}
               >
                 <CartesianGrid stroke="var(--border)" vertical={false} />
                 <XAxis
                   dataKey="nome"
                   stroke="var(--muted-foreground)"
-                  tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
-                  fontSize={10}
+                  tick={<DashboardColumnAxisTick layout={columnAxisLayout} />}
+                  tickMargin={2}
+                  fontSize={columnAxisLayout.fontSize}
                   interval={0}
-                  angle={columnAxisLayout.angle}
-                  textAnchor={columnAxisLayout.textAnchor}
                   height={columnAxisLayout.height}
-                  tickFormatter={(value) =>
-                    formatDashboardAxisLabelToWidth(value, columnAxisLayout.maxLabelWidth)
-                  }
                 />
                 <YAxis
                   stroke="var(--muted-foreground)"
@@ -167,6 +195,7 @@ export function DashboardComponentRenderer({
                     content={(properties) => (
                       <DashboardBarValueLabel
                         {...(properties as DashboardBarValueLabelProperties)}
+                        maxWidth={columnAxisLayout.slotWidth - 4}
                         orientation="column"
                         suffix={valueSuffix}
                       />
@@ -202,12 +231,20 @@ export function DashboardComponentRenderer({
                   type="category"
                   dataKey="nome"
                   stroke="var(--muted-foreground)"
-                  tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
+                  tick={
+                    <DashboardBarAxisTick
+                      maxWidth={Math.min(categoryAxisLayout.maxLabelWidth, 72)}
+                      rowSlot={(height - 36) / Math.max(1, normalized.length)}
+                      fontSize={Math.max(
+                        9,
+                        Math.min(10, (height - 36) / Math.max(1, normalized.length) - 1),
+                      )}
+                    />
+                  }
+                  tickMargin={2}
+                  interval={0}
                   fontSize={10}
                   width={Math.min(categoryAxisLayout.width, 80)}
-                  tickFormatter={(value) =>
-                    formatDashboardAxisLabelToWidth(value, categoryAxisLayout.maxLabelWidth)
-                  }
                 />
                 <Tooltip content={<DashboardValueTooltip suffix={valueSuffix} />} />
                 <Bar dataKey="valor" radius={[0, 6, 6, 0]}>
@@ -219,6 +256,11 @@ export function DashboardComponentRenderer({
                     content={(properties) => (
                       <DashboardBarValueLabel
                         {...(properties as DashboardBarValueLabelProperties)}
+                        maxWidth={barValueMarginRight - 6}
+                        maxFontSize={Math.max(
+                          9,
+                          Math.min(11, (height - 36) / Math.max(1, normalized.length) - 1),
+                        )}
                         orientation="bar"
                         suffix={valueSuffix}
                       />
@@ -313,25 +355,66 @@ export function DashboardComponentRenderer({
 
           {visualization === "table" && (
             <div
-              className={`w-full overflow-auto rounded-lg border border-border ${maximized ? "max-h-[72dvh]" : "max-h-[270px]"}`}
+              className={`w-full overflow-auto rounded-lg border border-border ${contactRanking ? "absolute inset-0" : maximized ? "max-h-[72dvh]" : "max-h-[270px]"}`}
+              style={
+                contactRanking
+                  ? {
+                      backgroundImage: `linear-gradient(to bottom, var(--surface-2) 0px, var(--surface-2) ${tableHeaderHeight}px, transparent ${tableHeaderHeight}px)`,
+                    }
+                  : undefined
+              }
             >
-              <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 bg-surface-2 text-muted-foreground">
+              <table className={`w-full text-left text-xs ${contactRanking ? "table-fixed" : ""}`}>
+                {contactRanking && (
+                  <colgroup>
+                    <col />
+                    <col />
+                    <col />
+                    <col style={{ width: "3.5rem" }} />
+                  </colgroup>
+                )}
+                <thead
+                  ref={tableHeaderRef}
+                  className="sticky top-0 bg-surface-2 text-muted-foreground"
+                >
                   <tr>
-                    <th className="px-3 py-2 font-medium">Categoria</th>
-                    <th className="px-3 py-2 text-right font-medium">Valor</th>
+                    <th className="px-3 py-2 font-medium">
+                      {contactRanking ? "Nome contato" : "Categoria"}
+                    </th>
+                    {contactRanking && (
+                      <>
+                        <th className="px-3 py-2 font-medium">Cliente</th>
+                        <th className="px-3 py-2 font-medium">Departamento</th>
+                      </>
+                    )}
+                    <th className="px-3 py-2 text-right font-medium">
+                      {contactRanking ? "Qtd." : "Valor"}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {normalized.map((item) => (
-                    <tr key={item.nome}>
-                      <td className="px-3 py-2">
+                    <tr key={item.id ?? item.nome}>
+                      <td
+                        className="break-words px-3 py-2"
+                        title={contactRanking ? item.nome : undefined}
+                      >
                         <span
                           className="mr-2 inline-block h-2 w-2 rounded-full"
                           style={{ background: item.cor }}
                         />
-                        {item.nome}
+                        {contactRanking
+                          ? item.nome.trim().split(/\s+/).slice(0, 2).join(" ")
+                          : item.nome}
                       </td>
+                      {contactRanking && (
+                        <>
+                          <td className="break-words px-3 py-2">{item.cliente || "Sem cliente"}</td>
+                          <td className="break-words px-3 py-2">
+                            {item.departamento || "Sem departamento"}
+                          </td>
+                        </>
+                      )}
                       <td className="px-3 py-2 text-right font-mono font-semibold">
                         {formatValue(item.valor, valueSuffix)}
                       </td>
@@ -415,9 +498,13 @@ function DashboardBarValueLabel({
   value = 0,
   suffix,
   orientation,
+  maxWidth,
+  maxFontSize = 11,
 }: DashboardBarValueLabelProperties & {
   suffix: string;
   orientation: "column" | "bar";
+  maxWidth?: number;
+  maxFontSize?: number;
 }) {
   const numericX = Number(x);
   const numericY = Number(y);
@@ -429,7 +516,10 @@ function DashboardBarValueLabel({
   }
 
   const label = formatValue(numericValue, suffix);
-  const fontSize = 11;
+  const fontSize = Math.max(
+    9,
+    Math.min(maxFontSize, ((maxWidth ?? Infinity) / Math.max(1, dashboardLabelWidth(label))) * 10),
+  );
   const isColumn = orientation === "column";
   return (
     <text
@@ -556,4 +646,85 @@ function formatValue(value: number, suffix: string) {
   return suffix
     ? `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(value)}${suffix}`
     : num(value);
+}
+
+type DashboardColumnAxisTickProperties = {
+  x?: number;
+  y?: number;
+  payload?: { value?: unknown };
+  layout: ReturnType<typeof dashboardColumnAxisLayout>;
+};
+
+export function DashboardColumnAxisTick({
+  x = 0,
+  y = 0,
+  payload,
+  layout,
+}: DashboardColumnAxisTickProperties) {
+  const label = String(payload?.value ?? "");
+  const lines = dashboardColumnAxisLabelLines(label, layout);
+  const endpointOffset = layout.angle
+    ? ((lines.length - 1) * layout.lineHeight * Math.SQRT1_2) / 2
+    : 0;
+  return (
+    <g transform={`translate(${x - endpointOffset},${y + 2})`}>
+      <text
+        fill={DASHBOARD_CHART_TEXT_COLOR}
+        fontSize={layout.fontSize}
+        textAnchor={layout.textAnchor}
+        transform={layout.angle ? `rotate(${layout.angle})` : undefined}
+        dominantBaseline="hanging"
+        aria-label={label}
+      >
+        <title>{label}</title>
+        {lines.map((line, index) => (
+          <tspan key={index} x={0} dy={index === 0 ? 0 : layout.lineHeight}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+}
+
+function DashboardBarAxisTick({
+  x = 0,
+  y = 0,
+  payload,
+  maxWidth,
+  fontSize = 10,
+  rowSlot,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: unknown };
+  maxWidth: number;
+  fontSize?: number;
+  rowSlot: number;
+}) {
+  const label = String(payload?.value ?? "");
+  const lines = dashboardBarAxisLabelLines(label, maxWidth, rowSlot, fontSize);
+  const lineHeight = fontSize * 1.3;
+  return (
+    <text
+      x={x}
+      y={y}
+      dominantBaseline="central"
+      textAnchor="end"
+      fill={DASHBOARD_CHART_TEXT_COLOR}
+      fontSize={fontSize}
+      aria-label={label}
+    >
+      <title>{label}</title>
+      {lines.map((line, index) => (
+        <tspan
+          key={index}
+          x={x}
+          dy={index === 0 ? (-(lines.length - 1) * lineHeight) / 2 : lineHeight}
+        >
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
 }

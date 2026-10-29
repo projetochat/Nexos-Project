@@ -36,7 +36,7 @@ export type DashboardPreferencesV2 = {
   components: DashboardComponentConfig[];
 };
 
-export const DASHBOARD_NATIVE_REVISION = 5;
+export const DASHBOARD_NATIVE_REVISION = 6;
 
 export type DashboardGroupingOption = {
   value: string;
@@ -89,10 +89,10 @@ export const DEFAULT_DASHBOARD_COMPONENTS: DashboardComponentConfig[] = [
   component("messages", "Tráfego de mensagens", true, "line", 2, "messages", "hour", "count"),
   component(
     "ticketRequesterRanking",
-    "Top 10 contatos que mais abrem conversas",
+    "Ranking de Contatos",
     true,
     "table",
-    1,
+    2,
     "conversations",
     "conversationContact",
     "count",
@@ -238,6 +238,18 @@ export function saveDashboardComponents(
 }
 
 export function parseDashboardPreferences(value: unknown): DashboardComponentConfig[] {
+  return parseDashboardPreferencesValue(value).map((item) =>
+    item.id === "ticketRequesterRanking" &&
+    item.dataSource === "conversations" &&
+    item.groupBy === "conversationContact" &&
+    (item.title === "Top 10 contatos que mais abrem conversas" ||
+      item.title === "RANKING DE CONTATOS")
+      ? { ...item, title: "Ranking de Contatos" }
+      : item,
+  );
+}
+
+function parseDashboardPreferencesValue(value: unknown): DashboardComponentConfig[] {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const candidate = value as Record<string, unknown>;
     if (candidate.version === 2 && Array.isArray(candidate.components)) {
@@ -292,6 +304,15 @@ function migrateNativeDashboardRevision(
             ? "Top 10 contatos que mais abrem conversas"
             : component.title,
       };
+    }
+    if (
+      nativeRevision < 6 &&
+      migrated.id === "ticketRequesterRanking" &&
+      migrated.dataSource === "conversations" &&
+      migrated.groupBy === "conversationContact" &&
+      migrated.columns === 1
+    ) {
+      migrated = { ...migrated, columns: 2 };
     }
     return migrated;
   });

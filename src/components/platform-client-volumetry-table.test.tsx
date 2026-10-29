@@ -19,6 +19,131 @@ const zeroes = {
   campaigns: 0,
 };
 
+async function mountTable(
+  props: Partial<React.ComponentProps<typeof PlatformClientVolumetryTable>>,
+) {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const render = async (next = props) =>
+    act(async () =>
+      root.render(
+        <PlatformClientVolumetryTable
+          title="Métricas por cliente"
+          rows={[]}
+          totals={zeroes}
+          {...next}
+        />,
+      ),
+    );
+  await render();
+  return {
+    host,
+    render,
+    close: async () => {
+      await act(async () => root.unmount());
+      host.remove();
+    },
+  };
+}
+
+it("shows the available unified total and accessible breakdown for all three environments", async () => {
+  const environments = { local: 2, homologation: 3, production: 5 };
+  const f = await mountTable({
+    rows: [
+      {
+        ...zeroes,
+        clientId: "synthetic-client",
+        clientName: "Alfa",
+        logins: 10,
+        loginEnvironments: environments,
+      },
+    ],
+    totals: { ...zeroes, logins: 10, loginEnvironments: environments },
+    loginAggregation: { status: "available", updatedAt: "2026-10-28T12:00:00Z" },
+  });
+  try {
+    expect(f.host.textContent).toContain("Logins unificados de Localhost, HML e Produção");
+    expect(f.host.textContent).toContain("somente novos logins internos");
+    expect(f.host.textContent).toContain("Atualizado em");
+    const login = f.host.querySelector("tbody td:nth-child(2) span");
+    expect(login?.textContent).toBe("10");
+    expect(login?.getAttribute("title")).toBe("Localhost: 2 · HML: 3 · Produção: 5");
+    expect(login?.getAttribute("aria-label")).toContain("Logins: 10.");
+    expect(f.host.textContent).not.toContain("synthetic-client");
+    expect(f.host.querySelector("tfoot td:nth-child(2)")?.textContent).toBe("10");
+  } finally {
+    await f.close();
+  }
+});
+
+it.each(["unavailable", "ambiguous"] as const)(
+  "does not disguise %s aggregation as zero or a partial total",
+  async (status) => {
+    const f = await mountTable({
+      rows: [{ ...zeroes, clientId: "a", clientName: "Alfa", logins: 0, instances: 4 }],
+      totals: { ...zeroes, logins: 0, instances: 4 },
+      loginAggregation: { status },
+    });
+    try {
+      expect(f.host.querySelector("tbody td:nth-child(2)")?.textContent).toBe("Indisponível");
+      expect(f.host.querySelector("tfoot td:nth-child(2)")?.textContent).toBe("Indisponível");
+      expect(f.host.querySelector("tbody td:nth-child(3)")?.textContent).toBe("4");
+      expect(f.host.textContent).toContain(
+        status === "ambiguous"
+          ? "divergência na identificação"
+          : "não foi possível consultar todos os ambientes",
+      );
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it("keeps legacy and disabled responses scoped to the current environment", async () => {
+  const props = {
+    rows: [{ ...zeroes, clientId: "a", clientName: "Alfa", logins: 6 }],
+    totals: { ...zeroes, logins: 6 },
+  };
+  const f = await mountTable(props);
+  try {
+    for (const status of [undefined, "disabled"] as const) {
+      await f.render({ ...props, loginAggregation: status ? { status } : undefined });
+      expect(f.host.textContent).toContain("somente neste ambiente");
+      expect(f.host.textContent).not.toContain("unificados");
+      expect(f.host.querySelector("tbody td:nth-child(2)")?.textContent).toBe("6");
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+it("sorts available counts numerically while unavailable rows stay last in both directions", async () => {
+  const f = await mountTable({
+    rows: [
+      { ...zeroes, clientId: "b", clientName: "Beta", logins: null },
+      { ...zeroes, clientId: "a", clientName: "Alfa", logins: null },
+      { ...zeroes, clientId: "c", clientName: "Gama", logins: 1 },
+      { ...zeroes, clientId: "d", clientName: "Delta", logins: 0 },
+    ],
+    totals: { ...zeroes, logins: null },
+    loginAggregation: { status: "available" },
+  });
+  try {
+    const names = () =>
+      [...f.host.querySelectorAll("tbody tr")].map((row) => row.querySelector("td")?.textContent);
+    const sort = f.host.querySelector<HTMLButtonElement>('[aria-label="Ordenar por Logins"]')!;
+    await act(async () => sort.click());
+    expect(names()).toEqual(["Delta", "Gama", "Alfa", "Beta"]);
+    await act(async () => sort.click());
+    expect(names()).toEqual(["Gama", "Delta", "Alfa", "Beta"]);
+    expect(f.host.querySelector("tfoot td:nth-child(2)")?.textContent).toBe("Indisponível");
+  } finally {
+    await f.close();
+  }
+});
+
 it("renders every metric, keeps totals fixed and sorts client rows", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div");

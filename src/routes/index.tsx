@@ -1,5 +1,5 @@
 import * as React from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -23,7 +23,7 @@ import {
 } from "@/components/dashboard-component-renderer";
 import { Button, Card, KPI, SectionHeader } from "@/components/ui-kit";
 import { num, relativeTime } from "@/lib/format";
-import { crmApi, operationsApi } from "@/lib/trixus-api";
+import { conversationApi, crmApi, operationsApi } from "@/lib/trixus-api";
 import {
   DEFAULT_OPERATIONAL_FILTERS,
   datesForOperationalPeriod,
@@ -40,6 +40,12 @@ import {
   parseDashboardPreferences,
   type DashboardComponentConfig,
 } from "@/lib/dashboard-components";
+
+import {
+  recentConversationDestination,
+  resolveRecentConversationDestination,
+} from "@/lib/dashboard-recent-location";
+import { setInboxTab } from "@/lib/inbox-tab-state";
 
 export const Route = createFileRoute("/")({ component: Dashboard });
 
@@ -97,9 +103,23 @@ function loadDashboardFilters(storageKey: string): OperationalReportFilters {
 }
 
 function Dashboard() {
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const user = useSession((state) => state.user);
+  const recentNavigationRequest = React.useRef(0);
+  const recentNavigationScope = React.useRef("");
+  const currentRecentScope = `${user?.id ?? ""}:${user?.empresaId ?? ""}`;
+  if (recentNavigationScope.current !== currentRecentScope) {
+    recentNavigationScope.current = currentRecentScope;
+    recentNavigationRequest.current += 1;
+  }
+  React.useEffect(
+    () => () => {
+      recentNavigationRequest.current += 1;
+    },
+    [],
+  );
   const canCreateDashboard =
     user?.role === "admin" ||
     user?.role === "super_admin" ||
@@ -237,7 +257,9 @@ function Dashboard() {
     { nome: "Aguardando", total: kpiValue(kpis.conversasAguardando) },
     { nome: "Encerradas", total: kpiValue(kpis.conversasEncerradas) },
   ];
-  const recent = (data?.recent ?? []).slice(0, 7);
+  const recent = (data?.recent ?? [])
+    .filter((conversation) => Boolean(conversation.protocolo?.trim()))
+    .slice(0, 10);
   const queueKpiById: Record<QueueId, [keyof typeof kpis, keyof typeof kpis]> = {
     ativas: ["contadorAtivasAtuais", "filaAtivas"],
     standby: ["contadorStandbyAtual", "filaStandby"],
@@ -294,7 +316,7 @@ function Dashboard() {
     }
     if (component.dataSource === "conversations") {
       if (component.groupBy === "conversationContact") {
-        return (remoteDataByGroup.get(component.groupBy) ?? []).slice(0, 10);
+        return (remoteDataByGroup.get(component.groupBy) ?? []).slice(0, 20);
       }
       const chartByGroup: Record<string, DashboardVisualDatum[]> = {
         status: statusSerie,
@@ -440,34 +462,56 @@ function Dashboard() {
                         <p className="text-xs uppercase tracking-widest text-muted-foreground">
                           {component.title}
                         </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Últimas conversas movimentadas.
-                        </p>
                       </div>
                       <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
                         {recent.map((conversation) => (
-                          <li
-                            key={conversation.id}
-                            className="flex items-center gap-3 px-3 py-2 text-sm"
-                          >
-                            <span className="h-2 w-2 rounded-full bg-primary" />
-                            <span className="min-w-0 flex-1 truncate">
-                              <Link
-                                to="/inbox/$conversationId"
-                                params={{ conversationId: conversation.id }}
-                                className="font-medium hover:underline"
-                              >
-                                {conversation.contact?.nome ?? "Contato"}
-                              </Link>
-                              <span className="ml-2 text-muted-foreground">
+                          <li key={conversation.id}>
+                            <Link
+                              {...recentConversationDestination(conversation)}
+                              onClick={(event) => {
+                                if (
+                                  event.button !== 0 ||
+                                  event.metaKey ||
+                                  event.ctrlKey ||
+                                  event.shiftKey ||
+                                  event.altKey
+                                )
+                                  return;
+                                event.preventDefault();
+                                const request = ++recentNavigationRequest.current;
+                                const scope = recentNavigationScope.current;
+                                void resolveRecentConversationDestination(
+                                  conversation,
+                                  conversationApi.get,
+                                ).then((destination) => {
+                                  if (
+                                    request !== recentNavigationRequest.current ||
+                                    scope !== recentNavigationScope.current
+                                  )
+                                    return;
+                                  if (destination.to === "/inbox/$conversationId")
+                                    setInboxTab(destination.search.locate);
+                                  void navigate(destination);
+                                });
+                              }}
+                              className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-sm hover:bg-surface-2"
+                              aria-label={`Abrir conversa ${conversation.protocolo ? `protocolo ${conversation.protocolo}` : "sem protocolo"}`}
+                            >
+                              <span className="shrink-0 font-mono text-xs font-medium text-primary">
                                 {conversation.protocolo
                                   ? `#${conversation.protocolo}`
-                                  : conversation.status}
+                                  : "Sem protocolo"}
                               </span>
-                            </span>
-                            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                              há {relativeTime(new Date(conversation.last_message_at).getTime())}
-                            </span>
+                              <span
+                                className="min-w-0 truncate font-medium"
+                                title={conversation.contact?.nome ?? "Contato"}
+                              >
+                                {shortRecentContactName(conversation.contact?.nome ?? "Contato")}
+                              </span>
+                              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                                há {relativeTime(new Date(conversation.last_message_at).getTime())}
+                              </span>
+                            </Link>
                           </li>
                         ))}
                         {recent.length === 0 && (
@@ -484,6 +528,10 @@ function Dashboard() {
                       columns={component.columns}
                       valueMode={component.valueMode}
                       data={resolveDashboardData(component)}
+                      contactRanking={
+                        component.dataSource === "conversations" &&
+                        component.groupBy === "conversationContact"
+                      }
                       preserveOrder={
                         component.dataSource === "activity" ||
                         (component.dataSource === "conversations" &&
@@ -525,6 +573,7 @@ function Dashboard() {
                 columns={component.columns}
                 valueMode={component.valueMode}
                 data={resolveDashboardData(component)}
+                contactRanking
                 preserveOrder
                 preserveAllItems
               />
@@ -563,4 +612,9 @@ function requiresRemoteDashboardData(component: DashboardComponentConfig) {
     component.groupBy === "ticketRequesterContact" ||
     (component.dataSource === "conversations" && component.groupBy === "conversationContact")
   );
+}
+
+function shortRecentContactName(name: string) {
+  const characters = Array.from(name);
+  return characters.length > 20 ? `${characters.slice(0, 19).join("")}…` : name;
 }

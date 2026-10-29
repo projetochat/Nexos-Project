@@ -326,6 +326,22 @@ function Page() {
     },
     onError: (e) => toast.error((e as Error).message),
   });
+  const prepareRemoval = useMutation({
+    mutationFn: (connection: ApiMessagingConnection) =>
+      connection.status === "error" && connection.serviceEnabled === false
+        ? Promise.resolve(connection)
+        : connectionsApi.status(connection.id),
+    onSuccess: (connection) => {
+      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+      if (connection.status === "connected") {
+        toast.error("Desconecte a instância antes de removê-la.");
+        return;
+      }
+      setDisconnecting(null);
+      setRemoving(connection);
+    },
+    onError: (error) => toast.error(connectionRemoveErrorMessage(error)),
+  });
   const remove = useMutation({
     mutationFn: (connection: ApiMessagingConnection) => connectionsApi.remove(connection.id),
     onSuccess: () => {
@@ -492,11 +508,8 @@ function Page() {
                         variant="ghost"
                         size="sm"
                         className="trash-action"
-                        onClick={() => {
-                          setDisconnecting(null);
-                          setRemoving(connection);
-                        }}
-                        disabled={remove.isPending}
+                        onClick={() => prepareRemoval.mutate(connection)}
+                        disabled={remove.isPending || prepareRemoval.isPending}
                         title="Remover"
                         aria-label="Remover"
                       >
@@ -2444,7 +2457,6 @@ export function ServiceHoursTable({
     </div>
   );
 }
-
 
 function EntityFormLog({
   createdAt,

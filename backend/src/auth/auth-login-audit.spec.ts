@@ -86,6 +86,7 @@ async function fixture() {
     jwt,
     committed,
     service: new AuthService(prisma as never, jwt as never, config as never),
+    config,
     credentials: { email: user.email, password: "placeholder-value" },
   };
 }
@@ -115,6 +116,92 @@ describe("durable tenant login audit", () => {
     });
     expect(f.committed).toHaveLength(1);
   });
+  it("enqueues one minimal origin-stamped export atomically when explicitly enabled", async () => {
+    const f = await fixture();
+    const occurredAt = new Date();
+    const values: Record<string, string> = {
+      TRIXUS_LOGIN_METRICS_ENABLED: "true",
+      TRIXUS_LOGIN_METRICS_SOURCE_ID: "synthetic-local",
+      TRIXUS_LOGIN_METRICS_ENVIRONMENT: "local",
+      TRIXUS_LOGIN_METRICS_KEY: "synthetic-key-at-least-thirty-two-characters",
+      TRIXUS_LOGIN_METRICS_START_AT: "2026-01-01T00:00:00.000Z",
+      TRIXUS_LOGIN_METRICS_CENTRAL_URL: "https://central.invalid",
+    };
+    f.config.get.mockImplementation(
+      (name: string) => values[name] ?? "synthetic-secret-at-least-thirty-two-characters",
+    );
+    f.audit.create.mockResolvedValue({ id: "audit-a", createdAt: occurredAt } as never);
+    const outboxCreate = vi.fn().mockResolvedValue({});
+    f.prisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        authSession: f.transactionSession,
+        platformAuditLog: f.audit,
+        outboxEvent: { create: outboxCreate },
+      }),
+    );
+    await f.service.loginTenant(f.credentials);
+    expect(f.audit.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadataJson: {
+            loginMetricOrigin: { sourceId: "synthetic-local", environment: "local" },
+          },
+        }),
+      }),
+    );
+    expect(outboxCreate).toHaveBeenCalledExactlyOnceWith({
+      data: {
+        tenantId: "tenant-a",
+        type: "LOGIN_METRIC_V1",
+        aggregateId: "audit-a",
+        payload: {
+          version: 1,
+          sourceId: "synthetic-local",
+          environment: "local",
+          eventId: "audit-a",
+          tenantId: "tenant-a",
+          tenantKey: "synthetic",
+          occurredAt: occurredAt.toISOString(),
+        },
+      },
+    });
+  });
+
+  it("returns no tokens and does not commit when enabled outbox persistence fails", async () => {
+    const f = await fixture();
+    const values: Record<string, string> = {
+      TRIXUS_LOGIN_METRICS_ENABLED: "true",
+      TRIXUS_LOGIN_METRICS_SOURCE_ID: "synthetic-local",
+      TRIXUS_LOGIN_METRICS_ENVIRONMENT: "local",
+      TRIXUS_LOGIN_METRICS_KEY: "synthetic-key-at-least-thirty-two-characters",
+      TRIXUS_LOGIN_METRICS_START_AT: "2026-01-01T00:00:00.000Z",
+      TRIXUS_LOGIN_METRICS_CENTRAL_URL: "https://central.invalid",
+    };
+    f.config.get.mockImplementation(
+      (name: string) => values[name] ?? "synthetic-secret-at-least-thirty-two-characters",
+    );
+    f.audit.create.mockResolvedValue({ id: "audit-a", createdAt: new Date() } as never);
+    const outboxCreate = vi.fn().mockRejectedValue(new Error("synthetic outbox failure"));
+    f.prisma.$transaction.mockImplementation(async (callback) => {
+      const result = await callback({
+        authSession: f.transactionSession,
+        platformAuditLog: f.audit,
+        outboxEvent: { create: outboxCreate },
+      });
+      f.committed.push(result);
+      return result;
+    });
+    let returned: unknown;
+    await expect(async () => {
+      returned = await f.service.loginTenant(f.credentials);
+    }).rejects.toThrow("synthetic outbox failure");
+    expect(returned).toBeUndefined();
+    expect(f.committed).toHaveLength(0);
+    expect(f.audit.create).toHaveBeenCalledOnce();
+    expect(f.transactionSession.create).toHaveBeenCalledOnce();
+    expect(outboxCreate).toHaveBeenCalledOnce();
+  });
+
   it("rejects the transaction and returns no tokens when audit persistence fails", async () => {
     const f = await fixture();
     f.audit.create.mockRejectedValue(new Error("synthetic audit failure"));

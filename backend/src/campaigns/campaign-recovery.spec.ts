@@ -153,22 +153,38 @@ describe("campaign recovery without duplicate dispatch", () => {
       ).toHaveLength(2);
     },
   );
-  it.each(["P2034", "P2024"])("retries safe failure %s then creates once", async (code) => {
+  it.each(["P2034", "P2024", "CAMPAIGN_MEDIA_STORAGE_FAILED_BEFORE_MESSAGE"])(
+    "retries safe failure %s then creates once",
+    async (code) => {
+      const f = fixture();
+      f.recipient.status = "QUEUED";
+      const create = vi
+        .spyOn(f.internals, "createCampaignMessage")
+        .mockRejectedValueOnce(Object.assign(transient(), { code }))
+        .mockResolvedValueOnce("m");
+      await expect(f.service.dispatchRecipient("c", "r", 1)).rejects.toThrow(
+        "transaction rolled back",
+      );
+      expect(f.recipient.status).toBe("QUEUED");
+      expect(f.count).not.toHaveBeenCalled();
+      expect(await f.service.dispatchRecipient("c", "r", 2)).toEqual({ messageId: "m" });
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(f.outbox.dispatchMessage).toHaveBeenCalledTimes(1);
+      expect(await f.service.dispatchRecipient("c", "r", 3)).toEqual({ skipped: true });
+    },
+  );
+  it("bounds retries for a media preparation failure proven before message creation", async () => {
     const f = fixture();
     f.recipient.status = "QUEUED";
-    const create = vi
-      .spyOn(f.internals, "createCampaignMessage")
-      .mockRejectedValueOnce(Object.assign(transient(), { code }))
-      .mockResolvedValueOnce("m");
-    await expect(f.service.dispatchRecipient("c", "r", 1)).rejects.toThrow(
-      "transaction rolled back",
+    vi.spyOn(f.internals, "createCampaignMessage").mockRejectedValue(
+      Object.assign(new Error("prepare failed"), {
+        code: "CAMPAIGN_MEDIA_STORAGE_FAILED_BEFORE_MESSAGE",
+      }),
     );
-    expect(f.recipient.status).toBe("QUEUED");
-    expect(f.count).not.toHaveBeenCalled();
-    expect(await f.service.dispatchRecipient("c", "r", 2)).toEqual({ messageId: "m" });
-    expect(create).toHaveBeenCalledTimes(2);
-    expect(f.outbox.dispatchMessage).toHaveBeenCalledTimes(1);
-    expect(await f.service.dispatchRecipient("c", "r", 3)).toEqual({ skipped: true });
+    await expect(f.service.dispatchRecipient("c", "r", 3)).rejects.toThrow("prepare failed");
+    expect(f.recipient.status).toBe("FAILED");
+    expect(f.count).toHaveBeenCalledWith("c", { failedCount: 1 });
+    expect(f.outbox.dispatchMessage).not.toHaveBeenCalled();
   });
   it("revalidates an inactive contact before dispatch and classifies it as blocked", async () => {
     const f = fixture();

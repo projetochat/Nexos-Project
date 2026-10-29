@@ -62,6 +62,11 @@ describe("Platform dashboard URL filters", () => {
     });
 
     const defaults = platformDashboardFiltersFromSearch({});
+    expect(defaults.period).toBe("today");
+    expect(
+      platformDashboardFiltersFromSearch(normalizePlatformDashboardSearch({ period: "month" }))
+        .period,
+    ).toBe("month");
     expect(platformDashboardSearchFromFilters(defaults)).toEqual({
       clientId: undefined,
       tenantId: undefined,

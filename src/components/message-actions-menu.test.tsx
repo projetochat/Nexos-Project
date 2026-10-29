@@ -22,6 +22,7 @@ it("anchors a context-menu request at the pointer position", async () => {
                 id: "context-image",
                 conversation_id: "c1",
                 sender: "contact",
+                direction: "inbound",
                 type: "image",
                 content: "",
                 status: "delivered",
@@ -69,6 +70,7 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
                 id: "m1",
                 conversation_id: "c1",
                 sender: "contact",
+                direction: "inbound",
                 type: "image",
                 content: "Legenda",
                 status: "delivered",
@@ -95,16 +97,20 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
     await open();
     const actionSurfaces = document.querySelectorAll('[aria-label="Ações da mensagem"]');
     expect(actionSurfaces.item(actionSurfaces.length - 1).className).toContain("w-52");
-    expect(button("Editar").disabled).toBe(true);
-    expect(button("Apagar").disabled).toBe(true);
-    expect(button("Reenviar").disabled).toBe(true);
+    expect(button("Encaminhar").nextElementSibling).toBe(button("Baixar"));
+    expect(button("Informações").nextElementSibling).toBe(button("Responder"));
+
+    expect(button("Editar")).toBeUndefined();
+    expect(button("Apagar")).toBeUndefined();
+    expect(button("Reenviar")).toBeUndefined();
+    expect(button("Baixar").nextElementSibling?.className).toContain("mt-1");
     await React.act(() => button("Responder").click());
     expect(reply).toHaveBeenCalledOnce();
     await open();
     await React.act(() => button("Copiar").click());
     expect(copy).toHaveBeenCalledWith(expect.objectContaining({ id: "m1", type: "image" }));
     await open();
-    await React.act(() => button("Salvar como…").click());
+    await React.act(() => button("Baixar").click());
     expect(download).toHaveBeenCalledOnce();
     await open();
     await React.act(() => button("👍").click());
@@ -130,6 +136,7 @@ it("allows copying a ready image without a caption", async () => {
     id: "image-only",
     conversation_id: "c1",
     sender: "contact",
+    direction: "inbound",
     type: "image",
     content: "",
     status: "delivered",
@@ -179,6 +186,7 @@ it("uses the approved destructive copy for deleting an outgoing message", async 
                 id: "m2",
                 conversation_id: "c1",
                 sender: "agent",
+                direction: "outbound",
                 type: "text",
                 content: "Mensagem de teste",
                 status: "sent",
@@ -225,6 +233,7 @@ it("opens on a context-menu request and allows editing an outgoing image caption
     id: "m3",
     conversation_id: "c1",
     sender: "agent",
+    direction: "outbound",
     type: "image",
     content: "Legenda da imagem",
     status: "sent",
@@ -275,6 +284,7 @@ it("keeps media actions blocked before first attendance while allowing caption t
     id: "not-started",
     conversation_id: "isolated",
     sender: "agent",
+    direction: "outbound",
     type: "image",
     content: "Visible caption",
     status: "failed",
@@ -298,7 +308,7 @@ it("keeps media actions blocked before first attendance while allowing caption t
     );
     const button = (label: string) =>
       [...document.querySelectorAll("button")].find((item) => item.textContent === label)!;
-    expect(button("Salvar como…").disabled).toBe(true);
+    expect(button("Baixar").disabled).toBe(true);
     expect(button("Encaminhar").disabled).toBe(true);
     expect(button("Reenviar").disabled).toBe(true);
     expect(button("Copiar").disabled).toBe(false);
@@ -310,5 +320,75 @@ it("keeps media actions blocked before first attendance while allowing caption t
     await React.act(async () => root.unmount());
     host.remove();
     qc.clear();
+  }
+});
+
+it.each([
+  { sender: "contact", direction: "inbound", status: "created", participant: null },
+  {
+    sender: "contact",
+    direction: "inbound",
+    status: "failed",
+    participant: { name: "Participante sintético" },
+  },
+  {
+    sender: "agent",
+    direction: "inbound",
+    status: "failed",
+    participant: { name: "Participante sintético" },
+  },
+  { sender: "agent", direction: "outbound", status: "sent", participant: null },
+  {
+    sender: "agent",
+    direction: "outbound",
+    status: "failed",
+    sent_at: "2026-10-28T12:00:00Z",
+    participant: null,
+  },
+  { sender: "agent", direction: "outbound", status: "failed", participant: null },
+])("hides received actions and only offers resend before a successful send: %j", async (data) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const qc = new QueryClient();
+  try {
+    await React.act(async () =>
+      root.render(
+        <QueryClientProvider client={qc}>
+          <MessageActionsMenu
+            message={
+              {
+                id: "synthetic",
+                conversation_id: "isolated",
+                type: "text",
+                content: "Teste",
+                created_at: "2026-10-28T12:00:00Z",
+                ...data,
+              } as ApiMessage
+            }
+            onReact={vi.fn()}
+            canEdit
+            canDelete
+            canSend
+            openRequest={1}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const button = (label: string) =>
+      [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === label);
+    const outgoing = data.sender === "agent" && data.direction === "outbound";
+    expect(Boolean(button("Editar"))).toBe(outgoing);
+    expect(Boolean(button("Apagar"))).toBe(outgoing);
+    expect(Boolean(button("Reenviar"))).toBe(
+      outgoing && data.status === "failed" && !("sent_at" in data),
+    );
+    expect(button("Informações")?.nextElementSibling).toBe(button("Responder"));
+    if (outgoing) expect(button("Editar")?.nextElementSibling).toBe(button("Apagar"));
+  } finally {
+    await React.act(async () => root.unmount());
+    qc.clear();
+    host.remove();
   }
 });

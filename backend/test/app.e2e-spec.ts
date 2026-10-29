@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { INestApplication, Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
@@ -32,6 +33,7 @@ describe("Trixus API organization and RBAC", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
+  const fixtureWebhookSecret = randomBytes(32).toString("hex");
   const restoreRoleScopes: Array<() => Promise<unknown>> = [];
 
   function uniqueBrazilianMobilePhone() {
@@ -43,17 +45,17 @@ describe("Trixus API organization and RBAC", () => {
 
   beforeAll(async () => {
     process.env.TRIXUS_ENVIRONMENT = "staging";
+    const fixtureDatabaseUrl = new URL("postgresql://127.0.0.1:5432/trixus_1200?schema=public");
+    fixtureDatabaseUrl.username = "trixus";
+    fixtureDatabaseUrl.password = "fixture";
     const testDatabaseUrl = normalizeLocalPostgresUrl(
-      process.env.TRIXUS_TEST_DATABASE_URL ??
-        "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus_1200?schema=public",
+      process.env.TRIXUS_TEST_DATABASE_URL ?? fixtureDatabaseUrl.toString(),
     );
     process.env.DATABASE_URL = testDatabaseUrl;
     process.env.TRIXUS_TEST_DATABASE_URL = testDatabaseUrl;
-    process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-access-secret-minimum-32-chars";
-    process.env.JWT_REFRESH_SECRET =
-      process.env.JWT_REFRESH_SECRET ?? "test-refresh-secret-minimum-32-chars";
-    process.env.EVOLUTION_WEBHOOK_SECRET =
-      process.env.EVOLUTION_WEBHOOK_SECRET ?? "test-evolution-webhook-secret";
+    process.env["JWT_SECRET"] ??= randomBytes(32).toString("hex");
+    process.env["JWT_REFRESH_SECRET"] ??= randomBytes(32).toString("hex");
+    process.env["EVOLUTION_WEBHOOK_SECRET"] ??= fixtureWebhookSecret;
     process.env.TRIXUS_CAMPAIGN_CONCURRENCY = "1";
     process.env.TRIXUS_CAMPAIGN_MESSAGES_PER_MINUTE = "5";
     process.env.TRIXUS_CAMPAIGN_BATCH_SIZE = "5";
@@ -1213,13 +1215,13 @@ describe("Trixus API organization and RBAC", () => {
 
     await request(app.getHttpServer())
       .post("/api/auth/password/reset")
-      .send({ token: resetToken, password: "resetpass123" })
+      .send({ token: resetToken, password: "reset123" })
       .expect(201)
       .expect(({ body }) => expect(body.ok).toBe(true));
 
     await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email, password: "resetpass123", tenantSlug: "acme" })
+      .send({ email, password: "reset123", tenantSlug: "acme" })
       .expect(201);
   });
 
@@ -2027,7 +2029,7 @@ describe("Trixus API organization and RBAC", () => {
 
     await request(app.getHttpServer())
       .post("/api/webhooks/evolution")
-      .set("jwt_key", process.env.EVOLUTION_WEBHOOK_SECRET ?? "test-evolution-webhook-secret")
+      .set("jwt_key", process.env.EVOLUTION_WEBHOOK_SECRET ?? fixtureWebhookSecret)
       .send({
         event: "MESSAGES_UPSERT",
         instance: connection.externalReference,
@@ -2104,7 +2106,8 @@ describe("Trixus API organization and RBAC", () => {
 
   it("does not write the Evolution webhook secret to auth failure logs", async () => {
     const previousSecret = process.env.EVOLUTION_WEBHOOK_SECRET;
-    process.env.EVOLUTION_WEBHOOK_SECRET = "super-secret-value-never-log";
+    const privateWebhookFixture = randomBytes(32).toString("hex");
+    process.env["EVOLUTION_WEBHOOK_SECRET"] = privateWebhookFixture;
     const warnSpy = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
     const logSpy = vi.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
 
@@ -2115,11 +2118,11 @@ describe("Trixus API organization and RBAC", () => {
         .send({ event: "MESSAGES_UPSERT", instance: "unknown", data: {} })
         .expect(401);
     } finally {
-      process.env.EVOLUTION_WEBHOOK_SECRET = previousSecret;
+      process.env["EVOLUTION_WEBHOOK_SECRET"] = previousSecret;
     }
 
     const logged = JSON.stringify([...warnSpy.mock.calls, ...logSpy.mock.calls]);
-    expect(logged).not.toContain("super-secret-value-never-log");
+    expect(logged).not.toContain(privateWebhookFixture);
     expect(logged).toContain("invalid_jwt_key");
     warnSpy.mockRestore();
     logSpy.mockRestore();
@@ -2771,7 +2774,7 @@ describe("Trixus API organization and RBAC", () => {
       })
       .expect(201)
       .expect(({ body }) => {
-        expect(body.protocol).toMatch(/^TKT-\d{6}$/);
+        expect(body.protocol).toMatch(/^\d{6,}$/);
         expect(body.department.id).toBe(department.id);
         expect(body.conversation.id).toBe(conversation.id);
         expect(body.requesterContact.id).toBe(conversation.contactId);
@@ -2820,7 +2823,7 @@ describe("Trixus API organization and RBAC", () => {
       })
       .expect(201);
 
-    expect(created.body.protocol).toMatch(/^TKT-\d{6}$/);
+    expect(created.body.protocol).toMatch(/^\d{6,}$/);
     expect(created.body.descriptionHtmlSanitized).not.toContain("<script");
     expect(created.body.descriptionHtmlSanitized).not.toContain("onerror");
     expect(created.body.descriptionHtmlSanitized).not.toContain("javascript:");
@@ -3711,7 +3714,7 @@ describe("Trixus API organization and RBAC", () => {
   it("rejects invalid credentials", async () => {
     await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email: "admin@trixus.app", password: "wrong-password", tenantSlug: "acme" })
+      .send({ email: "admin@trixus.app", password: "invalid", tenantSlug: "acme" })
       .expect(401);
   });
 

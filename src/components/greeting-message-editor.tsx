@@ -17,6 +17,7 @@ export function GreetingMessageEditor({
   placeholder,
   showAttachment = true,
   showEmoji = false,
+  showVariables = true,
   attachmentLayout = "menu",
   maxLength = 1000,
   rows = 6,
@@ -30,6 +31,7 @@ export function GreetingMessageEditor({
   placeholder: string;
   showAttachment?: boolean;
   showEmoji?: boolean;
+  showVariables?: boolean;
   attachmentLayout?: "menu" | "segmented";
   maxLength?: number;
   rows?: number;
@@ -69,7 +71,9 @@ export function GreetingMessageEditor({
       />
       <div className="flex flex-wrap items-center gap-1.5 overflow-visible rounded-b-lg border-t border-border bg-surface-1 px-2 py-1.5">
         {showEmoji && <MessageEmojiPicker disabled={disabled} onSelect={insertText} />}
-        <MessageVariablesMenu disabled={disabled} variables={variables} onSelect={insertText} />
+        {showVariables && (
+          <MessageVariablesMenu disabled={disabled} variables={variables} onSelect={insertText} />
+        )}
         {showAttachment && attachmentLayout === "menu" && attachment && (
           <Button
             type="button"

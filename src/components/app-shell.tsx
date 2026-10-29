@@ -1,3 +1,4 @@
+import { TaskAlerts } from "@/components/task-alerts";
 import { displayDateTime } from "@/lib/format";
 import * as React from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
@@ -793,7 +794,9 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
                         notificationApi.markRead(item.id),
                       ]);
                       await qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
-                      if (target.destination === "history") {
+                      if (target.destination === "tasks") {
+                        navigate({ to: "/agendamentos", search: { taskId: target.taskId } });
+                      } else if (target.destination === "history") {
                         navigate({
                           to: "/historico",
                           search: { conversationId: target.conversationId },
@@ -812,7 +815,7 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
                       );
                     }
                   }}
-                  className="w-full rounded-lg px-2 py-2 text-left transition hover:bg-surface-2"
+                  className={`w-full rounded-lg px-2 py-2 text-left transition hover:bg-surface-2 ${item.entityType === "task" ? `border-l-4 ${item.priority === "high" ? "border-l-red-500" : item.priority === "medium" ? "border-l-amber-500" : "border-l-emerald-500"}` : ""}`}
                 >
                   <p className="text-sm font-medium">{item.title}</p>
                   {item.body && (
@@ -1100,6 +1103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <TenantOnboardingBoundary>
       <div className="flex h-screen h-dvh min-h-screen min-h-dvh overflow-hidden bg-background text-foreground">
         <TopProgress active={isNavigating} />
+        <TaskAlerts />
         <Sidebar collapsed={collapsed} />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <ImpersonationBanner />
@@ -1126,6 +1130,7 @@ export function AppShellFull({ children }: { children: React.ReactNode }) {
     <TenantOnboardingBoundary>
       <div className="flex h-screen h-dvh min-h-screen min-h-dvh overflow-hidden bg-background text-foreground">
         <TopProgress active={isNavigating} />
+        <TaskAlerts />
         <Sidebar collapsed={collapsed} />
         <div className="flex min-w-0 flex-1 flex-col">
           <ImpersonationBanner />

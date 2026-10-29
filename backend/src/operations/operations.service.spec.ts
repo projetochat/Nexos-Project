@@ -43,7 +43,7 @@ describe("tenant dashboard configuration", () => {
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 
-  it("migrates the native requester ranking to a one-column list only for old configurations", async () => {
+  it("migrates the native requester ranking to the current two-column list for old configurations", async () => {
     const prisma = {
       $queryRaw: vi
         .fn()
@@ -71,12 +71,12 @@ describe("tenant dashboard configuration", () => {
     expect(prisma.$queryRaw).toHaveBeenCalledOnce();
     expect(result.configuration).toEqual({
       version: 2,
-      nativeRevision: 5,
+      nativeRevision: 6,
       components: [
         {
           ...ranking,
           visualization: "table",
-          columns: 1,
+          columns: 2,
           title: "Top 10 contatos que mais abrem conversas",
           dataSource: "conversations",
           groupBy: "conversationContact",
@@ -152,11 +152,14 @@ describe("dashboard week ranges", () => {
           where: {
             tenantId: "tenant-a",
             archivedAt: null,
-            connectionId: { in: ["vocical"] },
-            departmentId: { in: ["department-a"] },
+            AND: [
+              { connectionId: { in: ["vocical"] }, departmentId: { in: ["department-a"] } },
+              { protocol: { not: null } },
+              { NOT: { protocol: "" } },
+            ],
           },
-          orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
-          take: 7,
+          orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+          take: 10,
         }),
       );
     },
@@ -721,9 +724,22 @@ describe("dashboard conversation contact ranking", () => {
       conversation: { groupBy: vi.fn().mockResolvedValue(rows) },
       contact: {
         findMany: vi.fn().mockResolvedValue([
-          { id: "contact-b", name: "Contato B" },
-          { id: "contact-a", name: "Contato A" },
+          {
+            id: "contact-b",
+            name: "Contato B",
+            customerId: "customer-a",
+            customerDepartmentId: "department-a",
+          },
+          { id: "contact-a", name: "Contato A", customerId: null, customerDepartmentId: null },
         ]),
+      },
+      customer: { findMany: vi.fn().mockResolvedValue([{ id: "customer-a", name: "Cliente A" }]) },
+      customerDepartment: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "department-a", customerId: "customer-a", name: "Financeiro" },
+          ]),
       },
       ticket: { groupBy: vi.fn() },
     };
@@ -751,7 +767,7 @@ describe("dashboard conversation contact ranking", () => {
     expect(input).toMatchObject({
       by: ["contactId"],
       _count: { _all: true },
-      take: 10,
+      take: 20,
       orderBy: [{ _count: { contactId: "desc" } }, { contactId: "asc" }],
       where: {
         tenantId: "tenant-a",
@@ -767,13 +783,68 @@ describe("dashboard conversation contact ranking", () => {
     expect(input.where).not.toHaveProperty("closedAt");
     expect(f.prisma.contact.findMany).toHaveBeenCalledWith({
       where: { tenantId: "tenant-a", archivedAt: null, id: { in: ["contact-b", "contact-a"] } },
+      select: { id: true, name: true, customerId: true, customerDepartmentId: true },
+    });
+    expect(result.items).toEqual([
+      {
+        id: "contact-b",
+        nome: "Contato B",
+        cliente: "Cliente A",
+        departamento: "Financeiro",
+        total: 7,
+      },
+      { id: "contact-a", nome: "Contato A", cliente: null, departamento: null, total: 3 },
+    ]);
+    expect(f.prisma.ticket.groupBy).not.toHaveBeenCalled();
+  });
+
+  it("looks up customer names only inside the current tenant and keeps missing links nullable", async () => {
+    const f = fixture([
+      { contactId: "contact-b", _count: { _all: 7 } },
+      { contactId: "contact-a", _count: { _all: 3 } },
+    ]);
+    f.prisma.customer.findMany.mockResolvedValue([]);
+    const result = await f.service.dashboardComponentData(admin, query);
+    expect(f.prisma.customer.findMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", id: { in: ["customer-a"] } },
       select: { id: true, name: true },
     });
     expect(result.items).toEqual([
-      { nome: "Contato B", total: 7 },
-      { nome: "Contato A", total: 3 },
+      { id: "contact-b", nome: "Contato B", cliente: null, departamento: "Financeiro", total: 7 },
+      { id: "contact-a", nome: "Contato A", cliente: null, departamento: null, total: 3 },
     ]);
-    expect(f.prisma.ticket.groupBy).not.toHaveBeenCalled();
+  });
+
+  it("does not query customers when ranked contacts have no customer", async () => {
+    const f = fixture([{ contactId: "contact-a", _count: { _all: 3 } }]);
+    f.prisma.contact.findMany.mockResolvedValue([
+      { id: "contact-a", name: "Contato A", customerId: null, customerDepartmentId: null },
+    ]);
+    await expect(f.service.dashboardComponentData(admin, query)).resolves.toEqual({
+      items: [{ id: "contact-a", nome: "Contato A", cliente: null, departamento: null, total: 3 }],
+    });
+    expect(f.prisma.customer.findMany).not.toHaveBeenCalled();
+  });
+
+  it("uses the contact customer department with explicit tenant and customer ownership", async () => {
+    const f = fixture([{ contactId: "contact-b", _count: { _all: 7 } }]);
+    const result = await f.service.dashboardComponentData(admin, query);
+    expect(f.prisma.customerDepartment.findMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", OR: [{ id: "department-a", customerId: "customer-a" }] },
+      select: { id: true, customerId: true, name: true },
+    });
+    expect(result.items[0]).toMatchObject({ departamento: "Financeiro", total: 7 });
+  });
+
+  it("does not reuse a department name from another customer", async () => {
+    const f = fixture([{ contactId: "contact-b", _count: { _all: 7 } }]);
+    f.prisma.customerDepartment.findMany.mockResolvedValue([
+      { id: "department-a", customerId: "another-customer", name: "Must not display" },
+    ]);
+    expect((await f.service.dashboardComponentData(admin, query)).items[0]).toMatchObject({
+      departamento: null,
+      total: 7,
+    });
   });
 
   it("intersects explicit filters with common-user visibility and connection/department scopes", async () => {
@@ -863,7 +934,7 @@ describe("native contact ranking revision five", () => {
     const result = await normalize([ranking]);
     expect(result.configuration).toEqual({
       version: 2,
-      nativeRevision: 5,
+      nativeRevision: 6,
       components: [
         {
           ...ranking,
@@ -894,8 +965,29 @@ describe("native contact ranking revision five", () => {
   it("accepts revision five without re-migrating intentionally configured components", async () => {
     expect((await normalize([ranking], 5)).configuration.components).toEqual([ranking]);
   });
+  it("widens only the previous native one-column conversation ranking", async () => {
+    const native = {
+      ...ranking,
+      dataSource: "conversations",
+      groupBy: "conversationContact",
+      columns: 1,
+    };
+    expect((await normalize([native], 5)).configuration.components[0]).toMatchObject({
+      columns: 2,
+    });
+    expect(
+      (await normalize([{ ...native, columns: 3 }], 5)).configuration.components[0],
+    ).toMatchObject({ columns: 3 });
+    expect((await normalize([native], 6)).configuration.components[0]).toMatchObject({
+      columns: 1,
+    });
+    expect(
+      (await normalize([{ ...native, id: "custom-ranking" }], 5)).configuration.components[0],
+    ).toMatchObject({ columns: 1 });
+  });
+
   it("rejects revisions newer than supported", async () => {
-    await expect(normalize([ranking], 6)).rejects.toThrow("Revisão da configuração");
+    await expect(normalize([ranking], 7)).rejects.toThrow("Revisão da configuração");
   });
 });
 
@@ -1121,5 +1213,50 @@ describe("history closure author filter", () => {
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(result.closedByOptions).toEqual([]);
     expect(prisma.tenantMembership.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("dashboard recent protocols", () => {
+  it("selects ten conversations with protocol before limiting and preserves tenant/access scope without status restrictions", async () => {
+    const prisma = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ timezone: "America/Sao_Paulo" }) },
+      conversation: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const metrics = {
+      snapshot: vi.fn().mockResolvedValue({}),
+      chartData: vi.fn().mockResolvedValue({}),
+      semantics: vi.fn().mockReturnValue({}),
+    };
+    await new OperationsService(prisma as never, metrics as never).dashboard(
+      {
+        tenantId: "tenant-a",
+        roleKey: "agent",
+        connectionIds: ["connection-a"],
+        chatDepartmentIds: ["department-a"],
+        permissions: ["chat.conversations.view_all_active"],
+      } as never,
+      { period: "today" },
+    );
+    const query = (prisma.conversation.findMany.mock.calls[0] as unknown as [unknown])[0] as {
+      where: { tenantId: string; archivedAt: null; AND: unknown[] };
+      take: number;
+      orderBy: unknown[];
+    };
+    expect(query.take).toBe(10);
+    expect(query.where).toMatchObject({
+      tenantId: "tenant-a",
+      archivedAt: null,
+      AND: [
+        { connectionId: { in: ["connection-a"] }, departmentId: { in: ["department-a"] } },
+        { protocol: { not: null } },
+        { NOT: { protocol: "" } },
+      ],
+    });
+    expect(JSON.stringify(query.where)).not.toContain('"status"');
+    expect(query.orderBy).toEqual([
+      { lastMessageAt: "desc" },
+      { updatedAt: "desc" },
+      { id: "desc" },
+    ]);
   });
 });

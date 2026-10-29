@@ -65,6 +65,16 @@ export function MessageActionsMenu({
   const resendId = useRef<string | null>(null);
   const handledResendRequest = useRef(0);
   const handledOpenRequest = useRef(0);
+  const outgoing = message.sender === "agent" && message.direction === "outbound";
+  const canResendMessage = (item: ApiMessage) =>
+    item.sender === "agent" &&
+    item.direction === "outbound" &&
+    item.status === "failed" &&
+    !item.sent_at &&
+    !item.delivered_at &&
+    !item.read_at &&
+    !item.deleted_for_everyone;
+  const resendEligible = canResendMessage(message);
   const hasBlockedMedia = !!message.media_data && !mediaAccessAllowed;
   useEffect(() => {
     if (!openRequest || openRequest === handledOpenRequest.current) return;
@@ -76,10 +86,10 @@ export function MessageActionsMenu({
   useEffect(() => {
     if (!resendRequest || resendRequest === handledResendRequest.current) return;
     handledResendRequest.current = resendRequest;
-    if (hasBlockedMedia) return;
+    if (hasBlockedMedia || !resendEligible) return;
     setError("");
     setResend(true);
-  }, [hasBlockedMedia, resendRequest]);
+  }, [hasBlockedMedia, resendRequest, resendEligible]);
   const run = async (action: () => Promise<unknown>) => {
     if (running.current) return;
     running.current = true;
@@ -153,6 +163,17 @@ export function MessageActionsMenu({
           >
             <button
               className={itemClass}
+              disabled={busy}
+              onClick={() => {
+                setOpen(false);
+                setInfo(true);
+              }}
+            >
+              <Info className="h-4 w-4" />
+              Informações
+            </button>
+            <button
+              className={itemClass}
               disabled={busy || !canSend || !onReply}
               onClick={() => {
                 onReply?.();
@@ -201,76 +222,71 @@ export function MessageActionsMenu({
             </button>
             <button
               className={itemClass}
-              disabled={
-                busy ||
-                !canSend ||
-                (!!message.media_data && !mediaAccessAllowed) ||
-                message.sender !== "agent" ||
-                message.status !== "failed" ||
-                !canCopyMessage(message)
-              }
-              onClick={() => {
-                setOpen(false);
-                setResend(true);
-              }}
-            >
-              <RefreshCw className="h-4 w-4" />
-              Reenviar
-            </button>
-            <div className="my-1 border-t border-border" />
-            <button
-              className={itemClass}
-              disabled={
-                busy || !canDelete || message.sender !== "agent" || !!message.deleted_for_everyone
-              }
-              onClick={() => {
-                setOpen(false);
-                setRemove(true);
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-              Apagar
-            </button>
-            <button
-              className={itemClass}
-              disabled={
-                busy ||
-                !canEdit ||
-                message.sender !== "agent" ||
-                (message.type !== "text" &&
-                  !(message.type === "image" && !!message.content.trim())) ||
-                !!message.deleted_for_everyone
-              }
-              onClick={() => {
-                setEditText(message.content);
-                setOpen(false);
-                setEdit(true);
-              }}
-            >
-              <Pencil className="h-4 w-4" />
-              Editar
-            </button>
-            <button
-              className={itemClass}
-              disabled={busy}
-              onClick={() => {
-                setOpen(false);
-                setInfo(true);
-              }}
-            >
-              <Info className="h-4 w-4" />
-              Informações
-            </button>
-            <button
-              className={itemClass}
               disabled={busy || !mediaAccessAllowed || !mediaReady || !onDownload}
               onClick={() => {
                 if (mediaAccessAllowed && onDownload) void run(onDownload);
               }}
             >
               <Download className="h-4 w-4" />
-              Salvar como…
+              Baixar
             </button>
+            {resendEligible && (
+              <button
+                className={itemClass}
+                disabled={
+                  busy ||
+                  !canSend ||
+                  (!!message.media_data && !mediaAccessAllowed) ||
+                  message.sender !== "agent" ||
+                  message.status !== "failed" ||
+                  !canCopyMessage(message)
+                }
+                onClick={() => {
+                  setOpen(false);
+                  setResend(true);
+                }}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Reenviar
+              </button>
+            )}
+            {outgoing && <div className="my-1 border-t border-border" />}
+            {outgoing && (
+              <button
+                className={itemClass}
+                disabled={
+                  busy ||
+                  !canEdit ||
+                  message.sender !== "agent" ||
+                  (message.type !== "text" &&
+                    !(message.type === "image" && !!message.content.trim())) ||
+                  !!message.deleted_for_everyone
+                }
+                onClick={() => {
+                  setEditText(message.content);
+                  setOpen(false);
+                  setEdit(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+                Editar
+              </button>
+            )}
+            {outgoing && (
+              <button
+                className={itemClass}
+                disabled={
+                  busy || !canDelete || message.sender !== "agent" || !!message.deleted_for_everyone
+                }
+                onClick={() => {
+                  setOpen(false);
+                  setRemove(true);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Apagar
+              </button>
+            )}
             <div className="mt-1 flex items-center justify-between border-t border-border p-2">
               {["👍", "❤️", "😂", "😮", "😢", "🙏"].map((emoji) => (
                 <button
@@ -329,7 +345,7 @@ export function MessageActionsMenu({
         </dl>
       </Modal>
       <ConfirmDialog
-        open={resend && !hasBlockedMedia}
+        open={resend && !hasBlockedMedia && resendEligible}
         layerClassName="z-[270]"
         onClose={() => {
           if (!running.current) {
@@ -352,7 +368,7 @@ export function MessageActionsMenu({
           run(async () => {
             if (hasBlockedMedia) throw new Error("Inicie o atendimento para acessar este arquivo.");
             const current = await messageApi.get(message.conversation_id, message.id);
-            if (current.status !== "failed")
+            if (!canResendMessage(current))
               throw new Error("O status da mensagem mudou. Atualize a conversa antes de reenviar.");
             resendId.current ??= crypto.randomUUID();
             await sendMessageCopy(current, current.conversation_id, resendId.current);
@@ -361,7 +377,7 @@ export function MessageActionsMenu({
         }
       />
       <Modal
-        open={edit}
+        open={edit && outgoing}
         onClose={() => !busy && setEdit(false)}
         title="Editar mensagem"
         layerClassName="z-[270]"
@@ -404,7 +420,7 @@ export function MessageActionsMenu({
         </form>
       </Modal>
       <ConfirmDialog
-        open={remove}
+        open={remove && outgoing}
         layerClassName="z-[270]"
         onClose={() => !busy && setRemove(false)}
         title="Apagar Mensagem"

@@ -221,7 +221,7 @@ export class OperationsService {
         where,
         _count: { _all: true },
         orderBy: [{ _count: { contactId: "desc" } }, { contactId: "asc" }],
-        take: 10,
+        take: 20,
       });
       const contacts = await this.prisma.contact.findMany({
         where: {
@@ -229,13 +229,57 @@ export class OperationsService {
           archivedAt: null,
           id: { in: rows.map((row) => row.contactId) },
         },
-        select: { id: true, name: true },
+        select: { id: true, name: true, customerId: true, customerDepartmentId: true },
       });
-      const names = new Map(contacts.map((contact) => [contact.id, contact.name]));
+      const customerIds = [
+        ...new Set(contacts.flatMap((contact) => (contact.customerId ? [contact.customerId] : []))),
+      ];
+      const customers = customerIds.length
+        ? await this.prisma.customer.findMany({
+            where: { tenantId: current.tenantId, id: { in: customerIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+      const customerNames = new Map(customers.map((customer) => [customer.id, customer.name]));
+      const departmentLinks = contacts.flatMap((contact) =>
+        contact.customerId && contact.customerDepartmentId
+          ? [{ id: contact.customerDepartmentId, customerId: contact.customerId }]
+          : [],
+      );
+      const departments = departmentLinks.length
+        ? await this.prisma.customerDepartment.findMany({
+            where: { tenantId: current.tenantId, OR: departmentLinks },
+            select: { id: true, customerId: true, name: true },
+          })
+        : [];
+      const departmentNames = new Map(
+        departments.map((department) => [
+          `${department.customerId}:${department.id}`,
+          department.name,
+        ]),
+      );
+      const contactsById = new Map(contacts.map((contact) => [contact.id, contact]));
       return {
         items: rows.flatMap((row) => {
-          const name = names.get(row.contactId);
-          return name ? [{ nome: name, total: row._count._all }] : [];
+          const contact = contactsById.get(row.contactId);
+          return contact?.name
+            ? [
+                {
+                  id: contact.id,
+                  nome: contact.name,
+                  cliente: contact.customerId
+                    ? (customerNames.get(contact.customerId) ?? null)
+                    : null,
+                  departamento:
+                    contact.customerId && contact.customerDepartmentId
+                      ? (departmentNames.get(
+                          `${contact.customerId}:${contact.customerDepartmentId}`,
+                        ) ?? null)
+                      : null,
+                  total: row._count._all,
+                },
+              ]
+            : [];
         }),
       };
     }
@@ -1048,10 +1092,14 @@ export class OperationsService {
   ) {
     return this.prisma.conversation
       .findMany({
-        where: { tenantId, archivedAt: null, ...scope },
+        where: {
+          tenantId,
+          archivedAt: null,
+          AND: [scope, { protocol: { not: null } }, { NOT: { protocol: "" } }],
+        },
         include: conversationInclude,
-        orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
-        take: 7,
+        orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+        take: 10,
       })
       .then((items) => items.map((conversation) => serializeConversation(conversation, current)));
   }
@@ -1085,7 +1133,7 @@ function validateDashboardConfiguration(value: unknown) {
   }
   const nativeRevision =
     candidate.nativeRevision === undefined ? 1 : Number(candidate.nativeRevision);
-  if (!Number.isInteger(nativeRevision) || nativeRevision < 1 || nativeRevision > 5) {
+  if (!Number.isInteger(nativeRevision) || nativeRevision < 1 || nativeRevision > 6) {
     throw new BadRequestException("Revisão da configuração do dashboard inválida.");
   }
   if (candidate.components.length > 100) {
@@ -1148,9 +1196,17 @@ function validateDashboardConfiguration(value: unknown) {
             : title,
       };
     }
+    if (
+      nativeRevision < 6 &&
+      id === "ticketRequesterRanking" &&
+      normalized.dataSource === "conversations" &&
+      normalized.groupBy === "conversationContact" &&
+      Number(normalized.columns) === 1
+    )
+      normalized = { ...normalized, columns: 2 };
     return normalized;
   });
-  return { version: 2, nativeRevision: 5, components };
+  return { version: 2, nativeRevision: 6, components };
 }
 
 function conversationWhere(
